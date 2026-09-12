@@ -4,6 +4,10 @@
   "stack": "node24",
   "memory": 512,
   "catalyst_auth": false,
+  "env_variables": {
+    "NODE_ENV": "production",
+    "CATALYST_APP_OWNER": "hitlist-shared"
+  },
   "scripts": {
     "predeploy": "npm run build:appsail",
     "preserve": "npm run build:appsail"
