@@ -181,6 +181,16 @@ problem.
 | `catalyst_auth` | `false` | `true` wraps the service in Catalyst's own login and intercepts API requests. This app handles its own auth. |
 | `scripts.predeploy` | `npm run build` | Produces `dist/` for the server to serve. |
 
+The deployed URL is printed on every successful deploy, and
+`pnpm run appsail:url` prints it again along with the service's status:
+
+```
+HitList (69251000000061001) — in
+
+  hitlist-api  [node24]  running
+  https://hitlist-api-50045863073.development.catalystappsail.in
+```
+
 First deploy:
 
 ```bash
