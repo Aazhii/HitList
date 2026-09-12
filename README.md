@@ -1,73 +1,77 @@
-# React + TypeScript + Vite
+# HitList — Kaizen Todo
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A task manager built around the **Eisenhower Matrix**, with a block-based notes
+editor and rule-driven reminders. React 19 + Vite on the front, Express on the
+back, persisting to **Zoho Catalyst Data Store**.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Tasks** — four-quadrant Eisenhower matrix (Do First / Schedule / Delegate /
+  Eliminate), multiple colour-coded lists, a three-state status cycle, due dates
+  and times, categories, and per-task notes.
+- **Momentum** — completion streak, today's wins, and an all-time counter.
+- **Notes** — a block editor with headings, lists, todos, quotes, code, dividers
+  and tables, driven by a `/` command menu.
+- **Automations** — reminder rules (due-date offset, overdue, recurring,
+  status-change, daily digest) with a run history.
+- **Reminders** — browser notifications plus an in-app notification centre.
 
-## React Compiler
+## Requirements
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- Node.js 20+ (developed on 24)
+- pnpm 10 (`corepack enable pnpm`)
 
-## Expanding the ESLint configuration
+## Getting started
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+pnpm install
+pnpm dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+`pnpm dev` runs two processes concurrently:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+| Process | Port | What |
+|---------|------|------|
+| `vite`  | 9000 | the React app |
+| `tsx server/notes-server.ts` | 3001 | the API |
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+Vite proxies `/api/*` to port 3001, so the frontend always uses relative URLs
+and needs no configuration for local development.
+
+## Scripts
+
+| Script | Purpose |
+|--------|---------|
+| `pnpm dev` | Vite + API server together |
+| `pnpm dev:ui` | Vite alone |
+| `pnpm server` | API server alone |
+| `pnpm build` | typecheck and build the frontend to `dist/` |
+| `pnpm start` | build, then serve the API and `dist/` from one origin |
+| `pnpm typecheck` | `tsc -b --noEmit` |
+| `pnpm lint` | ESLint over `src/` |
+| `pnpm test` | Vitest (jsdom) |
+
+## Storage
+
+The server persists through one of three backends, chosen at startup:
+
+| Backend | When | Notes |
+|---------|------|-------|
+| Catalyst Data Store | Catalyst credentials present | the real backend |
+| JSON files | no credentials | `server/*-db.json`; local development only, gitignored |
+
+See `docs/catalyst.md` for the Catalyst project setup, table schema and
+deployment. Copy `.env.example` to `.env.local` and fill it in.
+
+## Layout
+
+```
+src/
+  App.tsx            task UI and the top-level view switcher
+  components/        matrix, task cards, panels, notes editor, automations
+  hooks/             sync, notes, automations, notifications
+  lib/               api client, storage, auth, notifications
+  types/             Todo, Note and AutomationRule shapes
+server/
+  notes-server.ts    Express API
 ```
