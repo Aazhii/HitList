@@ -1,12 +1,11 @@
 {
-  "command": "node server/notes-server.ts",
+  "command": "node server.js",
   "build_path": "./build",
   "stack": "node24",
   "memory": 512,
   "catalyst_auth": false,
   "env_variables": {
-    "NODE_ENV": "production",
-    "CATALYST_APP_OWNER": "hitlist-shared"
+    "APP_OWNER_ID": "hitlist-shared"
   },
   "scripts": {
     "predeploy": "npm run build:appsail",

@@ -69,6 +69,10 @@
 import express from 'express';
 import cors from 'cors';
 import fs from 'node:fs';
+// Imported explicitly rather than using the global `crypto`, which only exists
+// from Node 19 — on an older runtime the bare global is undefined and every
+// create request would throw.
+import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -79,7 +83,14 @@ import {
 import type { ICatalystRow } from 'zcatalyst-sdk-node/lib/utils/pojo/common';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DEFAULT_PORT = 3001;
+// Catalyst's convention for AppSail: the platform injects
+// X_ZOHO_CATALYST_LISTEN_PORT, and 9000 is the documented fallback. Defaulting
+// to a local-dev port instead means that if the platform does not inject the
+// variable, the process listens somewhere the gateway never probes and the
+// deployment fails with "Execution failed. Please check the startup command or
+// port." Local dev pins PORT=3001 in the package scripts, matching the Vite
+// proxy.
+const DEFAULT_PORT = 9000;
 
 // ── Catalyst availability ──────────────────────────────────────────────────────
 //
@@ -935,7 +946,12 @@ function parseListPatch(body: Record<string, unknown>, errs: FieldErrors): Parti
 // classifyError maps the cause to a status; the detail is logged server-side
 // and only echoed to the client outside production.
 
-const IS_PRODUCTION = process.env['NODE_ENV'] === 'production';
+// Fail safe: anything other than an explicit development environment is
+// treated as production, so error details are withheld by default. AppSail
+// rejects NODE_ENV in env_variables (the CATALYST_/NODE_ reserved keywords),
+// so a deployment may well not set it — and defaulting to "not production"
+// there would echo raw datastore errors to clients.
+const IS_PRODUCTION = (process.env['NODE_ENV'] ?? 'production') !== 'development';
 
 interface ErrorShape { status: number; error: string; message: string }
 
@@ -1031,6 +1047,28 @@ app.use(cors({
 }));
 app.use(express.json({ limit: '4mb' }));
 
+// ── Readiness gate ────────────────────────────────────────────────────────────
+//
+// The backend probe used to run before app.listen(), so the socket opened only
+// after Catalyst had been contacted. That is correct but too slow for a
+// platform that expects the port to be bound promptly — AppSail reports
+// "Execution failed. Please check the startup command or port." if it waits
+// too long.
+//
+// So: bind immediately, and hold API requests here until the backend has
+// settled. Requests still never observe a half-configured backend (the bug the
+// original change fixed), and the port is available at once.
+
+let backendReady: Promise<void> | null = null;
+
+app.use('/api', (_req, res, next) => {
+  if (!backendReady) { next(); return; }
+  backendReady.then(() => next(), (e) => {
+    console.error('[kaizen] Backend never became ready:', e);
+    res.status(503).json({ error: 'starting_up', message: 'Server is still starting' });
+  });
+});
+
 // ── Health ────────────────────────────────────────────────────────────────────
 
 app.head('/api/health', (_req, res) => { res.sendStatus(200); });
@@ -1042,7 +1080,7 @@ app.get('/api/health', (req, res) => {
     // How the SDK would authenticate this request: 'gateway' (Catalyst headers
     // present), 'standalone' (env credentials) or 'none'. Without this, a
     // misconfiguration is invisible until a write fails.
-    catalystMode: catalystAvailable ? describeMode(req, standaloneConfig) : 'none',
+    catalystMode: describeMode(req, standaloneConfig),
     lastCatalystMode,
   });
 });
@@ -1268,7 +1306,7 @@ app.post('/api/tasks', async (req, res) => {
 
   const now = Date.now();
   const task: DbTask = {
-    id:          crypto.randomUUID(),
+    id:          randomUUID(),
     ownerId,
     title,
     ...fields,
@@ -1521,7 +1559,7 @@ app.post('/api/lists', async (req, res) => {
 
   const now = Date.now();
   const list: DbList = {
-    id:        crypto.randomUUID(),
+    id:        randomUUID(),
     ownerId,
     name,
     color,
@@ -1924,7 +1962,22 @@ app.use('/api', (req, res) => {
 
 // ── Static SPA serving ────────────────────────────────────────────────────────
 
-const DIST_DIR = path.join(__dirname, '..', 'dist');
+/**
+ * The built frontend, which the server serves from its own origin.
+ *
+ * Two layouts to satisfy:
+ *   development  server/notes-server.ts  -> ../dist
+ *   AppSail      server.js (bundled)     -> ./dist
+ *
+ * Hardcoding '../dist' meant the deployed bundle looked one level above the
+ * app root, found nothing, skipped the static middleware entirely, and served
+ * 404 for every non-API route.
+ */
+const DIST_DIR = [
+  path.join(__dirname, '..', 'dist'),
+  path.join(__dirname, 'dist'),
+].find((dir) => fs.existsSync(path.join(dir, 'index.html')))
+  ?? path.join(__dirname, '..', 'dist');
 
 if (fs.existsSync(DIST_DIR)) {
   app.use(express.static(DIST_DIR));
@@ -1968,7 +2021,8 @@ app.use((err: unknown, req: express.Request, res: express.Response, _next: expre
 //      variable AppSail actually sets; reading only PORT meant a deployed app
 //      bound the wrong port and the platform health check never passed.
 //   2. PORT                        — other hosts, and local overrides.
-//   3. DEFAULT_PORT (3001)         — local dev; Vite proxies /api here.
+//   3. DEFAULT_PORT (9000)         — Catalyst's documented AppSail fallback.
+//                                   Local dev pins PORT=3001 via package scripts.
 
 function resolvePort(): number {
   for (const name of ['X_ZOHO_CATALYST_LISTEN_PORT', 'PORT']) {
@@ -2016,6 +2070,21 @@ async function settleBackend(): Promise<void> {
   // With no gateway headers and no standalone config, fall back to the CLI's
   // own login if someone has run `catalyst login` + `catalyst init` here. This
   // is what lets `pnpm dev` reach the real project with no secrets in the repo.
+  // Under the Catalyst gateway (AppSail, Functions) the project credentials
+  // arrive as per-request headers, so there is nothing for a startup probe to
+  // authenticate with: it would fail, and the old code then disabled Catalyst
+  // for the whole process — which is why the first successful deployment
+  // reported "json-file" while running inside Catalyst.
+  //
+  // Trust the runtime instead and let each request initialise from its own
+  // headers. Table problems surface as classified per-request errors rather
+  // than a silent process-wide downgrade.
+  if (catalystAvailable && !standaloneConfig && CATALYST_ENV_SIGNALS.X_ZOHO_CATALYST_LISTEN_PORT) {
+    console.log('[kaizen] Catalyst gateway runtime detected — credentials arrive per request');
+    lastCatalystMode = 'gateway';
+    return;
+  }
+
   if (!catalystAvailable) {
     const app = await getCliApp();
     if (app) {
@@ -2048,18 +2117,23 @@ async function settleBackend(): Promise<void> {
   catalystAvailable = false;
 }
 
-const server = await (async () => {
-  await settleBackend();
+// Bind the port first so the platform's health check succeeds, then settle the
+// storage backend while the readiness gate above holds API requests.
+const server = app.listen(LISTEN_PORT, '0.0.0.0', () => {
+  console.log(`[kaizen] Server listening on http://0.0.0.0:${LISTEN_PORT}`);
+  if (fs.existsSync(DIST_DIR)) console.log(`[kaizen] Serving SPA from ${DIST_DIR}`);
+});
 
-  console.log(`[kaizen] Backend: ${catalystAvailable ? 'Catalyst DataStore' : 'JSON file fallback'}`);
-  if (fs.existsSync(DIST_DIR)) {
-    console.log(`[kaizen] Serving SPA from ${DIST_DIR}`);
-  }
-
-  return app.listen(LISTEN_PORT, '0.0.0.0', () => {
-    console.log(`[kaizen] Server running on http://0.0.0.0:${LISTEN_PORT}`);
+backendReady = settleBackend()
+  .then(() => {
+    console.log(`[kaizen] Backend: ${catalystAvailable ? 'Catalyst DataStore' : 'JSON file fallback'}`);
+  })
+  .catch((e) => {
+    // Never leave the gate rejected: fall back to the JSON store rather than
+    // refusing every request for the life of the process.
+    console.error('[kaizen] Backend setup failed, using JSON-file storage:', e);
+    catalystAvailable = false;
   });
-})();
 
 // A rejected promise with no handler terminates the process on modern Node.
 // Log it with context rather than dying silently mid-request.

@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "concurrently --names \"vite,notes\" --prefix-colors \"cyan,green\" \"vite\" \"NODE_ENV=development pnpm run server\"",
     "dev:ui": "vite",
-    "server": "node --env-file-if-exists=.env.local --import tsx server/notes-server.ts",
+    "server": "PORT=${PORT:-3001} node --env-file-if-exists=.env.local --import tsx server/notes-server.ts",
     "build": "tsc -b && vite build",
     "lint": "eslint src/ --format stylish --cache",
     "preview": "vite preview",
@@ -56,6 +56,7 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.2",
     "concurrently": "^10.0.5",
+    "esbuild": "^0.28.2",
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",

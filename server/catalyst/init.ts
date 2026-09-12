@@ -188,7 +188,7 @@ export function cliProject(): CliProject | null {
  * Under the gateway a real session is present and required.
  */
 export function ownerForAdminMode(): string | null {
-  const explicit = (process.env['CATALYST_DEV_OWNER'] ?? '').trim();
+  const explicit = (process.env['DEV_OWNER_ID'] ?? process.env['CATALYST_DEV_OWNER'] ?? '').trim();
   if (explicit) return explicit;
   return cliOwner;
 }
@@ -217,7 +217,12 @@ export function ownerForAdminMode(): string | null {
  * Returns null when unset, and the request gets a 401.
  */
 export function ownerForAnonymousGateway(): string | null {
-  const explicit = (process.env['CATALYST_APP_OWNER'] ?? '').trim();
+  // Named APP_OWNER_ID, not CATALYST_APP_OWNER: AppSail rejects a deploy whose
+  // env_variables use the reserved CATALYST_ prefix with
+  //   400 environment_variables must not contain reserved keywords
+  // The CATALYST_-prefixed name is still read so a local .env.local keeps
+  // working, but it cannot be set on a deployment.
+  const explicit = (process.env['APP_OWNER_ID'] ?? process.env['CATALYST_APP_OWNER'] ?? '').trim();
   return explicit || null;
 }
 
