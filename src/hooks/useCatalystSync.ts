@@ -1,15 +1,30 @@
 /**
- * useCatalystSync — Now uses local mockApi exclusively.
- * Catalyst/Zoho DataStore dependency removed. All data is stored
- * in localStorage scoped per user via storage.ts + localAuth.ts.
+ * useCatalystSync — the app's data layer.
+ *
+ * This hook used to import mockApi exclusively and hardcode
+ * `serverOnline: true`, so every task, list and stat the UI showed came from
+ * localStorage. lib/api.ts — the typed REST client for the Express server —
+ * was never invoked at runtime, which meant nothing the app did ever reached
+ * the server, and therefore never reached Catalyst either. Creating a task
+ * wrote to localStorage and stopped there.
+ *
+ * Now the server is the source of truth, and mockApi is what it was always
+ * named for: a fallback for when the backend genuinely is not reachable.
+ * `serverOnline` reports which one is live instead of always claiming true.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ServerSyncState } from './useServerSync';
 import type { ApiTask, ApiList, ApiMomentumStats, TaskCreateRequest, TaskUpdateRequest, Quadrant, TaskStatus } from '../lib/api';
+import { taskApi, listApi, statsApi, checkServerHealth, isNetworkError } from '../lib/api';
 import { mockTaskApi, mockListApi, mockStatsApi } from '../lib/mockApi';
 
 export { ServerSyncState };
+
+/** The two interchangeable data sources. */
+const REAL = { task: taskApi,     list: listApi,     stats: statsApi };
+const MOCK = { task: mockTaskApi, list: mockListApi, stats: mockStatsApi };
+type Backend = typeof REAL;
 
 export function useCatalystSync(activeListId?: string, _filters?: import('../lib/api').TaskListParams): ServerSyncState {
   const [loading, setLoading]           = useState(true);
@@ -20,7 +35,40 @@ export function useCatalystSync(activeListId?: string, _filters?: import('../lib
   const [momentum, setMomentum]         = useState<ApiMomentumStats | null>(null);
   const [todayHistory, setTodayHistory] = useState<ApiTask[]>([]);
 
+  const [serverOnline, setServerOnline] = useState(false);
+
   const savingCount = useRef(0);
+  // Read synchronously inside callbacks, so a mid-flight switch is seen
+  // immediately rather than one render later.
+  const onlineRef = useRef(false);
+
+  const setOnline = useCallback((online: boolean) => {
+    if (onlineRef.current === online) return;
+    onlineRef.current = online;
+    setServerOnline(online);
+    console.info(`[sync] backend is now ${online ? 'server' : 'local (offline)'}`);
+  }, []);
+
+  const backend = useCallback((): Backend => (onlineRef.current ? REAL : MOCK), []);
+
+  /**
+   * Runs an operation against the live backend, falling back to the local one
+   * if the server turns out to be unreachable.
+   *
+   * Only a network-level failure triggers the fallback. A 4xx is a real answer
+   * from a working server — retrying it locally would hide validation errors
+   * and silently diverge the two stores.
+   */
+  const viaBackend = useCallback(async <T>(op: (api: Backend) => Promise<T>): Promise<T> => {
+    if (!onlineRef.current) return op(MOCK);
+    try {
+      return await op(REAL);
+    } catch (e) {
+      if (!isNetworkError(e)) throw e;
+      setOnline(false);
+      return op(MOCK);
+    }
+  }, [setOnline]);
 
   const clearError = useCallback(() => setError(null), []);
 
@@ -48,18 +96,24 @@ export function useCatalystSync(activeListId?: string, _filters?: import('../lib
 
     async function init() {
       try {
-        const [mockTasks, mockLists] = await Promise.all([
-          mockTaskApi.list(),
-          mockListApi.list(),
+        // Decide once, up front, which backend we are talking to.
+        const healthy = await checkServerHealth();
+        if (cancelled) return;
+        setOnline(healthy);
+
+        const api = healthy ? REAL : MOCK;
+        const [fetchedTasks, fetchedLists] = await Promise.all([
+          api.task.list(),
+          api.list.list(),
         ]);
-        if (!cancelled) {
-          setTasks(mockTasks);
-          setLists(mockLists);
-          const mom = await mockStatsApi.momentum(activeListId);
-          if (!cancelled) setMomentum(mom);
-          const hist = await mockTaskApi.todayHistory(activeListId);
-          if (!cancelled) setTodayHistory(hist);
-        }
+        if (cancelled) return;
+        setTasks(fetchedTasks);
+        setLists(fetchedLists);
+
+        const mom = await api.stats.momentum(activeListId);
+        if (!cancelled) setMomentum(mom);
+        const hist = await api.task.todayHistory(activeListId);
+        if (!cancelled) setTodayHistory(hist);
       } catch (e) {
         if (!cancelled) handleError(e);
       } finally {
@@ -69,31 +123,31 @@ export function useCatalystSync(activeListId?: string, _filters?: import('../lib
 
     void init();
     return () => { cancelled = true; };
-  }, []); // initial load only — activeListId changes handled by refresh
+  }, []); // initial load only — activeListId changes are handled by refresh
 
   // ── Refresh helpers ───────────────────────────────────────────────────────
 
   const refreshMomentum = useCallback(async (listId?: string) => {
     try {
-      const mom = await mockStatsApi.momentum(listId ?? activeListId);
+      const mom = await viaBackend((api) => api.stats.momentum(listId ?? activeListId));
       setMomentum(mom);
     } catch { /* non-critical */ }
-  }, [activeListId]);
+  }, [activeListId, viaBackend]);
 
   const refreshTodayHistory = useCallback(async (listId?: string) => {
     try {
-      const hist = await mockTaskApi.todayHistory(listId ?? activeListId);
+      const hist = await viaBackend((api) => api.task.todayHistory(listId ?? activeListId));
       setTodayHistory(hist);
     } catch { /* non-critical */ }
-  }, [activeListId]);
+  }, [activeListId, viaBackend]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     clearError();
     try {
       const [fetchedTasks, fetchedLists] = await Promise.all([
-        mockTaskApi.list(),
-        mockListApi.list(),
+        viaBackend((api) => api.task.list()),
+        viaBackend((api) => api.list.list()),
       ]);
       setTasks(fetchedTasks);
       setLists(fetchedLists);
@@ -101,7 +155,7 @@ export function useCatalystSync(activeListId?: string, _filters?: import('../lib
       await refreshTodayHistory();
     } catch (e) { handleError(e); }
     finally { setLoading(false); }
-  }, [refreshMomentum, refreshTodayHistory, clearError, handleError]);
+  }, [refreshMomentum, refreshTodayHistory, clearError, handleError, viaBackend]);
 
   // ── Task mutations ────────────────────────────────────────────────────────
 
@@ -109,69 +163,69 @@ export function useCatalystSync(activeListId?: string, _filters?: import('../lib
     clearError();
     return withSaving(async () => {
       try {
-        const task = await mockTaskApi.create(req);
+        const task = await viaBackend((api) => api.task.create(req));
         setTasks((prev) => [...prev, task]);
         await Promise.all([refreshMomentum(), refreshTodayHistory()]);
         return task;
       } catch (e) { return handleError(e); }
     });
-  }, [clearError, handleError, withSaving, refreshMomentum, refreshTodayHistory]);
+  }, [clearError, handleError, withSaving, viaBackend, refreshMomentum, refreshTodayHistory]);
 
   const updateTask = useCallback(async (id: string, req: TaskUpdateRequest): Promise<ApiTask | null> => {
     clearError();
     return withSaving(async () => {
       try {
-        const task = await mockTaskApi.update(id, req);
+        const task = await viaBackend((api) => api.task.update(id, req));
         setTasks((prev) => prev.map((t) => t.id === id ? task : t));
         return task;
       } catch (e) { return handleError(e); }
     });
-  }, [clearError, handleError, withSaving]);
+  }, [clearError, handleError, withSaving, viaBackend]);
 
   const updateStatus = useCallback(async (id: string, status: TaskStatus): Promise<ApiTask | null> => {
     clearError();
     return withSaving(async () => {
       try {
-        const task = await mockTaskApi.updateStatus(id, status);
+        const task = await viaBackend((api) => api.task.updateStatus(id, status));
         setTasks((prev) => prev.map((t) => t.id === id ? task : t));
         if (status === 'DONE') await Promise.all([refreshMomentum(), refreshTodayHistory()]);
         return task;
       } catch (e) { return handleError(e); }
     });
-  }, [clearError, handleError, withSaving, refreshMomentum, refreshTodayHistory]);
+  }, [clearError, handleError, withSaving, viaBackend, refreshMomentum, refreshTodayHistory]);
 
   const markComplete = useCallback(async (id: string): Promise<ApiTask | null> => {
     clearError();
     return withSaving(async () => {
       try {
-        const task = await mockTaskApi.markComplete(id);
+        const task = await viaBackend((api) => api.task.markComplete(id));
         setTasks((prev) => prev.map((t) => t.id === id ? task : t));
         await Promise.all([refreshMomentum(), refreshTodayHistory()]);
         return task;
       } catch (e) { return handleError(e); }
     });
-  }, [clearError, handleError, withSaving, refreshMomentum, refreshTodayHistory]);
+  }, [clearError, handleError, withSaving, viaBackend, refreshMomentum, refreshTodayHistory]);
 
   const reprioritize = useCallback(async (id: string, quadrant: Quadrant): Promise<ApiTask | null> => {
     clearError();
     return withSaving(async () => {
       try {
-        const task = await mockTaskApi.reprioritize(id, quadrant);
+        const task = await viaBackend((api) => api.task.reprioritize(id, quadrant));
         setTasks((prev) => prev.map((t) => t.id === id ? task : t));
         return task;
       } catch (e) { return handleError(e); }
     });
-  }, [clearError, handleError, withSaving]);
+  }, [clearError, handleError, withSaving, viaBackend]);
 
   const deleteTask = useCallback(async (id: string): Promise<void> => {
     clearError();
     await withSaving(async () => {
       try {
-        await mockTaskApi.delete(id);
+        await viaBackend((api) => api.task.delete(id));
         setTasks((prev) => prev.filter((t) => t.id !== id));
       } catch (e) { handleError(e); }
     });
-  }, [clearError, handleError, withSaving]);
+  }, [clearError, handleError, withSaving, viaBackend]);
 
   // ── List mutations ────────────────────────────────────────────────────────
 
@@ -179,38 +233,39 @@ export function useCatalystSync(activeListId?: string, _filters?: import('../lib
     clearError();
     return withSaving(async () => {
       try {
-        const list = await mockListApi.create({ name, color, listOrder: lists.length });
+        const list = await viaBackend((api) => api.list.create({ name, color, listOrder: lists.length }));
         setLists((prev) => [...prev, list]);
         return list;
       } catch (e) { return handleError(e); }
     });
-  }, [clearError, handleError, withSaving, lists.length]);
+  }, [clearError, handleError, withSaving, viaBackend, lists.length]);
 
   const updateList = useCallback(async (id: string, name: string, color?: string): Promise<ApiList | null> => {
     clearError();
     return withSaving(async () => {
       try {
-        const list = await mockListApi.update(id, { name, color });
+        const list = await viaBackend((api) => api.list.update(id, { name, color }));
         setLists((prev) => prev.map((l) => l.id === id ? list : l));
         return list;
       } catch (e) { return handleError(e); }
     });
-  }, [clearError, handleError, withSaving]);
+  }, [clearError, handleError, withSaving, viaBackend]);
 
   const deleteList = useCallback(async (id: string): Promise<void> => {
     clearError();
     await withSaving(async () => {
       try {
-        await mockListApi.delete(id);
+        await viaBackend((api) => api.list.delete(id));
         setLists((prev) => prev.filter((l) => l.id !== id));
       } catch (e) { handleError(e); }
     });
-  }, [clearError, handleError, withSaving]);
+  }, [clearError, handleError, withSaving, viaBackend]);
 
   return {
-    serverOnline: true,
-    backendUnavailable: false,
-    catalystReady: false,
+    // Previously hardcoded `true` while every call went to localStorage.
+    serverOnline,
+    backendUnavailable: !serverOnline,
+    catalystReady: serverOnline,
     loading,
     saving,
     error,
