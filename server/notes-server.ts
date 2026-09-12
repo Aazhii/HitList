@@ -938,6 +938,124 @@ async function catalystDeleteRow(
   await tbl.deleteRow(rowId);
 }
 
+// ── Request validation ────────────────────────────────────────────────────────
+//
+// Validation used to be `if (!body.title)` and nothing else. That accepted
+// title as {} , [] , 12345 or "   ", and a 4 MB string under the body cap. The
+// enum fields were never checked at all, so `status: "BANANA"` was persisted
+// and then cast to a TaskStatus union in dbTaskToApi — the type was a lie, and
+// it broke the status sort, which maps unknown values to the same rank.
+// `taskOrder: "abc"` survived to `a.taskOrder - b.taskOrder`, producing a NaN
+// comparator and an unstable order.
+
+const TASK_STATUSES = ['TODO', 'IN_PROGRESS', 'DONE'] as const;
+const QUADRANTS     = ['DO', 'SCHEDULE', 'DELEGATE', 'ELIMINATE'] as const;
+const PRIORITIES    = ['LOW', 'MEDIUM', 'HIGH'] as const;
+
+const MAX_TITLE_LEN    = 500;
+const MAX_NOTE_LEN     = 10_000;  // Catalyst Text column limit
+const MAX_CATEGORY_LEN = 100;
+
+/** Collects field errors so a bad request reports everything at once. */
+class FieldErrors {
+  readonly errors: Record<string, string> = {};
+  get ok(): boolean { return Object.keys(this.errors).length === 0; }
+  add(field: string, message: string): void { this.errors[field] = message; }
+
+  send(res: express.Response): void {
+    res.status(400).json({
+      error: 'validation_failed',
+      message: 'One or more fields are invalid',
+      fields: this.errors,
+    });
+  }
+}
+
+/** Required non-empty string within a length bound. */
+function reqString(
+  errs: FieldErrors, field: string, value: unknown, maxLen: number
+): string | undefined {
+  if (typeof value !== 'string') { errs.add(field, 'must be a string'); return undefined; }
+  const trimmed = value.trim();
+  if (trimmed === '')           { errs.add(field, 'must not be empty'); return undefined; }
+  if (trimmed.length > maxLen)  { errs.add(field, `must be at most ${maxLen} characters`); return undefined; }
+  return trimmed;
+}
+
+/** Optional string; absent/null yields the fallback. */
+function optString(
+  errs: FieldErrors, field: string, value: unknown, maxLen: number, fallback = ''
+): string {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value !== 'string') { errs.add(field, 'must be a string'); return fallback; }
+  if (value.length > maxLen)     { errs.add(field, `must be at most ${maxLen} characters`); return fallback; }
+  return value;
+}
+
+/** Optional member of a fixed set. Case-insensitive, stored upper-case. */
+function optEnum<T extends string>(
+  errs: FieldErrors, field: string, value: unknown, allowed: readonly T[], fallback: T | ''
+): T | '' {
+  if (value === undefined || value === null || value === '') return fallback;
+  if (typeof value !== 'string') { errs.add(field, 'must be a string'); return fallback; }
+  const upper = value.trim().toUpperCase() as T;
+  if (!allowed.includes(upper)) {
+    errs.add(field, `must be one of ${allowed.join(', ')}`);
+    return fallback;
+  }
+  return upper;
+}
+
+/** Optional finite number. Rejects NaN, Infinity and numeric strings that are not. */
+function optNumber(
+  errs: FieldErrors, field: string, value: unknown, fallback: number, min = Number.NEGATIVE_INFINITY
+): number {
+  if (value === undefined || value === null || value === '') return fallback;
+  const n = typeof value === 'number' ? value : Number(value);
+  if (!Number.isFinite(n)) { errs.add(field, 'must be a finite number'); return fallback; }
+  if (n < min)             { errs.add(field, `must be at least ${min}`); return fallback; }
+  return n;
+}
+
+/** Optional boolean. Accepts real booleans and the strings "true"/"false". */
+function optBoolean(
+  errs: FieldErrors, field: string, value: unknown, fallback: boolean
+): boolean {
+  if (value === undefined || value === null || value === '') return fallback;
+  if (typeof value === 'boolean') return value;
+  if (value === 'true')  return true;
+  if (value === 'false') return false;
+  errs.add(field, 'must be a boolean');
+  return fallback;
+}
+
+/** Optional YYYY-MM-DD date. */
+function optDate(errs: FieldErrors, field: string, value: unknown): string {
+  if (value === undefined || value === null || value === '') return '';
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    errs.add(field, 'must be a date in YYYY-MM-DD form');
+    return '';
+  }
+  // Reject calendar-invalid dates such as 2026-02-31.
+  const [y, m, d] = value.split('-').map(Number);
+  const probe = new Date(Date.UTC(y, m - 1, d));
+  if (probe.getUTCFullYear() !== y || probe.getUTCMonth() !== m - 1 || probe.getUTCDate() !== d) {
+    errs.add(field, 'is not a real calendar date');
+    return '';
+  }
+  return value;
+}
+
+/** Optional HH:MM time. */
+function optTime(errs: FieldErrors, field: string, value: unknown): string {
+  if (value === undefined || value === null || value === '') return '';
+  if (typeof value !== 'string' || !/^([01]\d|2[0-3]):[0-5]\d$/.test(value)) {
+    errs.add(field, 'must be a time in HH:MM form');
+    return '';
+  }
+  return value;
+}
+
 // ── Error responses ───────────────────────────────────────────────────────────
 //
 // Every route used to answer `503 datastore_unavailable` with `message:
@@ -1254,28 +1372,37 @@ app.post('/api/tasks', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
 
-  const body = req.body as Partial<DbTask> & { title?: string };
-  if (!body.title) { res.status(400).json({ error: 'title is required' }); return; }
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const errs = new FieldErrors();
+
+  const title = reqString(errs, 'title', body['title'], MAX_TITLE_LEN);
+  const fields = {
+    status:                optEnum(errs, 'status', body['status'], TASK_STATUSES, 'TODO'),
+    quadrant:              optEnum(errs, 'quadrant', body['quadrant'], QUADRANTS, 'SCHEDULE'),
+    priority:              optEnum(errs, 'priority', body['priority'], PRIORITIES, ''),
+    note:                  optString(errs, 'note', body['note'], MAX_NOTE_LEN),
+    dueDate:               optDate(errs, 'dueDate', body['dueDate']),
+    dueTime:               optTime(errs, 'dueTime', body['dueTime']),
+    category:              optString(errs, 'category', body['category'], MAX_CATEGORY_LEN),
+    listId:                optString(errs, 'listId', body['listId'], 64),
+    taskOrder:             optNumber(errs, 'taskOrder', body['taskOrder'], 0),
+    reminderEnabled:       optBoolean(errs, 'reminderEnabled', body['reminderEnabled'], false),
+    reminderMinutesBefore: optNumber(errs, 'reminderMinutesBefore', body['reminderMinutesBefore'], 0, 0),
+  };
+
+  if (!errs.ok || title === undefined) { errs.send(res); return; }
 
   const now = Date.now();
   const task: DbTask = {
-    id:                    crypto.randomUUID(),
+    id:          crypto.randomUUID(),
     ownerId,
-    title:                 body.title,
-    status:                body.status ?? 'TODO',
-    quadrant:              body.quadrant ?? 'SCHEDULE',
-    priority:              body.priority ?? '',
-    note:                  body.note ?? '',
-    dueDate:               body.dueDate ?? '',
-    dueTime:               body.dueTime ?? '',
-    category:              body.category ?? '',
-    listId:                body.listId ?? '',
-    taskOrder:             body.taskOrder ?? 0,
-    reminderEnabled:       body.reminderEnabled ?? false,
-    reminderMinutesBefore: body.reminderMinutesBefore ?? 0,
-    completedAt:           body.completedAt ?? 0,
-    createdAt:             now,
-    updatedAt:             now,
+    title,
+    ...fields,
+    // completedAt is set by the server when a task is completed, never by the
+    // client — accepting it here let a caller forge the momentum/streak stats.
+    completedAt: 0,
+    createdAt:   now,
+    updatedAt:   now,
   };
 
   try {
@@ -1334,8 +1461,10 @@ app.patch('/api/tasks/:id/status', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
 
-  const { status } = req.body as { status: string };
-  if (!status) { res.status(400).json({ error: 'status is required' }); return; }
+  const errs = new FieldErrors();
+  const status = optEnum(errs, 'status', (req.body ?? {})['status'], TASK_STATUSES, '');
+  if (!status) errs.add('status', 'is required');
+  if (!errs.ok) { errs.send(res); return; }
   const now = Date.now();
 
   try {
@@ -1398,8 +1527,10 @@ app.patch('/api/tasks/:id/quadrant', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
 
-  const { quadrant } = req.body as { quadrant: string };
-  if (!quadrant) { res.status(400).json({ error: 'quadrant is required' }); return; }
+  const errs = new FieldErrors();
+  const quadrant = optEnum(errs, 'quadrant', (req.body ?? {})['quadrant'], QUADRANTS, '');
+  if (!quadrant) errs.add('quadrant', 'is required');
+  if (!errs.ok) { errs.send(res); return; }
   const now = Date.now();
 
   try {
@@ -1503,16 +1634,20 @@ app.post('/api/lists', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
 
-  const body = req.body as Partial<DbList>;
-  if (!body.name) { res.status(400).json({ error: 'name is required' }); return; }
+  const body = (req.body ?? {}) as Record<string, unknown>;
+  const errs = new FieldErrors();
+  const name = reqString(errs, 'name', body['name'], MAX_TITLE_LEN);
+  const color = optString(errs, 'color', body['color'], 32, 'emerald');
+  const listOrder = optNumber(errs, 'listOrder', body['listOrder'], 0);
+  if (!errs.ok || name === undefined) { errs.send(res); return; }
 
   const now = Date.now();
   const list: DbList = {
     id:        crypto.randomUUID(),
     ownerId,
-    name:      body.name,
-    color:     body.color ?? 'emerald',
-    listOrder: body.listOrder ?? 0,
+    name,
+    color,
+    listOrder,
     createdAt: now,
     updatedAt: now,
   };
