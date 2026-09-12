@@ -124,52 +124,72 @@ let catalystAvailable = Object.values(CATALYST_ENV_SIGNALS).some(Boolean);
 
 // ── Auth / owner scoping ──────────────────────────────────────────────────────
 
+// In JSON-file mode there is no identity provider, so every row belongs to a
+// single local developer. This is dev-only storage; see docs/catalyst.md.
 const LOCAL_DEV_OWNER = 'local-dev-user';
+
+/** Thrown when a request carries no usable Catalyst session. */
+class UnauthenticatedError extends Error {
+  constructor(message = 'Valid Catalyst session required') {
+    super(message);
+    this.name = 'UnauthenticatedError';
+  }
+}
 
 /**
  * Returns the Catalyst user_id for the authenticated user.
  *
- * In Catalyst Functions (deployed env) the SDK reads credentials from the
- * platform-injected CATALYST_CONFIG env var, not from the request session.
- * `getCurrentUser()` requires a valid Zoho session cookie on the request; when
- * the app is accessed without a Catalyst auth session (e.g. direct API calls,
- * health checks, or apps that don't enforce Catalyst login) it will throw.
+ * getCurrentUser() needs a valid Zoho session on the request. If there isn't
+ * one, that is an authentication failure and the caller gets a 401 — we do not
+ * invent an identity for them.
  *
- * Strategy:
- *  1. Try to resolve the real Catalyst user_id from the session.
- *  2. On any failure, fall back to CATALYST_DEFAULT_OWNER — a stable per-app
- *     owner key that scopes all data to this deployment. This allows the app
- *     to persist data to Catalyst DataStore without requiring end-user login.
+ * The previous implementation caught every failure and returned the constant
+ * 'kaizen-app-owner'. Two consequences, both bad:
  *
- * In JSON-file fallback mode (catalystAvailable=false) always returns LOCAL_DEV_OWNER.
+ *   - Every anonymous caller resolved to the same owner, so all users shared
+ *     one dataset and could read and delete each other's rows.
+ *   - Because it could never throw, resolveOwner()'s catch was unreachable and
+ *     the `if (!ownerId) return;` guard repeated at 14 call sites never fired.
+ *     The API was effectively unauthenticated.
+ *
+ * In JSON-file mode (catalystAvailable=false) there is no session to check and
+ * everything belongs to LOCAL_DEV_OWNER.
  */
-const CATALYST_DEFAULT_OWNER = 'kaizen-app-owner';
-
 async function getCurrentUserId(req: express.Request): Promise<string> {
   if (!catalystAvailable) return LOCAL_DEV_OWNER;
+
+  let user: unknown;
   try {
     const app = initCatalyst(req);
-    const user = await app.userManagement().getCurrentUser();
-    // SDK returns user_id as a number or string depending on version
-    const uid = (user as unknown as { user_id?: string | number; userId?: string | number }).user_id
-      ?? (user as unknown as { user_id?: string | number; userId?: string | number }).userId;
-    if (!uid) return CATALYST_DEFAULT_OWNER;
-    return String(uid);
-  } catch {
-    // No valid Catalyst session on this request — use the stable default owner.
-    // This is intentional: the app does not require Catalyst user auth to
-    // persist todos; all data is scoped to CATALYST_DEFAULT_OWNER.
-    return CATALYST_DEFAULT_OWNER;
+    user = await app.userManagement().getCurrentUser();
+  } catch (e) {
+    throw new UnauthenticatedError(`Catalyst session lookup failed: ${String(e)}`);
   }
+
+  // The SDK returns user_id as a number or a string depending on version.
+  const uid = (user as { user_id?: string | number; userId?: string | number } | null)?.user_id
+    ?? (user as { user_id?: string | number; userId?: string | number } | null)?.userId;
+
+  if (uid === undefined || uid === null || String(uid).trim() === '') {
+    throw new UnauthenticatedError('Catalyst session carries no user_id');
+  }
+  return String(uid);
 }
 
-/** Middleware-style helper: resolves owner or sends 401. Returns null on failure. */
+/**
+ * Resolves the owner for this request, or sends a 401 and returns null.
+ * Callers must `return` immediately when this returns null.
+ */
 async function resolveOwner(req: express.Request, res: express.Response): Promise<string | null> {
   try {
     return await getCurrentUserId(req);
-  } catch {
-    res.status(401).json({ error: 'unauthenticated', message: 'Valid Catalyst session required' });
-    return null;
+  } catch (e) {
+    if (e instanceof UnauthenticatedError) {
+      console.warn(`[kaizen] 401 ${req.method} ${req.path}: ${e.message}`);
+      res.status(401).json({ error: 'unauthenticated', message: 'Valid Catalyst session required' });
+      return null;
+    }
+    throw e;
   }
 }
 
