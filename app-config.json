@@ -6,7 +6,7 @@
   "catalyst_auth": false,
   "env_variables": {
     "APP_OWNER_ID": "hitlist-shared",
-    "ALLOWED_ORIGINS": "https://hitlist-kgewwunu.onslate.in,https://hitlist-eqrgelva.onslate.in"
+    "ALLOWED_ORIGINS": "https://hitlist-kgewwunu.onslate.in,https://hitlist-eqrgelva.onslate.in,https://hitlist-api-50045863073.development.catalystappsail.in"
   },
   "scripts": {
     "predeploy": "npm run build:appsail",

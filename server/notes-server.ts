@@ -1034,11 +1034,32 @@ const corsOrigins = ALLOWED_ORIGINS.length
   ? ALLOWED_ORIGINS
   : (process.env['NODE_ENV'] === 'production' ? [] : DEV_ORIGINS);
 
+/**
+ * Normalises an origin for comparison.
+ *
+ * A fully-qualified hostname may carry a trailing dot — https://example.com.
+ * is a valid URL and resolves identically, but the browser treats it as a
+ * DIFFERENT origin. Reaching this app by that form made its own same-origin
+ * API calls cross-origin, and they were then refused here. Strip the dot so
+ * both spellings match.
+ */
+function normaliseOrigin(origin: string): string {
+  try {
+    const url = new URL(origin);
+    url.hostname = url.hostname.replace(/\.$/, '');
+    return url.origin;
+  } catch {
+    return origin;
+  }
+}
+
+const allowedOriginSet = new Set(corsOrigins.map(normaliseOrigin));
+
 app.use(cors({
   origin(origin, callback) {
     // No Origin header: same-origin, curl, or a server-to-server call.
     if (!origin) return callback(null, true);
-    if (corsOrigins.includes(origin)) return callback(null, true);
+    if (allowedOriginSet.has(normaliseOrigin(origin))) return callback(null, true);
     // Reject by withholding the header rather than erroring, so the browser
     // reports a clean CORS failure instead of a 500.
     return callback(null, false);
