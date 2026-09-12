@@ -72,7 +72,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  readStandaloneConfig, initCatalystApp, describeMode,
+  readStandaloneConfig, initCatalystApp, describeMode, getCliApp, cliProject, region,
+  ownerForAdminMode, hasGatewayHeaders,
   type StandaloneConfig, type CatalystMode,
 } from './catalyst/init.ts';
 import type { ICatalystRow } from 'zcatalyst-sdk-node/lib/utils/pojo/common';
@@ -163,6 +164,16 @@ class UnauthenticatedError extends Error {
 async function getCurrentUserId(req: express.Request): Promise<string> {
   if (!catalystAvailable) return LOCAL_DEV_OWNER;
 
+  // Admin credentials (CLI or standalone) carry no end-user session, so
+  // getCurrentUser() would always throw and every request would 401 — making
+  // local development against the real project impossible. Scope rows to the
+  // authenticated identity instead. Under the gateway a real session exists,
+  // and the strict path below still applies.
+  if (!hasGatewayHeaders(req)) {
+    const adminOwner = ownerForAdminMode();
+    if (adminOwner) return adminOwner;
+  }
+
   let user: unknown;
   try {
     const app = initCatalyst(req);
@@ -223,283 +234,63 @@ function initCatalyst(req: express.Request) {
 
 // ── Catalyst table probe ──────────────────────────────────────────────────────
 //
-// On startup (when catalystAvailable=true) we probe the three required tables
-// via ZCQL. If any table is missing we log a clear actionable message and
-// disable Catalyst for this process (falling back to JSON-file storage).
-// This prevents cryptic "table not found" errors from propagating to clients.
+// Verifies the tables exist before we commit to the Catalyst backend, so a
+// misconfigured project degrades to JSON files with one clear message instead
+// of 503-ing every request.
 //
-// NOTE: The Catalyst Node SDK does NOT expose a createTable() API.
-//       Tables must be created once in the Catalyst console:
-//       App Console → Data Store → New Table
-//       Column types: text for strings, number for integers/timestamps.
+// This replaces two things:
 //
+//   - `testTable`, a pre-existing table used as the primary tasks store with
+//     KaizenTasks as a "legacy" fallback. A successful testTable probe returned
+//     early without ever checking KaizenLists or KaizenNotes, so lists and
+//     notes 503'd while tasks appeared to work. The schema is now one set of
+//     three tables; see server/catalyst/schema.ts.
+//
+//   - A runtime column provisioner that reached into private SDK fields
+//     (`table.requester.send`) to POST undocumented endpoints on every boot,
+//     typing every column as `text`. Schema changes belong in
+//     `pnpm catalyst:setup`, which knows the real column types.
 
-// testTable is the pre-existing Catalyst DataStore table in this project.
-// We use it as the primary tasks store. KaizenTasks/KaizenLists/KaizenNotes
-// are legacy table names kept as fallback probes.
-const TEST_TABLE = 'testTable';
-
-// Columns we need in testTable for full todo CRUD.
-// These are created at startup if missing (Catalyst SDK supports column creation
-// via the datastore table API).
-const TEST_TABLE_COLUMNS = [
-  'TaskId', 'OwnerId', 'Title', 'Status', 'Quadrant', 'TaskPriority',
-  'Note', 'DueDate', 'DueTime', 'Category', 'ListId', 'TaskOrder',
-  'ReminderEnabled', 'ReminderMinutesBefore', 'CompletedAt', 'CreatedAt', 'UpdatedAt',
-] as const;
-
-// REQUIRED_TABLES is used by /api/setup to report table health.
-// testTable is the primary tasks store; KaizenTasks/KaizenLists/KaizenNotes are legacy.
-const REQUIRED_TABLES = [
-  { name: 'testTable',    probe: 'SELECT ROWID FROM testTable LIMIT 1' },
-  { name: 'KaizenLists',  probe: 'SELECT ListId FROM KaizenLists LIMIT 1' },
-  { name: 'KaizenNotes',  probe: 'SELECT NoteId FROM KaizenNotes LIMIT 1' },
-] as const;
+import { SCHEMA, TABLE_NAMES, TASKS_TABLE, LISTS_TABLE, NOTES_TABLE } from './catalyst/schema.ts';
 
 /**
- * Provisions missing columns in a Catalyst DataStore table using the SDK's
- * internal AuthorizedHttpClient. This avoids needing a separate REST client
- * while still being able to POST to the column endpoint.
- *
- * The SDK builds paths as: /{product}/{version}/project/{projectId}{path}
- * so we use path `/table/{tableId}/column` which maps to the column creation API.
- */
-async function provisionTableColumns(
-  req: express.Request,
-  tableName: string,
-  requiredColumns: readonly string[]
-): Promise<boolean> {
-  const catalystApp = initCatalyst(req);
-  const ds = catalystApp.datastore();
-
-  // Get all tables to find the numeric table ID for our target table
-  let tableId: string | null = null;
-  try {
-    const tables = await ds.getAllTables();
-    for (const t of tables) {
-      const details = t.toJSON() as { table_name?: string; table_id?: string };
-      if (details.table_name === tableName) {
-        tableId = details.table_id ?? null;
-        break;
-      }
-    }
-  } catch (e) {
-    console.warn(`[kaizen] Could not list tables for provisioning: ${e}`);
-    return false;
-  }
-
-  if (!tableId) {
-    console.warn(`[kaizen] Table '${tableName}' not found in getAllTables() — cannot provision columns`);
-    return false;
-  }
-
-  // Get existing columns
-  let existingColumnNames: Set<string> = new Set();
-  try {
-    const tbl = ds.table(tableId);
-    const cols = await tbl.getAllColumns() as Array<{ column_name: string }>;
-    existingColumnNames = new Set(cols.map((c) => c.column_name));
-    console.log(`[kaizen] Existing columns in ${tableName}: ${[...existingColumnNames].join(', ')}`);
-  } catch (e) {
-    console.warn(`[kaizen] Could not get columns for ${tableName}: ${e}`);
-    return false;
-  }
-
-  // Find missing columns
-  const missing = requiredColumns.filter((col) => !existingColumnNames.has(col));
-  if (missing.length === 0) {
-    console.log(`[kaizen] ✓ All required columns present in ${tableName}`);
-    return true;
-  }
-
-  console.log(`[kaizen] Creating ${missing.length} missing columns in ${tableName}: ${missing.join(', ')}`);
-
-  // Use the SDK's internal requester to POST column creation requests
-  // The requester is accessible via the Table instance's requester property
-  const tbl = ds.table(tableId) as unknown as { requester: { send: (req: Record<string, unknown>) => Promise<unknown> } };
-
-  let allCreated = true;
-  for (const colName of missing) {
-    try {
-      await tbl.requester.send({
-        method: 'POST',
-        path: `/table/${tableId}/column`,
-        data: [{ column_name: colName, data_type: 'text', is_mandatory: 'false', audit_consent: 'false' }],
-        type: 'json',
-        catalyst: true,
-        track: true,
-        user: 'admin',
-      });
-      console.log(`[kaizen]   ✓ Created column: ${colName}`);
-    } catch (e: unknown) {
-      const msg = String(e);
-      // Column may already exist (race condition or partial prior run)
-      if (/already exists|duplicate/i.test(msg)) {
-        console.log(`[kaizen]   ~ Column already exists: ${colName}`);
-      } else {
-        console.warn(`[kaizen]   ✗ Failed to create column ${colName}: ${msg}`);
-        allCreated = false;
-      }
-    }
-  }
-
-  return allCreated;
-}
-
-/**
- * Creates a table in Catalyst DataStore if it doesn't exist.
- * Uses the SDK's internal requester to POST to the table creation endpoint.
- * Returns the table ID if created/found, null on failure.
- */
-async function ensureTableExists(
-  req: express.Request,
-  tableName: string
-): Promise<string | null> {
-  const catalystApp = initCatalyst(req);
-  const ds = catalystApp.datastore();
-
-  // Check if table already exists
-  try {
-    const tables = await ds.getAllTables();
-    for (const t of tables) {
-      const details = t.toJSON() as { table_name?: string; table_id?: string };
-      if (details.table_name === tableName) {
-        console.log(`[kaizen] ✓ Table '${tableName}' already exists (id: ${details.table_id})`);
-        return details.table_id ?? null;
-      }
-    }
-  } catch (e) {
-    console.warn(`[kaizen] Could not list tables: ${e}`);
-    return null;
-  }
-
-  // Table doesn't exist — create it using the SDK's internal requester
-  console.log(`[kaizen] Creating table '${tableName}'...`);
-  try {
-    // Access the datastore's requester via the internal structure
-    const dsInternal = ds as unknown as { requester: { send: (req: Record<string, unknown>) => Promise<{ data: { data: { table_id?: string } } }> } };
-    const resp = await dsInternal.requester.send({
-      method: 'POST',
-      path: '/table',
-      data: { table_name: tableName, table_scope: 'GLOBAL' },
-      type: 'json',
-      catalyst: true,
-      track: true,
-      user: 'admin',
-    });
-    const created = (resp as { data: { data: { table_id?: string } } }).data?.data;
-    const newId = created?.table_id;
-    console.log(`[kaizen] ✓ Created table '${tableName}' (id: ${newId})`);
-    return newId ?? null;
-  } catch (e) {
-    console.warn(`[kaizen] Failed to create table '${tableName}': ${e}`);
-    return null;
-  }
-}
-
-/**
- * Probes Catalyst DataStore tables and auto-provisions missing columns.
- *
- * Priority order:
- *  1. testTable — the pre-existing table in the Catalyst project (used for tasks)
- *  2. KaizenTasks / KaizenLists / KaizenNotes — legacy tables (optional)
- *
- * Returns true if testTable (or KaizenTasks) is accessible with all required columns.
- * Logs actionable guidance when tables are missing.
+ * Checks that every table in the schema is queryable.
+ * Returns the names of any that are not.
  */
 async function probeCatalystTables(req: express.Request): Promise<boolean> {
   const app = initCatalyst(req);
+  const missing: string[] = [];
 
-  // First probe testTable — the pre-existing table in this Catalyst project
-  try {
-    await app.zcql().executeZCQLQuery(`SELECT ROWID FROM ${TEST_TABLE} LIMIT 1`);
-    console.log(`[kaizen] ✓ testTable found — provisioning required columns`);
-    useTestTable = true;
-
-    // Auto-provision missing columns in testTable
-    const provisioned = await provisionTableColumns(req, TEST_TABLE, TEST_TABLE_COLUMNS);
-    if (!provisioned) {
-      console.warn(`[kaizen] Column provisioning incomplete for testTable — some operations may fail`);
-      // Still use testTable; columns may have been partially created
-    }
-    return true;
-  } catch (e: unknown) {
-    const msg = String(e);
-    if (/not found|does not exist|invalid table|no such table/i.test(msg)) {
-      console.warn(`[kaizen] testTable not found — trying KaizenTasks fallback`);
-    } else {
-      console.warn(`[kaizen] testTable probe warning: ${msg}`);
-    }
-  }
-
-  // Fallback: probe KaizenTasks — and auto-create if missing
-  console.log(`[kaizen] Attempting to ensure KaizenTasks/KaizenLists/KaizenNotes tables exist...`);
-
-  const KAIZEN_TASKS_COLS = [
-    'TaskId', 'OwnerId', 'Title', 'Status', 'Quadrant', 'TaskPriority',
-    'Note', 'DueDate', 'DueTime', 'Category', 'ListId', 'TaskOrder',
-    'ReminderEnabled', 'ReminderMinutesBefore', 'CompletedAt', 'CreatedAt', 'UpdatedAt',
-  ] as const;
-  const KAIZEN_LISTS_COLS = ['ListId', 'OwnerId', 'Name', 'Color', 'ListOrder', 'CreatedAt', 'UpdatedAt'] as const;
-  const KAIZEN_NOTES_COLS = ['NoteId', 'Title', 'BlocksJson', 'Emoji', 'Pinned', 'CreatedAt', 'UpdatedAt'] as const;
-
-  const tableSpecs = [
-    { name: 'KaizenTasks', cols: KAIZEN_TASKS_COLS },
-    { name: 'KaizenLists', cols: KAIZEN_LISTS_COLS },
-    { name: 'KaizenNotes', cols: KAIZEN_NOTES_COLS },
-  ];
-
-  let allOk = true;
-  for (const { name, cols } of tableSpecs) {
-    // Probe first
-    let tableExists = false;
+  for (const table of SCHEMA) {
     try {
-      await app.zcql().executeZCQLQuery(`SELECT ROWID FROM ${name} LIMIT 1`);
-      tableExists = true;
-    } catch (e: unknown) {
+      await app.zcql().executeZCQLQuery(`SELECT ROWID FROM ${table.name} LIMIT 1`);
+    } catch (e) {
       const msg = String(e);
       if (/not found|does not exist|invalid table|no such table/i.test(msg)) {
-        console.warn(`[kaizen] Table '${name}' not found — attempting to create`);
+        missing.push(table.name);
       } else {
-        console.warn(`[kaizen] Table probe warning for ${name}: ${msg}`);
-        tableExists = true; // Assume exists but has other issue
+        // Something other than absence — a credential or connectivity problem.
+        // Report it as-is rather than claiming the table is missing.
+        console.error(`[kaizen] Probing ${table.name} failed: ${msg}`);
+        return false;
       }
-    }
-
-    if (!tableExists) {
-      const tableId = await ensureTableExists(req, name);
-      if (!tableId) {
-        console.error(`[kaizen] ✗ Could not create table '${name}'`);
-        allOk = false;
-        continue;
-      }
-    }
-
-    // Provision columns
-    const ok = await provisionTableColumns(req, name, cols);
-    if (!ok) {
-      console.warn(`[kaizen] Column provisioning incomplete for ${name}`);
-      allOk = false;
     }
   }
 
-  if (!allOk) {
+  if (missing.length) {
     console.error(
-      `[kaizen] ⚠️  Some Catalyst DataStore tables/columns could not be provisioned.\n` +
-      `[kaizen]    The app uses 'testTable' as the primary tasks store.\n` +
-      `[kaizen]    Required columns for testTable:\n` +
-      `[kaizen]      ${TEST_TABLE_COLUMNS.join(', ')}\n` +
-      `[kaizen]    Create columns in Catalyst console → App Console → Data Store → testTable\n` +
-      `[kaizen]    Falling back to JSON-file storage until tables are accessible.`
+      `[kaizen] Missing Catalyst table(s): ${missing.join(', ')}\n` +
+      `[kaizen]   Run \`pnpm catalyst:setup\` to create them, or\n` +
+      `[kaizen]   \`pnpm catalyst:setup --dry-run\` to see what is missing.\n` +
+      `[kaizen]   Falling back to JSON-file storage.`
     );
     return false;
   }
 
+  console.log(`[kaizen] Catalyst tables verified: ${TABLE_NAMES.join(', ')}`);
   return true;
 }
 
-// Whether to use testTable (pre-existing) vs KaizenTasks (legacy)
-let useTestTable = false;
 
 // ── JSON-file fallback ────────────────────────────────────────────────────────
 
@@ -653,7 +444,6 @@ interface DbNote {
   updatedAt: number;
 }
 
-const NOTES_TABLE = 'KaizenNotes';
 
 // Full column list including OwnerId, which scopes every note to its author.
 const NOTES_COLS = 'NoteId,OwnerId,Title,BlocksJson,Emoji,Pinned,CreatedAt,UpdatedAt';
@@ -707,7 +497,7 @@ interface DbTask {
 }
 
 // Resolved at startup: 'testTable' if available, else 'KaizenTasks'
-function getTasksTable(): string { return useTestTable ? TEST_TABLE : 'KaizenTasks'; }
+function getTasksTable(): string { return TASKS_TABLE; }
 
 // Full column list including OwnerId for owner-scoped queries
 const TASKS_COLS = 'TaskId,OwnerId,Title,Status,Quadrant,TaskPriority,Note,DueDate,DueTime,Category,ListId,TaskOrder,ReminderEnabled,ReminderMinutesBefore,CompletedAt,CreatedAt,UpdatedAt';
@@ -793,7 +583,6 @@ interface DbList {
   updatedAt: number;
 }
 
-const LISTS_TABLE = 'KaizenLists';
 
 // Full column list including OwnerId
 const LISTS_COLS = 'ListId,OwnerId,Name,Color,ListOrder,CreatedAt,UpdatedAt';
@@ -1270,9 +1059,9 @@ app.get('/api/setup', async (req, res) => {
   const tableStatus: Record<string, 'ok' | 'missing' | 'error'> = {};
   const app2 = initCatalyst(req);
 
-  for (const { name, probe } of REQUIRED_TABLES) {
+  for (const { name } of SCHEMA) {
     try {
-      await app2.zcql().executeZCQLQuery(probe);
+      await app2.zcql().executeZCQLQuery(`SELECT ROWID FROM ${name} LIMIT 1`);
       tableStatus[name] = 'ok';
     } catch (e: unknown) {
       const msg = String(e);
@@ -1289,7 +1078,7 @@ app.get('/api/setup', async (req, res) => {
     tables: tableStatus,
     message: allOk
       ? 'All Catalyst DataStore tables are ready.'
-      : 'Some tables are missing. Create them in the Catalyst console → App Console → Data Store → New Table.',
+      : 'Some tables are missing. Run `pnpm catalyst:setup` to create them.',
   });
 });
 
@@ -2218,7 +2007,25 @@ async function settleBackend(): Promise<void> {
       : '[kaizen] No Catalyst credentials in env — using JSON-file storage'
   );
 
-  if (!catalystAvailable) return;
+  // With no gateway headers and no standalone config, fall back to the CLI's
+  // own login if someone has run `catalyst login` + `catalyst init` here. This
+  // is what lets `pnpm dev` reach the real project with no secrets in the repo.
+  if (!catalystAvailable) {
+    const app = await getCliApp();
+    if (app) {
+      const project = cliProject();
+      catalystAvailable = true;
+      lastCatalystMode = 'cli';
+      const r = region();
+      console.log(
+        `[kaizen] Using the Catalyst CLI login` +
+        (project ? ` for project ${project.projectName} (${project.projectId})` : '') +
+        ` — dc ${r.dataCentre}, ${r.consoleUrl}`
+      );
+    } else {
+      return;
+    }
+  }
 
   try {
     // The SDK reads credentials from the platform env rather than the request

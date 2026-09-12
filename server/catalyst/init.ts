@@ -31,14 +31,19 @@
  * authenticates the caller itself and scopes every query by OwnerId, so admin
  * scope is correct here, and it is what the AppSail reference template uses.
  */
+// Import order matters: region.ts sets X_ZOHO_CATALYST_CONSOLE_URL, and the SDK
+// reads that once at module load. Importing it after zcatalyst-sdk-node would
+// be too late and every request would go to the US host.
+import { REGION } from './region.ts';
 import catalyst from 'zcatalyst-sdk-node';
 import type express from 'express';
+import { accessTokenFromCli, readCatalystRc } from './cliCredentials.ts';
 
 /** Headers the Catalyst gateway injects; their presence selects GATEWAY mode. */
 const PROJECT_ID_HEADER = 'x-zc-projectid';
 const PROJECT_KEY_HEADER = 'x-zc-project-key';
 
-export type CatalystMode = 'gateway' | 'standalone' | 'none';
+export type CatalystMode = 'gateway' | 'standalone' | 'cli' | 'none';
 
 export interface StandaloneConfig {
   projectId: string;
@@ -125,11 +130,15 @@ export function initCatalystApp(
     );
   }
   if (standalone) return getStandaloneApp(standalone);
+  // Resolved once at startup, because callers are synchronous.
+  if (cliApp) return cliApp;
 
   throw new Error(
     'No Catalyst credentials available: the request carries no Catalyst gateway ' +
-    'headers and no standalone configuration is set. Run under `catalyst serve` / ' +
-    'AppSail, or set CATALYST_PROJECT_ID and friends. See docs/catalyst.md.'
+    'headers, no standalone configuration is set, and the Catalyst CLI is not ' +
+    'logged in to a linked project. Run under `catalyst serve` / AppSail, run ' +
+    '`catalyst login` + `catalyst init`, or set CATALYST_PROJECT_ID and friends. ' +
+    'See docs/catalyst.md.'
   );
 }
 
@@ -140,10 +149,90 @@ export function describeMode(
 ): CatalystMode {
   if (req && hasGatewayHeaders(req)) return 'gateway';
   if (standalone) return 'standalone';
+  if (cliApp) return 'cli';
   return 'none';
+}
+
+// ── CLI-backed credentials (local development) ────────────────────────────────
+//
+// A third way in, for `pnpm dev` on a machine where someone has run
+// `catalyst login`. The CLI already holds an authorised grant; borrowing it
+// means local development against the real project needs no second OAuth
+// client and no secrets in .env.local.
+//
+// The SDK takes any object with getToken(); we hand it one that asks the CLI
+// each time, so expiry is the CLI's problem rather than ours.
+
+let cliApp: ReturnType<typeof catalyst.initializeApp> | null = null;
+let cliUnavailable = false;
+let cliOwner: string | null = null;
+
+export interface CliProject { projectId: string; orgId: string; projectName: string }
+
+/** The project `catalyst init` linked, or null. */
+export function cliProject(): CliProject | null {
+  return readCatalystRc();
+}
+
+/**
+ * The owner id to use when the SDK is authenticated with admin credentials
+ * (CLI or standalone) rather than an end-user session.
+ *
+ * getCurrentUser() needs a Zoho session on the request. Admin credentials do
+ * not have one — there is no end user, just a developer or a service. Failing
+ * every request with 401 in that mode would make local development against the
+ * real project impossible, so rows are scoped to the authenticated identity
+ * instead: the CLI account's ZUID, or CATALYST_DEV_OWNER if set.
+ *
+ * This is single-user by construction and only applies outside gateway mode.
+ * Under the gateway a real session is present and required.
+ */
+export function ownerForAdminMode(): string | null {
+  const explicit = (process.env['CATALYST_DEV_OWNER'] ?? '').trim();
+  if (explicit) return explicit;
+  return cliOwner;
+}
+
+/** The data centre and API host in effect. Reported at startup. */
+export function region(): { dataCentre: string; consoleUrl: string } {
+  return REGION;
+}
+
+/**
+ * Builds a Catalyst app from the CLI's login, or returns null when the CLI is
+ * absent, logged out, or the directory has no linked project.
+ */
+export async function getCliApp(): Promise<ReturnType<typeof catalyst.initializeApp> | null> {
+  if (cliApp) return cliApp;
+  if (cliUnavailable) return null;
+
+  const project = readCatalystRc();
+  const creds = await accessTokenFromCli();
+  if (!project || !creds) { cliUnavailable = true; return null; }
+
+  // Admin credentials carry no end-user session, so rows are owned by whoever
+  // is logged in to the CLI. See ownerForAdminMode().
+  cliOwner = creds.zuid ? `cli:${creds.zuid}` : null;
+
+  try {
+    cliApp = catalyst.initializeApp({
+      project_id:  project.projectId,
+      project_key: project.orgId,
+      environment: process.env['CATALYST_ENVIRONMENT'] ?? 'Development',
+      credential: catalyst.credential.accessToken(creds.accessToken),
+    } as never);
+    return cliApp;
+  } catch (e) {
+    console.warn('[kaizen] Could not build a Catalyst app from the CLI login:', e);
+    cliUnavailable = true;
+    return null;
+  }
 }
 
 /** Resets memoised state. Tests only. */
 export function __resetCatalystApp(): void {
   standaloneApp = null;
+  cliApp = null;
+  cliUnavailable = false;
+  cliOwner = null;
 }

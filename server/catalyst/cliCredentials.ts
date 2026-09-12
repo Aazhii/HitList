@@ -21,6 +21,9 @@ import { execFileSync } from 'node:child_process';
 export interface CliCredentials {
   accessToken: string;
   dataCentre: string;
+  /** Zoho user id of whoever ran `catalyst login`. */
+  zuid: string;
+  email: string;
 }
 
 /** Where the CLI keeps its config, per platform. */
@@ -75,7 +78,14 @@ export async function accessTokenFromCli(): Promise<CliCredentials | null> {
     Credential.init(encrypted);
     const token = await Credential.getAccessToken();
     if (!token || typeof token !== 'string') return null;
-    return { accessToken: token, dataCentre };
+
+    const user = (store[dataCentre] as { user?: Record<string, unknown> } | undefined)?.user;
+    return {
+      accessToken: token,
+      dataCentre,
+      zuid:  String(user?.['ZUID'] ?? ''),
+      email: String(user?.['Email'] ?? ''),
+    };
   } catch {
     return null;
   }
