@@ -12,6 +12,7 @@
     "preview": "vite preview",
     "start": "pnpm run build && NODE_ENV=production pnpm run server",
     "preview:server": "NODE_ENV=production pnpm run server",
+    "catalyst:setup": "node --env-file-if-exists=.env.local --import tsx scripts/catalyst-setup.ts",
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
