@@ -41,16 +41,25 @@ authenticates callers itself and scopes every query by `OwnerId`.
 
 ```bash
 npm install -g zcatalyst-cli
-catalyst login                                              # opens a browser
-catalyst init --org 60084215173 -p 69251000000061001 -ni
-pnpm catalyst:setup                                         # create the tables
+catalyst login                                                    # opens a browser
+catalyst init --org 60084215173 -p 69251000000061001 -ni --dc in
+pnpm catalyst:setup                                               # create the tables
+pnpm dev
 ```
 
-`catalyst login` is interactive and cannot be scripted. Afterwards
-`pnpm catalyst:setup` picks up the grant from `~/.catalystrc`.
+`catalyst login` is interactive and cannot be scripted. Everything after it is
+automatic: the server and the setup script both borrow the CLI's stored login,
+so no secrets are needed in the repo and `pnpm dev` talks to the real project.
 
-To run the app with gateway credentials injected, use `catalyst serve` rather
-than `pnpm dev`. Its port is dynamic — do not hardcode it.
+The CLI encrypts that grant in its own config directory — **not** in a readable
+`~/.catalystrc`, which is what `catalyst init` writes (project ids only, no
+credentials). `server/catalyst/cliCredentials.ts` calls the CLI's own module to
+decrypt it, so it is best-effort and falls back cleanly if the CLI changes.
+
+Under these credentials the SDK is authenticated as **you**, not as an end
+user, so there is no session for `getCurrentUser()` to read. Rows are scoped to
+your CLI account (`cli:<ZUID>`), overridable with `CATALYST_DEV_OWNER`. This is
+single-user by construction and applies only outside the gateway.
 
 ## Option B — standalone credentials
 
@@ -82,6 +91,37 @@ Then `pnpm catalyst:setup && pnpm dev`.
 
 Outside the US data centre, also set `X_ZOHO_CATALYST_CONSOLE_URL` and
 `X_ZOHO_CATALYST_ACCOUNTS_URL` — see `.env.example`.
+
+## Things that will cost you an afternoon
+
+Learned the hard way getting this working; none are in the Catalyst docs.
+
+**The data centre is part of the credential.** The SDK picks its API host once,
+at module load, from `X_ZOHO_CATALYST_CONSOLE_URL`, defaulting to the US
+endpoint. A token from another region fails with `401 Authentication failed`,
+which looks like a bad token rather than a wrong host. `server/catalyst/region.ts`
+sets it from the CLI's `active_dc` and **must be imported before the SDK**.
+Passing `project_domain` to `initializeApp` does not affect the request host.
+
+**`initializeApp` accepts a credential it will not use.** A duck-typed
+`{ getToken() }` object passes validation and is then silently ignored —
+requests go out with no `Authorization` header. Use
+`catalyst.credential.accessToken(...)` or `.refreshToken(...)`.
+
+**Ids are BigInt and JSON.parse rounds them.** `table_id` 69251000000063001
+parses to `...63000`, above `Number.MAX_SAFE_INTEGER`. Every later call with
+the rounded id fails as `404 INVALID_ID`, which reads as "table does not
+exist". The setup script quotes long integer literals before parsing. The same
+applies to `ROWID` in anything that parses raw Catalyst JSON.
+
+**`Priority` is a reserved column name.** Catalyst rejects it with
+`INVALID_OPERATION`; the column is `TaskPriority`.
+
+**Column creation returns intermittent 500s.** It succeeds on retry, so the
+setup script retries 5xx — but not 4xx, which is a real answer.
+
+**App User gets SELECT only by default.** Every write fails until the table
+permissions are widened, and the error does not point at permissions.
 
 ## Schema
 
