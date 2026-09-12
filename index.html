@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Kaizen Flow</title>
+    <meta name="description" content="Kaizen Flow — Eisenhower Matrix todo app with Catalyst persistence" />
+    <!--
+      Catalyst Web SDK — loaded before React so window.catalyst is available
+      on Catalyst-hosted deployments.
+      catalystWebSDK.js sets window.catalyst with SDK methods.
+      init.js (served by Catalyst hosting at /__catalyst/sdk/init.js) populates
+      project credentials (ZAID, project ID) required for DataStore calls.
+      Both are static parser-blocking <script> tags so they execute synchronously
+      before React boots. On local dev init.js 404s silently — isCatalystAvailable()
+      guards all SDK access paths so local dev is unaffected.
+    -->
+    <script src="https://static.zohocdn.com/catalyst/sdk/js/4.0.0/catalystWebSDK.js"></script>
+    <!--
+      init.js populates Catalyst project credentials (ZAID, project ID).
+      We use a dynamic script with an onload callback so we can set
+      window.__catalystInitReady = true once credentials are available.
+      On local dev this 404s silently — the onerror handler ensures
+      __catalystInitReady stays false so isCatalystAvailable() returns false.
+    -->
+    <script>
+      (function () {
+        var s = document.createElement('script');
+        s.src = '/__catalyst/sdk/init.js';
+        s.onload = function () { window.__catalystInitReady = true; };
+        s.onerror = function () { window.__catalystInitReady = false; };
+        document.head.appendChild(s);
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
