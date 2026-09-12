@@ -53,7 +53,7 @@ and needs no configuration for local development.
 
 ## Storage
 
-The server persists through one of three backends, chosen at startup:
+The server persists through one of two backends, chosen at startup:
 
 | Backend | When | Notes |
 |---------|------|-------|

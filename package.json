@@ -8,7 +8,7 @@
     "dev:ui": "vite",
     "server": "tsx server/notes-server.ts",
     "build": "tsc -b && vite build",
-    "lint": "node --max-old-space-size=768 node_modules/.pnpm/eslint@10.9.0_jiti@2.7.0/node_modules/eslint/bin/eslint.js src/ --format stylish --cache",
+    "lint": "eslint src/ --format stylish --cache",
     "preview": "vite preview",
     "start": "pnpm run build && NODE_ENV=production tsx server/notes-server.ts",
     "preview:server": "NODE_ENV=production tsx server/notes-server.ts",
