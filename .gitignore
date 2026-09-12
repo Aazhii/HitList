@@ -22,3 +22,21 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local environment
+.env
+.env.local
+.env.*.local
+
+# Server JSON-file store (dev fallback backend — not source)
+server/*-db.json
+server/*-db.json.tmp
+server/*.tmp
+server/*.corrupt.*
+
+# Tool caches
+.eslintcache
+
+# Vendored agent skills (reinstall with: npx skills add — see skills-lock.json)
+.agents/
+.claude/skills/

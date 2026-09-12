@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "catalyst": {
+      "type": "http",
+      "url": "https://catalyst.zohomcp.in/mcp/message"
+    }
+  }
+}
