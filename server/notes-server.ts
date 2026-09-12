@@ -735,21 +735,6 @@ function assertSafeId(id: string, res: express.Response, field = 'id'): boolean 
 
 // ── Generic Catalyst CRUD helpers ─────────────────────────────────────────────
 
-async function catalystGetAll<T>(
-  req: express.Request,
-  table: string,
-  converter: (row: ICatalystRow) => T
-): Promise<T[]> {
-  const app = initCatalyst(req);
-  const cols = table === getTasksTable()
-    ? TASKS_COLS
-    : table === LISTS_TABLE
-    ? LISTS_COLS
-    : 'NoteId,Title,BlocksJson,Emoji,Pinned,CreatedAt,UpdatedAt';
-  const results = await app.zcql().executeZCQLQuery(`SELECT ${cols} FROM ${table}`);
-  return results.map((r) => converter(r[table] as ICatalystRow));
-}
-
 async function catalystGetOwnerRows<T>(
   req: express.Request,
   table: string,
