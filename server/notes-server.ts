@@ -692,6 +692,47 @@ function dbListToApi(l: DbList) {
   };
 }
 
+// ── ZCQL literal escaping ─────────────────────────────────────────────────────
+//
+// ZCQL is SQL-like, and SQL escapes a single quote inside a string literal by
+// DOUBLING it ('' ), not by backslashing it. The previous code used
+// `value.replace(/'/g, "\\'")`, which is wrong in two ways:
+//
+//   - Against an engine that treats backslash as literal, the quote still
+//     terminates the string and the rest of the value is parsed as SQL.
+//   - Against an engine that does honour backslash escapes, a value ending in
+//     a backslash escapes the escape and breaks out anyway.
+//
+// The values reaching these queries are fully caller-controlled: :id path
+// segments on every route, and the client-supplied `id` in POST /api/notes.
+//
+// zcqlString() returns a complete, quoted literal — callers must not add their
+// own quotes, so a missing pair of quotes is a type error rather than an
+// injection. assertSafeId() is the belt to that braces: our identifiers are
+// UUIDs and Catalyst user_ids, so anything outside that shape is rejected at
+// the edge before it ever reaches a query.
+
+/** Renders a value as a quoted ZCQL string literal, escaping it correctly. */
+function zcqlString(value: string): string {
+  // Strip NUL and other control characters, which no identifier or title needs
+  // and which some engines treat as statement terminators.
+  const cleaned = value.replace(/[\u0000-\u001f\u007f]/g, '');
+  return `'${cleaned.replace(/'/g, "''")}'`;
+}
+
+/** Identifiers we generate: UUIDs, Catalyst ROWIDs/user_ids, and slugs. */
+const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
+
+/**
+ * Validates a caller-supplied identifier, sending 400 and returning false when
+ * it is not one of ours. Callers must `return` immediately on false.
+ */
+function assertSafeId(id: string, res: express.Response, field = 'id'): boolean {
+  if (SAFE_ID.test(id)) return true;
+  res.status(400).json({ error: 'invalid_id', message: `${field} must match ${String(SAFE_ID)}` });
+  return false;
+}
+
 // ── Generic Catalyst CRUD helpers ─────────────────────────────────────────────
 
 async function catalystGetAll<T>(
@@ -718,10 +759,9 @@ async function catalystGetOwnerRows<T>(
 ): Promise<T[]> {
   const app = initCatalyst(req);
   const cols = table === getTasksTable() ? TASKS_COLS : LISTS_COLS;
-  const safeOwner = ownerId.replace(/'/g, "\\'");
   try {
     const results = await app.zcql().executeZCQLQuery(
-      `SELECT ${cols} FROM ${table} WHERE ${ownerCol} = '${safeOwner}'`
+      `SELECT ${cols} FROM ${table} WHERE ${ownerCol} = ${zcqlString(ownerId)}`
     );
     return results.map((r) => converter(r[table] as ICatalystRow));
   } catch (e: unknown) {
@@ -751,9 +791,8 @@ async function catalystGetRowId(
   idVal: string
 ): Promise<string | null> {
   const app = initCatalyst(req);
-  const escaped = idVal.replace(/'/g, "\\'");
   const results = await app.zcql().executeZCQLQuery(
-    `SELECT ROWID, ${idCol} FROM ${table} WHERE ${idCol} = '${escaped}'`
+    `SELECT ROWID, ${idCol} FROM ${table} WHERE ${idCol} = ${zcqlString(idVal)}`
   );
   if (!results.length) return null;
   const row = results[0][table] as ICatalystRow;
@@ -1466,9 +1505,8 @@ app.get('/api/notes/:id', async (req, res) => {
   try {
     let note: DbNote | null = null;
     if (catalystAvailable) {
-      const escaped = req.params.id.replace(/'/g, "\\'");
       const results = await initCatalyst(req).zcql().executeZCQLQuery(
-        `SELECT NoteId,Title,BlocksJson,Emoji,Pinned,CreatedAt,UpdatedAt FROM ${NOTES_TABLE} WHERE NoteId = '${escaped}'`
+        `SELECT NoteId,Title,BlocksJson,Emoji,Pinned,CreatedAt,UpdatedAt FROM ${NOTES_TABLE} WHERE NoteId = ${zcqlString(req.params.id)}`
       );
       if (results.length) note = rowToNote(results[0][NOTES_TABLE] as ICatalystRow);
     } else {
@@ -1501,9 +1539,8 @@ app.post('/api/notes', async (req, res) => {
     if (catalystAvailable) {
       const existingRowId = await catalystGetRowId(req, NOTES_TABLE, 'NoteId', note.id);
       if (existingRowId) {
-        const escaped = note.id.replace(/'/g, "\\'");
         const results = await initCatalyst(req).zcql().executeZCQLQuery(
-          `SELECT NoteId,Title,BlocksJson,Emoji,Pinned,CreatedAt,UpdatedAt FROM ${NOTES_TABLE} WHERE NoteId = '${escaped}'`
+          `SELECT NoteId,Title,BlocksJson,Emoji,Pinned,CreatedAt,UpdatedAt FROM ${NOTES_TABLE} WHERE NoteId = ${zcqlString(note.id)}`
         );
         const existing = results.length ? rowToNote(results[0][NOTES_TABLE] as ICatalystRow) : null;
         if (existing && note.updatedAt >= existing.updatedAt) {
@@ -1547,9 +1584,8 @@ app.put('/api/notes/:id', async (req, res) => {
     if (catalystAvailable) {
       const existingRowId = await catalystGetRowId(req, NOTES_TABLE, 'NoteId', req.params.id);
       if (!existingRowId) { res.status(404).json({ error: 'Not found' }); return; }
-      const escaped = req.params.id.replace(/'/g, "\\'");
       const results = await initCatalyst(req).zcql().executeZCQLQuery(
-        `SELECT NoteId,Title,BlocksJson,Emoji,Pinned,CreatedAt,UpdatedAt FROM ${NOTES_TABLE} WHERE NoteId = '${escaped}'`
+        `SELECT NoteId,Title,BlocksJson,Emoji,Pinned,CreatedAt,UpdatedAt FROM ${NOTES_TABLE} WHERE NoteId = ${zcqlString(req.params.id)}`
       );
       const existing = results.length ? rowToNote(results[0][NOTES_TABLE] as ICatalystRow) : null;
       const incoming: DbNote = { ...(existing ?? {}), ...body, id: req.params.id, updatedAt: body.updatedAt ?? Date.now() } as DbNote;
