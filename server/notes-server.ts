@@ -1884,21 +1884,21 @@ app.delete('/api/notes/:id', async (req, res) => {
   }
 });
 
-// ── Global error handler — always returns JSON ────────────────────────────────
+// ── Unknown /api routes ───────────────────────────────────────────────────────
 //
-// Catches any unhandled errors thrown inside route handlers (including
-// express.json() parse errors and unexpected throws). Ensures the client
-// always receives a JSON body instead of Express's default HTML error page.
-//
-app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  const status = (err as { status?: number; statusCode?: number }).status
-    ?? (err as { status?: number; statusCode?: number }).statusCode
-    ?? 500;
-  const message = err instanceof Error ? err.message : String(err);
-  console.error('[kaizen] Unhandled error:', err);
-  if (!res.headersSent) {
-    res.status(status).json({ error: 'internal_error', message });
-  }
+// This must come before the SPA fallback. Without it, GET /api/anything
+// unmatched fell through to app.get('/{*path}') and was answered with
+// dist/index.html — under the application/json Content-Type forced by the
+// middleware at the top of the file. The client saw `200 application/json`
+// whose body began `<!doctype html>`, and JSON.parse died on "Unexpected
+// token '<'". That is exactly what the Automations page hit against
+// /api/automation-runs/recent, and it presented as a permanent
+// "Backend unavailable" banner rather than a 404.
+app.use('/api', (req, res) => {
+  res.status(404).json({
+    error: 'not_found',
+    message: `No API route for ${req.method} /api${req.path}`,
+  });
 });
 
 // ── Static SPA serving ────────────────────────────────────────────────────────
@@ -1907,11 +1907,38 @@ const DIST_DIR = path.join(__dirname, '..', 'dist');
 
 if (fs.existsSync(DIST_DIR)) {
   app.use(express.static(DIST_DIR));
-  // SPA fallback — must come AFTER /api routes
+  // SPA fallback — must come AFTER the /api routes and the /api 404 above.
   app.get('/{*path}', (_req, res) => {
     res.sendFile(path.join(DIST_DIR, 'index.html'));
   });
 }
+
+// ── Global error handler — always returns JSON ────────────────────────────────
+//
+// Express matches middleware in registration order, so an error handler only
+// sees errors thrown by what was registered BEFORE it. This used to sit above
+// the static/SPA middleware, which meant a failure in express.static or in
+// res.sendFile (a missing dist/index.html, EACCES) bypassed it entirely and
+// returned Express's default HTML stack-trace page. It must be registered last.
+//
+// It also catches express.json() parse errors and any rejection an async
+// handler forwards, so the client always gets a JSON body.
+app.use((err: unknown, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  const shape = classifyError(err);
+  // Trust an explicit HTTP status on the error (express.json sets 400) over
+  // the classifier's guess.
+  const explicit = (err as { status?: number; statusCode?: number })?.status
+    ?? (err as { status?: number; statusCode?: number })?.statusCode;
+  const status = typeof explicit === 'number' ? explicit : shape.status;
+
+  console.error(`[kaizen] Unhandled error on ${req.method} ${req.path}:`, err);
+  if (res.headersSent) return;
+  res.status(status).json({
+    error: status === 400 ? 'bad_request' : shape.error,
+    message: status === 400 ? 'Malformed request body' : shape.message,
+    ...(IS_PRODUCTION ? {} : { detail: err instanceof Error ? err.message : String(err) }),
+  });
+});
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 //
