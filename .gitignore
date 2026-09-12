@@ -43,3 +43,7 @@ server/*.corrupt.*
 
 # Catalyst CLI project link (contains project/org ids, machine-specific)
 .catalystrc
+
+# Scratch dir used by `pnpm run lock:npm`
+.lockgen/
+catalyst-debug.log
