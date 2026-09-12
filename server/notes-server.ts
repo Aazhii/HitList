@@ -822,6 +822,67 @@ async function catalystDeleteRow(
   await tbl.deleteRow(rowId);
 }
 
+// ── Error responses ───────────────────────────────────────────────────────────
+//
+// Every route used to answer `503 datastore_unavailable` with `message:
+// String(e)`. Two problems:
+//
+//   - A TypeError in our own code, a validation rejection from Catalyst and a
+//     genuine outage were indistinguishable. Clients treat 503 as "retry
+//     later", so a permanent bug looked like a transient blip.
+//   - String(e) on an SDK error carries the raw ZCQL statement, table and
+//     column names and internal ids straight to the caller.
+//
+// classifyError maps the cause to a status; the detail is logged server-side
+// and only echoed to the client outside production.
+
+const IS_PRODUCTION = process.env['NODE_ENV'] === 'production';
+
+interface ErrorShape { status: number; error: string; message: string }
+
+function classifyError(e: unknown): ErrorShape {
+  if (e instanceof UnauthenticatedError) {
+    return { status: 401, error: 'unauthenticated', message: 'Valid Catalyst session required' };
+  }
+
+  // Bugs in our own code — never a datastore outage.
+  if (e instanceof TypeError || e instanceof ReferenceError || e instanceof SyntaxError) {
+    return { status: 500, error: 'internal_error', message: 'Internal server error' };
+  }
+
+  // The SDK reports HTTP failures through statusCode / errorInfo.
+  const status = (e as { statusCode?: number; status?: number })?.statusCode
+    ?? (e as { statusCode?: number; status?: number })?.status;
+
+  if (typeof status === 'number') {
+    if (status === 401 || status === 403) {
+      return { status: 401, error: 'unauthenticated', message: 'Valid Catalyst session required' };
+    }
+    if (status === 404) {
+      return { status: 404, error: 'not_found', message: 'Not found' };
+    }
+    if (status >= 400 && status < 500) {
+      // Catalyst rejected the request — a bad column, type or constraint.
+      return { status: 400, error: 'datastore_rejected', message: 'The datastore rejected this request' };
+    }
+  }
+
+  return { status: 503, error: 'datastore_unavailable', message: 'Storage backend unavailable' };
+}
+
+/** Logs the real cause and sends a classified, non-leaking JSON error. */
+function sendError(res: express.Response, route: string, e: unknown): void {
+  const shape = classifyError(e);
+  console.error(`[kaizen] ${route} -> ${shape.status} ${shape.error}:`, e);
+  if (res.headersSent) return;
+  res.status(shape.status).json({
+    error: shape.error,
+    message: shape.message,
+    // Detail is a debugging aid for local work, never for production clients.
+    ...(IS_PRODUCTION ? {} : { detail: String(e) }),
+  });
+}
+
 // ── Express app ───────────────────────────────────────────────────────────────
 
 const app = express();
@@ -1014,8 +1075,7 @@ app.get('/api/tasks', async (req, res) => {
 
     res.json(tasks.map(dbTaskToApi));
   } catch (e) {
-    console.error('[GET /api/tasks]', e);
-    res.status(503).json({ error: 'datastore_unavailable', message: String(e) });
+    sendError(res, '[GET /api/tasks]', e);
   }
 });
 
@@ -1047,8 +1107,7 @@ app.get('/api/tasks/today-history', async (req, res) => {
     tasks.sort((a, b) => b.completedAt - a.completedAt);
     res.json(tasks.map(dbTaskToApi));
   } catch (e) {
-    console.error('[GET /api/tasks/today-history]', e);
-    res.status(503).json({ error: 'datastore_unavailable', message: String(e) });
+    sendError(res, '[GET /api/tasks/today-history]', e);
   }
 });
 
@@ -1070,8 +1129,7 @@ app.get('/api/tasks/:id', async (req, res) => {
     if (!task) { res.status(404).json({ error: 'Not found' }); return; }
     res.json(dbTaskToApi(task));
   } catch (e) {
-    console.error('[GET /api/tasks/:id]', e);
-    res.status(503).json({ error: 'datastore_unavailable', message: String(e) });
+    sendError(res, '[GET /api/tasks/:id]', e);
   }
 });
 
@@ -1115,8 +1173,7 @@ app.post('/api/tasks', async (req, res) => {
       res.status(201).json(dbTaskToApi(task));
     }
   } catch (e) {
-    console.error('[POST /api/tasks]', e);
-    res.status(503).json({ error: 'datastore_unavailable', message: String(e) });
+    sendError(res, '[POST /api/tasks]', e);
   }
 });
 
@@ -1151,8 +1208,7 @@ app.put('/api/tasks/:id', async (req, res) => {
       res.json(dbTaskToApi(updated));
     }
   } catch (e) {
-    console.error('[PUT /api/tasks/:id]', e);
-    res.status(503).json({ error: 'datastore_unavailable', message: String(e) });
+    sendError(res, '[PUT /api/tasks/:id]', e);
   }
 });
 
@@ -1185,8 +1241,7 @@ app.patch('/api/tasks/:id/status', async (req, res) => {
       res.json(dbTaskToApi(db.tasks[idx]));
     }
   } catch (e) {
-    console.error('[PATCH /api/tasks/:id/status]', e);
-    res.status(503).json({ error: 'datastore_unavailable', message: String(e) });
+    sendError(res, '[PATCH /api/tasks/:id/status]', e);
   }
 });
 
@@ -1217,8 +1272,7 @@ app.patch('/api/tasks/:id/complete', async (req, res) => {
       res.json(dbTaskToApi(db.tasks[idx]));
     }
   } catch (e) {
-    console.error('[PATCH /api/tasks/:id/complete]', e);
-    res.status(503).json({ error: 'datastore_unavailable', message: String(e) });
+    sendError(res, '[PATCH /api/tasks/:id/complete]', e);
   }
 });
 
@@ -1251,8 +1305,7 @@ app.patch('/api/tasks/:id/quadrant', async (req, res) => {
       res.json(dbTaskToApi(db.tasks[idx]));
     }
   } catch (e) {
-    console.error('[PATCH /api/tasks/:id/quadrant]', e);
-    res.status(503).json({ error: 'datastore_unavailable', message: String(e) });
+    sendError(res, '[PATCH /api/tasks/:id/quadrant]', e);
   }
 });
 
@@ -1279,8 +1332,7 @@ app.delete('/api/tasks/:id', async (req, res) => {
       res.sendStatus(204);
     }
   } catch (e) {
-    console.error('[DELETE /api/tasks/:id]', e);
-    res.status(503).json({ error: 'datastore_unavailable', message: String(e) });
+    sendError(res, '[DELETE /api/tasks/:id]', e);
   }
 });
 
@@ -1304,8 +1356,7 @@ app.get('/api/lists', async (req, res) => {
     lists.sort((a, b) => a.listOrder - b.listOrder || a.createdAt - b.createdAt);
     res.json(lists.map(dbListToApi));
   } catch (e) {
-    console.error('[GET /api/lists]', e);
-    res.status(503).json({ error: 'datastore_unavailable', message: String(e) });
+    sendError(res, '[GET /api/lists]', e);
   }
 });
 
@@ -1327,8 +1378,7 @@ app.get('/api/lists/:id', async (req, res) => {
     if (!list) { res.status(404).json({ error: 'Not found' }); return; }
     res.json(dbListToApi(list));
   } catch (e) {
-    console.error('[GET /api/lists/:id]', e);
-    res.status(503).json({ error: 'datastore_unavailable', message: String(e) });
+    sendError(res, '[GET /api/lists/:id]', e);
   }
 });
 
@@ -1362,8 +1412,7 @@ app.post('/api/lists', async (req, res) => {
       res.status(201).json(dbListToApi(list));
     }
   } catch (e) {
-    console.error('[POST /api/lists]', e);
-    res.status(503).json({ error: 'datastore_unavailable', message: String(e) });
+    sendError(res, '[POST /api/lists]', e);
   }
 });
 
@@ -1396,8 +1445,7 @@ app.put('/api/lists/:id', async (req, res) => {
       res.json(dbListToApi(updated));
     }
   } catch (e) {
-    console.error('[PUT /api/lists/:id]', e);
-    res.status(503).json({ error: 'datastore_unavailable', message: String(e) });
+    sendError(res, '[PUT /api/lists/:id]', e);
   }
 });
 
@@ -1435,8 +1483,7 @@ app.delete('/api/lists/:id', async (req, res) => {
       res.sendStatus(204);
     }
   } catch (e) {
-    console.error('[DELETE /api/lists/:id]', e);
-    res.status(503).json({ error: 'datastore_unavailable', message: String(e) });
+    sendError(res, '[DELETE /api/lists/:id]', e);
   }
 });
 
@@ -1504,8 +1551,7 @@ app.get('/api/stats/momentum', async (req, res) => {
       asOf: new Date().toISOString(),
     });
   } catch (e) {
-    console.error('[GET /api/stats/momentum]', e);
-    res.status(503).json({ error: 'datastore_unavailable', message: String(e) });
+    sendError(res, '[GET /api/stats/momentum]', e);
   }
 });
 
@@ -1570,8 +1616,7 @@ app.get('/api/notes', async (req, res) => {
     });
     res.json(sorted);
   } catch (e) {
-    console.error('[GET /api/notes]', e);
-    res.status(503).json({ error: 'datastore_unavailable', message: String(e) });
+    sendError(res, '[GET /api/notes]', e);
   }
 });
 
@@ -1591,8 +1636,7 @@ app.get('/api/notes/:id', async (req, res) => {
     if (!note) { res.status(404).json({ error: 'Not found' }); return; }
     res.json(note);
   } catch (e) {
-    console.error('[GET /api/notes/:id]', e);
-    res.status(503).json({ error: 'datastore_unavailable', message: String(e) });
+    sendError(res, '[GET /api/notes/:id]', e);
   }
 });
 
@@ -1649,8 +1693,7 @@ app.post('/api/notes', async (req, res) => {
       }
     }
   } catch (e) {
-    console.error('[POST /api/notes]', e);
-    res.status(503).json({ error: 'datastore_unavailable', message: String(e) });
+    sendError(res, '[POST /api/notes]', e);
   }
 });
 
@@ -1699,8 +1742,7 @@ app.put('/api/notes/:id', async (req, res) => {
       }
     }
   } catch (e) {
-    console.error('[PUT /api/notes/:id]', e);
-    res.status(503).json({ error: 'datastore_unavailable', message: String(e) });
+    sendError(res, '[PUT /api/notes/:id]', e);
   }
 });
 
@@ -1722,8 +1764,7 @@ app.delete('/api/notes/:id', async (req, res) => {
       res.sendStatus(204);
     }
   } catch (e) {
-    console.error('[DELETE /api/notes/:id]', e);
-    res.status(503).json({ error: 'datastore_unavailable', message: String(e) });
+    sendError(res, '[DELETE /api/notes/:id]', e);
   }
 });
 
