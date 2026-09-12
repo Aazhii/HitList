@@ -1056,6 +1056,55 @@ function optTime(errs: FieldErrors, field: string, value: unknown): string {
   return value;
 }
 
+/**
+ * Validated partial update for a task: only keys actually present in the body
+ * are returned, so an omitted field is left untouched.
+ *
+ * A whitelist matters here. The routes used to build the updated row with
+ * `{ ...existing, ...body }`. id and ownerId were pinned back afterwards, but
+ * createdAt and completedAt were not — so a client could rewrite them and
+ * forge the momentum and streak statistics, which are computed entirely from
+ * completedAt. Unknown keys rode along into the row object too.
+ */
+function parseTaskPatch(body: Record<string, unknown>, errs: FieldErrors): Partial<DbTask> {
+  const patch: Partial<DbTask> = {};
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(body, k);
+
+  if (has('title')) {
+    const v = reqString(errs, 'title', body['title'], MAX_TITLE_LEN);
+    if (v !== undefined) patch.title = v;
+  }
+  if (has('status'))                patch.status                = optEnum(errs, 'status', body['status'], TASK_STATUSES, 'TODO');
+  if (has('quadrant'))              patch.quadrant              = optEnum(errs, 'quadrant', body['quadrant'], QUADRANTS, 'SCHEDULE');
+  if (has('priority'))              patch.priority              = optEnum(errs, 'priority', body['priority'], PRIORITIES, '');
+  if (has('note'))                  patch.note                  = optString(errs, 'note', body['note'], MAX_NOTE_LEN);
+  if (has('dueDate'))               patch.dueDate               = optDate(errs, 'dueDate', body['dueDate']);
+  if (has('dueTime'))               patch.dueTime               = optTime(errs, 'dueTime', body['dueTime']);
+  if (has('category'))              patch.category              = optString(errs, 'category', body['category'], MAX_CATEGORY_LEN);
+  if (has('listId'))                patch.listId                = optString(errs, 'listId', body['listId'], 64);
+  if (has('taskOrder'))             patch.taskOrder             = optNumber(errs, 'taskOrder', body['taskOrder'], 0);
+  if (has('reminderEnabled'))       patch.reminderEnabled       = optBoolean(errs, 'reminderEnabled', body['reminderEnabled'], false);
+  if (has('reminderMinutesBefore')) patch.reminderMinutesBefore = optNumber(errs, 'reminderMinutesBefore', body['reminderMinutesBefore'], 0, 0);
+
+  // id, ownerId, createdAt, updatedAt and completedAt are server-owned and are
+  // deliberately absent from this list.
+  return patch;
+}
+
+/** Validated partial update for a list. */
+function parseListPatch(body: Record<string, unknown>, errs: FieldErrors): Partial<DbList> {
+  const patch: Partial<DbList> = {};
+  const has = (k: string) => Object.prototype.hasOwnProperty.call(body, k);
+
+  if (has('name')) {
+    const v = reqString(errs, 'name', body['name'], MAX_TITLE_LEN);
+    if (v !== undefined) patch.name = v;
+  }
+  if (has('color'))     patch.color     = optString(errs, 'color', body['color'], 32, 'emerald');
+  if (has('listOrder')) patch.listOrder = optNumber(errs, 'listOrder', body['listOrder'], 0);
+  return patch;
+}
+
 // ── Error responses ───────────────────────────────────────────────────────────
 //
 // Every route used to answer `503 datastore_unavailable` with `message:
@@ -1230,7 +1279,7 @@ app.get('/api/tasks', async (req, res) => {
       tasks = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
     } else {
       tasks = readTasksDb().tasks;
-      tasks = tasks.filter((t) => t.ownerId === LOCAL_DEV_OWNER);
+      tasks = tasks.filter((t) => t.ownerId === ownerId);
     }
 
     const q = req.query as Record<string, string>;
@@ -1324,7 +1373,7 @@ app.get('/api/tasks/today-history', async (req, res) => {
       tasks = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
     } else {
       tasks = readTasksDb().tasks;
-      tasks = tasks.filter((t) => t.ownerId === LOCAL_DEV_OWNER);
+      tasks = tasks.filter((t) => t.ownerId === ownerId);
     }
 
     const today = new Date();
@@ -1358,7 +1407,7 @@ app.get('/api/tasks/:id', async (req, res) => {
       task = all.find((t) => t.id === req.params.id);
     } else {
       task = readTasksDb().tasks
-        .find((t) => t.id === req.params.id && t.ownerId === LOCAL_DEV_OWNER);
+        .find((t) => t.id === req.params.id && t.ownerId === ownerId);
     }
     if (!task) { res.status(404).json({ error: 'Not found' }); return; }
     res.json(dbTaskToApi(task));
@@ -1426,7 +1475,9 @@ app.put('/api/tasks/:id', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
 
-  const body = req.body as Partial<DbTask>;
+  const errs = new FieldErrors();
+  const body = parseTaskPatch((req.body ?? {}) as Record<string, unknown>, errs);
+  if (!errs.ok) { errs.send(res); return; }
   const now = Date.now();
 
   try {
@@ -1443,9 +1494,9 @@ app.put('/api/tasks/:id', async (req, res) => {
       res.json(dbTaskToApi(updated));
     } else {
       const db = readTasksDb();
-      const idx = db.tasks.findIndex((t) => t.id === req.params.id && t.ownerId === LOCAL_DEV_OWNER);
+      const idx = db.tasks.findIndex((t) => t.id === req.params.id && t.ownerId === ownerId);
       if (idx < 0) { res.status(404).json({ error: 'Not found' }); return; }
-      const updated: DbTask = { ...db.tasks[idx], ...body, id: req.params.id, ownerId: LOCAL_DEV_OWNER, updatedAt: now };
+      const updated: DbTask = { ...db.tasks[idx], ...body, id: req.params.id, ownerId, updatedAt: now };
       db.tasks[idx] = updated;
       writeJson(TASKS_DB_PATH, db);
       res.json(dbTaskToApi(updated));
@@ -1479,7 +1530,7 @@ app.patch('/api/tasks/:id/status', async (req, res) => {
       res.json(dbTaskToApi(updated));
     } else {
       const db = readTasksDb();
-      const idx = db.tasks.findIndex((t) => t.id === req.params.id && t.ownerId === LOCAL_DEV_OWNER);
+      const idx = db.tasks.findIndex((t) => t.id === req.params.id && t.ownerId === ownerId);
       if (idx < 0) { res.status(404).json({ error: 'Not found' }); return; }
       db.tasks[idx] = { ...db.tasks[idx], status, updatedAt: now };
       writeJson(TASKS_DB_PATH, db);
@@ -1510,7 +1561,7 @@ app.patch('/api/tasks/:id/complete', async (req, res) => {
       res.json(dbTaskToApi(updated));
     } else {
       const db = readTasksDb();
-      const idx = db.tasks.findIndex((t) => t.id === req.params.id && t.ownerId === LOCAL_DEV_OWNER);
+      const idx = db.tasks.findIndex((t) => t.id === req.params.id && t.ownerId === ownerId);
       if (idx < 0) { res.status(404).json({ error: 'Not found' }); return; }
       db.tasks[idx] = { ...db.tasks[idx], status: 'DONE', completedAt: now, updatedAt: now };
       writeJson(TASKS_DB_PATH, db);
@@ -1545,7 +1596,7 @@ app.patch('/api/tasks/:id/quadrant', async (req, res) => {
       res.json(dbTaskToApi(updated));
     } else {
       const db = readTasksDb();
-      const idx = db.tasks.findIndex((t) => t.id === req.params.id && t.ownerId === LOCAL_DEV_OWNER);
+      const idx = db.tasks.findIndex((t) => t.id === req.params.id && t.ownerId === ownerId);
       if (idx < 0) { res.status(404).json({ error: 'Not found' }); return; }
       db.tasks[idx] = { ...db.tasks[idx], quadrant, updatedAt: now };
       writeJson(TASKS_DB_PATH, db);
@@ -1574,7 +1625,7 @@ app.delete('/api/tasks/:id', async (req, res) => {
       res.sendStatus(204);
     } else {
       const db = readTasksDb();
-      db.tasks = db.tasks.filter((t) => !(t.id === req.params.id && t.ownerId === LOCAL_DEV_OWNER));
+      db.tasks = db.tasks.filter((t) => !(t.id === req.params.id && t.ownerId === ownerId));
       writeJson(TASKS_DB_PATH, db);
       res.sendStatus(204);
     }
@@ -1598,7 +1649,7 @@ app.get('/api/lists', async (req, res) => {
       lists = await catalystGetOwnerRows(req, LISTS_TABLE, 'OwnerId', ownerId, rowToList);
     } else {
       lists = readListsDb().lists;
-      lists = lists.filter((l) => l.ownerId === LOCAL_DEV_OWNER);
+      lists = lists.filter((l) => l.ownerId === ownerId);
     }
     lists.sort((a, b) => a.listOrder - b.listOrder || a.createdAt - b.createdAt);
     res.json(lists.map(dbListToApi));
@@ -1620,7 +1671,7 @@ app.get('/api/lists/:id', async (req, res) => {
       list = all.find((l) => l.id === req.params.id);
     } else {
       list = readListsDb().lists
-        .find((l) => l.id === req.params.id && l.ownerId === LOCAL_DEV_OWNER);
+        .find((l) => l.id === req.params.id && l.ownerId === ownerId);
     }
     if (!list) { res.status(404).json({ error: 'Not found' }); return; }
     res.json(dbListToApi(list));
@@ -1673,7 +1724,9 @@ app.put('/api/lists/:id', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
 
-  const body = req.body as Partial<DbList>;
+  const errs = new FieldErrors();
+  const body = parseListPatch((req.body ?? {}) as Record<string, unknown>, errs);
+  if (!errs.ok) { errs.send(res); return; }
   const now = Date.now();
 
   try {
@@ -1688,9 +1741,9 @@ app.put('/api/lists/:id', async (req, res) => {
       res.json(dbListToApi(updated));
     } else {
       const db = readListsDb();
-      const idx = db.lists.findIndex((l) => l.id === req.params.id && l.ownerId === LOCAL_DEV_OWNER);
+      const idx = db.lists.findIndex((l) => l.id === req.params.id && l.ownerId === ownerId);
       if (idx < 0) { res.status(404).json({ error: 'Not found' }); return; }
-      const updated: DbList = { ...db.lists[idx], ...body, id: req.params.id, ownerId: LOCAL_DEV_OWNER, updatedAt: now };
+      const updated: DbList = { ...db.lists[idx], ...body, id: req.params.id, ownerId, updatedAt: now };
       db.lists[idx] = updated;
       writeJson(LISTS_DB_PATH, db);
       res.json(dbListToApi(updated));
@@ -1725,11 +1778,11 @@ app.delete('/api/lists/:id', async (req, res) => {
       res.sendStatus(204);
     } else {
       const db = readListsDb();
-      db.lists = db.lists.filter((l) => !(l.id === req.params.id && l.ownerId === LOCAL_DEV_OWNER));
+      db.lists = db.lists.filter((l) => !(l.id === req.params.id && l.ownerId === ownerId));
       writeJson(LISTS_DB_PATH, db);
       // Also remove tasks for this list (owner-scoped)
       const tdb = readTasksDb();
-      tdb.tasks = tdb.tasks.filter((t) => !(t.listId === req.params.id && t.ownerId === LOCAL_DEV_OWNER));
+      tdb.tasks = tdb.tasks.filter((t) => !(t.listId === req.params.id && t.ownerId === ownerId));
       writeJson(TASKS_DB_PATH, tdb);
       res.sendStatus(204);
     }
@@ -1753,7 +1806,7 @@ app.get('/api/stats/momentum', async (req, res) => {
       tasks = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
     } else {
       tasks = readTasksDb().tasks;
-      tasks = tasks.filter((t) => t.ownerId === LOCAL_DEV_OWNER);
+      tasks = tasks.filter((t) => t.ownerId === ownerId);
     }
 
     const { listId } = req.query as Record<string, string>;
