@@ -2138,20 +2138,47 @@ app.use((err: unknown, req: express.Request, res: express.Response, _next: expre
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 //
-// Port resolution:
-//   - In Catalyst hosted env: PORT is injected by the platform (do NOT override it)
-//   - In local dev (pnpm dev): defaults to 3001 (Vite proxies /api → :3001)
-//   - In local preview (pnpm preview:server): defaults to 3001
-//
-// The `start` script (used by Catalyst Functions) must NOT force PORT=9000
-// because port 9000 is the Catalyst gateway — the function server runs on
-// whatever port the platform assigns via the PORT env var.
-//
+// Port resolution, in order:
+//   1. X_ZOHO_CATALYST_LISTEN_PORT — injected by Catalyst AppSail. This is the
+//      variable AppSail actually sets; reading only PORT meant a deployed app
+//      bound the wrong port and the platform health check never passed.
+//   2. PORT                        — other hosts, and local overrides.
+//   3. DEFAULT_PORT (3001)         — local dev; Vite proxies /api here.
 
-const LISTEN_PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : DEFAULT_PORT;
+function resolvePort(): number {
+  for (const name of ['X_ZOHO_CATALYST_LISTEN_PORT', 'PORT']) {
+    const raw = process.env[name];
+    if (raw === undefined || raw.trim() === '') continue;
+    const n = Number(raw);
+    // parseInt() used to be applied straight to PORT, so a non-numeric value
+    // produced NaN and listen() silently chose a random free port.
+    if (!Number.isInteger(n) || n < 0 || n > 65535) {
+      console.warn(`[kaizen] Ignoring ${name}="${raw}" — not a valid port. Falling back.`);
+      continue;
+    }
+    return n;
+  }
+  return DEFAULT_PORT;
+}
 
-const server = app.listen(LISTEN_PORT, '0.0.0.0', async () => {
-  console.log(`[kaizen] Server running on http://0.0.0.0:${LISTEN_PORT}`);
+const LISTEN_PORT = resolvePort();
+
+/**
+ * Probes Catalyst and settles `catalystAvailable` BEFORE the socket opens.
+ *
+ * This used to run inside the app.listen callback, i.e. after the server was
+ * already accepting connections. Two things went wrong in that window:
+ *
+ *   - catalystAvailable was true while useTestTable was still false, so early
+ *     requests queried a table that often does not exist and got a 503.
+ *   - If the probe then flipped catalystAvailable to false, a request that had
+ *     already resolved its owner against Catalyst wrote that owner into the
+ *     JSON store — where the LOCAL_DEV_OWNER filter would never match it
+ *     again. The row was written and permanently invisible.
+ *
+ * Probing first costs a little startup latency and removes the window entirely.
+ */
+async function settleBackend(): Promise<void> {
   const activeSignals = Object.entries(CATALYST_ENV_SIGNALS)
     .filter(([, on]) => on)
     .map(([name]) => name);
@@ -2161,38 +2188,46 @@ const server = app.listen(LISTEN_PORT, '0.0.0.0', async () => {
       : '[kaizen] No Catalyst credentials in env — using JSON-file storage'
   );
 
-  if (catalystAvailable) {
-    // Probe tables on startup using a synthetic request context.
-    // The SDK's initialize() accepts a plain object when running as a
-    // Catalyst Function (credentials come from the platform env, not the request).
-    try {
-      const syntheticReq = {} as express.Request;
-      const tablesOk = await probeCatalystTables(syntheticReq);
-      if (!tablesOk) {
-        // Disable Catalyst for this process — fall back to JSON-file storage
-        catalystAvailable = false;
-        console.warn('[kaizen] Catalyst DataStore disabled for this session. Using JSON-file fallback.');
-      } else {
-        console.log('[kaizen] Catalyst DataStore tables verified ✓');
-      }
-    } catch (e) {
-      console.warn('[kaizen] Catalyst table probe failed (will use JSON-file fallback):', e);
-      catalystAvailable = false;
+  if (!catalystAvailable) return;
+
+  try {
+    // The SDK reads credentials from the platform env rather than the request
+    // when running inside Catalyst, so a bare object is enough for the probe.
+    const tablesOk = await probeCatalystTables({} as express.Request);
+    if (tablesOk) {
+      console.log('[kaizen] Catalyst DataStore tables verified');
+      return;
     }
+    console.warn('[kaizen] Catalyst DataStore tables unavailable — using JSON-file fallback.');
+  } catch (e) {
+    console.warn('[kaizen] Catalyst table probe failed — using JSON-file fallback:', e);
   }
+  catalystAvailable = false;
+}
+
+const server = await (async () => {
+  await settleBackend();
 
   console.log(`[kaizen] Backend: ${catalystAvailable ? 'Catalyst DataStore' : 'JSON file fallback'}`);
   if (fs.existsSync(DIST_DIR)) {
     console.log(`[kaizen] Serving SPA from ${DIST_DIR}`);
   }
+
+  return app.listen(LISTEN_PORT, '0.0.0.0', () => {
+    console.log(`[kaizen] Server running on http://0.0.0.0:${LISTEN_PORT}`);
+  });
+})();
+
+// A rejected promise with no handler terminates the process on modern Node.
+// Log it with context rather than dying silently mid-request.
+process.on('unhandledRejection', (reason) => {
+  console.error('[kaizen] Unhandled promise rejection:', reason);
 });
 
 // Graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('[kaizen] SIGTERM received, shutting down gracefully');
+function shutdown(signal: string): void {
+  console.log(`[kaizen] ${signal} received, shutting down gracefully`);
   server.close(() => process.exit(0));
-});
-process.on('SIGINT', () => {
-  console.log('[kaizen] SIGINT received, shutting down gracefully');
-  server.close(() => process.exit(0));
-});
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT',  () => shutdown('SIGINT'));
