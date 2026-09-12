@@ -490,12 +490,78 @@ interface NotesDb  { notes: DbNote[] }
 interface TasksDb  { tasks: DbTask[] }
 interface ListsDb  { lists: DbList[] }
 
-function readJson<T>(filePath: string, empty: T): T {
+/**
+ * Reads a JSON store, validating its shape.
+ *
+ * The previous version caught every failure and returned the empty value. A
+ * corrupt or truncated file therefore read as "no records", and the very next
+ * write overwrote it with a single row — silent, total, unrecoverable data
+ * loss. A valid-but-wrong-shape file (say `{}`) was worse: it returned an
+ * object whose `.tasks` was undefined, and the caller's `.filter` threw a
+ * TypeError that surfaced as a 503.
+ *
+ * Now an unreadable or malformed file is moved aside as
+ * <name>.corrupt.<timestamp> and loudly logged, so the bad data is preserved
+ * for inspection and the next write starts from a known-empty store instead of
+ * destroying evidence.
+ */
+function readJson<T>(filePath: string, empty: T, isValid: (v: unknown) => v is T): T {
+  let raw: string;
   try {
     if (!fs.existsSync(filePath)) return empty;
-    return JSON.parse(fs.readFileSync(filePath, 'utf8')) as T;
-  } catch { return empty; }
+    raw = fs.readFileSync(filePath, 'utf8');
+  } catch (e) {
+    console.error(`[kaizen] Could not read ${filePath}:`, e);
+    return empty;
+  }
+
+  // An empty file is a legitimate "nothing stored yet".
+  if (raw.trim() === '') return empty;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    quarantine(filePath, `invalid JSON: ${String(e)}`);
+    return empty;
+  }
+
+  if (!isValid(parsed)) {
+    quarantine(filePath, 'JSON did not match the expected store shape');
+    return empty;
+  }
+  return parsed;
 }
+
+/** Moves a damaged store aside rather than letting the next write erase it. */
+function quarantine(filePath: string, reason: string): void {
+  const backup = `${filePath}.corrupt.${Date.now()}`;
+  try {
+    fs.renameSync(filePath, backup);
+    console.error(
+      `[kaizen] ${path.basename(filePath)} is unusable (${reason}).\n` +
+      `[kaizen]   Moved to ${backup}. Starting from an empty store.`
+    );
+  } catch (e) {
+    console.error(`[kaizen] ${filePath} is unusable (${reason}) and could not be moved aside:`, e);
+  }
+}
+
+// Shape guards. These check the container, not every record: a malformed row
+// is survivable, a malformed container is not.
+function isRecordArrayUnder<K extends string>(key: K) {
+  return (v: unknown): v is Record<K, unknown[]> =>
+    typeof v === 'object' && v !== null && Array.isArray((v as Record<string, unknown>)[key]);
+}
+
+const isNotesDb = isRecordArrayUnder('notes') as (v: unknown) => v is NotesDb;
+const isTasksDb = isRecordArrayUnder('tasks') as (v: unknown) => v is TasksDb;
+const isListsDb = isRecordArrayUnder('lists') as (v: unknown) => v is ListsDb;
+
+/** Typed readers, so no call site has to repeat the empty value and guard. */
+const readNotesDb = (): NotesDb => readJson<NotesDb>(DB_PATH,       { notes: [] }, isNotesDb);
+const readTasksDb = (): TasksDb => readJson<TasksDb>(TASKS_DB_PATH, { tasks: [] }, isTasksDb);
+const readListsDb = (): ListsDb => readJson<ListsDb>(LISTS_DB_PATH, { lists: [] }, isListsDb);
 
 function writeJson<T>(filePath: string, data: T): void {
   const tmp = filePath + '.tmp';
@@ -995,7 +1061,7 @@ app.get('/api/tasks', async (req, res) => {
       // Use owner-scoped ZCQL query to avoid fetching all rows
       tasks = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
     } else {
-      tasks = readJson<TasksDb>(TASKS_DB_PATH, { tasks: [] }).tasks;
+      tasks = readTasksDb().tasks;
       tasks = tasks.filter((t) => t.ownerId === LOCAL_DEV_OWNER);
     }
 
@@ -1089,7 +1155,7 @@ app.get('/api/tasks/today-history', async (req, res) => {
     if (catalystAvailable) {
       tasks = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
     } else {
-      tasks = readJson<TasksDb>(TASKS_DB_PATH, { tasks: [] }).tasks;
+      tasks = readTasksDb().tasks;
       tasks = tasks.filter((t) => t.ownerId === LOCAL_DEV_OWNER);
     }
 
@@ -1123,7 +1189,7 @@ app.get('/api/tasks/:id', async (req, res) => {
       const all = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
       task = all.find((t) => t.id === req.params.id);
     } else {
-      task = readJson<TasksDb>(TASKS_DB_PATH, { tasks: [] }).tasks
+      task = readTasksDb().tasks
         .find((t) => t.id === req.params.id && t.ownerId === LOCAL_DEV_OWNER);
     }
     if (!task) { res.status(404).json({ error: 'Not found' }); return; }
@@ -1167,7 +1233,7 @@ app.post('/api/tasks', async (req, res) => {
       await catalystInsertRow(req, getTasksTable(), taskToRow(task));
       res.status(201).json(dbTaskToApi(task));
     } else {
-      const db = readJson<TasksDb>(TASKS_DB_PATH, { tasks: [] });
+      const db = readTasksDb();
       db.tasks.push(task);
       writeJson(TASKS_DB_PATH, db);
       res.status(201).json(dbTaskToApi(task));
@@ -1199,7 +1265,7 @@ app.put('/api/tasks/:id', async (req, res) => {
       await catalystUpdateRow(req, getTasksTable(), rowId, taskToRow(updated));
       res.json(dbTaskToApi(updated));
     } else {
-      const db = readJson<TasksDb>(TASKS_DB_PATH, { tasks: [] });
+      const db = readTasksDb();
       const idx = db.tasks.findIndex((t) => t.id === req.params.id && t.ownerId === LOCAL_DEV_OWNER);
       if (idx < 0) { res.status(404).json({ error: 'Not found' }); return; }
       const updated: DbTask = { ...db.tasks[idx], ...body, id: req.params.id, ownerId: LOCAL_DEV_OWNER, updatedAt: now };
@@ -1233,7 +1299,7 @@ app.patch('/api/tasks/:id/status', async (req, res) => {
       await catalystUpdateRow(req, getTasksTable(), rowId, taskToRow(updated));
       res.json(dbTaskToApi(updated));
     } else {
-      const db = readJson<TasksDb>(TASKS_DB_PATH, { tasks: [] });
+      const db = readTasksDb();
       const idx = db.tasks.findIndex((t) => t.id === req.params.id && t.ownerId === LOCAL_DEV_OWNER);
       if (idx < 0) { res.status(404).json({ error: 'Not found' }); return; }
       db.tasks[idx] = { ...db.tasks[idx], status, updatedAt: now };
@@ -1264,7 +1330,7 @@ app.patch('/api/tasks/:id/complete', async (req, res) => {
       await catalystUpdateRow(req, getTasksTable(), rowId, taskToRow(updated));
       res.json(dbTaskToApi(updated));
     } else {
-      const db = readJson<TasksDb>(TASKS_DB_PATH, { tasks: [] });
+      const db = readTasksDb();
       const idx = db.tasks.findIndex((t) => t.id === req.params.id && t.ownerId === LOCAL_DEV_OWNER);
       if (idx < 0) { res.status(404).json({ error: 'Not found' }); return; }
       db.tasks[idx] = { ...db.tasks[idx], status: 'DONE', completedAt: now, updatedAt: now };
@@ -1297,7 +1363,7 @@ app.patch('/api/tasks/:id/quadrant', async (req, res) => {
       await catalystUpdateRow(req, getTasksTable(), rowId, taskToRow(updated));
       res.json(dbTaskToApi(updated));
     } else {
-      const db = readJson<TasksDb>(TASKS_DB_PATH, { tasks: [] });
+      const db = readTasksDb();
       const idx = db.tasks.findIndex((t) => t.id === req.params.id && t.ownerId === LOCAL_DEV_OWNER);
       if (idx < 0) { res.status(404).json({ error: 'Not found' }); return; }
       db.tasks[idx] = { ...db.tasks[idx], quadrant, updatedAt: now };
@@ -1326,7 +1392,7 @@ app.delete('/api/tasks/:id', async (req, res) => {
       }
       res.sendStatus(204);
     } else {
-      const db = readJson<TasksDb>(TASKS_DB_PATH, { tasks: [] });
+      const db = readTasksDb();
       db.tasks = db.tasks.filter((t) => !(t.id === req.params.id && t.ownerId === LOCAL_DEV_OWNER));
       writeJson(TASKS_DB_PATH, db);
       res.sendStatus(204);
@@ -1350,7 +1416,7 @@ app.get('/api/lists', async (req, res) => {
     if (catalystAvailable) {
       lists = await catalystGetOwnerRows(req, LISTS_TABLE, 'OwnerId', ownerId, rowToList);
     } else {
-      lists = readJson<ListsDb>(LISTS_DB_PATH, { lists: [] }).lists;
+      lists = readListsDb().lists;
       lists = lists.filter((l) => l.ownerId === LOCAL_DEV_OWNER);
     }
     lists.sort((a, b) => a.listOrder - b.listOrder || a.createdAt - b.createdAt);
@@ -1372,7 +1438,7 @@ app.get('/api/lists/:id', async (req, res) => {
       const all = await catalystGetOwnerRows(req, LISTS_TABLE, 'OwnerId', ownerId, rowToList);
       list = all.find((l) => l.id === req.params.id);
     } else {
-      list = readJson<ListsDb>(LISTS_DB_PATH, { lists: [] }).lists
+      list = readListsDb().lists
         .find((l) => l.id === req.params.id && l.ownerId === LOCAL_DEV_OWNER);
     }
     if (!list) { res.status(404).json({ error: 'Not found' }); return; }
@@ -1406,7 +1472,7 @@ app.post('/api/lists', async (req, res) => {
       await catalystInsertRow(req, LISTS_TABLE, listToRow(list));
       res.status(201).json(dbListToApi(list));
     } else {
-      const db = readJson<ListsDb>(LISTS_DB_PATH, { lists: [] });
+      const db = readListsDb();
       db.lists.push(list);
       writeJson(LISTS_DB_PATH, db);
       res.status(201).json(dbListToApi(list));
@@ -1436,7 +1502,7 @@ app.put('/api/lists/:id', async (req, res) => {
       await catalystUpdateRow(req, LISTS_TABLE, rowId, listToRow(updated));
       res.json(dbListToApi(updated));
     } else {
-      const db = readJson<ListsDb>(LISTS_DB_PATH, { lists: [] });
+      const db = readListsDb();
       const idx = db.lists.findIndex((l) => l.id === req.params.id && l.ownerId === LOCAL_DEV_OWNER);
       if (idx < 0) { res.status(404).json({ error: 'Not found' }); return; }
       const updated: DbList = { ...db.lists[idx], ...body, id: req.params.id, ownerId: LOCAL_DEV_OWNER, updatedAt: now };
@@ -1473,11 +1539,11 @@ app.delete('/api/lists/:id', async (req, res) => {
       }
       res.sendStatus(204);
     } else {
-      const db = readJson<ListsDb>(LISTS_DB_PATH, { lists: [] });
+      const db = readListsDb();
       db.lists = db.lists.filter((l) => !(l.id === req.params.id && l.ownerId === LOCAL_DEV_OWNER));
       writeJson(LISTS_DB_PATH, db);
       // Also remove tasks for this list (owner-scoped)
-      const tdb = readJson<TasksDb>(TASKS_DB_PATH, { tasks: [] });
+      const tdb = readTasksDb();
       tdb.tasks = tdb.tasks.filter((t) => !(t.listId === req.params.id && t.ownerId === LOCAL_DEV_OWNER));
       writeJson(TASKS_DB_PATH, tdb);
       res.sendStatus(204);
@@ -1501,7 +1567,7 @@ app.get('/api/stats/momentum', async (req, res) => {
     if (catalystAvailable) {
       tasks = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
     } else {
-      tasks = readJson<TasksDb>(TASKS_DB_PATH, { tasks: [] }).tasks;
+      tasks = readTasksDb().tasks;
       tasks = tasks.filter((t) => t.ownerId === LOCAL_DEV_OWNER);
     }
 
@@ -1591,7 +1657,7 @@ function noteOwner(note: DbNote): string {
 
 /** Reads the owner's notes from the JSON-file store. */
 function readOwnedNotes(ownerId: string): DbNote[] {
-  return readJson<NotesDb>(DB_PATH, { notes: [] }).notes.filter((n) => noteOwner(n) === ownerId);
+  return readNotesDb().notes.filter((n) => noteOwner(n) === ownerId);
 }
 
 // GET /api/notes — pinned first, then by updatedAt desc
@@ -1676,7 +1742,7 @@ app.post('/api/notes', async (req, res) => {
         res.status(201).json(note);
       }
     } else {
-      const db = readJson<NotesDb>(DB_PATH, { notes: [] });
+      const db = readNotesDb();
       const idx = db.notes.findIndex((n) => n.id === note.id && noteOwner(n) === ownerId);
       if (idx >= 0) {
         if (note.updatedAt >= db.notes[idx].updatedAt) {
@@ -1723,7 +1789,7 @@ app.put('/api/notes/:id', async (req, res) => {
         res.json(found.note);
       }
     } else {
-      const db = readJson<NotesDb>(DB_PATH, { notes: [] });
+      const db = readNotesDb();
       const idx = db.notes.findIndex((n) => n.id === req.params.id && noteOwner(n) === ownerId);
       if (idx < 0) { res.status(404).json({ error: 'Not found' }); return; }
       const incoming: DbNote = {
@@ -1758,7 +1824,7 @@ app.delete('/api/notes/:id', async (req, res) => {
       if (found) await catalystDeleteRow(req, NOTES_TABLE, found.rowId);
       res.sendStatus(204);
     } else {
-      const db = readJson<NotesDb>(DB_PATH, { notes: [] });
+      const db = readNotesDb();
       db.notes = db.notes.filter((n) => !(n.id === req.params.id && noteOwner(n) === ownerId));
       writeJson(DB_PATH, db);
       res.sendStatus(204);
