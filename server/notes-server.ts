@@ -78,25 +78,49 @@ const DEFAULT_PORT = 3001;
 
 // ── Catalyst availability ──────────────────────────────────────────────────────
 //
-// Catalyst is available only when the SDK can actually authenticate.
-// We check for the env vars the Catalyst platform injects at runtime.
-// NODE_ENV=production alone is NOT sufficient — the platform must also
-// provide credentials (CATALYST_CONFIG or X_ZOHO_CATALYST_IS_LOCAL).
+// Catalyst is available only when the SDK can actually authenticate, which means
+// the platform (or `catalyst serve`) has injected credentials into the env.
+// NODE_ENV=production alone is NOT sufficient.
 //
-// Priority order:
-//   1. CATALYST_CONFIG          — base64 JSON injected by Catalyst Functions runtime
-//   2. X_ZOHO_CATALYST_IS_LOCAL — set to "true" by `catalyst serve` (local dev via CLI)
-//   3. ZOHO_CATALYST_PROJECT_KEY / CATALYST_PROJECT_KEY — legacy env names
+// Two kinds of signal, which must be read differently:
 //
-const CATALYST_CONFIG_ENV =
-  process.env['CATALYST_CONFIG'] ??
-  process.env['X_ZOHO_CATALYST_IS_LOCAL'] ??
-  process.env['ZOHO_CATALYST_PROJECT_KEY'] ??
-  process.env['CATALYST_PROJECT_KEY'];
+//   Value-carrying — the variable holds a credential, so a non-empty value means yes:
+//     CATALYST_CONFIG                 base64 JSON, injected by the Functions runtime
+//     ZOHO_CATALYST_PROJECT_KEY       legacy name
+//     CATALYST_PROJECT_KEY            legacy name
+//     X_ZOHO_CATALYST_LISTEN_PORT     injected by AppSail (see LISTEN_PORT below)
+//
+//   Boolean — the variable holds a flag whose value must be parsed:
+//     X_ZOHO_CATALYST_IS_LOCAL        "true" under `catalyst serve`
+//
+// Reading the boolean as a presence check is what the old code did, and
+// `!!"false"` is true — so X_ZOHO_CATALYST_IS_LOCAL="false" switched Catalyst ON
+// and disabled the JSON-file fallback.
+
+/** True only for a value that actually spells out truth. */
+function envFlag(name: string): boolean {
+  const raw = process.env[name];
+  if (raw === undefined) return false;
+  return ['true', '1', 'yes', 'on'].includes(raw.trim().toLowerCase());
+}
+
+/** True when the variable carries a non-empty value. */
+function envPresent(name: string): boolean {
+  const raw = process.env[name];
+  return raw !== undefined && raw.trim() !== '';
+}
+
+const CATALYST_ENV_SIGNALS = {
+  CATALYST_CONFIG:             envPresent('CATALYST_CONFIG'),
+  X_ZOHO_CATALYST_LISTEN_PORT: envPresent('X_ZOHO_CATALYST_LISTEN_PORT'),
+  ZOHO_CATALYST_PROJECT_KEY:   envPresent('ZOHO_CATALYST_PROJECT_KEY'),
+  CATALYST_PROJECT_KEY:        envPresent('CATALYST_PROJECT_KEY'),
+  X_ZOHO_CATALYST_IS_LOCAL:    envFlag('X_ZOHO_CATALYST_IS_LOCAL'),
+} as const;
 
 // Only enable Catalyst when we have an explicit credential signal.
 // Falling back to JSON-file storage is always safe and correct.
-let catalystAvailable = !!CATALYST_CONFIG_ENV;
+let catalystAvailable = Object.values(CATALYST_ENV_SIGNALS).some(Boolean);
 
 // ── Auth / owner scoping ──────────────────────────────────────────────────────
 
@@ -1598,7 +1622,14 @@ const LISTEN_PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : DEFAULT_
 
 const server = app.listen(LISTEN_PORT, '0.0.0.0', async () => {
   console.log(`[kaizen] Server running on http://0.0.0.0:${LISTEN_PORT}`);
-  console.log(`[kaizen] Catalyst credentials detected: ${catalystAvailable}`);
+  const activeSignals = Object.entries(CATALYST_ENV_SIGNALS)
+    .filter(([, on]) => on)
+    .map(([name]) => name);
+  console.log(
+    activeSignals.length
+      ? `[kaizen] Catalyst credentials detected via: ${activeSignals.join(', ')}`
+      : '[kaizen] No Catalyst credentials in env — using JSON-file storage'
+  );
 
   if (catalystAvailable) {
     // Probe tables on startup using a synthetic request context.
