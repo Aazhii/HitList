@@ -46,4 +46,7 @@ server/*.corrupt.*
 
 # Scratch dir used by `pnpm run lock:npm`
 .lockgen/
+
+# AppSail deploy bundle, produced by `pnpm run build:appsail`
+build/
 catalyst-debug.log

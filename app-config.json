@@ -1,10 +1,11 @@
 {
   "command": "node server/notes-server.ts",
-  "build_path": ".",
+  "build_path": "./build",
   "stack": "node24",
   "memory": 512,
   "catalyst_auth": false,
   "scripts": {
-    "predeploy": "npm run build"
+    "predeploy": "npm run build:appsail",
+    "preserve": "npm run build:appsail"
   }
 }
