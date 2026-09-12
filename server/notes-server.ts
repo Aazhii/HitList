@@ -28,6 +28,7 @@
  *
  *   KaizenNotes
  *     NoteId      (text, unique)
+ *     OwnerId     (text)          — Catalyst user_id; scopes the note to its author
  *     Title       (text)
  *     BlocksJson  (text)
  *     Emoji       (text)
@@ -506,6 +507,7 @@ function writeJson<T>(filePath: string, data: T): void {
 
 interface DbNote {
   id: string;
+  ownerId: string;       // Catalyst user_id (or LOCAL_DEV_OWNER in fallback)
   title: string;
   blocksJson: string | null;
   emoji: string | null;
@@ -516,9 +518,13 @@ interface DbNote {
 
 const NOTES_TABLE = 'KaizenNotes';
 
+// Full column list including OwnerId, which scopes every note to its author.
+const NOTES_COLS = 'NoteId,OwnerId,Title,BlocksJson,Emoji,Pinned,CreatedAt,UpdatedAt';
+
 function rowToNote(row: ICatalystRow): DbNote {
   return {
     id:         String(row['NoteId'] ?? ''),
+    ownerId:    String(row['OwnerId'] ?? LOCAL_DEV_OWNER),
     title:      String(row['Title'] ?? 'Untitled'),
     blocksJson: row['BlocksJson'] != null ? String(row['BlocksJson']) : null,
     emoji:      row['Emoji'] != null ? String(row['Emoji']) : null,
@@ -531,6 +537,7 @@ function rowToNote(row: ICatalystRow): DbNote {
 function noteToRow(note: DbNote): Record<string, string | number | null> {
   return {
     NoteId:     note.id,
+    OwnerId:    note.ownerId,
     Title:      note.title,
     BlocksJson: note.blocksJson ?? '',
     Emoji:      note.emoji ?? '📝',
@@ -1470,17 +1477,55 @@ app.get('/api/stats/momentum', async (req, res) => {
 // NOTES ROUTES
 // ═══════════════════════════════════════════════════════════════════════════════
 
+/**
+ * Finds one note belonging to `ownerId`, returning its ROWID alongside it.
+ *
+ * Scoping by OwnerId in the predicate (rather than fetching and filtering) is
+ * what makes another user's note a 404 rather than a readable row.
+ */
+async function catalystFindNote(
+  req: express.Request,
+  ownerId: string,
+  noteId: string
+): Promise<{ rowId: string; note: DbNote } | null> {
+  const app = initCatalyst(req);
+  const results = await app.zcql().executeZCQLQuery(
+    `SELECT ROWID,${NOTES_COLS} FROM ${NOTES_TABLE} ` +
+    `WHERE NoteId = ${zcqlString(noteId)} AND OwnerId = ${zcqlString(ownerId)}`
+  );
+  if (!results.length) return null;
+  const row = results[0][NOTES_TABLE] as ICatalystRow;
+  return { rowId: String(row['ROWID'] ?? ''), note: rowToNote(row) };
+}
+
+/**
+ * Owner of a stored note. Notes written before OwnerId existed have no owner
+ * field; in JSON-file mode there was only ever one user, so they belong to
+ * LOCAL_DEV_OWNER rather than disappearing.
+ */
+function noteOwner(note: DbNote): string {
+  return note.ownerId || LOCAL_DEV_OWNER;
+}
+
+/** Reads the owner's notes from the JSON-file store. */
+function readOwnedNotes(ownerId: string): DbNote[] {
+  return readJson<NotesDb>(DB_PATH, { notes: [] }).notes.filter((n) => noteOwner(n) === ownerId);
+}
+
 // GET /api/notes — pinned first, then by updatedAt desc
 app.get('/api/notes', async (req, res) => {
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+
   try {
     let notes: DbNote[];
     if (catalystAvailable) {
       const results = await initCatalyst(req).zcql().executeZCQLQuery(
-        `SELECT NoteId,Title,BlocksJson,Emoji,Pinned,CreatedAt,UpdatedAt FROM ${NOTES_TABLE}`
+        `SELECT ${NOTES_COLS} FROM ${NOTES_TABLE} WHERE OwnerId = ${zcqlString(ownerId)}`
       );
       notes = results.map((r) => rowToNote(r[NOTES_TABLE] as ICatalystRow));
     } else {
-      notes = readJson<NotesDb>(DB_PATH, { notes: [] }).notes;
+      notes = readOwnedNotes(ownerId);
     }
     const sorted = [...notes].sort((a, b) => {
       if (a.pinned && !b.pinned) return -1;
@@ -1497,15 +1542,15 @@ app.get('/api/notes', async (req, res) => {
 // GET /api/notes/:id
 app.get('/api/notes/:id', async (req, res) => {
   if (!assertSafeId(req.params.id, res)) return;
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+
   try {
     let note: DbNote | null = null;
     if (catalystAvailable) {
-      const results = await initCatalyst(req).zcql().executeZCQLQuery(
-        `SELECT NoteId,Title,BlocksJson,Emoji,Pinned,CreatedAt,UpdatedAt FROM ${NOTES_TABLE} WHERE NoteId = ${zcqlString(req.params.id)}`
-      );
-      if (results.length) note = rowToNote(results[0][NOTES_TABLE] as ICatalystRow);
+      note = (await catalystFindNote(req, ownerId, req.params.id))?.note ?? null;
     } else {
-      note = readJson<NotesDb>(DB_PATH, { notes: [] }).notes.find((n) => n.id === req.params.id) ?? null;
+      note = readOwnedNotes(ownerId).find((n) => n.id === req.params.id) ?? null;
     }
     if (!note) { res.status(404).json({ error: 'Not found' }); return; }
     res.json(note);
@@ -1515,8 +1560,11 @@ app.get('/api/notes/:id', async (req, res) => {
   }
 });
 
-// POST /api/notes — create (upsert by NoteId)
+// POST /api/notes — create (upsert by NoteId, scoped to the owner)
 app.post('/api/notes', async (req, res) => {
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+
   const body = req.body as Partial<DbNote>;
   if (!body.id || !body.title) { res.status(400).json({ error: 'id and title are required' }); return; }
   // The note id is client-supplied here, so it gets the same check as a path param.
@@ -1524,7 +1572,8 @@ app.post('/api/notes', async (req, res) => {
 
   const note: DbNote = {
     id:         body.id,
-    title:      body.title ?? 'Untitled',
+    ownerId,
+    title:      body.title,
     blocksJson: body.blocksJson ?? null,
     emoji:      body.emoji ?? '📝',
     pinned:     body.pinned ?? false,
@@ -1534,17 +1583,13 @@ app.post('/api/notes', async (req, res) => {
 
   try {
     if (catalystAvailable) {
-      const existingRowId = await catalystGetRowId(req, NOTES_TABLE, 'NoteId', note.id);
-      if (existingRowId) {
-        const results = await initCatalyst(req).zcql().executeZCQLQuery(
-          `SELECT NoteId,Title,BlocksJson,Emoji,Pinned,CreatedAt,UpdatedAt FROM ${NOTES_TABLE} WHERE NoteId = ${zcqlString(note.id)}`
-        );
-        const existing = results.length ? rowToNote(results[0][NOTES_TABLE] as ICatalystRow) : null;
-        if (existing && note.updatedAt >= existing.updatedAt) {
-          await catalystUpdateRow(req, NOTES_TABLE, existingRowId, noteToRow(note));
+      const found = await catalystFindNote(req, ownerId, note.id);
+      if (found) {
+        if (note.updatedAt >= found.note.updatedAt) {
+          await catalystUpdateRow(req, NOTES_TABLE, found.rowId, noteToRow(note));
           res.json(note);
         } else {
-          res.json(existing ?? note);
+          res.json(found.note);
         }
       } else {
         await catalystInsertRow(req, NOTES_TABLE, noteToRow(note));
@@ -1552,7 +1597,7 @@ app.post('/api/notes', async (req, res) => {
       }
     } else {
       const db = readJson<NotesDb>(DB_PATH, { notes: [] });
-      const idx = db.notes.findIndex((n) => n.id === note.id);
+      const idx = db.notes.findIndex((n) => n.id === note.id && noteOwner(n) === ownerId);
       if (idx >= 0) {
         if (note.updatedAt >= db.notes[idx].updatedAt) {
           db.notes[idx] = note;
@@ -1576,28 +1621,39 @@ app.post('/api/notes', async (req, res) => {
 // PUT /api/notes/:id
 app.put('/api/notes/:id', async (req, res) => {
   if (!assertSafeId(req.params.id, res)) return;
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+
   const body = req.body as Partial<DbNote>;
 
   try {
     if (catalystAvailable) {
-      const existingRowId = await catalystGetRowId(req, NOTES_TABLE, 'NoteId', req.params.id);
-      if (!existingRowId) { res.status(404).json({ error: 'Not found' }); return; }
-      const results = await initCatalyst(req).zcql().executeZCQLQuery(
-        `SELECT NoteId,Title,BlocksJson,Emoji,Pinned,CreatedAt,UpdatedAt FROM ${NOTES_TABLE} WHERE NoteId = ${zcqlString(req.params.id)}`
-      );
-      const existing = results.length ? rowToNote(results[0][NOTES_TABLE] as ICatalystRow) : null;
-      const incoming: DbNote = { ...(existing ?? {}), ...body, id: req.params.id, updatedAt: body.updatedAt ?? Date.now() } as DbNote;
-      if (!existing || incoming.updatedAt >= existing.updatedAt) {
-        await catalystUpdateRow(req, NOTES_TABLE, existingRowId, noteToRow(incoming));
+      const found = await catalystFindNote(req, ownerId, req.params.id);
+      if (!found) { res.status(404).json({ error: 'Not found' }); return; }
+      const incoming: DbNote = {
+        ...found.note,
+        ...body,
+        id: req.params.id,
+        ownerId,
+        updatedAt: body.updatedAt ?? Date.now(),
+      };
+      if (incoming.updatedAt >= found.note.updatedAt) {
+        await catalystUpdateRow(req, NOTES_TABLE, found.rowId, noteToRow(incoming));
         res.json(incoming);
       } else {
-        res.json(existing);
+        res.json(found.note);
       }
     } else {
       const db = readJson<NotesDb>(DB_PATH, { notes: [] });
-      const idx = db.notes.findIndex((n) => n.id === req.params.id);
+      const idx = db.notes.findIndex((n) => n.id === req.params.id && noteOwner(n) === ownerId);
       if (idx < 0) { res.status(404).json({ error: 'Not found' }); return; }
-      const incoming: DbNote = { ...db.notes[idx], ...body, id: req.params.id, updatedAt: body.updatedAt ?? Date.now() };
+      const incoming: DbNote = {
+        ...db.notes[idx],
+        ...body,
+        id: req.params.id,
+        ownerId,
+        updatedAt: body.updatedAt ?? Date.now(),
+      };
       if (incoming.updatedAt >= db.notes[idx].updatedAt) {
         db.notes[idx] = incoming;
         writeJson(DB_PATH, db);
@@ -1615,14 +1671,17 @@ app.put('/api/notes/:id', async (req, res) => {
 // DELETE /api/notes/:id
 app.delete('/api/notes/:id', async (req, res) => {
   if (!assertSafeId(req.params.id, res)) return;
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+
   try {
     if (catalystAvailable) {
-      const rowId = await catalystGetRowId(req, NOTES_TABLE, 'NoteId', req.params.id);
-      if (rowId) await catalystDeleteRow(req, NOTES_TABLE, rowId);
+      const found = await catalystFindNote(req, ownerId, req.params.id);
+      if (found) await catalystDeleteRow(req, NOTES_TABLE, found.rowId);
       res.sendStatus(204);
     } else {
       const db = readJson<NotesDb>(DB_PATH, { notes: [] });
-      db.notes = db.notes.filter((n) => n.id !== req.params.id);
+      db.notes = db.notes.filter((n) => !(n.id === req.params.id && noteOwner(n) === ownerId));
       writeJson(DB_PATH, db);
       res.sendStatus(204);
     }
