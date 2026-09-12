@@ -1,0 +1,10 @@
+{
+  "command": "node server/notes-server.ts",
+  "build_path": ".",
+  "stack": "node24",
+  "memory": 512,
+  "catalyst_auth": false,
+  "scripts": {
+    "predeploy": "npm run build"
+  }
+}

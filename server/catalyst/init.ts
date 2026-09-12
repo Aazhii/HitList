@@ -193,6 +193,34 @@ export function ownerForAdminMode(): string | null {
   return cliOwner;
 }
 
+/**
+ * Owner to use when running behind the gateway with no end-user session.
+ *
+ * This case is specific to AppSail: the gateway injects admin-scope x-zc-*
+ * headers onto EVERY request, including anonymous ones, so
+ * `catalyst.initialize(req)` always succeeds and cannot be used as an auth
+ * check. `getCurrentUser()` returns null instead, because the injected
+ * identity is the project admin rather than an app user.
+ *
+ * That leaves a deployment choice, and it must be explicit rather than a
+ * silent default:
+ *
+ *   Catalyst authentication enabled — users sign in, getCurrentUser() returns
+ *     them, and every row is scoped per user. Nothing more to set.
+ *
+ *   No Catalyst authentication — there is no user to attribute rows to. Set
+ *     CATALYST_APP_OWNER to run the deployment as a single shared owner.
+ *     Everyone who can reach the URL shares one dataset, which is why it is
+ *     opt-in: defaulting to it would silently turn a multi-user app into a
+ *     public one.
+ *
+ * Returns null when unset, and the request gets a 401.
+ */
+export function ownerForAnonymousGateway(): string | null {
+  const explicit = (process.env['CATALYST_APP_OWNER'] ?? '').trim();
+  return explicit || null;
+}
+
 /** The data centre and API host in effect. Reported at startup. */
 export function region(): { dataCentre: string; consoleUrl: string } {
   return REGION;

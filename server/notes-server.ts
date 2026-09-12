@@ -73,7 +73,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   readStandaloneConfig, initCatalystApp, describeMode, getCliApp, cliProject, region,
-  ownerForAdminMode, hasGatewayHeaders,
+  ownerForAdminMode, ownerForAnonymousGateway, hasGatewayHeaders,
   type StandaloneConfig, type CatalystMode,
 } from './catalyst/init.ts';
 import type { ICatalystRow } from 'zcatalyst-sdk-node/lib/utils/pojo/common';
@@ -187,6 +187,12 @@ async function getCurrentUserId(req: express.Request): Promise<string> {
     ?? (user as { user_id?: string | number; userId?: string | number } | null)?.userId;
 
   if (uid === undefined || uid === null || String(uid).trim() === '') {
+    // Behind the AppSail gateway this is the normal anonymous case, not an
+    // error: the gateway injected admin headers but there is no signed-in app
+    // user. Honour an explicitly configured single-owner deployment; otherwise
+    // it really is a 401.
+    const shared = ownerForAnonymousGateway();
+    if (shared) return shared;
     throw new UnauthenticatedError('Catalyst session carries no user_id');
   }
   return String(uid);

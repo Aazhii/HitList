@@ -162,11 +162,64 @@ and reloading: the task should come back.
 
 ## Deploying
 
-The Express app fits Catalyst **AppSail** (a persistent Node process), not
-Functions. AppSail injects `X_ZOHO_CATALYST_LISTEN_PORT`, which the server
-reads before `PORT`.
+Deploy to **AppSail**, which runs a persistent Node process. Not Slate: Slate
+serves static files only, so `/api/*` would 404 there and the app would fall
+back to localStorage with none of the persistence above working. Not Functions
+either — this is a long-lived server.
+
+One AppSail service hosts both halves. The server already serves `dist/` from
+the same origin, so there is a single origin, no CORS, and no split-cookie
+problem.
+
+`app-config.json` holds the configuration:
+
+| Field | Value | Why |
+|-------|-------|-----|
+| `command` | `node server/notes-server.ts` | Node 23.6+ strips types natively, so production ships no transpiler. `tsconfig.server.json` sets `erasableSyntaxOnly` to keep the server compatible — an enum would run under tsx locally and crash here. |
+| `stack` | `node24` | Needed for native type stripping. |
+| `build_path` | `.` | Never `/` — it resolves to the filesystem root and tries to zip the whole disk. |
+| `catalyst_auth` | `false` | `true` wraps the service in Catalyst's own login and intercepts API requests. This app handles its own auth. |
+| `scripts.predeploy` | `npm run build` | Produces `dist/` for the server to serve. |
+
+First deploy:
 
 ```bash
-pnpm build
-catalyst deploy
+catalyst appsail:add            # registers the service in catalyst.json
+catalyst deploy appsail --name <service-name>
 ```
+
+Then `catalyst deploy appsail --name <service-name>` for subsequent deploys.
+Always pass `--name`; without it the CLI defaults to `AppSail` and can target
+the wrong service.
+
+### Identity on AppSail — read this before deploying
+
+The gateway injects admin-scope `x-zc-*` headers onto **every** request,
+including anonymous ones. So `catalyst.initialize(req)` always succeeds and is
+useless as an auth check — `getCurrentUser()` is the real check, and it returns
+`null` for an anonymous caller because the injected identity is the project
+admin, not an app user.
+
+That leaves a choice, and it is deliberately explicit rather than defaulted:
+
+- **Catalyst authentication enabled.** Users sign in, `getCurrentUser()`
+  returns them, every row is scoped per user. Nothing to configure.
+- **No Catalyst authentication.** There is no user to attribute rows to, so
+  every request gets a 401 until you set `CATALYST_APP_OWNER` in the AppSail
+  environment. That runs the deployment as one shared owner: **everyone who can
+  reach the URL shares one dataset.** It is opt-in because defaulting to it
+  would silently turn a multi-user app into a public one.
+
+### Dependencies
+
+The Catalyst deployers run `npm install`, so `package-lock.json` is committed
+even though local development uses pnpm. Keep them in step:
+
+```bash
+pnpm install && pnpm run lock:npm   # after any dependency change
+pnpm run check:lockfiles            # fails if either lockfile has drifted
+```
+
+Without the npm lockfile the Slate/AppSail image (npm 10.9.2) crashes with
+`Cannot read properties of null (reading 'edgesOut')` while resolving
+`vitest@4`'s optional peer dependencies.
