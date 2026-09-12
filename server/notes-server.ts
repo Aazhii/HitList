@@ -71,7 +71,10 @@ import cors from 'cors';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import catalyst from 'zcatalyst-sdk-node';
+import {
+  readStandaloneConfig, initCatalystApp, describeMode,
+  type StandaloneConfig, type CatalystMode,
+} from './catalyst/init.ts';
 import type { ICatalystRow } from 'zcatalyst-sdk-node/lib/utils/pojo/common';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -121,6 +124,7 @@ const CATALYST_ENV_SIGNALS = {
 
 // Only enable Catalyst when we have an explicit credential signal.
 // Falling back to JSON-file storage is always safe and correct.
+// Standalone credentials count too, and are added below once they are read.
 let catalystAvailable = Object.values(CATALYST_ENV_SIGNALS).some(Boolean);
 
 // ── Auth / owner scoping ──────────────────────────────────────────────────────
@@ -196,8 +200,25 @@ async function resolveOwner(req: express.Request, res: express.Response): Promis
 
 // ── Catalyst app init ─────────────────────────────────────────────────────────
 
+// Standalone credentials, read once. A partial configuration throws here so
+// the mistake is reported at startup rather than as a per-request 503.
+let standaloneConfig: StandaloneConfig | null = null;
+try {
+  standaloneConfig = readStandaloneConfig();
+} catch (e) {
+  console.error(`[kaizen] ${String(e instanceof Error ? e.message : e)}`);
+}
+
+// A complete standalone configuration is a credential signal in its own right:
+// it is what makes Catalyst reachable from a plain `pnpm dev`.
+if (standaloneConfig) catalystAvailable = true;
+
+/** Which initialisation path the last request used; reported by /api/health. */
+let lastCatalystMode: CatalystMode = standaloneConfig ? 'standalone' : 'none';
+
 function initCatalyst(req: express.Request) {
-  return catalyst.initialize(req as unknown as { [x: string]: unknown });
+  lastCatalystMode = describeMode(req, standaloneConfig);
+  return initCatalystApp(req, standaloneConfig);
 }
 
 // ── Catalyst table probe ──────────────────────────────────────────────────────
@@ -1218,8 +1239,17 @@ app.use(express.json({ limit: '4mb' }));
 // ── Health ────────────────────────────────────────────────────────────────────
 
 app.head('/api/health', (_req, res) => { res.sendStatus(200); });
-app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, ts: Date.now(), backend: catalystAvailable ? 'catalyst' : 'json-file' });
+app.get('/api/health', (req, res) => {
+  res.json({
+    ok: true,
+    ts: Date.now(),
+    backend: catalystAvailable ? 'catalyst' : 'json-file',
+    // How the SDK would authenticate this request: 'gateway' (Catalyst headers
+    // present), 'standalone' (env credentials) or 'none'. Without this, a
+    // misconfiguration is invisible until a write fails.
+    catalystMode: catalystAvailable ? describeMode(req, standaloneConfig) : 'none',
+    lastCatalystMode,
+  });
 });
 
 // ── Setup / table status ──────────────────────────────────────────────────────
