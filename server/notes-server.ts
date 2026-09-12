@@ -1026,6 +1026,7 @@ app.get('/api/tasks/today-history', async (req, res) => {
 
 // GET /api/tasks/:id
 app.get('/api/tasks/:id', async (req, res) => {
+  if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
 
@@ -1093,6 +1094,7 @@ app.post('/api/tasks', async (req, res) => {
 
 // PUT /api/tasks/:id — full update
 app.put('/api/tasks/:id', async (req, res) => {
+  if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
 
@@ -1128,6 +1130,7 @@ app.put('/api/tasks/:id', async (req, res) => {
 
 // PATCH /api/tasks/:id/status
 app.patch('/api/tasks/:id/status', async (req, res) => {
+  if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
 
@@ -1161,6 +1164,7 @@ app.patch('/api/tasks/:id/status', async (req, res) => {
 
 // PATCH /api/tasks/:id/complete
 app.patch('/api/tasks/:id/complete', async (req, res) => {
+  if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
 
@@ -1192,6 +1196,7 @@ app.patch('/api/tasks/:id/complete', async (req, res) => {
 
 // PATCH /api/tasks/:id/quadrant
 app.patch('/api/tasks/:id/quadrant', async (req, res) => {
+  if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
 
@@ -1225,6 +1230,7 @@ app.patch('/api/tasks/:id/quadrant', async (req, res) => {
 
 // DELETE /api/tasks/:id
 app.delete('/api/tasks/:id', async (req, res) => {
+  if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
 
@@ -1277,6 +1283,7 @@ app.get('/api/lists', async (req, res) => {
 
 // GET /api/lists/:id
 app.get('/api/lists/:id', async (req, res) => {
+  if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
 
@@ -1334,6 +1341,7 @@ app.post('/api/lists', async (req, res) => {
 
 // PUT /api/lists/:id
 app.put('/api/lists/:id', async (req, res) => {
+  if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
 
@@ -1367,6 +1375,7 @@ app.put('/api/lists/:id', async (req, res) => {
 
 // DELETE /api/lists/:id
 app.delete('/api/lists/:id', async (req, res) => {
+  if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
 
@@ -1502,6 +1511,7 @@ app.get('/api/notes', async (req, res) => {
 
 // GET /api/notes/:id
 app.get('/api/notes/:id', async (req, res) => {
+  if (!assertSafeId(req.params.id, res)) return;
   try {
     let note: DbNote | null = null;
     if (catalystAvailable) {
@@ -1524,6 +1534,8 @@ app.get('/api/notes/:id', async (req, res) => {
 app.post('/api/notes', async (req, res) => {
   const body = req.body as Partial<DbNote>;
   if (!body.id || !body.title) { res.status(400).json({ error: 'id and title are required' }); return; }
+  // The note id is client-supplied here, so it gets the same check as a path param.
+  if (!assertSafeId(body.id, res)) return;
 
   const note: DbNote = {
     id:         body.id,
@@ -1578,6 +1590,7 @@ app.post('/api/notes', async (req, res) => {
 
 // PUT /api/notes/:id
 app.put('/api/notes/:id', async (req, res) => {
+  if (!assertSafeId(req.params.id, res)) return;
   const body = req.body as Partial<DbNote>;
 
   try {
@@ -1616,6 +1629,7 @@ app.put('/api/notes/:id', async (req, res) => {
 
 // DELETE /api/notes/:id
 app.delete('/api/notes/:id', async (req, res) => {
+  if (!assertSafeId(req.params.id, res)) return;
   try {
     if (catalystAvailable) {
       const rowId = await catalystGetRowId(req, NOTES_TABLE, 'NoteId', req.params.id);
