@@ -1618,14 +1618,16 @@ app.delete('/api/tasks/:id', async (req, res) => {
       // Verify ownership before delete
       const all = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
       const task = all.find((t) => t.id === req.params.id);
-      if (task) {
-        const rowId = await catalystGetRowId(req, getTasksTable(), 'TaskId', req.params.id);
-        if (rowId) await catalystDeleteRow(req, getTasksTable(), rowId);
-      }
+      if (!task) { res.status(404).json({ error: 'Not found' }); return; }
+      const rowId = await catalystGetRowId(req, getTasksTable(), 'TaskId', req.params.id);
+      if (!rowId) { res.status(404).json({ error: 'Not found' }); return; }
+      await catalystDeleteRow(req, getTasksTable(), rowId);
       res.sendStatus(204);
     } else {
       const db = readTasksDb();
+      const before = db.tasks.length;
       db.tasks = db.tasks.filter((t) => !(t.id === req.params.id && t.ownerId === ownerId));
+      if (db.tasks.length === before) { res.status(404).json({ error: 'Not found' }); return; }
       writeJson(TASKS_DB_PATH, db);
       res.sendStatus(204);
     }
@@ -1764,7 +1766,8 @@ app.delete('/api/lists/:id', async (req, res) => {
       // Verify ownership before delete
       const allLists = await catalystGetOwnerRows(req, LISTS_TABLE, 'OwnerId', ownerId, rowToList);
       const list = allLists.find((l) => l.id === req.params.id);
-      if (list) {
+      if (!list) { res.status(404).json({ error: 'Not found' }); return; }
+      {
         const rowId = await catalystGetRowId(req, LISTS_TABLE, 'ListId', req.params.id);
         if (rowId) await catalystDeleteRow(req, LISTS_TABLE, rowId);
         // Also delete tasks belonging to this list (owner-scoped)
@@ -1778,7 +1781,9 @@ app.delete('/api/lists/:id', async (req, res) => {
       res.sendStatus(204);
     } else {
       const db = readListsDb();
+      const before = db.lists.length;
       db.lists = db.lists.filter((l) => !(l.id === req.params.id && l.ownerId === ownerId));
+      if (db.lists.length === before) { res.status(404).json({ error: 'Not found' }); return; }
       writeJson(LISTS_DB_PATH, db);
       // Also remove tasks for this list (owner-scoped)
       const tdb = readTasksDb();
@@ -2059,11 +2064,14 @@ app.delete('/api/notes/:id', async (req, res) => {
   try {
     if (catalystAvailable) {
       const found = await catalystFindNote(req, ownerId, req.params.id);
-      if (found) await catalystDeleteRow(req, NOTES_TABLE, found.rowId);
+      if (!found) { res.status(404).json({ error: 'Not found' }); return; }
+      await catalystDeleteRow(req, NOTES_TABLE, found.rowId);
       res.sendStatus(204);
     } else {
       const db = readNotesDb();
+      const before = db.notes.length;
       db.notes = db.notes.filter((n) => !(n.id === req.params.id && noteOwner(n) === ownerId));
+      if (db.notes.length === before) { res.status(404).json({ error: 'Not found' }); return; }
       writeJson(DB_PATH, db);
       res.sendStatus(204);
     }
