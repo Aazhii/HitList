@@ -10,7 +10,7 @@
  *     Title       (text)   — task text
  *     Status      (text)   — "TODO" | "IN_PROGRESS" | "DONE"
  *     Quadrant    (text)   — "DO" | "SCHEDULE" | "DELEGATE" | "ELIMINATE"
- *     Priority    (text)   — "LOW" | "MEDIUM" | "HIGH" | ""
+ *     TaskPriority (text)  — "LOW" | "MEDIUM" | "HIGH" | "" (Priority is reserved)
  *     Note        (text)
  *     DueDate     (text)   — YYYY-MM-DD
  *     DueTime     (text)   — HH:MM
@@ -42,7 +42,7 @@
  *     Title       (text)
  *     Status      (text)          — "TODO" | "IN_PROGRESS" | "DONE"
  *     Quadrant    (text)          — "DO" | "SCHEDULE" | "DELEGATE" | "ELIMINATE"
- *     Priority    (text)          — "LOW" | "MEDIUM" | "HIGH" | ""
+ *     TaskPriority (text)         — "LOW" | "MEDIUM" | "HIGH" | "" (Priority is reserved)
  *     Note        (text)
  *     DueDate     (text)          — YYYY-MM-DD
  *     DueTime     (text)          — HH:MM
@@ -243,7 +243,7 @@ const TEST_TABLE = 'testTable';
 // These are created at startup if missing (Catalyst SDK supports column creation
 // via the datastore table API).
 const TEST_TABLE_COLUMNS = [
-  'TaskId', 'OwnerId', 'Title', 'Status', 'Quadrant', 'Priority',
+  'TaskId', 'OwnerId', 'Title', 'Status', 'Quadrant', 'TaskPriority',
   'Note', 'DueDate', 'DueTime', 'Category', 'ListId', 'TaskOrder',
   'ReminderEnabled', 'ReminderMinutesBefore', 'CompletedAt', 'CreatedAt', 'UpdatedAt',
 ] as const;
@@ -436,7 +436,7 @@ async function probeCatalystTables(req: express.Request): Promise<boolean> {
   console.log(`[kaizen] Attempting to ensure KaizenTasks/KaizenLists/KaizenNotes tables exist...`);
 
   const KAIZEN_TASKS_COLS = [
-    'TaskId', 'OwnerId', 'Title', 'Status', 'Quadrant', 'Priority',
+    'TaskId', 'OwnerId', 'Title', 'Status', 'Quadrant', 'TaskPriority',
     'Note', 'DueDate', 'DueTime', 'Category', 'ListId', 'TaskOrder',
     'ReminderEnabled', 'ReminderMinutesBefore', 'CompletedAt', 'CreatedAt', 'UpdatedAt',
   ] as const;
@@ -710,7 +710,7 @@ interface DbTask {
 function getTasksTable(): string { return useTestTable ? TEST_TABLE : 'KaizenTasks'; }
 
 // Full column list including OwnerId for owner-scoped queries
-const TASKS_COLS = 'TaskId,OwnerId,Title,Status,Quadrant,Priority,Note,DueDate,DueTime,Category,ListId,TaskOrder,ReminderEnabled,ReminderMinutesBefore,CompletedAt,CreatedAt,UpdatedAt';
+const TASKS_COLS = 'TaskId,OwnerId,Title,Status,Quadrant,TaskPriority,Note,DueDate,DueTime,Category,ListId,TaskOrder,ReminderEnabled,ReminderMinutesBefore,CompletedAt,CreatedAt,UpdatedAt';
 
 function rowToTask(row: ICatalystRow): DbTask {
   return {
@@ -719,7 +719,7 @@ function rowToTask(row: ICatalystRow): DbTask {
     title:                 String(row['Title'] ?? ''),
     status:                String(row['Status'] ?? 'TODO'),
     quadrant:              String(row['Quadrant'] ?? 'SCHEDULE'),
-    priority:              String(row['Priority'] ?? ''),
+    priority:              String(row['TaskPriority'] ?? ''),
     note:                  String(row['Note'] ?? ''),
     dueDate:               String(row['DueDate'] ?? ''),
     dueTime:               String(row['DueTime'] ?? ''),
@@ -745,7 +745,7 @@ function taskToRow(t: DbTask): Record<string, string | number | null> {
     Title:                 t.title,
     Status:                t.status,
     Quadrant:              t.quadrant,
-    Priority:              t.priority,
+    TaskPriority:          t.priority,
     Note:                  t.note,
     DueDate:               t.dueDate,
     DueTime:               t.dueTime,

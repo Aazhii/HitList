@@ -16,129 +16,81 @@
  *
  * The Data Store admin API is REST; the Node SDK exposes no createTable.
  */
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import { SCHEMA, type ColumnSpec } from '../server/catalyst/schema.ts';
+import { endpointsFor } from '../server/catalyst/dc.ts';
+import { accessTokenFromCli, readCatalystRc } from '../server/catalyst/cliCredentials.ts';
 
 const DRY_RUN = process.argv.includes('--dry-run');
 
-const ACCOUNTS_URL = process.env['X_ZOHO_CATALYST_ACCOUNTS_URL'] ?? 'https://accounts.zoho.com';
-const CONSOLE_URL  = process.env['X_ZOHO_CATALYST_CONSOLE_URL']  ?? 'https://api.catalyst.zoho.com';
-
-interface Creds {
+interface Target {
   projectId: string;
   orgId?: string;
   environment: string;
-  clientId: string;
-  clientSecret: string;
-  refreshToken: string;
+  accessToken: string;
+  consoleUrl: string;
   source: string;
 }
 
-function fromEnv(): Creds | null {
+/** Explicit CATALYST_* credentials: an OAuth client plus a refresh token. */
+async function fromEnv(): Promise<Target | null> {
   const get = (n: string) => (process.env[n] ?? '').trim();
-  const c = {
-    projectId:    get('CATALYST_PROJECT_ID'),
-    orgId:        get('CATALYST_ORG_ID') || undefined,
-    environment:  get('CATALYST_ENVIRONMENT') || 'Development',
-    clientId:     get('CATALYST_CLIENT_ID'),
-    clientSecret: get('CATALYST_CLIENT_SECRET'),
-    refreshToken: get('CATALYST_REFRESH_TOKEN'),
-    source: '.env.local',
-  };
-  return c.projectId && c.clientId && c.clientSecret && c.refreshToken ? c : null;
-}
+  const projectId    = get('CATALYST_PROJECT_ID');
+  const clientId     = get('CATALYST_CLIENT_ID');
+  const clientSecret = get('CATALYST_CLIENT_SECRET');
+  const refreshToken = get('CATALYST_REFRESH_TOKEN');
+  if (!projectId || !clientId || !clientSecret || !refreshToken) return null;
 
-/** `catalyst login` stores its OAuth grant here. Shapes vary by CLI version. */
-function fromCatalystRc(): Creds | null {
-  const rcPath = path.join(os.homedir(), '.catalystrc');
-  if (!fs.existsSync(rcPath)) return null;
+  const { console: consoleUrl, accounts } = endpointsFor(get('CATALYST_DC') || undefined);
 
-  let rc: Record<string, unknown>;
-  try {
-    rc = JSON.parse(fs.readFileSync(rcPath, 'utf8')) as Record<string, unknown>;
-  } catch {
-    console.warn(`[setup] ${rcPath} is not valid JSON — ignoring it.`);
-    return null;
-  }
-
-  // Walk the file for the first object carrying a refresh token.
-  const found = findTokenBearer(rc);
-  if (!found) return null;
-
-  const projectId = (process.env['CATALYST_PROJECT_ID'] ?? '').trim() || readProjectIdFromCatalystJson();
-  if (!projectId) return null;
-
-  return {
-    projectId,
-    orgId:        (process.env['CATALYST_ORG_ID'] ?? '').trim() || undefined,
-    environment:  (process.env['CATALYST_ENVIRONMENT'] ?? 'Development').trim(),
-    clientId:     found.clientId,
-    clientSecret: found.clientSecret,
-    refreshToken: found.refreshToken,
-    source: rcPath,
-  };
-}
-
-function findTokenBearer(
-  node: unknown,
-): { clientId: string; clientSecret: string; refreshToken: string } | null {
-  if (!node || typeof node !== 'object') return null;
-  const o = node as Record<string, unknown>;
-
-  const pick = (...keys: string[]): string => {
-    for (const k of keys) if (typeof o[k] === 'string' && o[k]) return o[k] as string;
-    return '';
-  };
-  const refreshToken = pick('refresh_token', 'refreshToken');
-  const clientId     = pick('client_id', 'clientId');
-  const clientSecret = pick('client_secret', 'clientSecret');
-  if (refreshToken && clientId && clientSecret) return { clientId, clientSecret, refreshToken };
-
-  for (const v of Object.values(o)) {
-    const nested = findTokenBearer(v);
-    if (nested) return nested;
-  }
-  return null;
-}
-
-function readProjectIdFromCatalystJson(): string {
-  const p = path.join(process.cwd(), 'catalyst.json');
-  if (!fs.existsSync(p)) return '';
-  try {
-    const j = JSON.parse(fs.readFileSync(p, 'utf8')) as Record<string, unknown>;
-    const id = (j['project_id'] ?? j['projectId']) as string | number | undefined;
-    return id ? String(id) : '';
-  } catch { return ''; }
-}
-
-async function getAccessToken(c: Creds): Promise<string> {
-  const url = new URL('/oauth/v2/token', ACCOUNTS_URL);
   const body = new URLSearchParams({
-    refresh_token: c.refreshToken,
-    client_id:     c.clientId,
-    client_secret: c.clientSecret,
-    grant_type:    'refresh_token',
+    refresh_token: refreshToken, client_id: clientId,
+    client_secret: clientSecret, grant_type: 'refresh_token',
   });
-  const res = await fetch(url, { method: 'POST', body });
+  const res  = await fetch(new URL('/oauth/v2/token', accounts), { method: 'POST', body });
   const json = await res.json() as { access_token?: string; error?: string };
   if (!json.access_token) {
     throw new Error(
-      `Could not exchange the refresh token for an access token: ${json.error ?? res.status}.\n` +
-      `  Check CATALYST_CLIENT_ID / CATALYST_CLIENT_SECRET / CATALYST_REFRESH_TOKEN,\n` +
-      `  and that the client was issued for ${ACCOUNTS_URL}.`
+      `Could not exchange CATALYST_REFRESH_TOKEN for an access token: ${json.error ?? res.status}.\n` +
+      `  Check the client id/secret, and that the client was issued in the same data centre (${accounts}).`
     );
   }
-  return json.access_token;
+
+  return {
+    projectId,
+    orgId: get('CATALYST_ORG_ID') || undefined,
+    environment: get('CATALYST_ENVIRONMENT') || 'Development',
+    accessToken: json.access_token,
+    consoleUrl,
+    source: '.env.local',
+  };
+}
+
+/** The CLI's own login, after `catalyst login` + `catalyst init`. */
+async function fromCli(): Promise<Target | null> {
+  const creds = await accessTokenFromCli();
+  if (!creds) return null;
+
+  const rc = readCatalystRc();
+  const projectId = (process.env['CATALYST_PROJECT_ID'] ?? '').trim() || rc?.projectId;
+  if (!projectId) return null;
+
+  const { console: consoleUrl } = endpointsFor(creds.dataCentre);
+  return {
+    projectId,
+    orgId: (process.env['CATALYST_ORG_ID'] ?? '').trim() || rc?.orgId || undefined,
+    environment: (process.env['CATALYST_ENVIRONMENT'] ?? 'Development').trim(),
+    accessToken: creds.accessToken,
+    consoleUrl,
+    source: `catalyst CLI login (dc: ${creds.dataCentre})${rc ? ` + .catalystrc${rc.projectName ? ` [${rc.projectName}]` : ''}` : ''}`,
+  };
 }
 
 async function api(
-  c: Creds, token: string, method: string, apiPath: string, body?: unknown,
+  c: Target, method: string, apiPath: string, body?: unknown,
 ): Promise<unknown> {
-  const url = `${CONSOLE_URL}/baas/v1/project/${c.projectId}${apiPath}`;
+  const url = `${c.consoleUrl}/baas/v1/project/${c.projectId}${apiPath}`;
   const headers: Record<string, string> = {
-    Authorization: `Zoho-oauthtoken ${token}`,
+    Authorization: `Zoho-oauthtoken ${c.accessToken}`,
     'Content-Type': 'application/json',
     Environment: c.environment,
   };
@@ -150,12 +102,32 @@ async function api(
   });
   const text = await res.text();
   let parsed: unknown;
-  try { parsed = text ? JSON.parse(text) : null; } catch { parsed = text; }
+  try { parsed = text ? parseJsonPreservingBigIds(text) : null; } catch { parsed = text; }
 
   if (!res.ok) {
     throw new Error(`${method} ${apiPath} -> ${res.status}: ${typeof parsed === 'string' ? parsed : JSON.stringify(parsed)}`);
   }
   return (parsed as { data?: unknown })?.data ?? parsed;
+}
+
+/**
+ * Parses a Catalyst response without mangling its identifiers.
+ *
+ * Catalyst ids are BigInt — table_id 69251000000063001 for this project — and
+ * they arrive as bare JSON numbers. That is larger than Number.MAX_SAFE_INTEGER
+ * (9007199254740991), so JSON.parse silently rounds it to ...63000. Every
+ * subsequent call using that id then fails with
+ *   404 {"error_code":"INVALID_ID","message":"No such Table with the given id exists"}
+ * which looks like the table does not exist rather than like a rounding error.
+ *
+ * Quote long integer literals before parsing so they survive as strings, which
+ * is how we use them anyway.
+ */
+function parseJsonPreservingBigIds(text: string): unknown {
+  // Only touch values (after a colon or a comma/bracket in an array) that are
+  // runs of 16+ digits — far above any count or length the API returns.
+  const safe = text.replace(/([:[,]\s*)(\d{16,})(?=\s*[,}\]])/g, '$1"$2"');
+  return JSON.parse(safe);
 }
 
 function columnPayload(col: ColumnSpec) {
@@ -170,9 +142,47 @@ function columnPayload(col: ColumnSpec) {
   };
 }
 
+/**
+ * Retries an operation through transient server-side failures.
+ *
+ * The Data Store admin API intermittently answers column creation with a 500
+ * INTERNAL_SERVER_ERROR and succeeds on a retry, so a single failure should not
+ * abandon a half-built schema. Only 5xx and network errors are retried — a 4xx
+ * is a real answer (a bad name, a reserved keyword) and retrying it just
+ * repeats the mistake.
+ */
+async function withRetry<T>(op: () => Promise<T>, what: string, attempts = 4): Promise<T> {
+  let lastError: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await op();
+    } catch (e) {
+      lastError = e;
+      const msg = String(e);
+      const transient = / 5\d\d:/.test(msg) || /INTERNAL_SERVER_ERROR|ECONNRESET|ETIMEDOUT|fetch failed/i.test(msg);
+      if (!transient || i === attempts - 1) throw e;
+      const waitMs = 1500 * (i + 1);
+      console.log(`            … ${what} failed transiently, retrying in ${waitMs}ms`);
+      await new Promise((r) => setTimeout(r, waitMs));
+    }
+  }
+  throw lastError;
+}
+
+/** Looks a table up by name, retrying while creation settles server-side. */
+async function resolveTableId(target: Target, name: string, attempts = 6): Promise<string | null> {
+  for (let i = 0; i < attempts; i++) {
+    const tables = await api(target, 'GET', '/table') as Array<Record<string, unknown>>;
+    const match = (tables ?? []).find((t) => String(t['table_name']) === name);
+    if (match) return String(match['table_id']);
+    await new Promise((r) => setTimeout(r, 1000 * (i + 1)));
+  }
+  return null;
+}
+
 async function main(): Promise<void> {
-  const creds = fromEnv() ?? fromCatalystRc();
-  if (!creds) {
+  const target = (await fromEnv()) ?? (await fromCli());
+  if (!target) {
     console.error(
       'No Catalyst credentials found.\n\n' +
       'Either:\n' +
@@ -183,12 +193,13 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  console.log(`[setup] project ${creds.projectId} (${creds.environment}) via ${creds.source}`);
-  if (DRY_RUN) console.log('[setup] dry run — nothing will be created\n');
+  console.log(`[setup] project ${target.projectId} (${target.environment})`);
+  console.log(`[setup] endpoint ${target.consoleUrl}`);
+  console.log(`[setup] credentials from ${target.source}`);
+  if (DRY_RUN) console.log('[setup] dry run — nothing will be created');
+  console.log('');
 
-  const token = await getAccessToken(creds);
-
-  const existing = await api(creds, token, 'GET', '/table') as Array<Record<string, unknown>>;
+  const existing = await api(target, 'GET', '/table') as Array<Record<string, unknown>>;
   const byName = new Map<string, string>();
   for (const t of existing ?? []) {
     byName.set(String(t['table_name']), String(t['table_id']));
@@ -197,22 +208,31 @@ async function main(): Promise<void> {
 
   let created = 0;
   for (const table of SCHEMA) {
-    let tableId = byName.get(table.name);
+    let tableId: string | undefined = byName.get(table.name);
 
     if (!tableId) {
       console.log(`[setup] table ${table.name}: MISSING`);
       if (DRY_RUN) { console.log('          would create it and all columns\n'); continue; }
-      const res = await api(creds, token, 'POST', '/table', {
-        table_name: table.name, table_scope: 'GLOBAL',
-      }) as Record<string, unknown>;
-      tableId = String(res['table_id']);
+      await api(target, 'POST', '/table', { table_name: table.name, table_scope: 'GLOBAL' });
       created++;
+
+      // Do not trust table_id from the create response — it came back one less
+      // than the table's real id, and the column endpoint then 404s with
+      // INVALID_ID. Re-list and match on the name, which is authoritative.
+      // Creation also settles asynchronously, so allow a few attempts.
+      tableId = (await resolveTableId(target, table.name)) ?? undefined;
+      if (!tableId) {
+        throw new Error(
+          `Created ${table.name} but it did not appear in the table list. ` +
+          `Check the Catalyst console before re-running.`
+        );
+      }
       console.log(`          created (id ${tableId})`);
     } else {
       console.log(`[setup] table ${table.name}: ok (id ${tableId})`);
     }
 
-    const cols = await api(creds, token, 'GET', `/table/${tableId}/column`) as Array<Record<string, unknown>>;
+    const cols = await api(target, 'GET', `/table/${tableId}/column`) as Array<Record<string, unknown>>;
     const have = new Set((cols ?? []).map((c) => String(c['column_name'])));
     const missing = table.columns.filter((c) => !have.has(c.name));
 
@@ -223,13 +243,25 @@ async function main(): Promise<void> {
 
     for (const col of missing) {
       try {
-        await api(creds, token, 'POST', `/table/${tableId}/column`, [columnPayload(col)]);
+        await withRetry(
+          () => api(target, 'POST', `/table/${tableId}/column`, [columnPayload(col)]),
+          `create column ${table.name}.${col.name}`,
+        );
         console.log(`            + ${col.name} (${col.type})`);
         created++;
       } catch (e) {
         const msg = String(e);
-        if (/already exists|duplicate/i.test(msg)) console.log(`            ~ ${col.name} already exists`);
-        else throw new Error(`Failed to create column ${table.name}.${col.name}: ${msg}`);
+        if (/already exists|duplicate/i.test(msg)) {
+          console.log(`            ~ ${col.name} already exists`);
+        } else if (/reserved keyword/i.test(msg)) {
+          throw new Error(
+            `Catalyst rejects the column name "${col.name}" as a reserved keyword.\n` +
+            `  Rename it in server/catalyst/schema.ts (and in the server's row ` +
+            `converters) — this is why Priority is stored as TaskPriority.`
+          );
+        } else {
+          throw new Error(`Failed to create column ${table.name}.${col.name}: ${msg}`);
+        }
       }
     }
     console.log('');

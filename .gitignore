@@ -40,3 +40,6 @@ server/*.corrupt.*
 # Vendored agent skills (reinstall with: npx skills add — see skills-lock.json)
 .agents/
 .claude/skills/
+
+# Catalyst CLI project link (contains project/org ids, machine-specific)
+.catalystrc

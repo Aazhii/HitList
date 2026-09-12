@@ -60,7 +60,9 @@ export const SCHEMA: TableSpec[] = [
       { name: 'Title',     type: 'varchar', maxLength: 500, mandatory: true },
       { name: 'Status',    type: 'varchar', maxLength: 16, note: 'TODO | IN_PROGRESS | DONE' },
       { name: 'Quadrant',  type: 'varchar', maxLength: 16, note: 'DO | SCHEDULE | DELEGATE | ELIMINATE' },
-      { name: 'Priority',  type: 'varchar', maxLength: 16, note: 'LOW | MEDIUM | HIGH, or empty' },
+      // Named TaskPriority, not Priority: Catalyst rejects "Priority" as a
+      // reserved keyword with INVALID_OPERATION. The API field stays `priority`.
+      { name: 'TaskPriority', type: 'varchar', maxLength: 16, note: 'LOW | MEDIUM | HIGH, or empty' },
       { name: 'Note',      type: 'text' },
       { name: 'DueDate',   type: 'varchar', maxLength: 10, note: 'YYYY-MM-DD' },
       { name: 'DueTime',   type: 'varchar', maxLength: 5,  note: 'HH:MM' },
