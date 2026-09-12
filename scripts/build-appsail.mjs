@@ -126,6 +126,11 @@ fs.writeFileSync(
     env_variables: {
       // CATALYST_-prefixed names are rejected by AppSail as reserved.
       APP_OWNER_ID: process.env['APPSAIL_OWNER_ID'] ?? 'hitlist-shared',
+      // The Slate-hosted frontend is a different origin, so it needs an
+      // explicit CORS allowance. The AppSail-hosted copy is same-origin and
+      // does not.
+      ALLOWED_ORIGINS: process.env['APPSAIL_ALLOWED_ORIGINS']
+        ?? 'https://hitlist-kgewwunu.onslate.in,https://hitlist-eqrgelva.onslate.in',
     },
   }, null, 2)}\n`
 );

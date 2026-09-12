@@ -5,7 +5,8 @@
   "memory": 512,
   "catalyst_auth": false,
   "env_variables": {
-    "APP_OWNER_ID": "hitlist-shared"
+    "APP_OWNER_ID": "hitlist-shared",
+    "ALLOWED_ORIGINS": "https://hitlist-kgewwunu.onslate.in,https://hitlist-eqrgelva.onslate.in"
   },
   "scripts": {
     "predeploy": "npm run build:appsail",
