@@ -832,7 +832,43 @@ app.use('/api', (_req, res, next) => {
   next();
 });
 
-app.use(cors({ origin: '*' }));
+// ── CORS ──────────────────────────────────────────────────────────────────────
+//
+// origin:'*' was wrong in both directions. It let any web page on the internet
+// read and mutate a deployment's data; and because the wildcard is incompatible
+// with credentialed requests, the browser would never have sent the Catalyst
+// session cookie, so cross-origin owner scoping could not have worked anyway.
+//
+// In production the server serves dist/ from the same origin, so no CORS is
+// needed at all. The allowlist exists for local dev (Vite proxies, so this is
+// belt-and-braces) and for split-origin deployments, which must set
+// ALLOWED_ORIGINS explicitly.
+const DEV_ORIGINS = [
+  'http://localhost:9000',
+  'http://127.0.0.1:9000',
+  'http://localhost:4173',
+];
+
+const ALLOWED_ORIGINS = (process.env['ALLOWED_ORIGINS'] ?? '')
+  .split(',')
+  .map((o) => o.trim())
+  .filter(Boolean);
+
+const corsOrigins = ALLOWED_ORIGINS.length
+  ? ALLOWED_ORIGINS
+  : (process.env['NODE_ENV'] === 'production' ? [] : DEV_ORIGINS);
+
+app.use(cors({
+  origin(origin, callback) {
+    // No Origin header: same-origin, curl, or a server-to-server call.
+    if (!origin) return callback(null, true);
+    if (corsOrigins.includes(origin)) return callback(null, true);
+    // Reject by withholding the header rather than erroring, so the browser
+    // reports a clean CORS failure instead of a 500.
+    return callback(null, false);
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: '4mb' }));
 
 // ── Health ────────────────────────────────────────────────────────────────────
