@@ -563,10 +563,60 @@ const readNotesDb = (): NotesDb => readJson<NotesDb>(DB_PATH,       { notes: [] 
 const readTasksDb = (): TasksDb => readJson<TasksDb>(TASKS_DB_PATH, { tasks: [] }, isTasksDb);
 const readListsDb = (): ListsDb => readJson<ListsDb>(LISTS_DB_PATH, { lists: [] }, isListsDb);
 
+/**
+ * Writes a JSON store atomically and durably.
+ *
+ * Three problems with the previous version:
+ *
+ *   - The temp file was a fixed `<name>.tmp`. Two processes sharing the store
+ *     (trivially reachable — `pnpm dev` and `pnpm preview:server` both point
+ *     at server/) would interleave their writeFileSync calls into the same
+ *     path, so one could rename a file the other was still writing and publish
+ *     a half-written store. rename(2) is atomic; a shared temp file is not.
+ *   - No fsync. After rename the directory entry points at data that may still
+ *     be in the page cache, so a crash or power loss leaves a zero-length or
+ *     garbage file — which the reader then quarantines as corrupt.
+ *   - No mkdir. If server/ does not exist (a deploy bundle that ships only the
+ *     compiled file, or a read-only mount) the first write throws ENOENT and
+ *     every subsequent one fails the same way.
+ *
+ * Note this does not make the store safe for concurrent *processes* in
+ * general: each handler's read-modify-write is serial only because it contains
+ * no await, so within one process it cannot interleave. Two servers on the
+ * same files will still lose each other's updates. The JSON store is a
+ * single-process development fallback; Catalyst is the real backend.
+ */
 function writeJson<T>(filePath: string, data: T): void {
-  const tmp = filePath + '.tmp';
-  fs.writeFileSync(tmp, JSON.stringify(data, null, 2), 'utf8');
-  fs.renameSync(tmp, filePath);
+  const dir = path.dirname(filePath);
+  fs.mkdirSync(dir, { recursive: true });
+
+  // Unique per write, so a second process cannot share our temp file.
+  const tmp = `${filePath}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+
+  let fd: number | undefined;
+  try {
+    fd = fs.openSync(tmp, 'w');
+    fs.writeFileSync(fd, JSON.stringify(data, null, 2), 'utf8');
+    fs.fsyncSync(fd);          // the data itself
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+
+  try {
+    fs.renameSync(tmp, filePath);
+  } catch (e) {
+    // Do not leave the temp file behind if the rename failed.
+    try { fs.unlinkSync(tmp); } catch { /* best effort */ }
+    throw e;
+  }
+
+  // fsync the directory so the rename itself survives a crash.
+  try {
+    const dirFd = fs.openSync(dir, 'r');
+    try { fs.fsyncSync(dirFd); } finally { fs.closeSync(dirFd); }
+  } catch {
+    // Not supported on every platform/filesystem; the rename is still atomic.
+  }
 }
 
 // ── Notes types & converters ──────────────────────────────────────────────────
