@@ -44,11 +44,34 @@ function globalNodeModules(): string | null {
   }
 }
 
+// Access tokens live about an hour. Cache ours well inside that, because
+// minting a new one on every call is not free: Zoho starts rejecting rapid
+// refreshes, and the rejection arrives as a 400 HTML error page from the API —
+// which reads like a malformed query rather than a throttled credential.
+const TOKEN_TTL_MS = 45 * 60 * 1000;
+let cachedToken: { value: CliCredentials; fetchedAt: number } | null = null;
+
 /**
  * Returns an access token from the CLI's stored login, or null if the CLI is
  * not installed, not logged in, or has changed shape.
+ *
+ * Pass `forceRefresh` after a 401 to replace a token that expired early.
  */
-export async function accessTokenFromCli(): Promise<CliCredentials | null> {
+export async function accessTokenFromCli(forceRefresh = false): Promise<CliCredentials | null> {
+  if (!forceRefresh && cachedToken && Date.now() - cachedToken.fetchedAt < TOKEN_TTL_MS) {
+    return cachedToken.value;
+  }
+  const fresh = await readCliCredentials(forceRefresh);
+  if (fresh) cachedToken = { value: fresh, fetchedAt: Date.now() };
+  return fresh;
+}
+
+/** Resets the memoised token. Tests only. */
+export function __resetCliToken(): void {
+  cachedToken = null;
+}
+
+async function readCliCredentials(forceRefresh: boolean): Promise<CliCredentials | null> {
   const configPath = configPaths().find((p) => p && fs.existsSync(p));
   if (!configPath) return null;
 
@@ -76,7 +99,11 @@ export async function accessTokenFromCli(): Promise<CliCredentials | null> {
     if (!Credential?.init || !Credential?.getAccessToken) return null;
 
     Credential.init(encrypted);
-    const token = await Credential.getAccessToken();
+    // getAccessToken() hands back Credential.globalSelf.accessToken whenever it
+    // is non-null and only refreshes when it is absent — it never checks expiry.
+    // So the token decrypted from the CLI's config may already be dead, and the
+    // caller forces a refresh when it sees a 401.
+    const token = await Credential.getAccessToken(forceRefresh);
     if (!token || typeof token !== 'string') return null;
 
     const user = (store[dataCentre] as { user?: Record<string, unknown> } | undefined)?.user;
@@ -93,7 +120,8 @@ export async function accessTokenFromCli(): Promise<CliCredentials | null> {
 
 interface CredentialLike {
   init(token: string): unknown;
-  getAccessToken(): Promise<string>;
+  /** `forceRefresh` bypasses the cached, possibly-expired token. */
+  getAccessToken(forceRefresh?: boolean): Promise<string>;
 }
 
 /** Project and org ids written by `catalyst init` into the project .catalystrc. */

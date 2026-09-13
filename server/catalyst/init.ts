@@ -166,6 +166,15 @@ export function describeMode(
 let cliApp: ReturnType<typeof catalyst.initializeApp> | null = null;
 let cliUnavailable = false;
 let cliOwner: string | null = null;
+let cliAppBuiltAt = 0;
+let cliAppSeq = 0;
+
+// Catalyst access tokens last about an hour. The app is built with a static
+// token (a duck-typed refreshing credential is accepted by initializeApp and
+// then silently ignored — requests go out with no Authorization header), so it
+// has to be rebuilt before the token goes stale. Otherwise local development
+// quietly drops to JSON-file storage mid-session and the only clue is a 401.
+const CLI_APP_MAX_AGE_MS = 40 * 60 * 1000;
 
 export interface CliProject { projectId: string; orgId: string; projectName: string }
 
@@ -235,12 +244,16 @@ export function region(): { dataCentre: string; consoleUrl: string } {
  * Builds a Catalyst app from the CLI's login, or returns null when the CLI is
  * absent, logged out, or the directory has no linked project.
  */
-export async function getCliApp(): Promise<ReturnType<typeof catalyst.initializeApp> | null> {
-  if (cliApp) return cliApp;
-  if (cliUnavailable) return null;
+export async function getCliApp(
+  { forceRefresh = false }: { forceRefresh?: boolean } = {},
+): Promise<ReturnType<typeof catalyst.initializeApp> | null> {
+  if (!forceRefresh && cliApp && Date.now() - cliAppBuiltAt < CLI_APP_MAX_AGE_MS) return cliApp;
+  if (cliUnavailable && !forceRefresh) return null;
+  // Past the token's usable life, or explicitly retrying after a 401.
+  cliApp = null;
 
   const project = readCatalystRc();
-  const creds = await accessTokenFromCli();
+  const creds = await accessTokenFromCli(forceRefresh);
   if (!project || !creds) { cliUnavailable = true; return null; }
 
   // Admin credentials carry no end-user session, so rows are owned by whoever
@@ -253,7 +266,9 @@ export async function getCliApp(): Promise<ReturnType<typeof catalyst.initialize
       project_key: project.orgId,
       environment: process.env['CATALYST_ENVIRONMENT'] ?? 'Development',
       credential: catalyst.credential.accessToken(creds.accessToken),
-    } as never);
+      // initializeApp refuses to reuse an app name, so each rebuild gets its own.
+    } as never, `hitlist-cli-${++cliAppSeq}`);
+    cliAppBuiltAt = Date.now();
     return cliApp;
   } catch (e) {
     console.warn('[kaizen] Could not build a Catalyst app from the CLI login:', e);

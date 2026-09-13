@@ -275,8 +275,23 @@ import { SCHEMA, TABLE_NAMES, TASKS_TABLE, LISTS_TABLE, NOTES_TABLE } from './ca
  * Returns the names of any that are not.
  */
 async function probeCatalystTables(req: express.Request): Promise<boolean> {
-  const app = initCatalyst(req);
+  let app = initCatalyst(req);
   const missing: string[] = [];
+
+  // A token decrypted from the CLI's config may already have expired. Spend one
+  // retry on a forced refresh before concluding Catalyst is unreachable —
+  // otherwise a stale token silently downgrades the whole session to JSON-file
+  // storage, which looks identical to having no credentials at all.
+  try {
+    await app.zcql().executeZCQLQuery(`SELECT ROWID FROM ${SCHEMA[0].name} LIMIT 1`);
+  } catch (e) {
+    const status = (e as { statusCode?: number })?.statusCode;
+    if (status === 401 || status === 400) {
+      console.warn('[kaizen] Catalyst rejected the cached token — refreshing and retrying once');
+      const refreshed = await getCliApp({ forceRefresh: true });
+      if (refreshed) app = refreshed;
+    }
+  }
 
   for (const table of SCHEMA) {
     try {
@@ -287,8 +302,9 @@ async function probeCatalystTables(req: express.Request): Promise<boolean> {
         missing.push(table.name);
       } else {
         // Something other than absence — a credential or connectivity problem.
-        // Report it as-is rather than claiming the table is missing.
-        console.error(`[kaizen] Probing ${table.name} failed: ${msg}`);
+        // String(e) on an SDK error yields "[object Object]", which hides the
+        // one detail that matters (an expired token reads as 401).
+        console.error(`[kaizen] Probing ${table.name} failed: ${describeError(e)}`);
         return false;
       }
     }
@@ -952,6 +968,26 @@ function parseListPatch(body: Record<string, unknown>, errs: FieldErrors): Parti
 // so a deployment may well not set it — and defaulting to "not production"
 // there would echo raw datastore errors to clients.
 const IS_PRODUCTION = (process.env['NODE_ENV'] ?? 'production') !== 'development';
+
+/**
+ * Renders an unknown thrown value usefully.
+ *
+ * The Catalyst SDK throws objects whose String() is "[object Object]" — which
+ * is what a failing table probe used to log, hiding whether the cause was a
+ * missing table, an expired token or a network fault.
+ */
+function describeError(e: unknown): string {
+  if (e instanceof Error) return `${e.name}: ${e.message}`;
+  if (e && typeof e === 'object') {
+    const o = e as Record<string, unknown>;
+    const parts = [o['name'], o['code'], o['statusCode'], o['message']]
+      .filter((v) => v !== undefined && v !== null)
+      .map(String);
+    if (parts.length) return parts.join(' | ');
+    try { return JSON.stringify(e); } catch { /* fall through */ }
+  }
+  return String(e);
+}
 
 interface ErrorShape { status: number; error: string; message: string }
 
