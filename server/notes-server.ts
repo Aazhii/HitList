@@ -75,6 +75,7 @@ import fs from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { baasProxy } from './catalyst/baasProxy.ts';
 import {
   readStandaloneConfig, initCatalystApp, describeMode, getCliApp, cliProject, region,
   ownerForAdminMode, ownerForAnonymousGateway, hasGatewayHeaders,
@@ -1999,6 +2000,13 @@ app.delete('/api/notes/:id', async (req, res) => {
     sendError(res, '[DELETE /api/notes/:id]', e);
   }
 });
+
+// ── Catalyst Web SDK API ──────────────────────────────────────────────────────
+//
+// Must be registered before the SPA catch-all, which would otherwise answer
+// these with index.html. See server/catalyst/baasProxy.ts for why the Web SDK
+// addresses this server rather than Catalyst directly.
+app.use('/baas', baasProxy());
 
 // ── Unknown /api routes ───────────────────────────────────────────────────────
 //
