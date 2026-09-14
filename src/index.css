@@ -562,11 +562,17 @@ html.login-locked body {
   --a-shadow-md: 0 3px 10px rgba(0, 0, 0, 0.4);
 }
 
-.app-organic ::selection {
-  background: color-mix(in srgb, var(--a-accent) 30%, transparent);
-}
+/* In the base layer, not unlayered. Unlayered rules beat every layered utility
+   regardless of specificity, so an unlayered :focus-visible outline could not
+   be removed by `outline-none` — and every note block's textarea would draw an
+   accent ring while being typed in. Here, components still opt out. */
+@layer base {
+  .app-organic ::selection {
+    background: color-mix(in srgb, var(--a-accent) 30%, transparent);
+  }
 
-.app-organic :focus-visible {
-  outline: 2px solid var(--a-accent);
-  outline-offset: 2px;
+  .app-organic :focus-visible {
+    outline: 2px solid var(--a-accent);
+    outline-offset: 2px;
+  }
 }
