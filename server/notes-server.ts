@@ -80,6 +80,7 @@ import { runSweep, describeSweep } from './notifications/sweep.ts';
 import {
   syncTaskReminder,
   cancelTaskReminders,
+  backfillReminders,
   resolveTimeZone,
   type ReminderContext,
 } from './notifications/reminders.ts';
@@ -1276,6 +1277,65 @@ async function cancelRemindersFor(req: express.Request, taskId: string): Promise
   if (result.error) console.warn(`[kaizen] reminder ${taskId}: ${result.detail}`);
   else if (result.cancelled > 0) console.log(`[kaizen] reminder ${taskId}: ${result.detail}`);
 }
+
+/**
+ * Queues reminders for tasks that predate the queue.
+ *
+ * Scoped to the caller, and deliberately so. The sweep runs as the cron with
+ * no user session, so it has neither a delivery address nor a timezone for
+ * anyone — both of which arrive on a signed-in request for free. Enumerating
+ * every user to find them would be a larger and more fragile piece of
+ * machinery than letting each user's own client ask once.
+ *
+ * Idempotent: every task re-derives the DedupeKey it would have had all along,
+ * so a second call enqueues nothing. That makes it safe for the client to
+ * call on sign-in rather than having to remember whether it already did.
+ */
+app.post('/api/reminders/backfill', async (req, res) => {
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+
+  if (!catalystAvailable) {
+    res.json({ scanned: 0, enqueued: 0, failed: 0, skipped: 'no Catalyst backend' });
+    return;
+  }
+
+  try {
+    const tasks = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
+
+    const ctx: ReminderContext = {
+      ownerId,
+      email: (await getCurrentIdentity(req)).email,
+      timeZone: resolveTimeZone(req.headers['x-timezone']),
+    };
+
+    const out = await backfillReminders(
+      initCatalyst(req) as unknown as NotificationApp,
+      ctx,
+      tasks.map((t) => ({
+        id: t.id,
+        title: t.title,
+        status: t.status,
+        dueDate: t.dueDate,
+        dueTime: t.dueTime,
+        reminderEnabled: t.reminderEnabled,
+        reminderMinutesBefore: t.reminderMinutesBefore,
+      })),
+    );
+
+    if (out.enqueued > 0 || out.failed > 0) {
+      console.log(
+        `[kaizen] backfill for ${ownerId}: scanned=${out.scanned} ` +
+        `enqueued=${out.enqueued} failed=${out.failed}`,
+      );
+      for (const line of out.details) console.warn(`[kaizen]   ${line}`);
+    }
+
+    res.json({ scanned: out.scanned, enqueued: out.enqueued, failed: out.failed });
+  } catch (e) {
+    sendError(res, '[POST /api/reminders/backfill]', e);
+  }
+});
 
 // ── Scheduled sweep ───────────────────────────────────────────────────────────
 //
