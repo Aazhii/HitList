@@ -156,14 +156,46 @@ class UnauthenticatedError extends Error {
   }
 }
 
+/** Who the caller is, as far as this request is concerned. */
+interface Identity {
+  userId: string;
+  /**
+   * The user's email address, or '' when there is none to be had.
+   *
+   * Empty is the normal case for the admin and shared-owner fallbacks, which
+   * resolve an owner id without a real app user behind it. Notification
+   * channels that need an address skip rather than fail when it is missing.
+   */
+  email: string;
+}
+
 /**
- * Returns the Catalyst user_id for the authenticated user.
+ * Per-request identity cache.
  *
- * getCurrentUser() needs a valid Zoho session on the request. If there isn't
- * one, that is an authentication failure and the caller gets a 401 — we do not
- * invent an identity for them.
+ * getCurrentUser() is a network call to Catalyst. A single request can ask for
+ * the owner and then, on the write path, for the delivery address; without
+ * this that would be two round trips for one answer. Keyed on the request
+ * object, so it lives exactly as long as the request does.
+ */
+const identityCache = new WeakMap<express.Request, Identity>();
+
+async function getCurrentIdentity(req: express.Request): Promise<Identity> {
+  const cached = identityCache.get(req);
+  if (cached) return cached;
+
+  const identity = await resolveIdentity(req);
+  identityCache.set(req, identity);
+  return identity;
+}
+
+/**
+ * Works out who is calling, from the Catalyst session on the request.
  *
- * The previous implementation caught every failure and returned the constant
+ * getCurrentUser() needs a valid Zoho session. If there isn't one, that is an
+ * authentication failure and the caller gets a 401 — we do not invent an
+ * identity for them.
+ *
+ * The original implementation caught every failure and returned the constant
  * 'kaizen-app-owner'. Two consequences, both bad:
  *
  *   - Every anonymous caller resolved to the same owner, so all users shared
@@ -174,9 +206,11 @@ class UnauthenticatedError extends Error {
  *
  * In JSON-file mode (catalystAvailable=false) there is no session to check and
  * everything belongs to LOCAL_DEV_OWNER.
+ *
+ * Call getCurrentIdentity() rather than this: it memoises the round trip.
  */
-async function getCurrentUserId(req: express.Request): Promise<string> {
-  if (!catalystAvailable) return LOCAL_DEV_OWNER;
+async function resolveIdentity(req: express.Request): Promise<Identity> {
+  if (!catalystAvailable) return { userId: LOCAL_DEV_OWNER, email: '' };
 
   // Admin credentials (CLI or standalone) carry no end-user session, so
   // getCurrentUser() would always throw and every request would 401 — making
@@ -185,7 +219,7 @@ async function getCurrentUserId(req: express.Request): Promise<string> {
   // and the strict path below still applies.
   if (!hasGatewayHeaders(req)) {
     const adminOwner = ownerForAdminMode();
-    if (adminOwner) return adminOwner;
+    if (adminOwner) return { userId: adminOwner, email: '' };
   }
 
   let user: unknown;
@@ -211,10 +245,23 @@ async function getCurrentUserId(req: express.Request): Promise<string> {
     // runs without end-user authentication, and it must be opted into with
     // APP_OWNER_ID; defaulting to it would put every user back in one dataset.
     const shared = ownerForAnonymousGateway();
-    if (shared) return shared;
+    if (shared) return { userId: shared, email: '' };
     throw new UnauthenticatedError('No signed-in Catalyst user on this request');
   }
-  return String(uid);
+
+  // The SDK has spelt this several ways across versions; take whichever is
+  // present rather than pinning to one and silently losing the address.
+  const record = user as Record<string, unknown> | null;
+  const email = String(
+    record?.['email_id'] ?? record?.['emailId'] ?? record?.['email'] ?? '',
+  ).trim();
+
+  return { userId: String(uid), email };
+}
+
+/** Returns the Catalyst user_id for the authenticated user. */
+async function getCurrentUserId(req: express.Request): Promise<string> {
+  return (await getCurrentIdentity(req)).userId;
 }
 
 /**
