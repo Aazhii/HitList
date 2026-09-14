@@ -222,9 +222,12 @@ function NoteDetail({
   });
 
   return (
-    <div className="flex flex-col h-full animate-fade-in">
+    // The one scroller for the note pane. The header lives inside it, so the
+    // title scrolls away with the content rather than pinning above it.
+    <ScrollArea className="h-full">
+    <div className="animate-fade-in">
       {/* Note header */}
-      <div className="px-8 pt-10 pb-4 flex-shrink-0">
+      <div className="px-8 pt-10 pb-4">
         {/* Emoji */}
         <EmojiPicker
           emoji={note.emoji ?? '📝'}
@@ -272,7 +275,7 @@ function NoteDetail({
       <Separator className="mx-8 w-auto" />
 
       {/* Slash command hint */}
-      <div className="px-8 pt-2 pb-1 flex-shrink-0 flex items-center gap-2 flex-wrap">
+      <div className="px-8 pt-2 pb-1 flex items-center gap-2 flex-wrap">
         <span className="text-[10px] text-muted-foreground/35 font-medium flex items-center gap-1">
           <kbd className="font-mono bg-muted/50 px-1 py-px rounded border border-border/40 text-[9px] text-muted-foreground/60">/</kbd>
           <span>commands</span>
@@ -290,19 +293,18 @@ function NoteDetail({
       </div>
 
       {/* Editor */}
-      <ScrollArea className="flex-1 min-h-0">
-        <div className="px-8 py-4 pb-24">
-          <NoteEditor
-            blocks={note.blocks}
-            onUpdateBlock={(blockId, changes) => onUpdateBlock(note.id, blockId, changes)}
-            onAddBlock={(afterBlockId, type) => onAddBlock(note.id, afterBlockId, type)}
-            onDeleteBlock={(blockId) => onDeleteBlock(note.id, blockId)}
-            onChangeBlockType={(blockId, type) => onChangeBlockType(note.id, blockId, type)}
-            onMoveBlock={(blockId, direction) => onMoveBlock(note.id, blockId, direction)}
-          />
-        </div>
-      </ScrollArea>
+      <div className="px-8 py-4 pb-24">
+        <NoteEditor
+          blocks={note.blocks}
+          onUpdateBlock={(blockId, changes) => onUpdateBlock(note.id, blockId, changes)}
+          onAddBlock={(afterBlockId, type) => onAddBlock(note.id, afterBlockId, type)}
+          onDeleteBlock={(blockId) => onDeleteBlock(note.id, blockId)}
+          onChangeBlockType={(blockId, type) => onChangeBlockType(note.id, blockId, type)}
+          onMoveBlock={(blockId, direction) => onMoveBlock(note.id, blockId, direction)}
+        />
+      </div>
     </div>
+    </ScrollArea>
   );
 }
 
@@ -657,18 +659,16 @@ export function NotesWorkspace() {
         {/* Content */}
         <div className="flex-1 min-h-0 overflow-hidden">
           {activeNote ? (
-            <ScrollArea className="h-full">
-              <NoteDetail
-                note={activeNote}
-                onUpdateTitle={updateNoteTitle}
-                onUpdateEmoji={updateNoteEmoji}
-                onUpdateBlock={updateBlock}
-                onAddBlock={addBlock}
-                onDeleteBlock={deleteBlock}
-                onChangeBlockType={changeBlockType}
-                onMoveBlock={moveBlock}
-              />
-            </ScrollArea>
+            <NoteDetail
+              note={activeNote}
+              onUpdateTitle={updateNoteTitle}
+              onUpdateEmoji={updateNoteEmoji}
+              onUpdateBlock={updateBlock}
+              onAddBlock={addBlock}
+              onDeleteBlock={deleteBlock}
+              onChangeBlockType={changeBlockType}
+              onMoveBlock={moveBlock}
+            />
           ) : notes.length === 0 ? (
             <NotesEmptyState onCreate={handleCreate} />
           ) : (
