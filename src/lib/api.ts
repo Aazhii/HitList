@@ -117,13 +117,36 @@ export function isNetworkError(e: unknown): boolean {
   return false;
 }
 
+/**
+ * The browser's IANA timezone, sent on every request.
+ *
+ * The server needs it to turn a task's dueDate + dueTime — which are stored
+ * with no zone at all — into the absolute instant a reminder fires. Without
+ * it the server interprets those digits in its own zone (UTC), so a 2:30pm
+ * reminder set in Kolkata would fire at 8:00pm local time.
+ *
+ * Read per call rather than once at module load: a laptop that crosses a
+ * timezone mid-session should schedule in the zone it is now in.
+ */
+function browserTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+  } catch {
+    return '';
+  }
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
   const url = `${BASE_URL}/api${path}`;
   const res = await fetch(url, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Timezone': browserTimeZone(),
+      ...options.headers,
+    },
     // The server identifies the caller from their Catalyst session cookie, so
     // it has to be sent. The default ('same-origin') covers the AppSail
     // deployment but silently drops the cookie for the Slate build, which
