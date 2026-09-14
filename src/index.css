@@ -156,3 +156,185 @@
     @apply font-sans;
     }
 }
+/* ─────────────────────────────────────────────────────────────────────────────
+ * Organic login theme — append to src/index.css (after the existing @layer base).
+ *
+ * Scoped to .login-organic so the rest of the app keeps its current theme.
+ * Values come from the Organic design system's styles.css token sheet.
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+.login-organic {
+  --o-bg: #f5ead8;
+  --o-surface: #ebddc5;
+  --o-text: #201e1d;
+  --o-muted: #4a453f;
+  --o-faint: #6d675f;
+  --o-divider: color-mix(in srgb, #201e1d 16%, transparent);
+
+  /* Accent — swap this trio for another palette (blue: #3f6b8a / #335873 / #26435a,
+     green: #4e7a55 / #406647 / #2f4f36, sage: #7a8a5e / #667350 / #4f5a3d). */
+  --o-accent: #3f6b8a;
+  --o-accent-600: #335873;
+  --o-accent-700: #26435a;
+
+  /* Quadrant inks — four voices, each measured to clear 4.5:1 on its tint. */
+  --o-q1: #9c3421; --o-q1-bg: #f7e0d6;
+  --o-q2: #3f6b8a; --o-q2-bg: #dde8ef;
+  --o-q3: #75570f; --o-q3-bg: #f2e7cd;
+  --o-q4: #57524b; --o-q4-bg: #e7e1d6;
+
+  --o-danger: #7d2415;
+  --o-danger-bg: #f7e0d6;
+  --o-sage-bg: #e1eecc;
+  --o-sage-ink: #56633f;
+
+  --o-radius: 28px;
+  --o-radius-md: 20px;
+  --o-shadow-md: 0 3px 10px color-mix(in srgb, #2e2b25 16%, transparent);
+  --o-shadow-lg: 0 12px 32px color-mix(in srgb, #2e2b25 22%, transparent);
+
+  --o-font-heading: 'Caprasimo', ui-serif, system-ui, sans-serif;
+  --o-font-body: 'Figtree', ui-sans-serif, system-ui, sans-serif;
+
+  font-family: var(--o-font-body);
+  color: var(--o-text);
+}
+
+.login-organic .o-display {
+  font-family: var(--o-font-heading);
+  font-weight: 400;
+  letter-spacing: -0.015em;
+  line-height: 1.06;
+}
+
+.login-organic .o-card {
+  border-radius: var(--o-radius);
+  background: var(--o-bg);
+  box-shadow: var(--o-shadow-lg);
+}
+
+.login-organic .o-label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--o-muted);
+  margin-bottom: 8px;
+}
+
+.login-organic .o-input {
+  width: 100%;
+  min-height: 48px;
+  box-sizing: border-box;
+  padding: 12px 18px;
+  font: inherit;
+  font-size: 15px;
+  color: var(--o-text);
+  caret-color: var(--o-accent);
+  background: var(--o-surface);
+  border: 1px solid var(--o-divider);
+  border-radius: 999px;
+  outline: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.login-organic .o-input:hover { border-color: color-mix(in srgb, var(--o-text) 45%, transparent); }
+.login-organic .o-input:focus-visible {
+  border-color: var(--o-accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--o-accent) 26%, transparent);
+}
+.login-organic .o-input[aria-invalid='true'] { border-color: #b4432c; }
+
+.login-organic .o-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 52px;
+  box-sizing: border-box;
+  padding: 12px 22px;
+  font-family: var(--o-font-heading);
+  font-weight: 400;
+  font-size: 17px;
+  line-height: 1.2;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background-color 120ms ease;
+}
+.login-organic .o-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.login-organic .o-btn:focus-visible { outline: 2px solid var(--o-accent); outline-offset: 2px; }
+
+.login-organic .o-btn-primary { background: var(--o-accent); color: var(--o-bg); }
+.login-organic .o-btn-primary:hover:not(:disabled) { background: var(--o-accent-600); }
+.login-organic .o-btn-primary:active:not(:disabled) { background: var(--o-accent-700); }
+
+.login-organic .o-btn-secondary {
+  background: transparent;
+  color: var(--o-text);
+  border-color: color-mix(in srgb, var(--o-text) 20%, transparent);
+}
+.login-organic .o-btn-secondary:hover { background: color-mix(in srgb, var(--o-text) 7%, transparent); }
+
+.login-organic .o-btn-ghost {
+  width: auto;
+  min-height: 36px;
+  padding: 6px 14px;
+  font-size: 15px;
+  color: var(--o-accent-700);
+  background: transparent;
+}
+.login-organic .o-btn-ghost:hover { background: color-mix(in srgb, var(--o-accent) 12%, transparent); }
+
+.login-organic .o-link {
+  color: var(--o-accent-700);
+  font-weight: 600;
+  text-decoration: none;
+  text-underline-offset: 3px;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.login-organic .o-link:hover { text-decoration: underline; }
+.login-organic .o-link:focus-visible { outline: 2px solid var(--o-accent); outline-offset: 2px; border-radius: 4px; }
+
+.login-organic .o-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.login-organic .o-pill span { width: 10px; height: 10px; border-radius: 999px; background: currentColor; }
+
+.login-organic .o-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--o-text) 18%, transparent);
+  font-size: 13px;
+  color: var(--o-muted);
+}
+
+.login-organic .o-alert {
+  display: flex;
+  gap: 12px;
+  padding: 16px 18px;
+  border-radius: var(--o-radius-md);
+  background: var(--o-danger-bg);
+  color: var(--o-danger);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+/* The Catalyst iframe has no intrinsic height; keep the well close to the
+   form's real height so the card does not open an empty gap underneath. */
+.login-organic .o-auth-well { min-height: 220px; }
+.login-organic .o-auth-well iframe { width: 100%; border: 0; }
+
+.login-organic ::selection { background: color-mix(in srgb, var(--o-accent) 30%, transparent); }

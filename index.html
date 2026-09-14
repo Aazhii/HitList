@@ -6,6 +6,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Kaizen Flow</title>
     <meta name="description" content="Kaizen Flow — Eisenhower Matrix todo app with Catalyst persistence" />
+
+    <!--
+      Caprasimo (display) and Figtree (body) for the sign-in screen's theme.
+      Loaded here rather than @import-ed into src/index.css so the request
+      starts during HTML parse instead of waiting on the CSS bundle.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Caprasimo&family=Figtree:wght@400;500;600;700&display=swap"
+    />
     <!--
       Catalyst Web SDK — loaded before React so window.catalyst is available
       on Catalyst-hosted deployments.
