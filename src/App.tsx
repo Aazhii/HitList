@@ -389,6 +389,15 @@ function App() {
   // ── Scope storage to the signed-in user ──────────────────────────────────
   const { session } = useCatalystUser();
 
+  // ── Organic theme ────────────────────────────────────────────────────────
+  // On <html>, not on App's root element: sheets, dialogs, menus, popovers and
+  // the toaster portal into document.body, outside this tree, and would render
+  // unthemed. The login page never mounts App, so it keeps its own theme.
+  useEffect(() => {
+    document.documentElement.classList.add('app-organic');
+    return () => document.documentElement.classList.remove('app-organic');
+  }, []);
+
   // ── localStorage state scoped to the signed-in user ──────────────────────
   const [appState, setAppState] = useState<AppState>(() => {
     // setActiveUserId is synchronous — set it before the first loadAppState call
