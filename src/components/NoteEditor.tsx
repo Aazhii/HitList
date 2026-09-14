@@ -24,6 +24,8 @@ import { StatusBox } from '@/components/ui/status-box';
 import { SlashMenu, filterSlashCommands } from '@/components/notes/SlashMenu';
 import { TableBlock } from '@/components/notes/TableBlock';
 import { computeNumberedOrdinals } from '@/lib/noteBlocks';
+import { InlineText, supportedMarks } from '@/components/notes/InlineText';
+import { activeMarks, hasInlineMarks, toggleMark, type Mark } from '@/lib/inlineMarkdown';
 
 // ── Block type icon map ────────────────────────────────────────────────────────
 const ICON = 'size-3.5';
@@ -161,23 +163,51 @@ function getCaretCoordinates(el: HTMLTextAreaElement, position: number): { top: 
 }
 
 // ── Inline formatting toolbar ──────────────────────────────────────────────────
-function InlineToolbar({ onFormat }: { onFormat: (format: string) => void }) {
+const MOD = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
+
+const MARK_BUTTONS: Array<{ mark: Mark; label: string; shortcut: string; icon: React.ReactNode }> = [
+  { mark: 'bold',      label: 'Bold',          shortcut: `${MOD}B`,  icon: <Bold className={ICON} strokeWidth={STROKE} /> },
+  { mark: 'italic',    label: 'Italic',        shortcut: `${MOD}I`,  icon: <Italic className={ICON} strokeWidth={STROKE} /> },
+  { mark: 'underline', label: 'Underline',     shortcut: `${MOD}U`,  icon: <Underline className={ICON} strokeWidth={STROKE} /> },
+  { mark: 'strike',    label: 'Strikethrough', shortcut: `${MOD}⇧X`, icon: <Strikethrough className={ICON} strokeWidth={STROKE} /> },
+];
+
+/**
+ * Bold / italic / underline / strikethrough for the current selection.
+ *
+ * These buttons used to do nothing: their handler discarded the format and
+ * closed the toolbar. They now apply marks, stored as delimiters in the block's
+ * content — see lib/inlineMarkdown. Only marks the block type supports are
+ * offered, and a mark already covering the selection shows as pressed.
+ */
+function InlineToolbar({ marks, active, onToggle }: {
+  marks: readonly Mark[];
+  active: Set<Mark>;
+  onToggle: (mark: Mark) => void;
+}) {
   return (
-    <div className="flex items-center gap-0.5 rounded-xl border border-border bg-popover shadow-lg px-1.5 py-1">
-      {[
-        { label: <Bold className="size-3" />,          title: 'Bold',          format: 'bold' },
-        { label: <Italic className="size-3" />,        title: 'Italic',        format: 'italic' },
-        { label: <Underline className="size-3" />,     title: 'Underline',     format: 'underline' },
-        { label: <Strikethrough className="size-3" />, title: 'Strikethrough', format: 'strikethrough' },
-      ].map(({ label, title, format }) => (
+    <div
+      role="toolbar"
+      aria-label="Text formatting"
+      className="flex items-center gap-0.5 rounded-[12px] border border-a-line bg-a-bg p-1 shadow-[var(--a-shadow-md)]"
+    >
+      {MARK_BUTTONS.filter((b) => marks.includes(b.mark)).map(({ mark, label, shortcut, icon }) => (
         <button
-          key={format}
+          key={mark}
           type="button"
-          title={title}
-          onMouseDown={(e) => { e.preventDefault(); onFormat(format); }}
-          className="size-6 rounded-md text-xs text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors duration-150 flex items-center justify-center"
+          title={`${label} (${shortcut})`}
+          aria-label={label}
+          aria-pressed={active.has(mark)}
+          // mousedown, prevented: the textarea must keep focus and its selection.
+          onMouseDown={(e) => { e.preventDefault(); onToggle(mark); }}
+          className={cn(
+            'flex size-7 items-center justify-center rounded-[8px] transition-colors duration-150',
+            active.has(mark)
+              ? 'bg-a-accent-tint text-a-accent-700'
+              : 'text-a-muted hover:bg-a-row-hover hover:text-a-ink',
+          )}
         >
-          {label}
+          {icon}
         </button>
       ))}
     </div>
@@ -185,13 +215,22 @@ function InlineToolbar({ onFormat }: { onFormat: (format: string) => void }) {
 }
 
 // ── Textarea auto-resize ───────────────────────────────────────────────────────
-function useAutoResize(ref: React.RefObject<HTMLTextAreaElement | null>, value: string) {
+function useAutoResize(
+  ref: React.RefObject<HTMLTextAreaElement | null>,
+  value: string,
+  /** Stacked under rendered text: fill the rendered copy instead of sizing to content. */
+  overlay = false,
+) {
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
+    if (overlay) {
+      el.style.height = '100%';
+      return;
+    }
     el.style.height = 'auto';
     el.style.height = `${el.scrollHeight}px`;
-  }, [ref, value]);
+  }, [ref, value, overlay]);
 }
 
 // ── Gutter controls (add + options menu) ───────────────────────────────────────
@@ -287,6 +326,8 @@ interface BlockRowProps {
   onUpdateTable: (id: string, tableData: TableData) => void;
   textareaRef: (el: HTMLTextAreaElement | null, id: string) => void;
   onSlashOpen: (blockId: string, pos: { top: number; left: number }) => void;
+  /** The textarea's selection may have changed; re-evaluate the format toolbar. */
+  onSelectionChange: (id: string) => void;
 }
 
 /**
@@ -304,14 +345,19 @@ function BlockRow({
   block, index, ordinal, total, focusedId,
   onFocus, onChange, onToggleCheck, onKeyDown,
   onAddAfter, onDelete, onChangeType, onMoveUp, onMoveDown,
-  onUpdateTable, textareaRef, onSlashOpen,
+  onUpdateTable, textareaRef, onSlashOpen, onSelectionChange,
 }: BlockRowProps) {
   const [hovered, setHovered] = useState(false);
   const isFocused = focusedId === block.id;
   const showControls = hovered || isFocused;
   const taRef = useRef<HTMLTextAreaElement | null>(null);
 
-  useAutoResize(taRef, block.content);
+  // Formatted text is shown rendered while the block is not being edited, and
+  // as raw text with its delimiters while it is. Blocks with no marks never
+  // swap: for them the textarea is all there is, exactly as before.
+  const rendered = !isFocused && supportedMarks(block.type).length > 0 && hasInlineMarks(block.content);
+
+  useAutoResize(taRef, block.content, rendered);
 
   const gutter = (
     <div className="relative hidden w-[var(--a-gutter)] flex-shrink-0 select-none md:block">
@@ -341,6 +387,11 @@ function BlockRow({
     onMouseEnter: () => setHovered(true),
     onMouseLeave: () => setHovered(false),
   };
+
+  const textClass = cn(
+    getBlockTextClass(block.type),
+    block.type === 'todo' && block.checked && 'text-a-faint line-through decoration-[1.5px]',
+  );
 
   // ── Divider ──────────────────────────────────────────────────────────────────
   if (block.type === 'divider') {
@@ -405,6 +456,22 @@ function BlockRow({
           </span>
         )}
 
+        <div className="relative min-w-0 flex-1">
+        {/* The textarea stays mounted underneath the rendered copy the whole
+            time, so it keeps its place in the tab order; focusing it — by Tab
+            or by clicking the rendered text — swaps back to raw editing. */}
+        {rendered && (
+          <InlineText
+            text={block.content}
+            className={textClass}
+            onActivate={(offset) => {
+              const el = taRef.current;
+              if (!el) return;
+              el.focus();
+              el.setSelectionRange(offset, offset);
+            }}
+          />
+        )}
         <textarea
           ref={(el) => {
             taRef.current = el;
@@ -431,18 +498,25 @@ function BlockRow({
           }}
           onKeyDown={(e) => onKeyDown(e, block.id)}
           onFocus={() => onFocus(block.id)}
+          // Textarea selections do not reliably fire document `selectionchange`,
+          // so the toolbar listens to the textarea itself.
+          onSelect={() => onSelectionChange(block.id)}
+          onMouseUp={() => onSelectionChange(block.id)}
+          onKeyUp={() => onSelectionChange(block.id)}
+          onBlur={() => onSelectionChange(block.id)}
           placeholder={getBlockPlaceholder(block.type)}
           rows={1}
           className={cn(
-            'min-w-0 flex-1 resize-none overflow-hidden border-none bg-transparent p-0 outline-none',
+            'block w-full resize-none overflow-hidden border-none bg-transparent p-0 outline-none',
             'placeholder:text-a-faint/55',
-            getBlockTextClass(block.type),
-            block.type === 'todo' && block.checked && 'text-a-faint line-through decoration-[1.5px]',
+            textClass,
+            rendered && 'pointer-events-none absolute inset-0 opacity-0',
           )}
           style={{ height: 'auto' }}
           aria-label={`Block ${index + 1}: ${BLOCK_TYPE_LABELS[block.type] ?? 'Text'}`}
           spellCheck
         />
+        </div>
       </div>
     </div>
   );
@@ -467,7 +541,13 @@ export function NoteEditor({
   onMoveBlock,
 }: NoteEditorProps) {
   const [focusedId, setFocusedId] = useState<string | null>(null);
-  const [toolbarPos, setToolbarPos] = useState<{ x: number; y: number } | null>(null);
+  const [toolbar, setToolbar] = useState<{
+    blockId: string;
+    x: number;
+    y: number;
+    marks: readonly Mark[];
+    active: Set<Mark>;
+  } | null>(null);
   const [slashState, setSlashState] = useState<{
     blockId: string;
     query: string;
@@ -477,6 +557,8 @@ export function NoteEditor({
 
   const textareaRefs = useRef<Map<string, HTMLTextAreaElement>>(new Map());
   const pendingFocusId = useRef<string | null>(null);
+  // A selection to restore once a formatting edit has re-rendered its block.
+  const pendingSelection = useRef<{ id: string; start: number; end: number } | null>(null);
 
   // Numbered lists count within their own run. Computed once here rather than
   // per row, because a row alone cannot see where its list started.
@@ -498,23 +580,53 @@ export function NoteEditor({
         pendingFocusId.current = null;
       }
     }
+    if (pendingSelection.current) {
+      const { id, start, end } = pendingSelection.current;
+      const el = textareaRefs.current.get(id);
+      if (el) {
+        el.setSelectionRange(start, end);
+        pendingSelection.current = null;
+      }
+    }
   });
 
-  // Selection toolbar
+  // ── Formatting toolbar ──
+  // Shown for a non-empty selection inside a block type that takes marks.
+  const handleSelectionChange = useCallback((blockId: string) => {
+    const el = textareaRefs.current.get(blockId);
+    const block = blocks.find((b) => b.id === blockId);
+    const marks = block ? supportedMarks(block.type) : [];
+    if (
+      !el || !block || marks.length === 0 ||
+      document.activeElement !== el ||
+      el.selectionStart === el.selectionEnd
+    ) {
+      setToolbar((t) => (t === null ? t : null));
+      return;
+    }
+    try {
+      const start = getCaretCoordinates(el, el.selectionStart);
+      const end = getCaretCoordinates(el, el.selectionEnd);
+      const sameLine = Math.abs(start.top - end.top) < 4;
+      setToolbar({
+        blockId,
+        x: sameLine ? (start.left + end.left) / 2 : start.left,
+        y: start.top - 8,
+        marks,
+        active: activeMarks(el.value, el.selectionStart, el.selectionEnd),
+      });
+    } catch {
+      setToolbar(null);
+    }
+  }, [blocks]);
+
+  // Fixed to the viewport, the toolbar would drift off its selection on scroll.
   useEffect(() => {
-    const handleSelectionChange = () => {
-      const sel = window.getSelection();
-      if (!sel || sel.isCollapsed || !sel.toString().trim()) {
-        setToolbarPos(null);
-        return;
-      }
-      const range = sel.getRangeAt(0);
-      const rect = range.getBoundingClientRect();
-      setToolbarPos({ x: rect.left + rect.width / 2, y: rect.top - 8 });
-    };
-    document.addEventListener('selectionchange', handleSelectionChange);
-    return () => document.removeEventListener('selectionchange', handleSelectionChange);
-  }, []);
+    if (!toolbar) return;
+    const hide = () => setToolbar(null);
+    window.addEventListener('scroll', hide, true);
+    return () => window.removeEventListener('scroll', hide, true);
+  }, [toolbar]);
 
   // Close slash menu on outside click
   useEffect(() => {
@@ -561,6 +673,23 @@ export function NoteEditor({
     onUpdateBlock(blockId, { tableData });
   }, [onUpdateBlock]);
 
+  const handleToggleMark = useCallback((blockId: string, mark: Mark) => {
+    const el = textareaRefs.current.get(blockId);
+    const block = blocks.find((b) => b.id === blockId);
+    if (!el || !block || !supportedMarks(block.type).includes(mark)) return;
+
+    const next = toggleMark(el.value, el.selectionStart, el.selectionEnd, mark);
+    if (next.content === el.value) return;
+
+    // Keep the same visible text selected after the edit, so pressing the
+    // button again undoes it.
+    pendingSelection.current = { id: blockId, start: next.selStart, end: next.selEnd };
+    onUpdateBlock(blockId, { content: next.content });
+    setToolbar((t) => (t && t.blockId === blockId
+      ? { ...t, active: activeMarks(next.content, next.selStart, next.selEnd) }
+      : t));
+  }, [blocks, onUpdateBlock]);
+
   const handleKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>, blockId: string) => {
     const block = blocks.find((b) => b.id === blockId);
     if (!block) return;
@@ -568,6 +697,23 @@ export function NoteEditor({
     const el = textareaRefs.current.get(blockId);
     const cursorAtStart = el?.selectionStart === 0 && el?.selectionEnd === 0;
     const cursorAtEnd = el && el.selectionStart === el.value.length;
+
+    // Formatting shortcuts, only in block types that take marks — so ⌘B inside
+    // a code block is left alone.
+    if ((e.metaKey || e.ctrlKey) && !e.altKey) {
+      const key = e.key.toLowerCase();
+      const mark: Mark | null =
+        key === 'b' && !e.shiftKey ? 'bold'
+        : key === 'i' && !e.shiftKey ? 'italic'
+        : key === 'u' && !e.shiftKey ? 'underline'
+        : key === 'x' && e.shiftKey ? 'strike'
+        : null;
+      if (mark && supportedMarks(block.type).includes(mark)) {
+        e.preventDefault();
+        handleToggleMark(blockId, mark);
+        return;
+      }
+    }
 
     // Slash menu navigation
     if (slashState && slashState.blockId === blockId) {
@@ -624,28 +770,27 @@ export function NoteEditor({
         onUpdateBlock(blockId, { content: block.content + '  ' });
       }
     }
-  }, [blocks, slashState, onAddBlock, onDeleteBlock, onUpdateBlock, handleSlashSelect]);
+  }, [blocks, slashState, onAddBlock, onDeleteBlock, onUpdateBlock, handleSlashSelect, handleToggleMark]);
 
   const handleAddAfter = useCallback((blockId: string) => {
     const newId = onAddBlock(blockId, 'paragraph');
     pendingFocusId.current = newId;
   }, [onAddBlock]);
 
-  const handleFormat = useCallback((_format: string) => {
-    const sel = window.getSelection();
-    if (!sel || sel.isCollapsed) return;
-    setToolbarPos(null);
-  }, []);
 
   return (
     <div className="relative">
       {/* Inline toolbar */}
-      {toolbarPos && (
+      {toolbar && (
         <div
           className="fixed z-50 -translate-x-1/2 -translate-y-full animate-fade-in"
-          style={{ left: toolbarPos.x, top: toolbarPos.y }}
+          style={{ left: toolbar.x, top: toolbar.y }}
         >
-          <InlineToolbar onFormat={handleFormat} />
+          <InlineToolbar
+            marks={toolbar.marks}
+            active={toolbar.active}
+            onToggle={(mark) => handleToggleMark(toolbar.blockId, mark)}
+          />
         </div>
       )}
 
@@ -682,6 +827,7 @@ export function NoteEditor({
             onUpdateTable={handleUpdateTable}
             textareaRef={registerRef}
             onSlashOpen={handleSlashOpen}
+            onSelectionChange={handleSelectionChange}
           />
         ))}
       </div>
