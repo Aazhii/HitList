@@ -178,5 +178,3 @@ export function markSeenInToast(
   return records.map((r) => (idSet.has(r.id) ? { ...r, seenInToast: true } : r));
 }
 
-// ── Seed demo records ────────────────────────────────────────────────────────
-

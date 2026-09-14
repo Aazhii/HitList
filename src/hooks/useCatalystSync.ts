@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ServerSyncState } from './useServerSync';
 import type { ApiTask, ApiList, ApiMomentumStats, TaskCreateRequest, TaskUpdateRequest, Quadrant, TaskStatus } from '../lib/api';
-import { taskApi, listApi, statsApi, checkServerHealth, isNetworkError } from '../lib/api';
+import { taskApi, listApi, statsApi, notificationApi, checkServerHealth, isNetworkError } from '../lib/api';
 import { mockTaskApi, mockListApi, mockStatsApi } from '../lib/mockApi';
 
 export { ServerSyncState };
@@ -131,6 +131,19 @@ export function useCatalystSync(activeListId?: string, _filters?: import('../lib
         if (!cancelled) setMomentum(mom);
         const hist = await api.task.todayHistory(activeListId);
         if (!cancelled) setTodayHistory(hist);
+
+        // Queue reminders for tasks that predate the delivery queue, or whose
+        // scheduling failed during a task write. Idempotent — each task
+        // re-derives the DedupeKey it would have had all along — so calling it
+        // on every load is a self-heal rather than a migration step.
+        //
+        // Not awaited: nothing on screen depends on it, and it is the one call
+        // here whose failure should cost nothing.
+        if (healthy) {
+          void notificationApi.backfill().catch((e) => {
+            console.warn('[kaizen] reminder backfill skipped:', e);
+          });
+        }
       } catch (e) {
         if (!cancelled) handleError(e);
       } finally {
