@@ -1482,27 +1482,37 @@ html, body {
 .bg_one { display: none; }                 /* Zoho's page backdrop */
 .portal_logo { display: none; }            /* the card already carries the mark */
 
+/* !important is needed on the box metrics, not for style but for height.
+   Catalyst sets .signin_container to min-height:520px globally and adds
+   margin-top:40px inside its own max-width:600px query, which always applies at
+   the iframe's ~400px width. Left standing, the form's content box is 520px
+   tall inside a shorter iframe, so the iframe scrolls internally and the email
+   field ends up above the fold — visibly, the card shows only the button.
+   Colour and radius stay unforced. */
 .signin_container,
 .mod_container,
 .trustdevicebox {
-  width: 100%;
-  max-width: none;
-  min-height: 0;
-  margin: 0;
+  width: 100% !important;
+  max-width: none !important;
+  min-height: 0 !important;
+  height: auto !important;
+  margin: 0 !important;
+  padding: 0 !important;
   background: transparent;
   box-shadow: none;
   border-radius: 0;
-  overflow: visible;
+  overflow: visible !important;
 }
 .signin_box {
-  width: 100%;
-  min-height: 0;
-  padding: 0;
+  width: 100% !important;
+  min-height: 0 !important;
+  height: auto !important;
+  padding: 0 !important;
   float: none;
   display: block;
   background: transparent;
   border-right: none;
-  overflow: visible;
+  overflow: visible !important;
 }
 .rightside_box { display: none; }          /* second column; we render one card */
 .line { background: var(--o-divider); height: 1px; }
@@ -1561,7 +1571,7 @@ html, body {
 #password:focus,
 #cpassword:focus {
   border: 1px solid var(--o-accent);
-  box-shadow: 0 0 0 3px rgba(63, 107, 138, 0.26);
+  box-shadow: 0 0 0 3px rgba(198, 113, 57, 0.26);
 }
 ::placeholder { color: rgba(32, 30, 29, 0.5); opacity: 1; }
 
@@ -1695,8 +1705,9 @@ html, body {
    only field and re-rounds the button at 4px. Re-assert the pill inside the
    same query or the fields silently revert. */
 @media only screen and (max-width: 600px) {
-  .signin_container { width: 100%; margin: 0; }
-  .signin_box { width: 100%; padding: 0; }
+  /* Catalyst re-declares margin-top:40px here; override it in the same query. */
+  .signin_container { width: 100% !important; margin: 0 !important; min-height: 0 !important; height: auto !important; }
+  .signin_box { width: 100% !important; padding: 0 !important; min-height: 0 !important; }
   .textbox, #login_id, #password, #cpassword, #verify_totp {
     background-color: var(--o-surface);
     border: 1px solid var(--o-divider);
@@ -1706,7 +1717,7 @@ html, body {
   }
   .textbox:focus, #login_id:focus, #password:focus {
     border: 1px solid var(--o-accent);
-    box-shadow: 0 0 0 3px rgba(63, 107, 138, 0.26);
+    box-shadow: 0 0 0 3px rgba(198, 113, 57, 0.26);
   }
   .errorborder:focus, .textbox.errorborder {
     border: 1px solid var(--o-danger);
@@ -1719,3 +1730,9 @@ html, body {
   .btn { margin-top: 0; border-radius: 999px; }
   ::placeholder { font-weight: 400; }
 }
+
+
+/* The iframe is sized by the page, so the form must start at its top edge —
+   any leading whitespace here reads as a gap between the card's subtitle and
+   the first field. */
+html, body { margin: 0 !important; padding: 0 !important; height: auto !important; min-height: 0 !important; }

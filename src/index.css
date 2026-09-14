@@ -336,16 +336,21 @@
    explicit one — a min-height on the container does not help, since the iframe
    itself still collapses to zero.
    
-   320px, not the 480 used while Catalyst's own .signin_container min-height of
-   520px was still in force. The theme block neutralises that, so the form is
-   only about 250px tall; the surplus showed up as dead space inside the card
-   and was what made the page scroll. This still clears the tallest step
-   (password: username + Change + field + button + two links). */
+   Catalyst's .signin_container carries min-height:520px globally and
+   margin-top:40px inside its own max-width:600px query, which always applies at
+   the iframe's ~400px width. The theme block now overrides both with
+   !important, so the form's content box is its natural height and starts at the
+   iframe's top edge.
+   
+   That top alignment matters more than the exact number: if this height is ever
+   short for a step, what gets clipped is the trailing links, never the field or
+   the button. 340px clears the tallest step (password: username, Change, field,
+   button, two links) with a little headroom. */
 .login-organic .o-auth-well { display: block; }
 .login-organic .o-auth-well iframe {
   display: block;
   width: 100%;
-  height: 320px;
+  height: 340px;
   border: 0;
 }
 
