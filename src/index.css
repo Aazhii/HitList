@@ -332,26 +332,53 @@
   line-height: 1.55;
 }
 
-/* The Catalyst iframe has no intrinsic height and renders invisible without an
-   explicit one — a min-height on the container does not help, since the iframe
-   itself still collapses to zero.
-   
-   Catalyst's .signin_container carries min-height:520px globally and
-   margin-top:40px inside its own max-width:600px query, which always applies at
-   the iframe's ~400px width. The theme block now overrides both with
-   !important, so the form's content box is its natural height and starts at the
-   iframe's top edge.
-   
-   That top alignment matters more than the exact number: if this height is ever
-   short for a step, what gets clipped is the trailing links, never the field or
-   the button. 340px clears the tallest step (password: username, Change, field,
-   button, two links) with a little headroom. */
-.login-organic .o-auth-well { display: block; }
+/* ── Sign-in height, and the three places it can leak ────────────────────────
+ *
+ * The screen is locked to the viewport, so every height in the chain has to be
+ * known. One variable drives the only unknown — the iframe.
+ *
+ *   1. The page. min-h-svh is a floor, not a cap: it guarantees at least the
+ *      viewport and lets content push past it. The wrapper uses 100dvh with
+ *      overflow hidden instead, and .login-locked pins <html>/<body> so the
+ *      document itself cannot scroll behind it.
+ *   2. The iframe's own document. Catalyst's sheet gives .signin_box
+ *      min-height:520px, padding:50px and overflow-y:auto, which is a second
+ *      scrollbar inside a shorter iframe. Only the css_url sheet reaches it;
+ *      see styles/catalyst-login.append.css.
+ *   3. The iframe element. Its height is whatever the SDK sets, so it is forced
+ *      here with !important rather than left to a min-height that leaves the
+ *      card's total height unknown.
+ *
+ * Short viewports step the height down rather than introducing a scrollbar.
+ * Below 560px there is no honest way to fit the form, so the lock is released
+ * and the page scrolls — clipping the button would be worse.
+ */
+.login-organic { --o-auth-h: 340px; }
+
+@media (max-height: 780px) { .login-organic { --o-auth-h: 320px; } }
+@media (max-height: 700px) { .login-organic { --o-auth-h: 300px; } }
+@media (max-height: 640px) { .login-organic { --o-auth-h: 280px; } }
+
+.login-organic .o-auth-well { display: block; height: var(--o-auth-h); }
 .login-organic .o-auth-well iframe {
   display: block;
-  width: 100%;
-  height: 340px;
+  width: 100% !important;
+  height: var(--o-auth-h) !important;
   border: 0;
+}
+
+/* Pins the document while the sign-in screen is mounted. Applied to <html> by
+   CatalystLoginPage; removed on unmount so the app scrolls normally. */
+html.login-locked,
+html.login-locked body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+@media (max-height: 560px) {
+  html.login-locked,
+  html.login-locked body { height: auto; overflow: auto; }
 }
 
 .login-organic ::selection { background: color-mix(in srgb, var(--o-accent) 30%, transparent); }

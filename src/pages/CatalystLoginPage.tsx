@@ -29,8 +29,16 @@ type Mode = 'signin' | 'signup';
 export function CatalystLoginPage() {
   const [mode, setMode] = useState<Mode>('signin');
 
+  // Pin <html> so the sign-in screen cannot scroll. Done here rather than in
+  // CSS alone because the class has to come off again when the app mounts —
+  // the app itself is a normal scrolling page.
+  useEffect(() => {
+    document.documentElement.classList.add('login-locked');
+    return () => document.documentElement.classList.remove('login-locked');
+  }, []);
+
   return (
-    <div className="login-organic relative min-h-svh overflow-hidden bg-[var(--o-surface)]">
+    <div className="login-organic relative h-[100dvh] overflow-hidden bg-[var(--o-surface)]">
       {/* Soft shapes — the system's decoration, never content. */}
       <div
         aria-hidden
@@ -43,7 +51,7 @@ export function CatalystLoginPage() {
         style={{ background: 'color-mix(in srgb, #7a8a5e 22%, transparent)' }}
       />
 
-      <div className="relative mx-auto flex min-h-svh w-full max-w-[1440px] flex-col gap-8 px-6 py-7 sm:px-10 lg:px-16 lg:py-9">
+      <div className="relative mx-auto flex h-full w-full max-w-[1440px] flex-col gap-8 px-6 py-7 sm:px-10 lg:px-16 lg:py-9">
         <header className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <span
@@ -57,7 +65,7 @@ export function CatalystLoginPage() {
           <span className="o-tag hidden sm:inline-flex">Secured by Zoho Catalyst</span>
         </header>
 
-        <div className="grid flex-1 items-center gap-10 lg:grid-cols-[1fr_460px] lg:gap-16">
+        <div className="grid min-h-0 flex-1 items-center gap-10 lg:grid-cols-[1fr_460px] lg:gap-16">
           <Pitch />
 
           <div className="o-card w-full max-w-[480px] justify-self-center p-8 sm:p-10">
@@ -83,7 +91,7 @@ const QUADRANTS = [
 
 function Pitch() {
   return (
-    <section className="max-w-[620px]">
+    <section className="hidden max-w-[620px] lg:block">
       <h1 className="o-display text-[clamp(38px,4.4vw,60px)]">
         Decide what matters
         <span className="block" style={{ color: 'var(--o-accent-700)' }}>before you start.</span>

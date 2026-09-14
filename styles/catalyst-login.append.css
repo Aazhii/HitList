@@ -306,4 +306,22 @@ html, body {
 /* The iframe is sized by the page, so the form must start at its top edge —
    any leading whitespace here reads as a gap between the card's subtitle and
    the first field. */
-html, body { margin: 0 !important; padding: 0 !important; height: auto !important; min-height: 0 !important; }
+/* The iframe's own document must not scroll: .signin_box ships
+   overflow-y:auto with min-height:520px and 50px padding, which is a second
+   scrollbar inside an iframe the page has already sized. The page owns the
+   height; this document just fills it. */
+html, body {
+  margin: 0 !important;
+  padding: 0 !important;
+  height: auto !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+}
+.signin_box { overflow: hidden !important; }
+
+/* The exception: the recovery and MFA option lists are genuinely long, so they
+   keep a contained scroll of their own rather than being cut off. */
+#recovery_container, #backup_container, .options_container, .more_options {
+  overflow-y: auto;
+  max-height: 100%;
+}

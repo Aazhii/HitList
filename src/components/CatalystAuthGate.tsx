@@ -93,9 +93,14 @@ export function CatalystAuthGate({ children }: { children: React.ReactNode }) {
   );
 }
 
+/**
+ * Painted in the same slot as the sign-in screen, so it is capped to the
+ * viewport too — a min-height floor here would let the page scroll for the
+ * moment before the session resolves.
+ */
 export function AuthLoadingScreen() {
   return (
-    <div className="min-h-svh bg-background flex flex-col items-center justify-center gap-4">
+    <div className="flex h-[100dvh] flex-col items-center justify-center gap-4 overflow-hidden bg-background">
       <div className="flex size-12 items-center justify-center rounded-2xl bg-primary/10">
         <Leaf className="size-6 text-primary" />
       </div>
@@ -111,7 +116,7 @@ export function AuthLoadingScreen() {
  */
 function AuthUnavailableScreen({ reason }: { reason: string }) {
   return (
-    <div className="min-h-svh bg-background flex flex-col items-center justify-center gap-4 px-6">
+    <div className="flex h-[100dvh] flex-col items-center justify-center gap-4 overflow-hidden bg-background px-6">
       <div className="flex size-12 items-center justify-center rounded-2xl bg-destructive/10">
         <AlertCircle className="size-6 text-destructive" />
       </div>
