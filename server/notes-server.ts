@@ -143,7 +143,7 @@ let catalystAvailable = Object.values(CATALYST_ENV_SIGNALS).some(Boolean);
 // ── Auth / owner scoping ──────────────────────────────────────────────────────
 
 // In JSON-file mode there is no identity provider, so every row belongs to a
-// single local developer. This is dev-only storage; see docs/catalyst.md.
+// single local developer. This is dev-only storage; see docs/catalyst/.
 const LOCAL_DEV_OWNER = 'local-dev-user';
 
 /** Thrown when a request carries no usable Catalyst session. */

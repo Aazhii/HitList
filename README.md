@@ -60,8 +60,8 @@ The server persists through one of two backends, chosen at startup:
 | Catalyst Data Store | Catalyst credentials present | the real backend |
 | JSON files | no credentials | `server/*-db.json`; local development only, gitignored |
 
-See `docs/catalyst.md` for the Catalyst project setup, table schema and
-deployment. Copy `.env.example` to `.env.local` and fill it in.
+See `docs/catalyst/` for the Catalyst reference — setup, schema, deployment,
+and a symptom-first troubleshooting table. Copy `.env.example` to `.env.local` and fill it in.
 
 ## Layout
 

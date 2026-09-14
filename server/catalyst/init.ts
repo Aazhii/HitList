@@ -80,7 +80,7 @@ export function readStandaloneConfig(): StandaloneConfig | null {
     const names = missing.map((k) => `CATALYST_${k.replace(/[A-Z]/g, (c) => '_' + c).toUpperCase()}`);
     throw new Error(
       `Catalyst standalone config is incomplete. Missing: ${names.join(', ')}. ` +
-      `Set them in .env.local, or remove them all to use JSON-file storage. See docs/catalyst.md.`
+      `Set them in .env.local, or remove them all to use JSON-file storage. See docs/catalyst/01-credentials.md.`
     );
   }
   return cfg as StandaloneConfig;
@@ -151,7 +151,7 @@ export function initCatalystApp(
     'headers, no standalone configuration is set, and the Catalyst CLI is not ' +
     'logged in to a linked project. Run under `catalyst serve` / AppSail, run ' +
     '`catalyst login` + `catalyst init`, or set CATALYST_PROJECT_ID and friends. ' +
-    'See docs/catalyst.md.'
+    'See docs/catalyst/01-credentials.md.'
   );
 }
 
