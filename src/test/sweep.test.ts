@@ -13,108 +13,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { runSweep, describeSweep } from '../../server/notifications/sweep.ts';
 import { enqueue, findDue, QueueStatus, MAX_ATTEMPTS } from '../../server/notifications/queue.ts';
-import type { CatalystApp } from '../../server/notifications/types.ts';
 import type { QueueEntry } from '../../server/notifications/queue.ts';
+import { fakeCatalyst, QUEUE_TABLE, INBOX_TABLE } from './helpers/fakeCatalyst.ts';
 
-const QUEUE = 'KaizenNotificationQueue';
-const INBOX = 'KaizenNotifications';
-
-interface FakeOptions {
-  emailFails?: boolean;
-  pushFails?: boolean;
-}
-
-function fakeCatalyst(options: FakeOptions = {}) {
-  const tables: Record<string, Array<Record<string, string>>> = { [QUEUE]: [], [INBOX]: [] };
-  const sentEmails: Array<{ to: string; subject: string }> = [];
-  const sentPush: Array<{ message: string; recipients: string[] }> = [];
-  let nextRowId = 1000;
-
-  const app: CatalystApp = {
-    datastore: () => ({
-      table: (name: string) => {
-        tables[name] ??= [];
-        const rows = tables[name];
-        return {
-          insertRow: async (row) => {
-            if (name === QUEUE) {
-              const key = String(row.DedupeKey ?? '');
-              if (rows.some((r) => r.DedupeKey === key)) {
-                throw { code: 'DUPLICATE_VALUE', message: 'duplicate DedupeKey' };
-              }
-            }
-            const stored: Record<string, string> = { ROWID: String(nextRowId++) };
-            for (const [k, v] of Object.entries(row)) stored[k] = String(v ?? '');
-            rows.push(stored);
-            return stored;
-          },
-          updateRow: async (row) => {
-            const found = rows.find((r) => r.ROWID === String(row.ROWID));
-            if (!found) throw new Error('no such row');
-            for (const [k, v] of Object.entries(row)) {
-              if (k !== 'ROWID') found[k] = String(v ?? '');
-            }
-            return found;
-          },
-          deleteRow: async (rowId) => {
-            const i = rows.findIndex((r) => r.ROWID === String(rowId));
-            if (i >= 0) rows.splice(i, 1);
-            return true;
-          },
-        };
-      },
-    }),
-
-    zcql: () => ({
-      executeZCQLQuery: async (query: string) => {
-        const rows = tables[QUEUE];
-        const eq = (c: string) => query.match(new RegExp(`${c} = '([^']*)'`))?.[1] ?? null;
-        const lte = (c: string) => {
-          const m = query.match(new RegExp(`${c} <= (\\d+)`));
-          return m ? Number(m[1]) : null;
-        };
-        const limit = Number(query.match(/LIMIT (\d+)/)?.[1] ?? Infinity);
-
-        let out = rows.slice();
-        const rowId = query.match(/ROWID = (\d+)/)?.[1];
-        if (rowId) out = out.filter((r) => r.ROWID === rowId);
-        const status = eq('Status');
-        if (status) out = out.filter((r) => r.Status === status);
-        const sourceId = eq('SourceId');
-        if (sourceId) out = out.filter((r) => r.SourceId === sourceId);
-        const fireAt = lte('FireAt');
-        if (fireAt !== null) out = out.filter((r) => Number(r.FireAt) <= fireAt);
-        const sentBefore = query.match(/SentAt < (\d+)/);
-        if (sentBefore) out = out.filter((r) => Number(r.SentAt) < Number(sentBefore[1]));
-        if (/SentAt > 0/.test(query)) out = out.filter((r) => Number(r.SentAt) > 0);
-        if (/ORDER BY FireAt ASC/.test(query)) {
-          out.sort((a, b) => Number(a.FireAt) - Number(b.FireAt));
-        }
-        return out.slice(0, limit).map((r) => ({ [QUEUE]: { ...r } }));
-      },
-    }),
-
-    email: () => ({
-      sendMail: async (mail) => {
-        if (options.emailFails) throw { statusCode: 404, message: 'No such from_email' };
-        sentEmails.push({ to: String(mail.to_email), subject: mail.subject });
-        return true;
-      },
-    }),
-
-    pushNotification: () => ({
-      web: () => ({
-        sendNotification: async (message: string, recipients: string[]) => {
-          if (options.pushFails) throw new Error('push rejected');
-          sentPush.push({ message, recipients });
-          return true;
-        },
-      }),
-    }),
-  };
-
-  return { app, tables, sentEmails, sentPush };
-}
+const QUEUE = QUEUE_TABLE;
+const INBOX = INBOX_TABLE;
 
 function entry(overrides: Partial<QueueEntry> = {}): QueueEntry {
   return {

@@ -28,96 +28,9 @@ import {
   RETENTION_MS,
   type QueueEntry,
 } from '../../server/notifications/queue.ts';
-import type { CatalystApp } from '../../server/notifications/types.ts';
+import { fakeCatalyst, QUEUE_TABLE } from './helpers/fakeCatalyst.ts';
 
-const TABLE = 'KaizenNotificationQueue';
-
-/**
- * An in-memory stand-in for Catalyst that enforces what the real table
- * enforces: a unique DedupeKey, and ZCQL's row-wrapped result shape.
- */
-function fakeCatalyst() {
-  const rows: Array<Record<string, string>> = [];
-  let nextRowId = 1000;
-
-  const app: CatalystApp = {
-    datastore: () => ({
-      table: (name: string) => {
-        expect(name).toBe(TABLE);
-        return {
-          insertRow: async (row) => {
-            const key = String(row.DedupeKey ?? '');
-            if (rows.some((r) => r.DedupeKey === key)) {
-              // What Catalyst answers for a unique-constraint violation.
-              throw { code: 'DUPLICATE_VALUE', message: 'duplicate value for DedupeKey' };
-            }
-            const stored: Record<string, string> = { ROWID: String(nextRowId++) };
-            for (const [k, v] of Object.entries(row)) stored[k] = String(v ?? '');
-            rows.push(stored);
-            return stored;
-          },
-          updateRow: async (row) => {
-            const found = rows.find((r) => r.ROWID === String(row.ROWID));
-            if (!found) throw new Error('no such row');
-            for (const [k, v] of Object.entries(row)) {
-              if (k !== 'ROWID') found[k] = String(v ?? '');
-            }
-            return found;
-          },
-          deleteRow: async (rowId) => {
-            const i = rows.findIndex((r) => r.ROWID === String(rowId));
-            if (i >= 0) rows.splice(i, 1);
-            return true;
-          },
-        };
-      },
-    }),
-
-    // Enough ZCQL to serve the queries the queue actually issues.
-    zcql: () => ({
-      executeZCQLQuery: async (query: string) => {
-        const eq = (col: string): string | null => {
-          const m = query.match(new RegExp(`${col} = '([^']*)'`));
-          return m ? m[1] : null;
-        };
-        const lte = (col: string): number | null => {
-          const m = query.match(new RegExp(`${col} <= (\\d+)`));
-          return m ? Number(m[1]) : null;
-        };
-        const lt = (col: string): number | null => {
-          const m = query.match(new RegExp(`${col} < (\\d+)`));
-          return m ? Number(m[1]) : null;
-        };
-        const limit = Number(query.match(/LIMIT (\d+)/)?.[1] ?? Infinity);
-
-        let out = rows.slice();
-        const rowId = query.match(/ROWID = (\d+)/)?.[1];
-        if (rowId) out = out.filter((r) => r.ROWID === rowId);
-        const status = eq('Status');
-        if (status) out = out.filter((r) => r.Status === status);
-        const sourceType = eq('SourceType');
-        if (sourceType) out = out.filter((r) => r.SourceType === sourceType);
-        const sourceId = eq('SourceId');
-        if (sourceId) out = out.filter((r) => r.SourceId === sourceId);
-        const fireAt = lte('FireAt');
-        if (fireAt !== null) out = out.filter((r) => Number(r.FireAt) <= fireAt);
-        const sentBefore = lt('SentAt');
-        if (sentBefore !== null) out = out.filter((r) => Number(r.SentAt) < sentBefore);
-        if (/SentAt > 0/.test(query)) out = out.filter((r) => Number(r.SentAt) > 0);
-
-        if (/ORDER BY FireAt ASC/.test(query)) {
-          out.sort((a, b) => Number(a.FireAt) - Number(b.FireAt));
-        }
-        return out.slice(0, limit).map((r) => ({ [TABLE]: { ...r } }));
-      },
-    }),
-
-    email: () => ({ sendMail: async () => true }),
-    pushNotification: () => ({ web: () => ({ sendNotification: async () => true }) }),
-  };
-
-  return { app, rows };
-}
+const TABLE = QUEUE_TABLE;
 
 function entry(overrides: Partial<QueueEntry> = {}): QueueEntry {
   return {
@@ -136,7 +49,7 @@ function entry(overrides: Partial<QueueEntry> = {}): QueueEntry {
 
 describe('enqueue', () => {
   let fake: ReturnType<typeof fakeCatalyst>;
-  beforeEach(() => { fake = fakeCatalyst(); });
+  beforeEach(() => { fake = fakeCatalyst({ onlyTable: QUEUE_TABLE }); });
 
   it('stores an entry as PENDING', async () => {
     expect(await enqueue(fake.app, entry())).toBe(true);
@@ -182,7 +95,7 @@ describe('enqueue', () => {
 
 describe('findDue', () => {
   let fake: ReturnType<typeof fakeCatalyst>;
-  beforeEach(() => { fake = fakeCatalyst(); });
+  beforeEach(() => { fake = fakeCatalyst({ onlyTable: QUEUE_TABLE }); });
 
   it('returns nothing when nothing is due', async () => {
     await enqueue(fake.app, entry({ fireAt: Date.now() + 3_600_000 }));
@@ -239,7 +152,7 @@ describe('findDue', () => {
 
 describe('claiming — the exactly-once property', () => {
   let fake: ReturnType<typeof fakeCatalyst>;
-  beforeEach(() => { fake = fakeCatalyst(); });
+  beforeEach(() => { fake = fakeCatalyst({ onlyTable: QUEUE_TABLE }); });
 
   it('removes the row from the due set once claimed', async () => {
     await enqueue(fake.app, entry({ fireAt: Date.now() - 1000 }));
@@ -277,7 +190,7 @@ describe('claiming — the exactly-once property', () => {
 
 describe('failure handling', () => {
   let fake: ReturnType<typeof fakeCatalyst>;
-  beforeEach(() => { fake = fakeCatalyst(); });
+  beforeEach(() => { fake = fakeCatalyst({ onlyTable: QUEUE_TABLE }); });
 
   it('returns a row to PENDING while attempts remain', async () => {
     await enqueue(fake.app, entry({ fireAt: Date.now() - 1000 }));
@@ -314,7 +227,7 @@ describe('failure handling', () => {
 
 describe('cancellation', () => {
   let fake: ReturnType<typeof fakeCatalyst>;
-  beforeEach(() => { fake = fakeCatalyst(); });
+  beforeEach(() => { fake = fakeCatalyst({ onlyTable: QUEUE_TABLE }); });
 
   it('cancels everything pending for a task', async () => {
     await enqueue(fake.app, entry({ dedupeKey: 'a' }));
@@ -361,7 +274,7 @@ describe('cancellation', () => {
 
 describe('retention', () => {
   let fake: ReturnType<typeof fakeCatalyst>;
-  beforeEach(() => { fake = fakeCatalyst(); });
+  beforeEach(() => { fake = fakeCatalyst({ onlyTable: QUEUE_TABLE }); });
 
   it('clears delivered entries past the window', async () => {
     const now = Date.now();
