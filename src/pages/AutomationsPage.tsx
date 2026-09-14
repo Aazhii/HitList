@@ -1,28 +1,27 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import {
-  Zap,
-  Plus,
-  Activity,
-  PauseCircle,
-  FileEdit,
-  Clock,
-  Play,
-  RefreshCw,
   CheckCircle2,
-  XCircle,
-  SkipForward,
   History,
   Loader2,
+  Plus,
+  RefreshCw,
   ServerCrash,
+  SkipForward,
+  XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { useAutomations } from '@/hooks/useAutomations';
 import { useAutomationRuns } from '@/hooks/useAutomationRuns';
-import { AutomationList } from '@/components/automations/AutomationList';
+import {
+  AutomationFilters,
+  AutomationList,
+  countRulesByStatus,
+  type FilterStatus,
+} from '@/components/automations/AutomationList';
 import { AutomationRuleForm } from '@/components/automations/AutomationRuleForm';
+import { ViewLayout } from '@/components/shell/ViewLayout';
+import { TopBar, topBarPrimary } from '@/components/shell/TopBar';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -33,66 +32,36 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import type { AutomationRule, AutomationRuleFormValues, AutomationStatus } from '@/types/automation';
+import type { AutomationRule, AutomationRuleFormValues } from '@/types/automation';
 import type { Todo } from '@/types/todo';
 import type { ApiAutomationRun } from '@/api/automationRunsApi';
-
-// ── Stat card ─────────────────────────────────────────────────────────────────
-
-interface StatCardProps {
-  icon: React.ElementType;
-  label: string;
-  value: number | string;
-  accent?: string;
-}
-
-function StatCard({ icon: Icon, label, value, accent }: StatCardProps) {
-  return (
-    <div className="flex items-center gap-3 rounded-2xl border border-border bg-card px-5 py-4 transition-shadow duration-200 hover:shadow-sm">
-      <div
-        className={cn(
-          'flex size-9 flex-shrink-0 items-center justify-center rounded-xl border',
-          accent ?? 'bg-muted/50 border-border/50 text-muted-foreground'
-        )}
-      >
-        <Icon className="size-4" />
-      </div>
-      <div className="min-w-0">
-        <p className="text-xl font-bold text-foreground tabular-nums leading-tight">{value}</p>
-        <p className="text-xs text-muted-foreground leading-tight mt-0.5">{label}</p>
-      </div>
-    </div>
-  );
-}
-
-// ── AutomationsPage ───────────────────────────────────────────────────────────
 
 interface AutomationsPageProps {
   todos: Todo[];
 }
 
-type FilterStatus = 'all' | AutomationStatus;
-
 // ── Run status helpers ────────────────────────────────────────────────────────
+
+const RUN_CHIP = 'inline-flex items-center gap-1 rounded-full px-2.5 py-[3px] text-[12px] font-semibold leading-none';
 
 function RunStatusBadge({ status }: { status: string }) {
   if (status === 'SUCCESS') {
     return (
-      <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-        <CheckCircle2 className="size-3" /> success
+      <span className={cn(RUN_CHIP, 'bg-a-sage-tint text-a-sage-ink')}>
+        <CheckCircle2 className="size-3" strokeWidth={2.75} aria-hidden /> success
       </span>
     );
   }
   if (status === 'SKIPPED') {
     return (
-      <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-600 dark:text-amber-400">
-        <SkipForward className="size-3" /> skipped
+      <span className={cn(RUN_CHIP, 'bg-q-delegate-bg text-q-delegate')}>
+        <SkipForward className="size-3" strokeWidth={2.75} aria-hidden /> skipped
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 text-xs font-medium text-destructive">
-      <XCircle className="size-3" /> error
+    <span className={cn(RUN_CHIP, 'bg-q-do-bg text-q-do')}>
+      <XCircle className="size-3" strokeWidth={2.75} aria-hidden /> error
     </span>
   );
 }
@@ -107,7 +76,7 @@ function formatRelative(at: number): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-// ── Recent Executions panel ───────────────────────────────────────────────────
+// ── Recent runs ───────────────────────────────────────────────────────────────
 
 interface RecentRunsPanelProps {
   runs: ApiAutomationRun[];
@@ -119,87 +88,79 @@ interface RecentRunsPanelProps {
 
 function RecentRunsPanel({ runs, isLoading, error, lastChecked, onRefresh }: RecentRunsPanelProps) {
   return (
-    <div className="rounded-2xl border border-border bg-card overflow-hidden">
-      <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border/60">
+    <section aria-labelledby="recent-runs-heading" className="overflow-hidden rounded-[16px] border border-a-line bg-a-bg">
+      <header className="flex items-center justify-between gap-3 border-b border-a-line-soft px-4 py-3">
         <div className="flex items-center gap-2">
-          <History className="size-4 text-primary" />
-          <h3 className="text-sm font-semibold text-foreground">Recent Executions</h3>
-          {runs.length > 0 && (
-            <Badge variant="secondary" className="text-xs px-1.5 py-0 h-4">
-              {runs.length}
-            </Badge>
-          )}
+          <h2 id="recent-runs-heading" className="font-display text-[19px] leading-tight text-a-ink">Recent runs</h2>
+          {runs.length > 0 && <span className="text-[13px] tabular-nums text-a-faint">{runs.length}</span>}
         </div>
         <div className="flex items-center gap-2">
           {lastChecked && (
-            <span className="text-xs text-muted-foreground hidden sm:block">
+            <span className="hidden text-[12px] text-a-faint sm:block">
               Updated {formatRelative(lastChecked.getTime())}
             </span>
           )}
-          <Button
-            variant="ghost"
-            size="sm"
+          <button
+            type="button"
             onClick={onRefresh}
             disabled={isLoading}
-            className="h-7 w-7 p-0 rounded-lg"
             aria-label="Refresh runs"
+            className="flex size-7 items-center justify-center rounded-[9px] text-a-faint transition-colors duration-150 hover:bg-a-row-hover hover:text-a-ink disabled:opacity-50"
           >
-            <RefreshCw className={cn('size-3.5', isLoading && 'animate-spin')} />
-          </Button>
+            <RefreshCw className={cn('size-3.5', isLoading && 'animate-spin')} strokeWidth={2.5} />
+          </button>
         </div>
-      </div>
+      </header>
 
       {error && (
-        <div className="flex items-center gap-2 px-5 py-3 text-sm text-destructive bg-destructive/5">
-          <ServerCrash className="size-4 flex-shrink-0" />
+        <div className="flex items-center gap-2 bg-q-do-bg px-4 py-3 text-[13.5px] text-q-do" role="alert">
+          <ServerCrash className="size-4 flex-shrink-0" strokeWidth={2.5} aria-hidden />
           <span>Backend unavailable — {error}</span>
         </div>
       )}
 
       {!error && runs.length === 0 && !isLoading && (
         <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
-          <History className="size-8 text-muted-foreground/30" />
-          <p className="text-sm text-muted-foreground">No executions yet</p>
-          <p className="text-xs text-muted-foreground/70">
-            Activate a rule and click <strong>Run Now</strong> or wait for the scheduler.
+          <History className="size-7 text-a-faint/50" strokeWidth={2.25} aria-hidden />
+          <p className="text-[14.5px] text-a-muted">No runs yet</p>
+          <p className="text-[12.5px] text-a-faint">
+            Activate a rule and press <strong className="font-semibold">Run now</strong>, or wait for the scheduler.
           </p>
         </div>
       )}
 
       {isLoading && runs.length === 0 && (
-        <div className="flex items-center justify-center gap-2 py-10 text-muted-foreground">
-          <Loader2 className="size-4 animate-spin" />
-          <span className="text-sm">Loading…</span>
+        <div className="flex items-center justify-center gap-2 py-10 text-a-faint">
+          <Loader2 className="size-4 animate-spin" aria-hidden />
+          <span className="text-[13.5px]">Loading…</span>
         </div>
       )}
 
       {runs.length > 0 && (
-        <ul className="divide-y divide-border/40">
+        <ul>
           {runs.map((run) => (
-            <li key={run.id} className="flex items-start gap-3 px-5 py-3 hover:bg-muted/30 transition-colors duration-150">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm font-medium text-foreground truncate">{run.ruleName}</span>
-                  <Badge
-                    variant="outline"
-                    className="text-xs px-1.5 py-0 h-4 flex-shrink-0 capitalize"
-                  >
+            <li
+              key={run.id}
+              className="flex items-start gap-3 border-b border-a-line-soft px-4 py-3 transition-colors duration-150 last:border-0 hover:bg-a-row-hover"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="truncate text-[14.5px] font-medium text-a-ink">{run.ruleName}</span>
+                  <span className="flex-shrink-0 rounded-full px-2 py-[2px] text-[11.5px] capitalize text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)]">
                     {run.source}
-                  </Badge>
+                  </span>
                 </div>
-                {run.detail && (
-                  <p className="text-xs text-muted-foreground mt-0.5 truncate">{run.detail}</p>
-                )}
+                {run.detail && <p className="mt-0.5 truncate text-[12.5px] text-a-faint">{run.detail}</p>}
               </div>
-              <div className="flex flex-col items-end gap-1 flex-shrink-0">
+              <div className="flex flex-shrink-0 flex-col items-end gap-1">
                 <RunStatusBadge status={run.status} />
-                <span className="text-xs text-muted-foreground">{formatRelative(run.triggeredAt)}</span>
+                <span className="text-[12px] text-a-faint">{formatRelative(run.triggeredAt)}</span>
               </div>
             </li>
           ))}
         </ul>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -243,9 +204,7 @@ export function AutomationsPage({ todos }: AutomationsPageProps) {
 
   // ── Stats ──────────────────────────────────────────────────────────────────
 
-  const activeCount = rules.filter((r) => r.status === 'active').length;
-  const pausedCount = rules.filter((r) => r.status === 'paused').length;
-  const draftCount  = rules.filter((r) => r.status === 'draft').length;
+  const counts = useMemo(() => countRulesByStatus(rules), [rules]);
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -259,12 +218,13 @@ export function AutomationsPage({ todos }: AutomationsPageProps) {
       .sort((a, b) => (a.nextTriggerAt ?? 0) - (b.nextTriggerAt ?? 0));
     if (!upcoming.length) return null;
     const diff = (upcoming[0].nextTriggerAt ?? 0) - now;
-    if (diff <= 0) return 'now';
+    const name = upcoming[0].name;
+    if (diff <= 0) return { when: 'now', name };
     const mins = Math.floor(diff / 60000);
-    if (mins < 60) return `${mins}m`;
+    if (mins < 60) return { when: `in ${mins}m`, name };
     const hrs = Math.floor(mins / 60);
-    if (hrs < 24) return `${hrs}h`;
-    return `${Math.floor(hrs / 24)}d`;
+    if (hrs < 24) return { when: `in ${hrs}h`, name };
+    return { when: `in ${Math.floor(hrs / 24)}d`, name };
   }, [rules, now]);
 
   // ── Handlers ───────────────────────────────────────────────────────────────
@@ -328,98 +288,71 @@ export function AutomationsPage({ todos }: AutomationsPageProps) {
   // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
-    <div className="flex-1 overflow-auto">
-      <div className="px-4 md:px-6 py-6 space-y-6 max-w-6xl mx-auto">
-
-        {/* Page header */}
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div>
-            <h2 className="text-2xl font-bold tracking-tight text-foreground flex items-center gap-2.5">
-              <span className="flex size-8 items-center justify-center rounded-xl bg-primary/10">
-                <Zap className="size-4 text-primary" />
-              </span>
-              Automations
-            </h2>
-            <p className="text-sm text-muted-foreground mt-1.5 leading-relaxed">
-              Create rules to automatically remind you about tasks, send digests, and escalate overdue items.
+    <>
+      <ViewLayout
+        contextLabel="Rule filters"
+        context={<AutomationFilters filter={filter} counts={counts} onChange={setFilter} />}
+        contextFoot={
+          // The "Next trigger" stat card, now at the foot of the column.
+          <div className="px-3 pt-3 pb-1">
+            <p className="text-[13px] text-a-muted">Next trigger</p>
+            <p className="mt-0.5 font-display text-[19px] leading-tight text-a-ink">
+              {nextTrigger ? nextTrigger.when : '—'}
+            </p>
+            <p className="mt-0.5 truncate text-[12.5px] text-a-faint">
+              {nextTrigger ? nextTrigger.name : 'No active rule is scheduled'}
             </p>
           </div>
-          <Button
-            onClick={handleNew}
-            className="rounded-xl gap-2 px-4 flex-shrink-0"
-          >
-            <Plus className="size-3.5" />
-            New rule
-          </Button>
+        }
+        topBar={
+          <TopBar
+            title="Automations"
+            subtitle={`${counts.all} rule${counts.all !== 1 ? 's' : ''} · ${counts.active} active`}
+            actions={
+              <button type="button" onClick={handleNew} className={topBarPrimary} aria-label="New rule">
+                <Plus className="size-[15px]" strokeWidth={2.75} aria-hidden />
+                <span className="hidden sm:inline">New rule</span>
+              </button>
+            }
+          />
+        }
+      >
+        <div className="mx-auto max-w-[880px] space-y-7 px-4 py-[22px] md:px-[26px]">
+          {/* Rules cannot fire while the server is unreachable, and a page that
+              stays silent about that is how this feature came to look like it
+              worked. Say so plainly. */}
+          {!rulesOnline && (
+            <div className="rounded-[14px] bg-q-delegate-bg px-4 py-3 text-[13.5px] text-q-delegate" role="status">
+              Working offline — rules are saved on this device and will not fire until
+              the server is reachable again.
+            </div>
+          )}
+
+          {rulesError && (
+            <div className="rounded-[14px] bg-q-do-bg px-4 py-3 text-[13.5px] text-q-do" role="alert">
+              {rulesError}
+            </div>
+          )}
+
+          <AutomationList
+            rules={rules}
+            filter={filter}
+            onNew={handleNew}
+            onEdit={handleEdit}
+            onToggle={handleToggle}
+            onDelete={handleDeleteRequest}
+            onRunNow={handleRunNow}
+          />
+
+          <RecentRunsPanel
+            runs={runs}
+            isLoading={runsLoading}
+            error={runsError}
+            lastChecked={lastChecked}
+            onRefresh={refreshRuns}
+          />
         </div>
-
-        {/* Rules cannot fire while the server is unreachable, and a page that
-            stays silent about that is how this feature came to look like it
-            worked. Say so plainly. */}
-        {!rulesOnline && (
-          <div className="rounded-xl border border-amber-500/30 bg-amber-500/8 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
-            Working offline — rules are saved on this device and will not fire until
-            the server is reachable again.
-          </div>
-        )}
-
-        {rulesError && (
-          <div className="rounded-xl border border-destructive/30 bg-destructive/8 px-4 py-3 text-sm text-destructive">
-            {rulesError}
-          </div>
-        )}
-
-        {/* Stats bar */}
-        {rules.length > 0 && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 animate-fade-in">
-            <StatCard
-              icon={Activity}
-              label="Active rules"
-              value={activeCount}
-              accent="bg-emerald-500/8 border-emerald-500/20 text-emerald-600 dark:text-emerald-400"
-            />
-            <StatCard
-              icon={PauseCircle}
-              label="Paused"
-              value={pausedCount}
-              accent="bg-amber-500/8 border-amber-500/20 text-amber-600 dark:text-amber-400"
-            />
-            <StatCard
-              icon={FileEdit}
-              label="Drafts"
-              value={draftCount}
-              accent="bg-muted/50 border-border/50 text-muted-foreground"
-            />
-            <StatCard
-              icon={Clock}
-              label="Next trigger"
-              value={nextTrigger ?? '—'}
-              accent="bg-primary/8 border-primary/20 text-primary"
-            />
-          </div>
-        )}
-
-        {/* Rule list */}
-        <AutomationList
-          rules={rules}
-          filter={filter}
-          onFilterChange={setFilter}
-          onNew={handleNew}
-          onEdit={handleEdit}
-          onToggle={handleToggle}
-          onDelete={handleDeleteRequest}
-          onRunNow={handleRunNow}
-        />
-
-        {/* Recent Executions panel */}
-        <RecentRunsPanel
-          runs={runs}
-          isLoading={runsLoading}
-          error={runsError}
-          lastChecked={lastChecked}
-          onRefresh={refreshRuns}
-        />
-      </div>
+      </ViewLayout>
 
       {/* Create / edit form */}
       <AutomationRuleForm
@@ -446,13 +379,13 @@ export function AutomationsPage({ todos }: AutomationsPageProps) {
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteConfirm}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="bg-destructive text-a-bg hover:bg-destructive/90"
             >
               Delete rule
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </>
   );
 }

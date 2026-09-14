@@ -887,7 +887,7 @@ function App() {
             <NotesWorkspace />
           </div>
         ) : activeView === 'automations' ? (
-          <div className="min-h-0 min-w-0 flex-1 overflow-auto">
+          <div className="flex min-h-0 min-w-0 flex-1">
             <AutomationsPage todos={todos} />
           </div>
         ) : (
