@@ -129,9 +129,39 @@ function parseJsonPreservingBigIds(text) {
 
 The same applies to `ROWID` anywhere you parse raw Catalyst JSON.
 
-`[VERIFIED]` Relatedly: **the `table_id` in a create response is unreliable** — it came back one
-less than the table's real id. Re-list the tables and match on name, which is authoritative.
-Creation also settles asynchronously, so allow a few attempts.
+### The second way it bites: `Number()` on the way back out `[VERIFIED]`
+
+Parsing is only half of it. A `ROWID` you already hold **as a string** is still unsafe the moment
+you put it through `Number()` — including to build a query:
+
+```js
+// WRONG. Number('69251000000086009') is 69251000000086010.
+`SELECT ClaimToken FROM MyTable WHERE ROWID = ${Number(rowId)}`
+```
+
+There is no error. The query is valid, it simply matches a different row or none at all, and
+returns an empty result. Code asking "did my write land?" concludes *no* and takes the wrong
+branch.
+
+This cost a working delivery queue here. Every claim wrote its token, re-read with a rounded id,
+found nothing, concluded another worker had won the row, and delivered nothing — leaving rows
+stranded with no error recorded anywhere.
+
+Pass the digits through untouched instead, and refuse anything that is not a row id rather than
+coercing it:
+
+```js
+function zcqlRowId(rowId) {
+  const digits = String(rowId).trim();
+  if (!/^\d{1,25}$/.test(digits)) throw new Error(`Not a row id: ${rowId}`);
+  return digits;                      // never Number()
+}
+```
+
+**Watch for this in tests too.** A fake backend issuing small row ids (`1000`, `1001`) passes
+happily while production fails — and so does one issuing a round id like `...086000`, which is
+exactly representable as a double and round-trips unchanged. Use realistic ids that do *not*
+round-trip.
 
 ---
 

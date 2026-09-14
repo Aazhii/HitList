@@ -8,46 +8,88 @@ observation · `[UNKNOWN]` not established.
 
 ---
 
-## A cron can call your AppSail service directly
+## Crons: what runs, and what only looks like it does
 
-`[VERIFIED]` **This is the useful one.** You do not need a separate Cron *function* to run
-scheduled work — a cron can POST straight to an endpoint on the AppSail service you already
-deploy. No jobpool needs to be created first.
+`[VERIFIED]` **Read this before designing around Catalyst crons.** Three things
+create cleanly and then never do what the payload says. All of the following was established by
+watching a live project, not from documentation.
 
-```bash
-POST {apiHost}/baas/v1/project/{projectId}/cron
+### The summary
+
+| You want | Does it work? |
+|---|---|
+| `Periodic`, every N **hours** (N ≥ 1) | Yes |
+| `Periodic`, under 60 minutes | **Rejected at creation** |
+| `CronExpression`, e.g. a 5-minute step | **Created, enabled, and never fires** |
+| `OneTime` at an exact instant | Yes — fires at the moment given |
+| `target_type: "Webhook"` | Yes |
+| `target_type: "AppSail"` | **Created, fires, and fails every time** |
+
+No jobpool is needed for any of this. The project used here had none
+(`GET /job_scheduling/jobpool` returned `[]`) and the webhook crons ran regardless.
+Creating one is not an option from an ordinary CLI token anyway —
+`POST /job_scheduling/jobpool` answers `401 OAUTH_SCOPE_MISMATCH`.
+
+### CronExpression is accepted and never runs
+
+`[VERIFIED]` A cron created with a five-minute step expression comes back looking perfect: the
+expression echoed verbatim, `cron_status: true`, an id returned. It also comes back with
+
+```json
+"cron_detail": { "hour": 0, "minute": 0, "second": 0, "timezone": "Asia/Kolkata" }
 ```
+
+After 25 minutes it had **`success_count: 0, failure_count: 0`** — never invoked once. The
+scheduler evidently reads `cron_detail`, which a `cron_expression` does not populate, so the cron
+is scheduled for an interval of zero and never runs.
+
+**`success_count` and `failure_count` on the cron record are the only honest signal.** A 200 from
+`POST /cron` means the payload validated, nothing more.
+
+### An AppSail target fires and fails
+
+`[VERIFIED]` Two `OneTime` crons, scheduled ninety seconds apart, pointed at the same endpoint:
+
+| Target | Result |
+|---|---|
+| `target_type: "AppSail"`, `target_id`, relative `url` | `failure_count: 1` |
+| `target_type: "Webhook"`, absolute `url` | `success_count: 1`, and the request reached the server |
+
+So use **Webhook with the service's absolute URL**, even when the target is your own AppSail:
 
 ```json
 {
   "cron_name": "hitlist_notification_sweep",
-  "description": "Drains the notification queue",
-  "cron_type": "CronExpression",
-  "cron_expression": "*/5 * * * *",
+  "cron_type": "Periodic",
   "cron_status": true,
-  "cron_detail": { "timezone": "Asia/Kolkata" },
+  "cron_detail": {
+    "hour": 1, "minute": 0, "second": 0,
+    "repetition_type": "every", "timezone": "Asia/Kolkata"
+  },
   "job_meta": {
     "job_name": "notification_sweep",
-    "target_type": "AppSail",
-    "target_id": "69251000000070009",
-    "url": "/api/internal/tick",
+    "target_type": "Webhook",
+    "url": "https://<service>.development.catalystappsail.in/api/internal/tick",
     "request_method": "POST",
     "headers": { "x-tick-secret": "…" }
   }
 }
 ```
 
-`url` is **relative**; Catalyst resolves it against the service. `target_id` (the service id
-from `GET /appsail`) and `target_name` both work.
+### What to do when you need a sub-hourly schedule
 
-Verified end to end: created (`200`, the stored record echoes `target_type: AppSail` and the
-expression verbatim) and deleted (`200`). The project had **no jobpools at all** at the time,
-which is what proves none is required.
+You cannot get one from a Catalyst cron. Run the schedule **inside your AppSail service** and keep
+an hourly cron as the backstop that wakes a stopped container.
+
+The usual objection is that AppSail auto-scales to 1–5 instances, so an interval runs on all of
+them. That is only a problem if the work is not idempotent. Claim each unit of work in the
+database before acting on it — write a token, re-read it, and proceed only if yours won — and N
+concurrent sweeps deliver exactly once. Concurrency then costs a duplicate query, not a duplicate
+notification. See `server/notifications/scheduler.ts` and `queue.ts`.
 
 ### Three validation rules that are not in any doc
 
-`[VERIFIED]` All three are rejected with `400 INVALID_INPUT` and a message that does name the
-problem, so they cost minutes rather than hours — but only if you read it:
+`[VERIFIED]` All are rejected with `400 INVALID_INPUT` and a message that does name the problem:
 
 | Rule | Error |
 |---|---|
@@ -58,21 +100,16 @@ problem, so they cost minutes rather than hours — but only if you read it:
 The hyphen rule bites because service names *may* contain hyphens — `target_name` is
 `hitlist-api` while `cron_name` cannot be.
 
-**The 60-minute floor is the one that changes designs.** `Periodic` looks like the obvious type
-for "every five minutes" and is not usable for it. `CronExpression` has no such floor:
-`*/5 * * * *` is accepted and stored verbatim. If you want a sub-hourly schedule, that is the
-only cron type that will give you one.
-
 ### Cron types
 
 `[DOCS]` From the SDK's `CRON_TYPE` enum:
 
 | Type | `cron_detail` | Use |
 |---|---|---|
-| `Periodic` | `{ hour, minute, second, repetition_type: 'every', timezone? }` | Every N **hours** — see the 60-minute floor above `[VERIFIED]` |
+| `Periodic` | `{ hour, minute, second, repetition_type: 'every', timezone? }` | Every N **hours**. The only repeating type proven to run `[VERIFIED]` |
 | `OneTime` | `{ time_of_execution }` (epoch **ms**, as a string) `, timezone?` | A single event at an exact moment |
 | `Calender` | daily / monthly / yearly variants | Fixed calendar times |
-| `CronExpression` | `{ timezone? }` plus a top-level `cron_expression` | UNIX expression — **the only way to run sub-hourly** `[VERIFIED]` |
+| `CronExpression` | `{ timezone? }` plus a top-level `cron_expression` | **Never fires** — see above `[VERIFIED]` |
 
 `OneTime` with millisecond precision is genuinely useful for "remind me at 15:45" — but note
 that it creates a cloud object per reminder, which then has to be kept in step with every edit

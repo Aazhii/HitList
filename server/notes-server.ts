@@ -77,6 +77,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { baasProxy } from './catalyst/baasProxy.ts';
 import { runSweep, describeSweep } from './notifications/sweep.ts';
+import { startScheduler, schedulerEnabled, intervalFromEnv } from './notifications/scheduler.ts';
 import { listInbox, markRead, markAllRead, removeEntry } from './notifications/inbox.ts';
 import {
   listRules, getRule, insertRule, updateRule, deleteRule,
@@ -99,6 +100,7 @@ import type { CatalystApp as NotificationApp } from './notifications/types.ts';
 import {
   readStandaloneConfig, initCatalystApp, describeMode, getCliApp, cliProject, region,
   ownerForAdminMode, ownerForAnonymousGateway, hasGatewayHeaders,
+  captureGatewayCredentials, backgroundCatalystApp, hasBackgroundCredentials,
   type StandaloneConfig, type CatalystMode,
 } from './catalyst/init.ts';
 import type { ICatalystRow } from 'zcatalyst-sdk-node/lib/utils/pojo/common';
@@ -1224,7 +1226,12 @@ app.use(express.json({ limit: '4mb' }));
 
 let backendReady: Promise<void> | null = null;
 
-app.use('/api', (_req, res, next) => {
+app.use('/api', (req, res, next) => {
+  // The background sweep has no request of its own, and under the gateway the
+  // SDK's credentials live in request headers. Remember the latest set so the
+  // timer has something to authenticate with. See catalyst/init.ts.
+  captureGatewayCredentials(req);
+
   if (!backendReady) { next(); return; }
   backendReady.then(() => next(), (e) => {
     console.error('[kaizen] Backend never became ready:', e);
@@ -2907,6 +2914,7 @@ const server = app.listen(LISTEN_PORT, '0.0.0.0', () => {
 backendReady = settleBackend()
   .then(() => {
     console.log(`[kaizen] Backend: ${catalystAvailable ? 'Catalyst DataStore' : 'JSON file fallback'}`);
+    startSweepScheduler();
   })
   .catch((e) => {
     // Never leave the gate rejected: fall back to the JSON store rather than
@@ -2914,6 +2922,45 @@ backendReady = settleBackend()
     console.error('[kaizen] Backend setup failed, using JSON-file storage:', e);
     catalystAvailable = false;
   });
+
+/**
+ * Starts the in-process sweep.
+ *
+ * Safe to run on every AppSail instance despite the auto-scaling: a sweep
+ * claims each row before touching any channel, so of N concurrent sweeps
+ * exactly one delivers. Concurrency costs a duplicate query, not a duplicate
+ * notification — see server/notifications/scheduler.ts.
+ *
+ * It exists because Catalyst's crons could not be made to run every five
+ * minutes; the hourly webhook cron remains as the backstop for a container
+ * that has been idle long enough to be stopped.
+ */
+function startSweepScheduler(): void {
+  if (!catalystAvailable) return;       // the JSON-file fallback has no queue
+  if (!schedulerEnabled()) {
+    console.log('[kaizen] Sweep scheduler disabled by SWEEP_DISABLED');
+    return;
+  }
+
+  startScheduler(() => {
+    const app = backgroundCatalystApp(standaloneConfig);
+    if (!app) {
+      // Under the gateway this just means no request has arrived yet. The
+      // tick is skipped and the next one tries again.
+      throw new Error('no Catalyst credentials for background work yet');
+    }
+    return app as unknown as NotificationApp;
+  }, {
+    onError: (e) => {
+      // Expected before the first request under the gateway; not worth a
+      // warning every five minutes until then.
+      const waiting = !hasBackgroundCredentials(standaloneConfig);
+      if (!waiting) console.warn(`[kaizen] sweep failed: ${String(e)}`);
+    },
+  });
+
+  console.log(`[kaizen] Sweep scheduler running every ${intervalFromEnv() / 1000}s`);
+}
 
 // A rejected promise with no handler terminates the process on modern Node.
 // Log it with context rather than dying silently mid-request.

@@ -11,21 +11,43 @@
  * instances, so an in-process interval would run on every one of them and fire
  * each reminder up to five times.
  *
- * Four things about Catalyst crons, each established by probing the live
- * project rather than from the documentation, and each of which silently
- * shapes what this script can do:
+ * Everything below was established by watching the live project, not by
+ * reading documentation — and in two cases the thing that creates cleanly is
+ * not the thing that runs:
  *
  *   1. `cron_name` accepts only alphanumerics and underscores. A hyphen is
  *      rejected with INVALID_INPUT, which reads like a schema problem.
+ *
  *   2. A `Periodic` cron has a MINIMUM interval of 60 minutes —
  *      "Minimum Schedule time must be 60 minutes". That rules out the obvious
  *      cron_type for a five-minute sweep.
- *   3. `CronExpression` has no such floor. A standard five-field expression
- *      with a step in the minute field is accepted and stored verbatim, which
- *      is how we get five-minute granularity. See EXPRESSION below.
- *   4. An AppSail target needs NO jobpool. `target_type: 'AppSail'` with the
- *      service's `target_id` and a RELATIVE `url` is enough; the project has
- *      no jobpools at all and the cron creates cleanly.
+ *
+ *   3. `CronExpression` is ACCEPTED AND NEVER RUNS. A cron created with
+ *      `cron_expression: '*' + '/5 * * * *'` comes back with the expression
+ *      echoed, `cron_status: true` — and a `cron_detail` of
+ *      `{hour: 0, minute: 0, second: 0}`. After 25 minutes it had
+ *      `success_count: 0, failure_count: 0`: never invoked once. The scheduler
+ *      evidently reads cron_detail, which the expression does not populate.
+ *      Creation succeeding proves only that the payload validated.
+ *
+ *   4. An `AppSail` target FAILS when invoked. A OneTime cron pointed at the
+ *      service fired on schedule and recorded `failure_count: 1`; an
+ *      identically scheduled `Webhook` cron pointed at the same URL recorded
+ *      `success_count: 1` and the request reached the server. So this uses
+ *      Webhook with the service's absolute URL.
+ *
+ *      (No jobpool is involved either way — the project has none, and the
+ *      webhook cron ran regardless.)
+ *
+ * So Catalyst cannot drive a five-minute sweep. The sweep runs on an interval
+ * inside the server instead — safe on every instance because each row is
+ * claimed before delivery; see server/notifications/scheduler.ts — and this
+ * cron is the BACKSTOP for the one case that cannot cover: a container idle
+ * long enough to be stopped has no interval running either.
+ *
+ * Hourly, because that is the floor `Periodic` allows. Its real job is to wake
+ * the service; once awake, the interval takes over and delivers within five
+ * minutes.
  */
 import { api, resolveTarget, type Target } from './lib/catalystAdmin.ts';
 
@@ -36,15 +58,13 @@ const DELETE  = process.argv.includes('--delete');
 const CRON_NAME = 'hitlist_notification_sweep';
 
 /**
- * How often the sweep runs.
+ * How often the backstop runs, in hours.
  *
- * The one number that governs cost. Every tick is one HTTP call plus one
- * indexed query that normally returns nothing, so 5 minutes is 288 invocations
- * a day and a reminder is at worst 5 minutes early. Raising it to 15 cuts that
- * by two thirds and is the first dial to turn if credits matter more than
- * precision.
+ * One an hour is the floor Catalyst's Periodic cron allows, and is the right
+ * setting: this exists to wake a stopped container, not to be the schedule.
+ * 24 invocations a day.
  */
-const EXPRESSION = process.env['SWEEP_CRON_EXPRESSION'] ?? '*/5 * * * *';
+const INTERVAL_HOURS = Math.max(1, Number(process.env['SWEEP_CRON_HOURS'] ?? '1'));
 
 /** The path the cron calls. Relative — Catalyst resolves it against the service. */
 const TICK_PATH = '/api/internal/tick';
@@ -67,20 +87,29 @@ async function findCron(target: Target, name: string): Promise<{ id: string } | 
   return crons?.find((c) => c.cron_name === name) ?? null;
 }
 
-function cronPayload(appsailId: string, secret: string) {
+function cronPayload(serviceUrl: string, secret: string) {
   return {
     cron_name: CRON_NAME,
-    description: 'Drains the HitList notification queue. See server/notifications/sweep.ts.',
+    description:
+      'Hourly backstop for the HitList notification sweep. The five-minute ' +
+      'schedule runs inside the service; see server/notifications/scheduler.ts.',
     cron_status: true,
-    cron_type: 'CronExpression',
-    cron_expression: EXPRESSION,
-    cron_detail: { timezone: 'Asia/Kolkata' },
+    cron_type: 'Periodic',
+    cron_detail: {
+      hour: INTERVAL_HOURS,
+      minute: 0,
+      second: 0,
+      repetition_type: 'every',
+      timezone: 'Asia/Kolkata',
+    },
     job_meta: {
       job_name: 'notification_sweep',
-      target_type: 'AppSail',
-      target_id: appsailId,
+      // Webhook rather than AppSail, with the service's ABSOLUTE url. An
+      // AppSail-targeted cron fired on schedule and recorded failure_count 1;
+      // an identically scheduled Webhook cron to the same URL succeeded.
+      target_type: 'Webhook',
+      url: `${serviceUrl.replace(/\/+$/, '')}${TICK_PATH}`,
       request_method: 'POST',
-      url: TICK_PATH,
       // The endpoint refuses to run without this, so a cron registered with
       // the wrong secret fails closed rather than sweeping unauthenticated.
       headers: { 'X-Tick-Secret': secret },
@@ -125,11 +154,16 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  console.log(`[cron] target  ${service.name} (${service.id})`);
-  console.log(`[cron] calls   POST ${TICK_PATH}`);
-  console.log(`[cron] every   ${EXPRESSION}`);
+  if (!service.url) {
+    console.error(`\nAppSail service "${serviceName}" reports no URL yet; deploy it first.\n`);
+    process.exit(1);
+  }
 
-  const payload = cronPayload(service.id, secret);
+  console.log(`[cron] target  ${service.name} (${service.id})`);
+  console.log(`[cron] calls   POST ${service.url}${TICK_PATH}`);
+  console.log(`[cron] every   ${INTERVAL_HOURS}h (backstop; the service sweeps every 5 min)`);
+
+  const payload = cronPayload(service.url, secret);
 
   if (existing) {
     if (DRY_RUN) { console.log(`[cron] would update ${CRON_NAME} (${existing.id})`); return; }

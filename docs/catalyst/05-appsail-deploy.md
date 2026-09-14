@@ -172,6 +172,37 @@ Otherwise a production service echoes raw datastore errors to clients.
 
 ---
 
+### `env_variables` in app-config.json is ignored on redeploy `[VERIFIED]`
+
+It seeds a service when the service is **first created**, and is ignored from then on.
+
+Verified: a new variable was added to `app-config.json`, `catalyst deploy appsail` reported
+success, and the running service still answered as though the variable were unset. `GET /appsail`
+showed only the variables the service was originally created with.
+
+Worse, **a deploy RESETS the environment** to what the service already had, discarding anything
+set since. So the order matters:
+
+```
+catalyst deploy appsail --name <service>   # deploy FIRST
+pnpm catalyst:env                          # then set the environment
+```
+
+There is no CLI command for it — `appsail:add` is the only appsail subcommand, and `config:set`
+writes local CLI config rather than service environment. The endpoint that works is undocumented
+and answers **only to POST** (GET and PUT both return `INVALID_REQUEST_METHOD`, which is how it
+was found):
+
+```
+POST {apiHost}/baas/v1/project/{projectId}/appsail/{serviceId}/configuration
+{ "environment": { "variables": { "KEY": "value", … } } }
+```
+
+The write **replaces the whole set**, so send every variable the service needs, not just the one
+you are changing. Empty values are not stored.
+
+See `scripts/set-appsail-env.ts`.
+
 ## Building a bundle
 
 `[VERIFIED]` Pointing `build_path` at a repo root uploaded ~310MB and installed 635 packages,

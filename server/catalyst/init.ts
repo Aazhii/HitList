@@ -155,6 +155,59 @@ export function initCatalystApp(
   );
 }
 
+// ── Credentials for background work ───────────────────────────────────────────
+//
+// Under the gateway, the SDK's credentials arrive in the REQUEST's headers.
+// That is fine for a route and useless for anything that runs on a timer: the
+// background sweep has no request, no standalone configuration on AppSail, and
+// no CLI login inside a container, so initCatalystApp() would simply throw.
+//
+// The gateway injects the same admin headers on every request, so the last set
+// seen is as good as any. The sweep therefore borrows them — which means it
+// stays idle until the service has served at least one request, and starts
+// working from the first one. The hourly backstop cron is itself a request, so
+// this bootstraps without anyone visiting the app.
+
+/** The most recent gateway headers, or null before any request has arrived. */
+let lastGatewayHeaders: Record<string, unknown> | null = null;
+
+/** Remembers a request's gateway headers for background use. */
+export function captureGatewayCredentials(req: express.Request): void {
+  if (!hasGatewayHeaders(req)) return;
+  lastGatewayHeaders = { ...req.headers };
+}
+
+/**
+ * A Catalyst app for work with no request behind it.
+ *
+ * Prefers real credentials (standalone or CLI) and falls back to the borrowed
+ * gateway headers, which is the only thing available inside AppSail.
+ *
+ * Returns null rather than throwing: a sweep that cannot authenticate should
+ * skip this tick quietly and try the next, not crash a timer.
+ */
+export function backgroundCatalystApp(
+  standalone: StandaloneConfig | null,
+): ReturnType<typeof catalyst.initializeApp> | null {
+  if (standalone) return getStandaloneApp(standalone);
+  if (cliApp) return cliApp;
+
+  if (lastGatewayHeaders) {
+    // The SDK's gateway path reads `headers` off whatever it is handed, so a
+    // bare object with the captured headers stands in for the request.
+    return catalyst.initialize(
+      { headers: lastGatewayHeaders } as unknown as { [x: string]: unknown },
+      { scope: 'admin' },
+    );
+  }
+  return null;
+}
+
+/** True once background work has credentials to use. */
+export function hasBackgroundCredentials(standalone: StandaloneConfig | null): boolean {
+  return Boolean(standalone) || Boolean(cliApp) || lastGatewayHeaders !== null;
+}
+
 /** Which mode a given request would use. For /api/health and startup logging. */
 export function describeMode(
   req: express.Request | null,
