@@ -21,6 +21,24 @@ import { mockTaskApi, mockListApi, mockStatsApi } from '../lib/mockApi';
 
 export { ServerSyncState };
 
+/**
+ * Renders a thrown value as something a person can read.
+ *
+ * lib/api.ts rejects with a plain ApiError object rather than an Error, so
+ * String(e) yielded "[object Object]" — which is what the app's error banner
+ * was showing instead of the actual problem.
+ */
+function describeApiError(e: unknown): string {
+  if (e instanceof Error) return e.message;
+  if (e && typeof e === 'object') {
+    const o = e as { message?: unknown; error?: unknown; status?: unknown };
+    if (typeof o.message === 'string' && o.message) return o.message;
+    if (typeof o.error === 'string' && o.error) return o.error;
+    if (typeof o.status === 'number') return `Request failed (${o.status})`;
+  }
+  return 'Something went wrong. Please try again.';
+}
+
 /** The two interchangeable data sources. */
 const REAL = { task: taskApi,     list: listApi,     stats: statsApi };
 const MOCK = { task: mockTaskApi, list: mockListApi, stats: mockStatsApi };
@@ -73,8 +91,7 @@ export function useCatalystSync(activeListId?: string, _filters?: import('../lib
   const clearError = useCallback(() => setError(null), []);
 
   const handleError = useCallback((e: unknown): null => {
-    const msg = e instanceof Error ? e.message : String(e);
-    setError(msg);
+    setError(describeApiError(e));
     return null;
   }, []);
 

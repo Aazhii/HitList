@@ -122,11 +122,24 @@ function getStandaloneApp(cfg: StandaloneConfig) {
 export function initCatalystApp(
   req: express.Request,
   standalone: StandaloneConfig | null,
+  scope: 'admin' | 'user' = 'admin',
 ): ReturnType<typeof catalyst.initializeApp> {
   if (hasGatewayHeaders(req)) {
+    // Scope decides whose identity the SDK acts as, and the two uses differ:
+    //
+    //   'admin' — for data. The gateway injects admin credentials, so table
+    //             permissions never block a write. Catalyst grants App User
+    //             SELECT only by default, so user scope would break writes.
+    //
+    //   'user'  — for identity. Under admin scope the SDK IS the project
+    //             admin, which is not an app user, so getCurrentUser() returns
+    //             null even for a signed-in visitor and every request 401s.
+    //
+    // Only the request's own session distinguishes them, so this must be
+    // per-call rather than a single cached app.
     return catalyst.initialize(
       req as unknown as { [x: string]: unknown },
-      { scope: 'admin' },
+      { scope },
     );
   }
   if (standalone) return getStandaloneApp(standalone);

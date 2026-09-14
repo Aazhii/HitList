@@ -188,7 +188,7 @@ async function getCurrentUserId(req: express.Request): Promise<string> {
 
   let user: unknown;
   try {
-    const app = initCatalyst(req);
+    const app = initCatalystAsUser(req);
     user = await app.userManagement().getCurrentUser();
   } catch (e) {
     throw new UnauthenticatedError(`Catalyst session lookup failed: ${String(e)}`);
@@ -250,9 +250,21 @@ if (standaloneConfig) catalystAvailable = true;
 /** Which initialisation path the last request used; reported by /api/health. */
 let lastCatalystMode: CatalystMode = standaloneConfig ? 'standalone' : 'none';
 
+/** Admin-scoped app, for reading and writing rows. */
 function initCatalyst(req: express.Request) {
   lastCatalystMode = describeMode(req, standaloneConfig);
-  return initCatalystApp(req, standaloneConfig);
+  return initCatalystApp(req, standaloneConfig, 'admin');
+}
+
+/**
+ * User-scoped app, for resolving who is calling.
+ *
+ * Must not be the admin-scoped one: under the AppSail gateway admin scope makes
+ * the SDK the project admin, which is not an app user, so getCurrentUser()
+ * returns null for a signed-in visitor and every request answers 401.
+ */
+function initCatalystAsUser(req: express.Request) {
+  return initCatalystApp(req, standaloneConfig, 'user');
 }
 
 // ── Catalyst table probe ──────────────────────────────────────────────────────
