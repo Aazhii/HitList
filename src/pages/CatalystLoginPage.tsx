@@ -60,7 +60,7 @@ export function CatalystLoginPage() {
         <div className="grid flex-1 items-center gap-12 lg:grid-cols-[1fr_480px] lg:gap-20">
           <Pitch />
 
-          <div className="o-card w-full max-w-[480px] justify-self-center p-8 sm:p-10">
+          <div className="o-card w-full max-w-[480px] justify-self-center p-7 sm:p-9">
             {mode === 'signin'
               ? <SignInPanel onSignUp={() => setMode('signup')} />
               : <SignUpPanel onBack={() => setMode('signin')} />}
@@ -131,11 +131,11 @@ function SignInPanel({ onSignUp }: { onSignUp: () => void }) {
         </p>
       </header>
 
-      {error && <InlineError message={error} className="mt-6" />}
+      {error && <InlineError message={error} className="mt-5" />}
 
-      <div id={LOGIN_CONTAINER_ID} className="o-auth-well mt-7" />
+      <div id={LOGIN_CONTAINER_ID} className="o-auth-well mt-5" />
 
-      <p className="mt-6 text-center text-[15px]" style={{ color: 'var(--o-muted)' }}>
+      <p className="mt-5 text-center text-[15px]" style={{ color: 'var(--o-muted)' }}>
         No account yet?{' '}
         <button type="button" onClick={onSignUp} className="o-link">Create one</button>
       </p>

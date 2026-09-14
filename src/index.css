@@ -332,9 +332,16 @@
   line-height: 1.55;
 }
 
-/* The Catalyst iframe has no intrinsic height; keep the well close to the
-   form's real height so the card does not open an empty gap underneath. */
-.login-organic .o-auth-well { min-height: 220px; }
-.login-organic .o-auth-well iframe { width: 100%; border: 0; }
+/* The Catalyst iframe has no intrinsic height and renders invisible without an
+   explicit one. It must be a real height rather than a min-height on the
+   container: the iframe itself collapses to 0 otherwise. 480px fits the form's
+   tallest state (OTP entry) without leaving a well under the shortest. */
+.login-organic .o-auth-well { display: block; }
+.login-organic .o-auth-well iframe {
+  display: block;
+  width: 100%;
+  height: 480px;
+  border: 0;
+}
 
 .login-organic ::selection { background: color-mix(in srgb, var(--o-accent) 30%, transparent); }

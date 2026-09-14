@@ -152,15 +152,21 @@ export async function getCurrentSession(): Promise<CatalystSession | null> {
 /**
  * Renders Catalyst's embedded login form into the given element.
  *
- * css_url styles the iframe's interior. The iframe is served from Catalyst's
- * domain, so this is the only way to reach inside it — page-level CSS stops at
- * the boundary, which is why the default form looks nothing like the app.
+ * Deliberately does NOT pass css_url.
+ *
+ * That option replaces Catalyst's own stylesheet rather than adding to it, and
+ * their sheet is what drives the form's state machine — it hides the steps that
+ * are not current. Supplying our own theme removed those rules, so the iframe
+ * rendered the email step, "Sign in using OTP", "Forgot Password?", "Change"
+ * and the OTP field all at once, stacked and overflowing its container.
+ *
+ * Styling the interior therefore means starting from Catalyst's published
+ * stylesheet and editing it, not writing one from scratch. Until we have that
+ * file, the form keeps its default appearance and we style the card around it.
+ * A working sign-in beats a themed broken one.
  */
 export function renderLoginForm(elementId: string, redirectTo = '/'): void {
-  sdk().signIn(elementId, {
-    service_url: redirectTo,
-    css_url: `${window.location.origin}/catalyst-login.css`,
-  });
+  sdk().signIn(elementId, { service_url: redirectTo });
 }
 
 export interface SignUpRequest {
