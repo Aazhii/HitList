@@ -308,15 +308,37 @@ html, body {
 /* The iframe's own document must not scroll: .signin_box ships
    overflow-y:auto with min-height:520px and 50px padding, which is a second
    scrollbar inside an iframe the page has already sized. The page owns the
-   height; this document just fills it. */
-html, body {
+   height; this document just fills it.
+   
+   The steps are not the same height — the password step runs about 80px taller
+   than the email step — and the iframe is one fixed size, so the shorter step
+   would otherwise leave all its slack as a gap at the bottom of the card.
+   Centring spreads that slack above and below, where it reads as padding.
+   
+   `safe center` is the important word: if a step is ever taller than the
+   iframe, safe alignment falls back to flex-start rather than centring, so the
+   overflow goes off the bottom and the field and button stay reachable.
+   Plain `center` would clip both ends. */
+html {
   margin: 0 !important;
   padding: 0 !important;
-  height: auto !important;
-  min-height: 0 !important;
+  height: 100% !important;
   overflow: hidden !important;
 }
+body {
+  margin: 0 !important;
+  padding: 0 !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column;
+  justify-content: safe center;
+}
 .signin_box { overflow: hidden !important; }
+
+/* Direct children of the now-flex body must not stretch to fill it. */
+body > * { flex: 0 0 auto; width: 100%; }
 
 /* The exception: the recovery and MFA option lists are genuinely long, so they
    keep a contained scroll of their own rather than being cut off. */
