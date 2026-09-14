@@ -149,9 +149,18 @@ export async function getCurrentSession(): Promise<CatalystSession | null> {
   }
 }
 
-/** Renders Catalyst's embedded login form into the given element. */
+/**
+ * Renders Catalyst's embedded login form into the given element.
+ *
+ * css_url styles the iframe's interior. The iframe is served from Catalyst's
+ * domain, so this is the only way to reach inside it — page-level CSS stops at
+ * the boundary, which is why the default form looks nothing like the app.
+ */
 export function renderLoginForm(elementId: string, redirectTo = '/'): void {
-  sdk().signIn(elementId, { service_url: redirectTo });
+  sdk().signIn(elementId, {
+    service_url: redirectTo,
+    css_url: `${window.location.origin}/catalyst-login.css`,
+  });
 }
 
 export interface SignUpRequest {

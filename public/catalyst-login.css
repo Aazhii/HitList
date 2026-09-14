@@ -1,0 +1,148 @@
+/*
+ * Styles for Catalyst's embedded sign-in iframe.
+ *
+ * Passed to catalyst.auth.signIn() as `css_url`. The iframe is served from
+ * Catalyst's own domain, so this file is the only way to reach inside it —
+ * page-level CSS cannot cross that boundary.
+ *
+ * Catalyst does not publish the markup it renders, so these rules are written
+ * defensively: element and attribute selectors that hold regardless of the
+ * class names in use, and only properties that degrade gracefully if a
+ * selector misses. The tokens mirror src/index.css so the form matches the
+ * rest of the app.
+ */
+
+:root {
+  --k-bg: #ffffff;
+  --k-fg: #191919;
+  --k-muted: #6b7280;
+  --k-border: #e6e6e6;
+  --k-primary: #2f7d62;
+  --k-primary-hover: #276a53;
+  --k-ring: rgba(47, 125, 98, 0.28);
+  --k-radius: 10px;
+  --k-font: 'Manrope Variable', 'Manrope', ui-sans-serif, system-ui, -apple-system, sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --k-bg: #1c1c1c;
+    --k-fg: #f5f5f5;
+    --k-muted: #a1a1a1;
+    --k-border: #343434;
+    --k-primary: #3f9d7c;
+    --k-primary-hover: #4bb28d;
+    --k-ring: rgba(63, 157, 124, 0.35);
+  }
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--k-fg);
+  font-family: var(--k-font);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Catalyst's own heading duplicates the one on our page. */
+h1, h2, h3 {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  margin: 0 0 4px;
+  color: var(--k-fg);
+}
+
+p, span, label, div {
+  color: inherit;
+}
+
+label {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--k-muted);
+  margin-bottom: 6px;
+}
+
+input[type='text'],
+input[type='email'],
+input[type='password'],
+input[type='tel'],
+input:not([type='checkbox']):not([type='radio']):not([type='submit']):not([type='button']) {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  margin: 0 0 14px;
+  font: inherit;
+  color: var(--k-fg);
+  background: var(--k-bg);
+  border: 1px solid var(--k-border);
+  border-radius: var(--k-radius);
+  outline: none;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+input:focus,
+input:focus-visible {
+  border-color: var(--k-primary);
+  box-shadow: 0 0 0 3px var(--k-ring);
+}
+
+input::placeholder { color: var(--k-muted); opacity: 1; }
+
+button,
+input[type='submit'],
+input[type='button'],
+a[role='button'] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 16px;
+  font: inherit;
+  font-weight: 600;
+  color: #ffffff;
+  background: var(--k-primary);
+  border: 1px solid transparent;
+  border-radius: var(--k-radius);
+  cursor: pointer;
+  transition: background-color 120ms ease, transform 80ms ease;
+}
+
+button:hover,
+input[type='submit']:hover { background: var(--k-primary-hover); }
+
+button:active,
+input[type='submit']:active { transform: translateY(1px); }
+
+button:focus-visible,
+input[type='submit']:focus-visible { box-shadow: 0 0 0 3px var(--k-ring); }
+
+button:disabled,
+input[type='submit']:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* Secondary links — forgot password, provider switches. */
+a {
+  color: var(--k-primary);
+  text-decoration: none;
+  font-weight: 500;
+}
+a:hover { text-decoration: underline; }
+
+/* Error and helper text. */
+[class*='error'], [class*='Error'] {
+  color: #b4342a;
+  font-size: 12px;
+}
+
+/* Catalyst draws its own container chrome; our page already provides a card. */
+[class*='container'], [class*='wrapper'], [class*='box'] {
+  box-shadow: none;
+  border: none;
+  background: transparent;
+}

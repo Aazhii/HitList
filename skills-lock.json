@@ -96,6 +96,12 @@
       "sourceType": "github",
       "skillPath": "skills/catalyst-zoho-mcp/SKILL.md",
       "computedHash": "b34448d11bb44ab9716edaade019c7bff6651e9836adfea405960a013541d4bd"
+    },
+    "frontend-design": {
+      "source": "nexu-io/open-design",
+      "sourceType": "github",
+      "skillPath": "skills/frontend-design/SKILL.md",
+      "computedHash": "157de51af16b12d13df05bd3eb5b81f726aa87470abf05b164592fc4ac6fb904"
     }
   }
 }
