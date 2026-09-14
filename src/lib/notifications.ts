@@ -21,8 +21,34 @@ export const DEFAULT_REMINDER_MINUTES: ReminderMinutes = 15;
 
 // ── Internal state ───────────────────────────────────────────────────────────
 
-/** Map of taskId → active timeout handle */
-const scheduledTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
+/**
+ * taskId → the live timer and the inputs it was scheduled from.
+ *
+ * The signature is what makes reconciliation possible. Previously
+ * scheduleAllReminders() cancelled every timer and rebuilt them all, and the
+ * effect that calls it re-runs whenever the todos array identity changes —
+ * which is every keystroke-driven state update. A reminder due inside that
+ * churn window could be destroyed microseconds before it was meant to fire.
+ * Now a reminder whose inputs have not changed is left strictly alone.
+ */
+interface ScheduledReminder {
+  handle: ReturnType<typeof setTimeout>;
+  signature: string;
+}
+
+const scheduledTimeouts = new Map<string, ScheduledReminder>();
+
+/** Everything that determines when — and whether — a reminder fires. */
+function reminderSignature(todo: Todo): string {
+  return [
+    todo.reminderEnabled ? '1' : '0',
+    todo.reminderMinutesBefore ?? DEFAULT_REMINDER_MINUTES,
+    todo.dueDate ?? '',
+    todo.dueTime ?? '',
+    todo.status,
+    todo.text,
+  ].join('|');
+}
 
 // ── Browser support ──────────────────────────────────────────────────────────
 
@@ -119,21 +145,21 @@ export function scheduleReminder(todo: Todo): void {
     fireNotification(todo, minutesBefore);
   }, delay);
 
-  scheduledTimeouts.set(todo.id, handle);
+  scheduledTimeouts.set(todo.id, { handle, signature: reminderSignature(todo) });
 }
 
 /** Cancel a scheduled reminder for a task. */
 export function cancelReminder(taskId: string): void {
-  const handle = scheduledTimeouts.get(taskId);
-  if (handle !== undefined) {
-    clearTimeout(handle);
+  const entry = scheduledTimeouts.get(taskId);
+  if (entry !== undefined) {
+    clearTimeout(entry.handle);
     scheduledTimeouts.delete(taskId);
   }
 }
 
 /** Cancel all scheduled reminders. */
 export function cancelAllReminders(): void {
-  for (const handle of scheduledTimeouts.values()) {
+  for (const { handle } of scheduledTimeouts.values()) {
     clearTimeout(handle);
   }
   scheduledTimeouts.clear();
@@ -144,11 +170,39 @@ export function cancelAllReminders(): void {
  * Cancels all existing reminders first, then re-registers.
  * Call this on mount and whenever the tasks array changes.
  */
+/**
+ * Brings the live timers in line with `todos`, touching only what changed.
+ *
+ * This used to cancel every timer and re-create them all. The effect that calls
+ * it re-runs on any change to the todos array identity, so reminders were being
+ * destroyed and rebuilt constantly — and one falling due inside that window
+ * could be cancelled just before it fired. Reconciling means an unchanged
+ * reminder keeps the timer it already has.
+ */
 export function scheduleAllReminders(todos: Todo[]): void {
-  cancelAllReminders();
-  if (!isNotificationSupported() || Notification.permission !== 'granted') return;
+  if (!isNotificationSupported() || Notification.permission !== 'granted') {
+    cancelAllReminders();
+    return;
+  }
+
+  const seen = new Set<string>();
+
   for (const todo of todos) {
+    seen.add(todo.id);
+    const existing = scheduledTimeouts.get(todo.id);
+    const signature = reminderSignature(todo);
+
+    // Unchanged — leave its timer running.
+    if (existing && existing.signature === signature) continue;
+
+    // Changed: drop the stale timer before scheduling the new one.
+    if (existing) cancelReminder(todo.id);
     scheduleReminder(todo);
+  }
+
+  // Anything no longer in the list has been deleted; drop its timer.
+  for (const taskId of [...scheduledTimeouts.keys()]) {
+    if (!seen.has(taskId)) cancelReminder(taskId);
   }
 }
 

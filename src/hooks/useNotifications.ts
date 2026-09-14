@@ -40,15 +40,21 @@ export function useNotifications(todos: Todo[]): UseNotificationsReturn {
     localStorage.setItem(PERM_STORAGE_KEY, Notification.permission);
   }, [supported]);
 
-  // Re-schedule all reminders whenever tasks change or permission changes
+  // Reconcile timers whenever tasks or permission change. scheduleAllReminders
+  // now leaves unchanged reminders alone, so this is cheap to run often.
   useEffect(() => {
     if (!supported) return;
     scheduleAllReminders(todos);
-    return () => {
-      // Cleanup on unmount — reminders will be re-registered on next mount
-      cancelAllReminders();
-    };
   }, [todos, permission, supported]);
+
+  // Cancel everything on unmount ONLY.
+  //
+  // This cleanup used to live on the effect above, where it ran before every
+  // re-run — so each change to the todos array tore down every timer and
+  // rebuilt it, and a reminder falling due inside that window could be
+  // cancelled moments before firing. An empty dependency list means it runs
+  // when the component really goes away, and not otherwise.
+  useEffect(() => cancelAllReminders, []);
 
   const requestPermission = useCallback(async (): Promise<NotificationPermission> => {
     const result = await requestNotificationPermission();
