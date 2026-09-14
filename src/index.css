@@ -173,9 +173,9 @@
 
   /* Accent — swap this trio for another palette (blue: #3f6b8a / #335873 / #26435a,
      green: #4e7a55 / #406647 / #2f4f36, sage: #7a8a5e / #667350 / #4f5a3d). */
-  --o-accent: #3f6b8a;
-  --o-accent-600: #335873;
-  --o-accent-700: #26435a;
+  --o-accent: #c67139;
+  --o-accent-600: #b2622d;
+  --o-accent-700: #8c491a;
 
   /* Quadrant inks — four voices, each measured to clear 4.5:1 on its tint. */
   --o-q1: #9c3421; --o-q1-bg: #f7e0d6;
@@ -333,14 +333,19 @@
 }
 
 /* The Catalyst iframe has no intrinsic height and renders invisible without an
-   explicit one. It must be a real height rather than a min-height on the
-   container: the iframe itself collapses to 0 otherwise. 480px fits the form's
-   tallest state (OTP entry) without leaving a well under the shortest. */
+   explicit one — a min-height on the container does not help, since the iframe
+   itself still collapses to zero.
+   
+   320px, not the 480 used while Catalyst's own .signin_container min-height of
+   520px was still in force. The theme block neutralises that, so the form is
+   only about 250px tall; the surplus showed up as dead space inside the card
+   and was what made the page scroll. This still clears the tallest step
+   (password: username + Change + field + button + two links). */
 .login-organic .o-auth-well { display: block; }
 .login-organic .o-auth-well iframe {
   display: block;
   width: 100%;
-  height: 480px;
+  height: 320px;
   border: 0;
 }
 

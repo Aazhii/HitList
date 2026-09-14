@@ -43,7 +43,7 @@ export function CatalystLoginPage() {
         style={{ background: 'color-mix(in srgb, #7a8a5e 22%, transparent)' }}
       />
 
-      <div className="relative mx-auto flex min-h-svh w-full max-w-[1440px] flex-col gap-10 px-6 py-8 sm:px-10 lg:px-16 lg:py-11">
+      <div className="relative mx-auto flex min-h-svh w-full max-w-[1440px] flex-col gap-8 px-6 py-7 sm:px-10 lg:px-16 lg:py-9">
         <header className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <span
@@ -57,7 +57,7 @@ export function CatalystLoginPage() {
           <span className="o-tag hidden sm:inline-flex">Secured by Zoho Catalyst</span>
         </header>
 
-        <div className="grid flex-1 items-center gap-12 lg:grid-cols-[1fr_480px] lg:gap-20">
+        <div className="grid flex-1 items-center gap-10 lg:grid-cols-[1fr_460px] lg:gap-16">
           <Pitch />
 
           <div className="o-card w-full max-w-[480px] justify-self-center p-8 sm:p-10">

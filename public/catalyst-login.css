@@ -1458,9 +1458,9 @@
   --o-text: #201e1d;
   --o-muted: #4a453f;
   --o-divider: rgba(32, 30, 29, 0.16);
-  --o-accent: #3f6b8a;
-  --o-accent-600: #335873;
-  --o-accent-700: #26435a;
+  --o-accent: #c67139;
+  --o-accent-600: #b2622d;
+  --o-accent-700: #8c491a;
   --o-danger: #7d2415;
   --o-danger-bg: #f7e0d6;
   --o-font-body: 'Figtree', ui-sans-serif, system-ui, sans-serif;
