@@ -15,9 +15,12 @@
  *     assumes numbers survive a round trip is caught here rather than in
  *     production
  *
- * It is not a SQL engine. `executeZCQLQuery` pattern-matches the specific
- * predicates the notification code issues; a query it has not been taught is
- * silently over-broad, so a new query means a new clause here.
+ * It is not a SQL engine. `executeZCQLQuery` reads the table out of the FROM
+ * clause and applies whatever equality and numeric comparisons the query
+ * names, which covers everything this code issues without needing a clause per
+ * query. What it does NOT understand — OR, joins, LIKE, parenthesised groups —
+ * it silently ignores, so a test relying on one would pass for the wrong
+ * reason.
  */
 import { expect } from 'vitest';
 import type { CatalystApp } from '../../../server/notifications/types.ts';
@@ -91,38 +94,43 @@ export function fakeCatalyst(options: FakeOptions = {}): Fake {
 
     zcql: () => ({
       executeZCQLQuery: async (query: string) => {
-        const rows = tables[QUEUE_TABLE];
+        // Route by the table the query names. Answering everything from the
+        // queue table was fine while only the queue issued queries; once the
+        // sweep also plans rules, it silently hands rule code a queue row.
+        const table = query.match(/FROM\s+(\w+)/i)?.[1] ?? QUEUE_TABLE;
+        tables[table] ??= [];
+        let out = tables[table].slice();
 
-        const eq = (col: string): string | null =>
-          query.match(new RegExp(`${col} = '([^']*)'`))?.[1] ?? null;
-        const num = (col: string, op: string): number | null => {
-          const m = query.match(new RegExp(`${col} ${op} (\\d+)`));
-          return m ? Number(m[1]) : null;
-        };
+        // Generic predicates, applied to whatever columns the query names, so
+        // a new query does not need a new clause here.
+        for (const [, col, value] of query.matchAll(/(\w+)\s*=\s*'([^']*)'/g)) {
+          out = out.filter((r) => (r[col] ?? '') === value);
+        }
+        // Unquoted equality, which is how ROWID and the bigint columns are
+        // compared. Without this the predicate is silently ignored and a query
+        // meant to select one row returns every row.
+        for (const [, col, value] of query.matchAll(/(\w+)\s*=\s*(-?\d+)(?!\d)/g)) {
+          out = out.filter((r) => Number(r[col] ?? NaN) === Number(value));
+        }
+        for (const [, col, op, value] of query.matchAll(/(\w+)\s*(<=|>=|<|>)\s*(-?\d+)/g)) {
+          const n = Number(value);
+          out = out.filter((r) => {
+            const v = Number(r[col] ?? 0);
+            return op === '<=' ? v <= n : op === '>=' ? v >= n : op === '<' ? v < n : v > n;
+          });
+        }
+
+        const order = query.match(/ORDER BY (\w+) (ASC|DESC)/i);
+        if (order) {
+          const [, col, dir] = order;
+          out.sort((a, b) => {
+            const d = Number(a[col] ?? 0) - Number(b[col] ?? 0);
+            return dir.toUpperCase() === 'DESC' ? -d : d;
+          });
+        }
+
         const limit = Number(query.match(/LIMIT (\d+)/)?.[1] ?? Infinity);
-
-        let out = rows.slice();
-
-        const rowId = query.match(/ROWID = (\d+)/)?.[1];
-        if (rowId) out = out.filter((r) => r.ROWID === rowId);
-
-        for (const col of ['Status', 'SourceType', 'SourceId', 'OwnerId', 'DedupeKey'] as const) {
-          const want = eq(col);
-          if (want !== null) out = out.filter((r) => r[col] === want);
-        }
-
-        const fireAt = num('FireAt', '<=');
-        if (fireAt !== null) out = out.filter((r) => Number(r.FireAt) <= fireAt);
-
-        const sentBefore = num('SentAt', '<');
-        if (sentBefore !== null) out = out.filter((r) => Number(r.SentAt) < sentBefore);
-        if (/SentAt > 0/.test(query)) out = out.filter((r) => Number(r.SentAt) > 0);
-
-        if (/ORDER BY FireAt ASC/.test(query)) {
-          out.sort((a, b) => Number(a.FireAt) - Number(b.FireAt));
-        }
-
-        return out.slice(0, limit).map((r) => ({ [QUEUE_TABLE]: { ...r } }));
+        return out.slice(0, limit).map((r) => ({ [table]: { ...r } }));
       },
     }),
 

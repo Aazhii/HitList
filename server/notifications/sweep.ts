@@ -1,14 +1,16 @@
 /**
  * The sweep — what a cron tick actually runs.
  *
- * Two phases:
+ * Three phases:
  *
  *   DRAIN  deliver everything in the queue whose FireAt has arrived
- *   PURGE  clear delivered rows past the retention window
+ *   PLAN   enqueue the next firing of every automation rule that is due
+ *   PURGE  clear delivered rows and old run records past retention
  *
- * (A PLAN phase, evaluating automation rules to enqueue their next firing,
- * joins this once rules move server-side. The shape is deliberately ready for
- * it: planning is just another producer of queue rows.)
+ * DRAIN runs before PLAN deliberately. A rule planned this tick sets a FireAt
+ * in the future, so draining first costs nothing — while planning first would
+ * occasionally deliver a rule in the same tick that scheduled it, making the
+ * rule's timing depend on the order two phases happen to run in.
  *
  * The whole design rests on this being cheap. A tick with nothing due runs one
  * indexed query that returns no rows and stops — which is what makes it
@@ -31,13 +33,20 @@ import {
   type QueueRow,
 } from './queue.ts';
 import { deliver, summarise } from './channels.ts';
+import { findDueRules } from '../automations/rules.ts';
+import { planRule, PLAN_LIMIT } from '../automations/planner.ts';
+import { purgeOldRuns } from '../automations/runs.ts';
 
 export interface SweepReport {
   /** Rows found due on this tick. */
   due: number;
   delivered: number;
   failed: number;
-  /** Delivered rows removed past the retention window. */
+  /** Automation rules whose NextTriggerAt had arrived. */
+  rulesDue: number;
+  /** Rules that enqueued a firing. */
+  rulesPlanned: number;
+  /** Delivered rows and old runs removed past their retention windows. */
   purged: number;
   /** Milliseconds the tick took, so a slow sweep is visible in the logs. */
   durationMs: number;
@@ -49,6 +58,8 @@ export interface SweepOptions {
   limit?: number;
   /** Skip retention this tick. */
   skipPurge?: boolean;
+  /** Skip rule planning this tick. */
+  skipPlan?: boolean;
 }
 
 /**
@@ -67,9 +78,11 @@ export async function runSweep(
   const limit = options.limit ?? SWEEP_LIMIT;
 
   const report: SweepReport = {
-    due: 0, delivered: 0, failed: 0, purged: 0, durationMs: 0, details: [],
+    due: 0, delivered: 0, failed: 0, rulesDue: 0, rulesPlanned: 0,
+    purged: 0, durationMs: 0, details: [],
   };
 
+  // ── DRAIN ──
   const dueRows = await findDue(app, now, limit);
   report.due = dueRows.length;
 
@@ -77,12 +90,29 @@ export async function runSweep(
     await deliverOne(app, row, report);
   }
 
+  // ── PLAN ──
+  if (!options.skipPlan) {
+    try {
+      await planDueRules(app, now, report);
+    } catch (e) {
+      // A planning failure must not cost the deliveries this tick already
+      // made, nor stop the purge that keeps the tables bounded.
+      report.details.push(`planning failed: ${String(e)}`);
+    }
+  }
+
+  // ── PURGE ──
   if (!options.skipPurge) {
     try {
       report.purged = await purgeOldEntries(app, now);
     } catch (e) {
       // Housekeeping must never fail a tick that delivered successfully.
       report.details.push(`purge failed: ${String(e)}`);
+    }
+    try {
+      report.purged += await purgeOldRuns(app, now);
+    } catch (e) {
+      report.details.push(`run purge failed: ${String(e)}`);
     }
   }
 
@@ -134,8 +164,36 @@ async function deliverOne(app: CatalystApp, row: QueueRow, report: SweepReport):
   report.details.push(`${row.queueId} undeliverable — ${summary}`);
 }
 
+/**
+ * Plans every rule whose NextTriggerAt has arrived.
+ *
+ * The owner's timezone and address come off the rule itself, captured when it
+ * was written from a signed-in request. The cron has no session, so there is
+ * nowhere else they could come from — see the OwnerTimezone column in
+ * server/catalyst/schema.ts.
+ */
+async function planDueRules(app: CatalystApp, now: number, report: SweepReport): Promise<void> {
+  const rules = await findDueRules(app, now, PLAN_LIMIT);
+  report.rulesDue = rules.length;
+
+  for (const rule of rules) {
+    const outcome = await planRule(app, rule, {
+      // UTC is a visible wrong answer rather than a crash, for a rule written
+      // before the column existed. The backfill refreshes it.
+      timeZone: rule.ownerTimezone || 'UTC',
+      email: rule.ownerEmail,
+    }, now);
+
+    if (outcome.enqueued) report.rulesPlanned++;
+    if (outcome.error || outcome.enqueued) {
+      report.details.push(`rule ${outcome.ruleId} ${outcome.detail}`);
+    }
+  }
+}
+
 /** One-line summary for the server log. */
 export function describeSweep(report: SweepReport): string {
   return `due=${report.due} delivered=${report.delivered} failed=${report.failed} ` +
+    `rulesDue=${report.rulesDue} rulesPlanned=${report.rulesPlanned} ` +
     `purged=${report.purged} in ${report.durationMs}ms`;
 }

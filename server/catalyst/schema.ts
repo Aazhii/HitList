@@ -178,6 +178,14 @@ export const SCHEMA: TableSpec[] = [
       { name: 'NotifyInApp', type: 'boolean' },
       { name: 'NotifyBrowser', type: 'boolean' },
       { name: 'NotifyEmail', type: 'boolean' },
+      // The tick runs as the cron, with no user session, so it can resolve
+      // neither the owner's zone nor their address. Both are captured here
+      // when the rule is written from a signed-in request — the same trick the
+      // queue uses, where a reminder resolves its timezone once at enqueue.
+      { name: 'OwnerTimezone', type: 'varchar', maxLength: 64,
+        note: 'IANA zone the RecurrenceTime is local to' },
+      { name: 'OwnerEmail', type: 'varchar', maxLength: 255,
+        note: 'Delivery address; empty means the email channel skips' },
       { name: 'LastTriggeredAt', type: 'bigint' },
       { name: 'NextTriggerAt', type: 'bigint', note: 'The planning index for the tick' },
       { name: 'CreatedAt', type: 'bigint' },
