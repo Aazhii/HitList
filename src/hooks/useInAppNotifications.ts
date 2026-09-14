@@ -13,11 +13,9 @@ import {
   dismissRecord as libDismissRecord,
   dismissAll as libDismissAll,
   markSeenInToast,
-  createSeedNotifications,
 } from '@/lib/inAppNotifications';
 
 const POLL_INTERVAL_MS = 60_000; // 60 seconds
-const SEED_KEY = 'kaizen_inapp_seeded';
 
 export interface UseInAppNotificationsReturn {
   notifications: NotificationRecord[];
@@ -42,27 +40,6 @@ export function useInAppNotifications(todos: Todo[]): UseInAppNotificationsRetur
     todosRef.current = todos;
   });
 
-  // Seed demo records on first load
-  useEffect(() => {
-    const alreadySeeded = localStorage.getItem(SEED_KEY);
-    if (alreadySeeded) return;
-
-    const existing = loadNotifications();
-    if (existing.length > 0) {
-      localStorage.setItem(SEED_KEY, '1');
-      return;
-    }
-
-    // Create seed records from seed tasks and schedule a microtask to avoid
-    // calling setState synchronously inside the effect body
-    const seedRecords = createSeedNotifications(todosRef.current);
-    localStorage.setItem(SEED_KEY, '1');
-    if (seedRecords.length > 0) {
-      saveNotifications(seedRecords);
-      // Use queueMicrotask to defer the setState call out of the effect body
-      queueMicrotask(() => setNotifications(seedRecords));
-    }
-  }, []); // intentionally run once on mount
 
   // Detection function — runs on mount and every 60s
   const runDetection = useCallback(() => {
