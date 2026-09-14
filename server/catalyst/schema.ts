@@ -14,6 +14,10 @@
  *
  * Catalyst types (see data-types docs):
  *   varchar  max 255        text     max 10,000
+ *
+ * varchar is clamped to 255 SILENTLY: declaring 500 is accepted without error
+ * and the column is created at 255. Query the column list if the length
+ * matters — see docs/catalyst/03-datastore.md.
  *   int      10 digits      bigint   19 digits (epoch ms fits)
  *   boolean  true/false
  *
@@ -49,6 +53,10 @@ const OWNER_COLUMN: ColumnSpec = {
 export const TASKS_TABLE = 'KaizenTasks';
 export const LISTS_TABLE = 'KaizenLists';
 export const NOTES_TABLE = 'KaizenNotes';
+export const QUEUE_TABLE = 'KaizenNotificationQueue';
+export const RULES_TABLE = 'KaizenAutomationRules';
+export const INBOX_TABLE = 'KaizenNotifications';
+export const RUNS_TABLE = 'KaizenAutomationRuns';
 
 export const SCHEMA: TableSpec[] = [
   {
@@ -57,7 +65,8 @@ export const SCHEMA: TableSpec[] = [
       { name: 'TaskId', type: 'varchar', maxLength: 64, mandatory: true, unique: true,
         note: 'Client-facing id (UUID). ROWID stays internal to Catalyst.' },
       OWNER_COLUMN,
-      { name: 'Title',     type: 'varchar', maxLength: 500, mandatory: true },
+      { name: 'Title',     type: 'varchar', maxLength: 255, mandatory: true,
+        note: 'Catalyst clamps varchar at 255 — declaring more is accepted and ignored' },
       { name: 'Status',    type: 'varchar', maxLength: 16, note: 'TODO | IN_PROGRESS | DONE' },
       { name: 'Quadrant',  type: 'varchar', maxLength: 16, note: 'DO | SCHEDULE | DELEGATE | ELIMINATE' },
       // Named TaskPriority, not Priority: Catalyst rejects "Priority" as a
@@ -81,7 +90,7 @@ export const SCHEMA: TableSpec[] = [
     columns: [
       { name: 'ListId', type: 'varchar', maxLength: 64, mandatory: true, unique: true },
       OWNER_COLUMN,
-      { name: 'Name',      type: 'varchar', maxLength: 500, mandatory: true },
+      { name: 'Name',      type: 'varchar', maxLength: 255, mandatory: true },
       { name: 'Color',     type: 'varchar', maxLength: 32 },
       { name: 'ListOrder', type: 'int' },
       { name: 'CreatedAt', type: 'bigint' },
@@ -94,12 +103,112 @@ export const SCHEMA: TableSpec[] = [
       { name: 'NoteId', type: 'varchar', maxLength: 64, mandatory: true, unique: true },
       // Notes had no owner column at all, so every note was visible to every user.
       OWNER_COLUMN,
-      { name: 'Title',      type: 'varchar', maxLength: 500 },
+      { name: 'Title',      type: 'varchar', maxLength: 255 },
       { name: 'BlocksJson', type: 'text', note: 'Serialised editor blocks; 10k limit applies' },
       { name: 'Emoji',      type: 'varchar', maxLength: 16 },
       { name: 'Pinned',     type: 'boolean' },
       { name: 'CreatedAt',  type: 'bigint' },
       { name: 'UpdatedAt',  type: 'bigint' },
+    ],
+  },
+
+  // ── Scheduling ─────────────────────────────────────────────────────────────
+  //
+  // The outbox. Every delivery, whatever produced it, becomes a row here.
+  //
+  // The design decision worth understanding: we materialise what is DUE rather
+  // than scanning what MIGHT be due. A sweep that evaluates every task on every
+  // tick reads the whole table forever, and its cost grows with the database
+  // rather than with the work. Querying FireAt instead returns nothing at all
+  // on a quiet tick, however many tasks exist — which is what keeps the tick
+  // cheap and what lets it scale.
+  {
+    name: QUEUE_TABLE,
+    columns: [
+      { name: 'QueueId', type: 'varchar', maxLength: 64, mandatory: true, unique: true },
+      OWNER_COLUMN,
+      { name: 'FireAt', type: 'bigint', mandatory: true,
+        note: 'Absolute epoch ms. The tick queries this — timezone is resolved at enqueue.' },
+      { name: 'Status', type: 'varchar', maxLength: 16, mandatory: true,
+        note: 'PENDING | SENDING | SENT | FAILED | CANCELLED' },
+      { name: 'DedupeKey', type: 'varchar', maxLength: 200, mandatory: true, unique: true,
+        note: 'Idempotency. Carries the due time, so re-scheduling yields a new key.' },
+      { name: 'Kind', type: 'varchar', maxLength: 32, note: 'TASK_REMINDER | AUTOMATION | DIGEST' },
+      { name: 'SourceType', type: 'varchar', maxLength: 16, note: 'TASK | RULE' },
+      { name: 'SourceId', type: 'varchar', maxLength: 64 },
+      { name: 'Channels', type: 'varchar', maxLength: 64, note: 'Comma list: email,webpush,inapp' },
+      { name: 'Title', type: 'varchar', maxLength: 255,
+        note: 'Rendered at enqueue, so a tick does no formatting work' },
+      { name: 'Body', type: 'text' },
+      { name: 'Payload', type: 'text', note: 'JSON for deep-linking' },
+      { name: 'AttemptCount', type: 'int' },
+      { name: 'LastError', type: 'text' },
+      { name: 'SentAt', type: 'bigint' },
+      { name: 'CreatedAt', type: 'bigint' },
+      { name: 'UpdatedAt', type: 'bigint' },
+    ],
+  },
+
+  // The user's automation rules. NextTriggerAt is the planning index: the tick
+  // asks for rules that are due rather than walking every rule a user owns.
+  {
+    name: RULES_TABLE,
+    columns: [
+      { name: 'RuleId', type: 'varchar', maxLength: 64, mandatory: true, unique: true },
+      OWNER_COLUMN,
+      { name: 'Name', type: 'varchar', maxLength: 255, mandatory: true },
+      { name: 'Description', type: 'text' },
+      { name: 'TaskId', type: 'varchar', maxLength: 64, note: 'Empty = applies to all tasks' },
+      { name: 'TriggerType', type: 'varchar', maxLength: 24,
+        note: 'due-date | overdue | recurring | status-change | daily-digest' },
+      { name: 'RuleStatus', type: 'varchar', maxLength: 16,
+        note: 'active | paused | draft. Not "Status" — kept distinct from the queue column.' },
+      { name: 'Urgency', type: 'varchar', maxLength: 16, note: 'low | medium | high | critical' },
+      { name: 'OffsetValue', type: 'int' },
+      { name: 'OffsetUnit', type: 'varchar', maxLength: 16, note: 'minutes | hours | days' },
+      { name: 'RecurrenceFreq', type: 'varchar', maxLength: 16,
+        note: 'daily | weekdays | weekly | monthly' },
+      { name: 'RecurrenceTime', type: 'varchar', maxLength: 5, note: 'HH:MM, local to the owner' },
+      { name: 'RecurrenceDayOfWeek', type: 'int', note: '0=Sun … 6=Sat' },
+      { name: 'RecurrenceDayOfMonth', type: 'int', note: '1–31' },
+      { name: 'NotifyInApp', type: 'boolean' },
+      { name: 'NotifyBrowser', type: 'boolean' },
+      { name: 'NotifyEmail', type: 'boolean' },
+      { name: 'LastTriggeredAt', type: 'bigint' },
+      { name: 'NextTriggerAt', type: 'bigint', note: 'The planning index for the tick' },
+      { name: 'CreatedAt', type: 'bigint' },
+      { name: 'UpdatedAt', type: 'bigint' },
+    ],
+  },
+
+  // What the in-app bell reads. Previously it was fed fabricated records.
+  {
+    name: INBOX_TABLE,
+    columns: [
+      { name: 'NotificationId', type: 'varchar', maxLength: 64, mandatory: true, unique: true },
+      OWNER_COLUMN,
+      { name: 'Title', type: 'varchar', maxLength: 255 },
+      { name: 'Body', type: 'text' },
+      { name: 'Kind', type: 'varchar', maxLength: 32 },
+      { name: 'SourceType', type: 'varchar', maxLength: 16 },
+      { name: 'SourceId', type: 'varchar', maxLength: 64 },
+      { name: 'Payload', type: 'text' },
+      { name: 'ReadAt', type: 'bigint', note: '0 or absent = unread' },
+      { name: 'CreatedAt', type: 'bigint' },
+    ],
+  },
+
+  // Audit trail — what fired, when, and whether delivery worked.
+  {
+    name: RUNS_TABLE,
+    columns: [
+      { name: 'RunId', type: 'varchar', maxLength: 64, mandatory: true, unique: true },
+      OWNER_COLUMN,
+      { name: 'RuleId', type: 'varchar', maxLength: 64 },
+      { name: 'TriggeredAt', type: 'bigint' },
+      { name: 'RunStatus', type: 'varchar', maxLength: 16, note: 'SUCCESS | FAILED | SKIPPED' },
+      { name: 'Detail', type: 'text' },
+      { name: 'Channels', type: 'varchar', maxLength: 64 },
     ],
   },
 ];
