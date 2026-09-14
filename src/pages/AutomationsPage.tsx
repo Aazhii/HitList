@@ -76,14 +76,14 @@ type FilterStatus = 'all' | AutomationStatus;
 // ── Run status helpers ────────────────────────────────────────────────────────
 
 function RunStatusBadge({ status }: { status: string }) {
-  if (status === 'success') {
+  if (status === 'SUCCESS') {
     return (
       <span className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
         <CheckCircle2 className="size-3" /> success
       </span>
     );
   }
-  if (status === 'skipped') {
+  if (status === 'SKIPPED') {
     return (
       <span className="inline-flex items-center gap-1 text-xs font-medium text-amber-600 dark:text-amber-400">
         <SkipForward className="size-3" /> skipped
@@ -97,8 +97,8 @@ function RunStatusBadge({ status }: { status: string }) {
   );
 }
 
-function formatRelative(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
+function formatRelative(at: number): string {
+  const diff = Date.now() - at;
   const mins = Math.floor(diff / 60_000);
   if (mins < 1) return 'just now';
   if (mins < 60) return `${mins}m ago`;
@@ -133,7 +133,7 @@ function RecentRunsPanel({ runs, isLoading, error, lastChecked, onRefresh }: Rec
         <div className="flex items-center gap-2">
           {lastChecked && (
             <span className="text-xs text-muted-foreground hidden sm:block">
-              Updated {formatRelative(lastChecked.toISOString())}
+              Updated {formatRelative(lastChecked.getTime())}
             </span>
           )}
           <Button
@@ -184,11 +184,11 @@ function RecentRunsPanel({ runs, isLoading, error, lastChecked, onRefresh }: Rec
                     variant="outline"
                     className="text-xs px-1.5 py-0 h-4 flex-shrink-0 capitalize"
                   >
-                    {run.triggerSource}
+                    {run.source}
                   </Badge>
                 </div>
-                {run.message && (
-                  <p className="text-xs text-muted-foreground mt-0.5 truncate">{run.message}</p>
+                {run.detail && (
+                  <p className="text-xs text-muted-foreground mt-0.5 truncate">{run.detail}</p>
                 )}
               </div>
               <div className="flex flex-col items-end gap-1 flex-shrink-0">
@@ -211,7 +211,7 @@ export function AutomationsPage({ todos }: AutomationsPageProps) {
     [todos]
   );
 
-  const { rules, addRule, updateRule, toggleStatus, deleteRule } =
+  const { rules, online: rulesOnline, error: rulesError, addRule, updateRule, toggleStatus, deleteRule } =
     useAutomations(todoStubs);
 
   const { runs, lastChecked, isLoading: runsLoading, error: runsError, triggerRule, refresh: refreshRuns } =
@@ -279,23 +279,32 @@ export function AutomationsPage({ todos }: AutomationsPageProps) {
     setFormOpen(true);
   };
 
-  const handleFormSubmit = (values: AutomationRuleFormValues) => {
+  const handleFormSubmit = async (values: AutomationRuleFormValues) => {
+    // Await before reporting. These calls used to be fire-and-forget with an
+    // unconditional success toast, which told the user their rule was saved
+    // whether or not it was.
     if (editingRule) {
-      updateRule(editingRule.id, values);
+      await updateRule(editingRule.id, values);
       toast.success('Rule updated', { duration: 2000 });
     } else {
-      addRule(values);
+      const created = await addRule(values);
+      if (!created) {
+        toast.error('Could not save the rule', { duration: 3000 });
+        return;
+      }
       toast.success('Automation rule created', {
-        description: values.name,
+        // A rule saved offline is a draft: firing happens server-side, and
+        // saying otherwise repeats the promise this page used to make.
+        description: rulesOnline ? values.name : `${values.name} — saved offline, will not fire yet`,
         duration: 2500,
       });
     }
   };
 
-  const handleToggle = (id: string) => {
+  const handleToggle = async (id: string) => {
     const rule = rules.find((r) => r.id === id);
     if (!rule) return;
-    toggleStatus(id);
+    await toggleStatus(id);
     const next = rule.status === 'active' ? 'paused' : 'active';
     toast(next === 'active' ? 'Rule activated' : 'Rule paused', {
       description: rule.name,
@@ -308,11 +317,12 @@ export function AutomationsPage({ todos }: AutomationsPageProps) {
     if (rule) setDeleteTarget(rule);
   };
 
-  const handleDeleteConfirm = () => {
+  const handleDeleteConfirm = async () => {
     if (!deleteTarget) return;
-    deleteRule(deleteTarget.id);
-    toast('Rule deleted', { description: deleteTarget.name, duration: 2000 });
+    const name = deleteTarget.name;
     setDeleteTarget(null);
+    await deleteRule(deleteTarget.id);
+    toast('Rule deleted', { description: name, duration: 2000 });
   };
 
   // ── Render ─────────────────────────────────────────────────────────────────
@@ -342,6 +352,22 @@ export function AutomationsPage({ todos }: AutomationsPageProps) {
             New rule
           </Button>
         </div>
+
+        {/* Rules cannot fire while the server is unreachable, and a page that
+            stays silent about that is how this feature came to look like it
+            worked. Say so plainly. */}
+        {!rulesOnline && (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/8 px-4 py-3 text-sm text-amber-700 dark:text-amber-400">
+            Working offline — rules are saved on this device and will not fire until
+            the server is reachable again.
+          </div>
+        )}
+
+        {rulesError && (
+          <div className="rounded-xl border border-destructive/30 bg-destructive/8 px-4 py-3 text-sm text-destructive">
+            {rulesError}
+          </div>
+        )}
 
         {/* Stats bar */}
         {rules.length > 0 && (

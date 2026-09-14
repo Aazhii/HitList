@@ -217,8 +217,13 @@ export const SCHEMA: TableSpec[] = [
       { name: 'RunId', type: 'varchar', maxLength: 64, mandatory: true, unique: true },
       OWNER_COLUMN,
       { name: 'RuleId', type: 'varchar', maxLength: 64 },
+      // Denormalised deliberately: the audit trail has to stay readable after
+      // the rule it describes is deleted, which is exactly when someone is
+      // most likely to be reading it.
+      { name: 'RuleName', type: 'varchar', maxLength: 255 },
       { name: 'TriggeredAt', type: 'bigint' },
       { name: 'RunStatus', type: 'varchar', maxLength: 16, note: 'SUCCESS | FAILED | SKIPPED' },
+      { name: 'TriggerSource', type: 'varchar', maxLength: 16, note: 'scheduler | manual' },
       { name: 'Detail', type: 'text' },
       { name: 'Channels', type: 'varchar', maxLength: 64 },
     ],

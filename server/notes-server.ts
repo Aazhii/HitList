@@ -78,14 +78,15 @@ import { fileURLToPath } from 'node:url';
 import { baasProxy } from './catalyst/baasProxy.ts';
 import { runSweep, describeSweep } from './notifications/sweep.ts';
 import { listInbox, markRead, markAllRead, removeEntry } from './notifications/inbox.ts';
-import { cancelPendingFor } from './notifications/queue.ts';
 import {
   listRules, getRule, insertRule, updateRule, deleteRule,
   TRIGGER_TYPES, RULE_STATUSES, URGENCIES, OFFSET_UNITS,
   type AutomationRule, type RuleRow,
 } from './automations/rules.ts';
 import { initialTrigger } from './automations/planner.ts';
-import { listRuns, listRunsForRule } from './automations/runs.ts';
+import { listRuns, listRunsForRule, recordRun } from './automations/runs.ts';
+import { channelsFor, renderRule } from './automations/planner.ts';
+import { enqueue, cancelPendingFor } from './notifications/queue.ts';
 import {
   syncTaskReminder,
   cancelTaskReminders,
@@ -1459,6 +1460,76 @@ app.get('/api/automation-runs/recent', async (req, res) => {
     res.json(runs);
   } catch (e) {
     sendError(res, '[GET /api/automation-runs/recent]', e);
+  }
+});
+
+/**
+ * POST /api/automation-runs/trigger/:id — the "Run now" button.
+ *
+ * Enqueues the rule's notification for immediate delivery without touching its
+ * schedule: running a rule by hand should not skip or shift its next scheduled
+ * firing.
+ *
+ * The DedupeKey is built from the current instant rather than from the rule's
+ * NextTriggerAt, which is what keeps a manual run from colliding with the
+ * scheduled one — and what makes pressing the button twice produce two
+ * notifications, which is what pressing it twice should do.
+ */
+app.post('/api/automation-runs/trigger/:id', async (req, res) => {
+  if (!assertSafeId(req.params.id, res)) return;
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+
+  try {
+    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const rule = await getRule(catalyst, ownerId, req.params.id);
+    if (!rule) { res.status(404).json({ error: 'Not found' }); return; }
+
+    const now = Date.now();
+    const { title, body } = renderRule(rule);
+    const channels = channelsFor(rule);
+
+    await enqueue(catalyst, {
+      ownerId,
+      fireAt: now,
+      dedupeKey: `rule:${rule.id}:manual:${now}`,
+      kind: rule.triggerType === 'daily-digest' ? 'DIGEST' : 'AUTOMATION',
+      sourceType: 'RULE',
+      sourceId: rule.id,
+      channels,
+      title,
+      body,
+      payload: {
+        email: (await getCurrentIdentity(req)).email,
+        ruleId: rule.id,
+        urgency: rule.urgency,
+        ...(rule.taskId ? { taskId: rule.taskId } : {}),
+      },
+    });
+
+    await recordRun(catalyst, {
+      ownerId, ruleId: rule.id, ruleName: rule.name, triggeredAt: now,
+      status: 'SUCCESS', source: 'manual',
+      detail: 'queued by hand; delivers on the next sweep',
+      channels,
+    });
+
+    // Delivery happens on the next sweep, not here: a manual run goes through
+    // exactly the same claim-and-deliver path as a scheduled one, so it cannot
+    // become a second way for a notification to be sent.
+    res.status(202).json({
+      id: randomUUID(),
+      ruleId: rule.id,
+      ruleName: rule.name,
+      triggeredAt: now,
+      status: 'SUCCESS',
+      source: 'manual',
+      detail: 'queued by hand; delivers on the next sweep',
+      channels,
+    });
+  } catch (e) {
+    sendError(res, '[POST /api/automation-runs/trigger/:id]', e);
   }
 });
 

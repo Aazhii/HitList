@@ -399,6 +399,87 @@ export const notificationApi = {
   },
 };
 
+// ── Automations ──────────────────────────────────────────────────────────────
+
+export interface ApiReminderOffset {
+  value: number;
+  unit: 'minutes' | 'hours' | 'days';
+}
+
+export interface ApiRecurrence {
+  frequency: 'daily' | 'weekdays' | 'weekly' | 'monthly';
+  time: string;
+  dayOfWeek?: number;
+  dayOfMonth?: number;
+}
+
+export interface ApiAutomationRule {
+  id: string;
+  name: string;
+  description?: string;
+  taskId?: string;
+  triggerType: 'due-date' | 'overdue' | 'recurring' | 'status-change' | 'daily-digest';
+  status: 'active' | 'paused' | 'draft';
+  urgency: 'low' | 'medium' | 'high' | 'critical';
+  reminderOffset?: ApiReminderOffset;
+  recurrence?: ApiRecurrence;
+  notifyInApp: boolean;
+  notifyBrowser: boolean;
+  notifyEmail: boolean;
+  createdAt: number;
+  updatedAt: number;
+  lastTriggeredAt?: number;
+  /** When the rule next fires. Absent for the event-driven triggers. */
+  nextTriggerAt?: number;
+}
+
+export type AutomationRuleInput = Omit<
+  ApiAutomationRule, 'id' | 'createdAt' | 'updatedAt' | 'lastTriggeredAt' | 'nextTriggerAt'
+>;
+
+export interface ApiAutomationRun {
+  id: string;
+  ruleId: string;
+  /** Copied onto the run, so the trail survives the rule being deleted. */
+  ruleName: string;
+  triggeredAt: number;
+  status: 'SUCCESS' | 'FAILED' | 'SKIPPED';
+  source: 'scheduler' | 'manual';
+  detail: string;
+  channels: string[];
+}
+
+export const automationApi = {
+  listRules(): Promise<ApiAutomationRule[]> {
+    return get<ApiAutomationRule[]>('/automation-rules');
+  },
+
+  createRule(rule: AutomationRuleInput): Promise<ApiAutomationRule> {
+    return post<ApiAutomationRule>('/automation-rules', rule);
+  },
+
+  updateRule(id: string, rule: AutomationRuleInput): Promise<ApiAutomationRule> {
+    return put<ApiAutomationRule>(`/automation-rules/${id}`, rule);
+  },
+
+  deleteRule(id: string): Promise<void> {
+    return del<void>(`/automation-rules/${id}`);
+  },
+
+  recentRuns(limit = 20): Promise<ApiAutomationRun[]> {
+    return get<ApiAutomationRun[]>(`/automation-runs/recent?limit=${limit}`);
+  },
+
+  runsForRule(ruleId: string): Promise<ApiAutomationRun[]> {
+    return get<ApiAutomationRun[]>(`/automation-runs/rule/${ruleId}`);
+  },
+
+  /** Queues one firing by hand. Delivery still happens on the next sweep. */
+  trigger(ruleId: string): Promise<ApiAutomationRun> {
+    return post<ApiAutomationRun>(`/automation-runs/trigger/${ruleId}`, {});
+  },
+};
+
 // ── Health check ─────────────────────────────────────────────────────────────
 
 /**

@@ -125,7 +125,7 @@ export async function planRule(
       // identically on every tick from now on.
       await parkRule(app, rule.rowId);
       await recordRun(app, {
-        ownerId: rule.ownerId, ruleId: rule.id, triggeredAt: now,
+        ownerId: rule.ownerId, ruleId: rule.id, ruleName: rule.name, triggeredAt: now,
         status: 'SKIPPED', detail: 'schedule could not be computed; rule parked',
         channels: channelsFor(rule),
       });
@@ -161,7 +161,7 @@ export async function planRule(
     await markTriggered(app, rule.rowId, now, upcoming);
 
     await recordRun(app, {
-      ownerId: rule.ownerId, ruleId: rule.id, triggeredAt: now,
+      ownerId: rule.ownerId, ruleId: rule.id, ruleName: rule.name, triggeredAt: now,
       status: 'SUCCESS',
       detail: enqueued ? 'queued for delivery' : 'already queued for this firing',
       channels: entry.channels,
@@ -178,7 +178,7 @@ export async function planRule(
     // Best-effort audit line. If this write is what failed, there is nothing
     // more to be done than report it upward.
     await recordRun(app, {
-      ownerId: rule.ownerId, ruleId: rule.id, triggeredAt: now,
+      ownerId: rule.ownerId, ruleId: rule.id, ruleName: rule.name, triggeredAt: now,
       status: 'FAILED', detail, channels: channelsFor(rule),
     }).catch(() => { /* already failing */ });
 

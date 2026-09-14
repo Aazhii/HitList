@@ -18,12 +18,23 @@ import { zcqlString, unwrapRows, str, num } from '../notifications/zcql.ts';
 export const RUN_STATUSES = ['SUCCESS', 'FAILED', 'SKIPPED'] as const;
 export type RunStatus = typeof RUN_STATUSES[number];
 
+export const TRIGGER_SOURCES = ['scheduler', 'manual'] as const;
+export type TriggerSource = typeof TRIGGER_SOURCES[number];
+
 export interface AutomationRun {
   id: string;
   ownerId: string;
   ruleId: string;
+  /**
+   * The rule's name, copied in rather than looked up.
+   *
+   * The audit trail has to stay readable after the rule is deleted, which is
+   * exactly when someone is most likely to be reading it.
+   */
+  ruleName: string;
   triggeredAt: number;
   status: RunStatus;
+  source: TriggerSource;
   detail: string;
   channels: string[];
 }
@@ -40,15 +51,18 @@ export const RUNS_LIMIT = 100;
  */
 export const RUN_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
 
-const SELECT_COLUMNS = 'ROWID,RunId,OwnerId,RuleId,TriggeredAt,RunStatus,Detail,Channels';
+const SELECT_COLUMNS =
+  'ROWID,RunId,OwnerId,RuleId,RuleName,TriggeredAt,RunStatus,TriggerSource,Detail,Channels';
 
 function toRun(row: Record<string, unknown>): AutomationRun {
   return {
     id: str(row['RunId']),
     ownerId: str(row['OwnerId']),
     ruleId: str(row['RuleId']),
+    ruleName: str(row['RuleName']),
     triggeredAt: num(row['TriggeredAt']),
     status: str(row['RunStatus']) as RunStatus,
+    source: (str(row['TriggerSource']) || 'scheduler') as TriggerSource,
     detail: str(row['Detail']),
     channels: str(row['Channels']).split(',').map((c) => c.trim()).filter(Boolean),
   };
@@ -57,8 +71,11 @@ function toRun(row: Record<string, unknown>): AutomationRun {
 export interface RunInput {
   ownerId: string;
   ruleId: string;
+  ruleName: string;
   triggeredAt: number;
   status: RunStatus;
+  /** Defaults to 'scheduler'; the "Run now" button passes 'manual'. */
+  source?: TriggerSource;
   detail: string;
   channels: string[];
 }
@@ -76,8 +93,10 @@ export async function recordRun(app: CatalystApp, run: RunInput): Promise<boolea
       RunId: crypto.randomUUID(),
       OwnerId: run.ownerId,
       RuleId: run.ruleId,
+      RuleName: run.ruleName.slice(0, 255),
       TriggeredAt: String(run.triggeredAt),
       RunStatus: run.status,
+      TriggerSource: run.source ?? 'scheduler',
       Detail: run.detail,
       Channels: run.channels.join(','),
     });
