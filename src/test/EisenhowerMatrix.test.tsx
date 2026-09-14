@@ -110,7 +110,9 @@ describe('EisenhowerMatrix', () => {
     const todo = makeTodo({ id: 'todo-1', text: 'Status task', quadrant: 'do', status: 'todo' });
     render(<EisenhowerMatrix {...defaultProps} todos={[todo]} onStatusChange={onStatusChange} />);
 
-    const statusBtn = screen.getByRole('button', { name: /mark as in-progress/i });
+    // The status control is the shared StatusBox: a real checkbox, named for the
+    // task it belongs to, with its state in aria-checked.
+    const statusBtn = screen.getByRole('checkbox', { name: 'Status task' });
     fireEvent.click(statusBtn);
     expect(onStatusChange).toHaveBeenCalledWith('todo-1', 'in-progress');
   });
