@@ -89,6 +89,20 @@ Likewise for environment variables: `CATALYST_` and `NODE_` prefixes are rejecte
 
 ---
 
+## Scheduling and delivery — what is now known
+
+Crons targeting AppSail, the email sender requirement and web-push recipients were established
+and moved to [12-scheduling-and-delivery](12-scheduling-and-delivery.md). What remains open
+there:
+
+- **Whether a web push actually renders in a browser.** The API accepts and returns
+  `{"data": true}`, but that only proves acceptance. Browser permission and Web SDK push
+  registration are untested.
+- **Cron execution limits** — minimum interval, timeout per invocation, and any quota.
+- **The SDK's `queue` module**, which exists in `lib/` but appears in no bundled documentation.
+
+---
+
 ## Everything in [07-other-services](07-other-services.md)
 
 Functions, Cache, Stratus, NoSQL, Signals, Zia, SmartBrowz. All of it is `[DOCS]`. We used Data

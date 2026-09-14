@@ -86,6 +86,7 @@ curl -s https://hitlist-api-50045863073.development.catalystappsail.in/api/healt
 | Add user login with Catalyst's own form | [04-auth-embedded.md](04-auth-embedded.md) |
 | Deploy a server | [05-appsail-deploy.md](05-appsail-deploy.md) |
 | Host a frontend | [06-slate.md](06-slate.md) |
+| Run scheduled work, send email or push | [12-scheduling-and-delivery.md](12-scheduling-and-delivery.md) |
 | Use Functions, Cache, Stratus, NoSQL, Signals, Zia | [07-other-services.md](07-other-services.md) |
 | Look up an SDK method, or find the authoritative source | [09-sdks-and-sources.md](09-sdks-and-sources.md) |
 | Copy a working script | [10-recipes.md](10-recipes.md) |
@@ -110,6 +111,8 @@ likely to cost an afternoon, because each says something misleading about its ow
 | `INVALID_OPERATION` on a column name | Reserved keyword — `Priority` is one | [03](03-datastore.md#reserved-column-names) |
 | `environment_variables must not contain reserved keywords` | `CATALYST_` and `NODE_` prefixes are reserved | [05](05-appsail-deploy.md#environment-variables) |
 | The login form shows every step at once | `css_url` replaced Catalyst's stylesheet | [04](04-auth-embedded.md#styling-the-form) |
+| `No such from_email with the given id exists` | The sender address is not registered — a console step | [12](12-scheduling-and-delivery.md#email) |
+| `cron_name must contain only alphanumeric and underscore` | Cron and job names reject hyphens | [12](12-scheduling-and-delivery.md#two-validation-rules-that-are-not-in-any-doc) |
 | Server logs `backend: json-file` inside Catalyst | The startup probe cannot authenticate under the gateway | [02](02-node-sdk.md#initialisation) |
 
 ---
