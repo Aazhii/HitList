@@ -1,31 +1,18 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import {
   Plus,
-  Leaf,
-  Menu,
-  BarChart2,
-  LayoutGrid,
-  Eye,
-  EyeOff,
   Grid2x2,
   WifiOff,
   RefreshCw,
   AlertCircle,
   X,
-  Bell,
-  StickyNote,
-  LogOut,
-  User,
-  MailCheck,
-  ShieldAlert,
-  ShieldCheck,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { NotesWorkspace } from '@/components/NotesWorkspace';
-import { useNotes } from '@/hooks/useNotes';
 import { AutomationsPage } from '@/pages/AutomationsPage';
-import { useAutomations } from '@/hooks/useAutomations';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useInAppNotifications } from '@/hooks/useInAppNotifications';
+import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { NotificationBell } from '@/components/NotificationBell';
 import { NotificationToast } from '@/components/NotificationToast';
 import { RemindersSettingsPanel } from '@/components/RemindersSettingsPanel';
@@ -34,27 +21,33 @@ import { DEFAULT_REMINDER_MINUTES, isNotificationSupported } from '@/lib/notific
 import { Toaster, toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { MomentumBar } from '@/components/MomentumBar';
 import { TodayHistoryPanel } from '@/components/TodayHistoryPanel';
 import { ListSidebar } from '@/components/ListSidebar';
 import { StreakPanel } from '@/components/StreakPanel';
 import { EisenhowerMatrix } from '@/components/EisenhowerMatrix';
+import { TaskListView } from '@/components/tasks/TaskListView';
 import { TaskDetailPanel } from '@/components/TaskDetailPanel';
+import { AppShell } from '@/components/shell/AppShell';
+import { IconRail, type AppView } from '@/components/shell/IconRail';
+import { ViewLayout } from '@/components/shell/ViewLayout';
+import { TopBar, TopBarToggle, topBarPill, topBarPrimary } from '@/components/shell/TopBar';
+import { UserMenu } from '@/components/shell/UserMenu';
 import { loadAppState, saveAppState, setActiveUserId } from '@/lib/storage';
+import type { ReorderChange } from '@/lib/reorder';
 import { useCatalystSync, apiTaskToTodo, apiListToKaizenList } from '@/hooks/useCatalystSync';
 import { SyncStatusBar } from '@/components/SyncStatusBar';
-import { AdvancedFilterBar, DEFAULT_FILTERS, filtersToParams } from '@/components/AdvancedFilterBar';
+import {
+  AdvancedFilterBar,
+  DEFAULT_FILTERS,
+  countActiveFilters,
+  filtersToParams,
+} from '@/components/AdvancedFilterBar';
 import type { FilterState } from '@/components/AdvancedFilterBar';
 import { EmptyState } from '@/components/EmptyState';
 import { useCatalystUser } from '@/components/CatalystAuthGate';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import type {
   Todo,
   TodoStatus,
@@ -63,7 +56,7 @@ import type {
   AppState,
   Quadrant,
 } from '@/types/todo';
-import { QUADRANTS } from '@/types/todo';
+import { QUADRANTS, getListColorDot } from '@/types/todo';
 
 // ── Add Task Dialog (inline, lightweight) ──────────────────────────────────
 
@@ -93,6 +86,8 @@ interface AddTaskDialogProps {
   onAdd: (text: string, quadrant: Quadrant, category?: string, dueDate?: string, dueTime?: string) => void;
 }
 
+const FIELD_LABEL = 'text-[11px] font-bold uppercase tracking-[0.1em] text-a-faint';
+
 function AddTaskDialog({ open, defaultQuadrant, onOpenChange, onAdd }: AddTaskDialogProps) {
   const [text, setText] = useState('');
   const [quadrant, setQuadrant] = useState<Quadrant>(defaultQuadrant);
@@ -121,23 +116,21 @@ function AddTaskDialog({ open, defaultQuadrant, onOpenChange, onAdd }: AddTaskDi
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-base font-semibold flex items-center gap-2">
-            <Grid2x2 className="size-4 text-primary" />
-            Add task to matrix
+          <DialogTitle className="flex items-center gap-2 font-display text-[22px] font-normal">
+            <Grid2x2 className="size-4 text-a-accent" strokeWidth={2.75} />
+            Add task
           </DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Task text */}
           <div className="space-y-1.5">
-            <Label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-              Task
-            </Label>
+            <Label className={FIELD_LABEL}>Task</Label>
             <Input
               ref={inputRef}
               value={text}
               onChange={(e) => { setText(e.target.value); setError(''); }}
               placeholder="What needs to be done?"
-              className={cn('rounded-xl text-sm', error && 'border-destructive')}
+              className={cn('rounded-xl text-[15px]', error && 'border-destructive')}
               maxLength={200}
             />
             {error && <p className="text-xs text-destructive animate-fade-in">{error}</p>}
@@ -145,37 +138,38 @@ function AddTaskDialog({ open, defaultQuadrant, onOpenChange, onAdd }: AddTaskDi
 
           {/* Quadrant */}
           <div className="space-y-1.5">
-            <Label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-              Priority Quadrant
-            </Label>
-            <div className="grid grid-cols-2 gap-2">
-              {QUADRANTS.map((q) => (
-                <button
-                  key={q.id}
-                  type="button"
-                  onClick={() => setQuadrant(q.id)}
-                  className={cn(
-                    'flex flex-col items-start rounded-xl px-3 py-2.5 text-left border transition-all duration-150',
-                    quadrant === q.id
-                      ? 'border-primary/40 bg-primary/8 ring-1 ring-primary/20'
-                      : 'border-border bg-card hover:border-border/80'
-                  )}
-                >
-                  <span className="text-xs font-semibold text-foreground">{q.label}</span>
-                  <span className="text-[10px] text-muted-foreground mt-0.5">{q.subtitle}</span>
-                </button>
-              ))}
+            <Label className={FIELD_LABEL}>Priority quadrant</Label>
+            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Priority quadrant">
+              {QUADRANTS.map((q) => {
+                const selected = quadrant === q.id;
+                return (
+                  <button
+                    key={q.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => setQuadrant(q.id)}
+                    className={cn(
+                      'flex flex-col items-start rounded-[14px] px-3 py-2.5 text-left transition-colors duration-150',
+                      selected
+                        ? cn(q.tintClass, q.inkClass, 'shadow-[inset_0_0_0_1.5px_currentColor]')
+                        : 'bg-a-bg text-a-ink shadow-[inset_0_0_0_1px_var(--a-line)] hover:bg-a-row-hover',
+                    )}
+                  >
+                    <span className="text-[13px] font-semibold">{q.label}</span>
+                    <span className="mt-0.5 text-[11.5px] opacity-75">{q.subtitle}</span>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
           {/* Category + Due date row */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
-              <Label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                Category
-              </Label>
+              <Label className={FIELD_LABEL}>Category</Label>
               <Select value={category || '__none__'} onValueChange={(v) => setCategory(v === '__none__' ? '' : v)}>
-                <SelectTrigger className="h-9 text-xs rounded-xl w-full">
+                <SelectTrigger className="h-9 w-full rounded-xl text-xs">
                   <SelectValue placeholder="None" />
                 </SelectTrigger>
                 <SelectContent>
@@ -193,14 +187,12 @@ function AddTaskDialog({ open, defaultQuadrant, onOpenChange, onAdd }: AddTaskDi
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                Due date
-              </Label>
+              <Label className={FIELD_LABEL}>Due date</Label>
               <Input
                 type="date"
                 value={dueDate}
                 onChange={(e) => setDueDate(e.target.value)}
-                className="h-9 text-xs rounded-xl"
+                className="h-9 rounded-xl text-xs"
               />
             </div>
           </div>
@@ -208,23 +200,23 @@ function AddTaskDialog({ open, defaultQuadrant, onOpenChange, onAdd }: AddTaskDi
           {/* Due time (only if date set) */}
           {dueDate && (
             <div className="space-y-1.5 animate-fade-in">
-              <Label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                Due time <span className="normal-case font-normal">(optional)</span>
+              <Label className={FIELD_LABEL}>
+                Due time <span className="font-normal normal-case tracking-normal">(optional)</span>
               </Label>
               <Input
                 type="time"
                 value={dueTime}
                 onChange={(e) => setDueTime(e.target.value)}
-                className="h-9 text-xs rounded-xl w-36"
+                className="h-9 w-36 rounded-xl text-xs"
               />
             </div>
           )}
 
-          <DialogFooter className="pt-1 gap-2">
-            <Button type="button" variant="ghost" className="rounded-xl" onClick={() => onOpenChange(false)}>
+          <DialogFooter className="gap-2 pt-1">
+            <Button type="button" variant="ghost" className="rounded-full" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" className="rounded-xl flex-1">
+            <Button type="submit" className="flex-1 rounded-full">
               Add task
             </Button>
           </DialogFooter>
@@ -245,38 +237,15 @@ function getTodayKey() {
 
 function LoadingSkeleton() {
   return (
-    <div className="px-4 md:px-6 py-5 space-y-5 max-w-6xl mx-auto animate-fade-in">
-      {/* Momentum bar skeleton */}
-      <div className="rounded-2xl border border-border bg-card p-5 space-y-4">
-        <div className="flex items-center justify-between">
-          <Skeleton className="h-4 w-36" />
-          <Skeleton className="h-4 w-20" />
+    <div className="mx-auto grid max-w-6xl grid-cols-1 gap-4 md:grid-cols-2 animate-fade-in" aria-hidden>
+      {[0, 1, 2, 3].map((i) => (
+        <div key={i} className="space-y-2.5 rounded-[24px] bg-a-surface px-5 py-[18px]">
+          <Skeleton className="h-5 w-28 bg-a-bg" />
+          {[0, 1].map((j) => (
+            <Skeleton key={j} className="h-11 w-full rounded-[14px] bg-a-bg" />
+          ))}
         </div>
-        <Skeleton className="h-2 w-full rounded-full" />
-        <div className="flex gap-4 pt-1 border-t border-border/60">
-          <Skeleton className="h-8 w-16" />
-          <Skeleton className="h-8 w-16" />
-        </div>
-      </div>
-
-      {/* Matrix skeleton */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="rounded-2xl border border-border bg-card overflow-hidden">
-            <div className="px-4 py-3 border-b border-border bg-muted/30">
-              <Skeleton className="h-4 w-24" />
-            </div>
-            <div className="p-3 space-y-2">
-              {[0, 1].map((j) => (
-                <div key={j} className="rounded-xl border border-border bg-background p-3 space-y-2">
-                  <Skeleton className="h-3.5 w-full" />
-                  <Skeleton className="h-3 w-2/3" />
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
+      ))}
     </div>
   );
 }
@@ -307,79 +276,6 @@ function ErrorBanner({ message, onRetry, onDismiss }: { message: string; onRetry
         <X className="size-3.5" />
       </Button>
     </div>
-  );
-}
-
-// ── User Menu ──────────────────────────────────────────────────────────────
-
-function UserMenu() {
-  const { session, signOut } = useCatalystUser();
-
-  if (!session) return null;
-
-  const initials = session.username?.[0]?.toUpperCase() || session.email?.[0]?.toUpperCase() || 'U';
-  const displayName = session.username || session.email;
-  const isVerified = session.emailVerified;
-
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          className="flex items-center gap-2 rounded-lg px-1.5 py-1 hover:bg-muted/60 transition-colors duration-150 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          aria-label="User menu"
-        >
-          <div className="relative">
-            <Avatar size="sm">
-              <AvatarFallback className="text-[10px] font-semibold bg-primary/15 text-primary">
-                {initials}
-              </AvatarFallback>
-            </Avatar>
-            {/* Verified badge */}
-            {isVerified && (
-              <div
-                className="absolute -bottom-0.5 -right-0.5 flex size-3.5 items-center justify-center rounded-full bg-primary ring-1 ring-background"
-                aria-label="Verified"
-              >
-                <ShieldCheck className="size-2 text-primary-foreground" />
-              </div>
-            )}
-          </div>
-          <span className="hidden sm:block text-xs font-medium text-foreground max-w-[120px] truncate">
-            {displayName}
-          </span>
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-60">
-        {/* Account info */}
-        <div className="px-3 py-3 space-y-1">
-          <div className="flex items-center gap-2">
-            <p className="text-xs font-semibold text-foreground truncate flex-1">{displayName}</p>
-            {isVerified ? (
-              <span className="flex items-center gap-1 text-[10px] font-medium text-primary bg-primary/10 rounded-full px-1.5 py-0.5 flex-shrink-0">
-                <ShieldCheck className="size-2.5" />
-                Verified
-              </span>
-            ) : (
-              <span className="flex items-center gap-1 text-[10px] font-medium text-yellow-600 dark:text-yellow-400 bg-yellow-500/10 rounded-full px-1.5 py-0.5 flex-shrink-0">
-                <ShieldAlert className="size-2.5" />
-                Unverified
-              </span>
-            )}
-          </div>
-          <p className="text-[11px] text-muted-foreground truncate">{session.email}</p>
-        </div>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem
-          variant="destructive"
-          onClick={signOut}
-          className="gap-2.5 cursor-pointer"
-        >
-          <LogOut className="size-4" />
-          Sign out
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 
@@ -462,7 +358,6 @@ function App() {
   // UI state
   const [dialogOpen, setDialogOpen] = useState(false);
   const [defaultQuadrant, setDefaultQuadrant] = useState<Quadrant>('do');
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showStreak, setShowStreak] = useState(false);
   const [showDone, setShowDone] = useState(false);
   const [detailTodo, setDetailTodo] = useState<Todo | null>(null);
@@ -470,14 +365,9 @@ function App() {
   const [showReminders, setShowReminders] = useState(false);
   const [showTodayHistory, setShowTodayHistory] = useState(false);
   const [defaultReminderMinutes, setDefaultReminderMinutes] = useState<ReminderMinutes>(DEFAULT_REMINDER_MINUTES);
-  const [activeView, setActiveView] = useState<'tasks' | 'notes' | 'automations'>('tasks');
-
-  // Notes state (count for sidebar badge)
-  const { notes } = useNotes();
-
-  // Automations state (count for sidebar badge)
-  const { rules: automationRules } = useAutomations(todos.map((t) => ({ id: t.id, text: t.text })));
-  const automationsActiveCount = automationRules.filter((r) => r.status === 'active').length;
+  const [activeView, setActiveView] = useState<AppView>('tasks');
+  // List vs Matrix is a mode within Tasks, remembered across reloads.
+  const [tasksMode, setTasksMode] = useLocalStorage<'list' | 'matrix'>('hitlist-tasks-mode', 'matrix');
 
   // ── Notifications ─────────────────────────────────────────────────────────
   const { permission: notificationPermission, requestPermission } = useNotifications(todos);
@@ -507,6 +397,7 @@ function App() {
 
   const totalCount = listTodos.length;
   const doneCount = doneTodos.length;
+  const activeFilterCount = countActiveFilters(filterState);
 
   // Next step: first in-progress, then first todo
   const nextId = useMemo(() => {
@@ -745,6 +636,39 @@ function App() {
     [todos, setTodos, server]
   );
 
+  /**
+   * Writes back a drag in the list view.
+   *
+   * Not handleUpdate: that toasts on every call and maps neither `order` nor a
+   * batch, so a drop that renumbers five tasks would toast five times. This is
+   * one optimistic update, one write per changed task, and a single rollback and
+   * error if any write fails. A reorder succeeding is visible; it needs no toast.
+   */
+  const handleReorder = useCallback(
+    async (changes: ReorderChange[]) => {
+      const byId = new Map(changes.map((c) => [c.id, c]));
+      const before = new Map(todos.filter((t) => byId.has(t.id)).map((t) => [t.id, t]));
+
+      setTodos((prev) => prev.map((t) => {
+        const c = byId.get(t.id);
+        return c ? { ...t, order: c.order, quadrant: c.quadrant } : t;
+      }));
+
+      const quadrantMap: Record<Quadrant, import('@/lib/api').Quadrant> = {
+        do: 'DO', schedule: 'SCHEDULE', delegate: 'DELEGATE', eliminate: 'ELIMINATE',
+      };
+      const results = await Promise.all(
+        changes.map((c) => server.updateTask(c.id, { taskOrder: c.order, quadrant: quadrantMap[c.quadrant] })),
+      );
+
+      if (results.some((r) => !r)) {
+        setTodos((prev) => prev.map((t) => before.get(t.id) ?? t));
+        toast.error("Couldn't save the new order", { duration: 3000 });
+      }
+    },
+    [todos, setTodos, server]
+  );
+
   const handleOpenDetail = useCallback((todo: Todo) => {
     setDetailTodo(todo);
     setDetailOpen(true);
@@ -851,341 +775,203 @@ function App() {
 
   // ── Layout ────────────────────────────────────────────────────────────────
 
+  const remindersNeedAttention = isNotificationSupported() && notificationPermission !== 'granted';
+
+  const tasksTopBar = (
+    <TopBar
+      dotClass={activeList ? getListColorDot(activeList.color) : undefined}
+      title={activeList?.name ?? 'Tasks'}
+      subtitle={
+        <>
+          {totalCount} task{totalCount !== 1 ? 's' : ''} · {stats.todayCompleted} done today
+          {alertCount > 0 && (
+            <span className="ml-2 font-semibold text-q-do">
+              {alertCount} need{alertCount === 1 ? 's' : ''} attention
+            </span>
+          )}
+        </>
+      }
+      actions={
+        <>
+          <TopBarToggle
+            label="Task view"
+            value={tasksMode}
+            onChange={setTasksMode}
+            options={[{ value: 'list', label: 'List' }, { value: 'matrix', label: 'Matrix' }]}
+          />
+
+          {/* One quiet pill for everything that narrows or tidies the view. It
+              was a filter bar in the scroll column, which scrolled away. */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <button type="button" className={topBarPill} aria-label={`Filter${activeFilterCount ? ` (${activeFilterCount} active)` : ''}`}>
+                <SlidersHorizontal className="size-3.5" strokeWidth={2.75} aria-hidden />
+                <span className="hidden sm:inline">Filter</span>
+                {activeFilterCount > 0 && (
+                  <span className="flex min-w-[18px] items-center justify-center rounded-full bg-a-accent px-1 text-[11px] font-bold leading-[18px] text-a-bg">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </button>
+            </PopoverTrigger>
+            <PopoverContent align="end" className="w-[min(92vw,560px)] p-3">
+              <AdvancedFilterBar filters={filterState} onChange={setFilterState} />
+              <div className="mt-3 flex items-center justify-between gap-3 border-t border-a-line-soft pt-3">
+                <label className="flex cursor-pointer items-center gap-2.5 text-[13.5px] text-a-ink">
+                  <Switch checked={showDone} onCheckedChange={setShowDone} />
+                  Show completed
+                </label>
+                {doneCount > 0 && showDone && (
+                  <button
+                    type="button"
+                    onClick={handleClearDone}
+                    className="text-[13px] text-a-faint transition-colors duration-150 hover:text-a-ink"
+                  >
+                    Clear done ({doneCount})
+                  </button>
+                )}
+              </div>
+              {activeFilterCount > 0 && tasksMode === 'list' && (
+                <p className="mt-2 text-[12px] text-a-faint">Drag to reorder is off while filters are active.</p>
+              )}
+            </PopoverContent>
+          </Popover>
+
+          <button
+            type="button"
+            onClick={() => { setDefaultQuadrant('do'); setDialogOpen(true); }}
+            className={topBarPrimary}
+            aria-label="Add new task"
+          >
+            <Plus className="size-[15px]" strokeWidth={2.75} aria-hidden />
+            <span className="hidden sm:inline">Add task</span>
+          </button>
+        </>
+      }
+    />
+  );
+
   return (
-    <div className="min-h-svh bg-background flex">
+    <>
       <Toaster position="top-center" richColors />
 
-      {/* ── Desktop sidebar ── */}
-      <div className="hidden md:flex flex-col h-screen sticky top-0 w-64 flex-shrink-0">
-        <ListSidebar
-          lists={lists}
-          activeListId={activeListId}
-          todoCounts={todoCounts}
-          onSelectList={handleSelectList}
-          onCreateList={handleCreateList}
-          onRenameList={handleRenameList}
-          onDeleteList={handleDeleteList}
-          activeView={activeView}
-          onViewChange={(v) => setActiveView(v)}
-          notesCount={notes.length}
-          automationsCount={automationsActiveCount}
-        />
-      </div>
-
-      {/* ── Mobile sidebar overlay ── */}
-      {sidebarOpen && (
-        <div className="fixed inset-0 z-40 md:hidden">
-          <div
-            className="absolute inset-0 bg-background/80 backdrop-blur-sm animate-fade-in"
-            onClick={() => setSidebarOpen(false)}
+      <AppShell
+        rail={
+          <IconRail
+            activeView={activeView}
+            onViewChange={setActiveView}
+            bell={
+              <NotificationBell
+                notifications={activeNotifications}
+                unreadCount={unreadCount}
+                onDismiss={dismissNotification}
+                onDismissAll={dismissAllNotifications}
+                onNavigateToTask={(taskId) => {
+                  const t = todos.find((x) => x.id === taskId);
+                  if (t) { setActiveView('tasks'); handleOpenDetail(t); }
+                }}
+                className="size-10 rounded-[14px] text-a-rail-fg/60 hover:bg-a-rail-fg/10 hover:text-a-rail-fg"
+              />
+            }
+            account={
+              <UserMenu
+                onOpenReminders={() => setShowReminders(true)}
+                remindersNeedAttention={remindersNeedAttention}
+              />
+            }
           />
-          <div className="absolute left-0 top-0 bottom-0 w-72 z-50 shadow-xl animate-slide-up">
-            <ListSidebar
-              lists={lists}
-              activeListId={activeListId}
-              todoCounts={todoCounts}
-              onSelectList={(id) => { handleSelectList(id); setSidebarOpen(false); }}
-              onCreateList={handleCreateList}
-              onRenameList={handleRenameList}
-              onDeleteList={handleDeleteList}
-              onClose={() => setSidebarOpen(false)}
-              isMobile
-              activeView={activeView}
-              onViewChange={(v) => { setActiveView(v); setSidebarOpen(false); }}
-              notesCount={notes.length}
-              automationsCount={automationsActiveCount}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* ── Main content ── */}
-      <main className="flex-1 min-w-0 flex flex-col min-h-0">
-        {/* Email verification banner */}
-
-        {/* Top bar */}
-        <header className="sticky top-0 z-20 bg-background/95 backdrop-blur-sm border-b border-border flex-shrink-0">
-          <div className="flex items-center gap-3 px-4 md:px-6 h-14">
-            {/* Mobile menu */}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => setSidebarOpen(true)}
-              className="md:hidden text-muted-foreground hover:text-foreground -ml-1"
-              aria-label="Open lists"
-            >
-              <Menu className="size-5" />
-            </Button>
-
-            {/* Logo + title */}
-            <div className="flex items-center gap-2.5 min-w-0 flex-1">
-              <div className="flex size-8 items-center justify-center rounded-lg bg-primary/10 flex-shrink-0">
-                <Leaf className="size-4 text-primary" />
-              </div>
-              <div className="min-w-0">
-                <h1 className="text-sm font-bold tracking-tight text-foreground truncate leading-tight">
-                  {activeView === 'notes' ? 'Rough Notes' : activeView === 'automations' ? 'Automations' : (activeList?.name ?? 'Kaizen Flow')}
-                </h1>
-                <p className="text-[10px] text-muted-foreground leading-tight hidden sm:block">
-                  {activeView === 'notes'
-                    ? `${notes.length} note${notes.length !== 1 ? 's' : ''} · Notion-style workspace`
-                    : activeView === 'automations'
-                    ? `${automationsActiveCount} active rule${automationsActiveCount !== 1 ? 's' : ''} · Scheduled reminders`
-                    : <>
-                        Eisenhower Matrix · {activeTodos.length} active
-                        {alertCount > 0 && (
-                          <span className="ml-1.5 inline-flex items-center rounded-full bg-destructive/15 px-1.5 py-0.5 text-[9px] font-bold text-destructive">
-                            {alertCount} alert{alertCount > 1 ? 's' : ''}
-                          </span>
-                        )}
-                      </>
-                  }
-                </p>
-              </div>
-            </div>
-
-            {/* Header actions */}
-            <div className="flex items-center gap-1.5 flex-shrink-0">
-              {/* View toggle (mobile) */}
-              <div className="flex md:hidden rounded-lg bg-muted/40 p-0.5 gap-0.5">
-                <button
-                  type="button"
-                  onClick={() => setActiveView('tasks')}
-                  className={cn(
-                    'flex items-center justify-center h-7 w-7 rounded-md text-xs transition-all duration-150',
-                    activeView === 'tasks' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'
-                  )}
-                  aria-label="Tasks view"
-                >
-                  <LayoutGrid className="size-3.5" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setActiveView('notes')}
-                  className={cn(
-                    'flex items-center justify-center h-7 w-7 rounded-md text-xs transition-all duration-150',
-                    activeView === 'notes' ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground'
-                  )}
-                  aria-label="Notes view"
-                >
-                  <StickyNote className="size-3.5" />
-                </button>
-              </div>
-
-              {activeView === 'tasks' && (
-                <>
-                  {/* Offline indicator */}
-                  {!server.loading && !server.serverOnline && (
-                    <div
-                      className="flex items-center gap-1.5 rounded-lg px-2 py-1 bg-amber-500/10 border border-amber-500/20 animate-fade-in"
-                      title="Server offline — using local data"
-                    >
-                      <WifiOff className="size-3 text-amber-500" />
-                      <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400 hidden sm:inline">Offline</span>
-                    </div>
-                  )}
-
-                  {/* Show/hide done */}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setShowDone((v) => !v)}
-                    className={cn(
-                      'h-8 px-2.5 text-xs gap-1.5 rounded-lg transition-colors duration-150',
-                      showDone ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:text-foreground'
-                    )}
-                    aria-label={showDone ? 'Hide completed tasks' : 'Show completed tasks'}
-                  >
-                    {showDone ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}
-                    <span className="hidden sm:inline">{showDone ? 'Hide done' : 'Show done'}</span>
-                  </Button>
-
-                  {/* Streak toggle */}
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => setShowStreak((v) => !v)}
-                    aria-label="Toggle progress panel"
-                    className={cn(
-                      'size-8 rounded-lg transition-colors duration-150',
-                      showStreak ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    <BarChart2 className="size-4" />
-                  </Button>
-
-                  {/* Notification bell */}
-                  <NotificationBell
-                    notifications={activeNotifications}
-                    unreadCount={unreadCount}
-                    onDismiss={dismissNotification}
-                    onDismissAll={dismissAllNotifications}
-                    onNavigateToTask={(taskId) => {
-                      const t = todos.find((x) => x.id === taskId);
-                      if (t) handleOpenDetail(t);
-                    }}
-                  />
-
-                  {/* Reminders settings toggle */}
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => setShowReminders((v) => !v)}
-                    aria-label="Toggle reminders panel"
-                    className={cn(
-                      'size-8 rounded-lg transition-colors duration-150 relative',
-                      showReminders ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    <Bell className="size-4" />
-                    {notificationPermission !== 'granted' && isNotificationSupported() && (
-                      <span className="absolute top-1 right-1 size-1.5 rounded-full bg-amber-500" />
-                    )}
-                  </Button>
-
-                  {/* Add task */}
-                  <Button
-                    onClick={() => { setDefaultQuadrant('do'); setDialogOpen(true); }}
-                    size="sm"
-                    className="h-8 px-3 text-xs rounded-lg gap-1.5"
-                    aria-label="Add new task"
-                  >
-                    <Plus className="size-3.5" />
-                    <span className="hidden sm:inline">Add task</span>
-                  </Button>
-                </>
-              )}
-
-              {/* User avatar / sign-out */}
-              <UserMenu />
-            </div>
-          </div>
-        </header>
-
-        {/* Sync status bar — only in tasks view */}
-        {activeView === 'tasks' && (
-          <SyncStatusBar
-            loading={server.loading}
-            saving={server.saving}
-            error={server.error}
-            serverOnline={server.serverOnline}
-            backendUnavailable={server.backendUnavailable}
-            onRetry={server.refresh}
-            onDismissError={server.clearError}
-          />
-        )}
-
-        {/* Content area */}
+        }
+      >
         {activeView === 'notes' ? (
-          <div className="flex-1 min-h-0 overflow-hidden">
+          <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
             <NotesWorkspace />
           </div>
         ) : activeView === 'automations' ? (
-          <div className="flex-1 overflow-auto">
+          <div className="min-h-0 min-w-0 flex-1 overflow-auto">
             <AutomationsPage todos={todos} />
           </div>
         ) : (
-          <div className="flex-1 overflow-auto">
-            {server.loading ? (
-              <LoadingSkeleton />
-            ) : (
-              <div className="px-4 md:px-6 py-5 space-y-5 max-w-6xl mx-auto">
-
-                {/* Momentum bar */}
+          <ViewLayout
+            contextLabel="Lists"
+            context={
+              <ListSidebar
+                lists={lists}
+                activeListId={activeListId}
+                todoCounts={todoCounts}
+                onSelectList={handleSelectList}
+                onCreateList={handleCreateList}
+                onRenameList={handleRenameList}
+                onDeleteList={handleDeleteList}
+                loading={server.loading}
+              />
+            }
+            contextFoot={
+              <>
+                {!server.loading && !server.serverOnline && (
+                  <p className="flex items-center gap-1.5 px-3 pt-2 text-[12.5px] text-q-delegate" role="status">
+                    <WifiOff className="size-3.5" strokeWidth={2.75} aria-hidden />
+                    Offline — using local data
+                  </p>
+                )}
+                {/* Momentum moved here from a card at the top of the page. */}
                 <MomentumBar
                   stats={stats}
                   total={totalCount}
                   done={doneCount}
                   onViewHistory={() => setShowTodayHistory(true)}
+                  onViewProgress={() => setShowStreak(true)}
                 />
+              </>
+            }
+            topBar={tasksTopBar}
+          >
+            {/* Sync status: shows only while saving, offline, or erroring — with Retry. */}
+            <SyncStatusBar
+              loading={server.loading}
+              saving={server.saving}
+              error={server.error}
+              serverOnline={server.serverOnline}
+              backendUnavailable={server.backendUnavailable}
+              onRetry={server.refresh}
+              onDismissError={server.clearError}
+            />
 
-                {/* Streak / Progress panel */}
-                {showStreak && (
-                  <div className="animate-fade-in">
-                    <StreakPanel todos={listTodos} listName={activeList?.name ?? 'this list'} />
-                  </div>
-                )}
-
-                {/* Matrix legend */}
-                <div className="flex items-center gap-3 flex-wrap">
-                  <div className="flex items-center gap-1.5">
-                    <LayoutGrid className="size-3.5 text-muted-foreground" />
-                    <span className="text-xs font-semibold text-muted-foreground">Eisenhower Matrix</span>
-                  </div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {QUADRANTS.map((q) => (
-                      <span
-                        key={q.id}
-                        className={cn(
-                          'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium',
-                          q.badgeClass
-                        )}
-                      >
-                        {q.label}
-                      </span>
-                    ))}
-                  </div>
-                  <div className="flex-1" />
-                  {doneCount > 0 && showDone && (
-                    <button
-                      onClick={handleClearDone}
-                      className="text-[11px] text-muted-foreground hover:text-foreground transition-colors duration-150"
-                    >
-                      Clear done ({doneCount})
-                    </button>
-                  )}
-                </div>
-
-                {/* Reminders panel */}
-                {showReminders && (
-                  <div className="animate-fade-in">
-                    <RemindersSettingsPanel
-                      permission={notificationPermission}
-                      defaultMinutes={defaultReminderMinutes}
-                      onRequestPermission={requestPermission}
-                      onDefaultMinutesChange={setDefaultReminderMinutes}
-                      activeReminderCount={activeReminderCount}
-                      overdueCount={reminderOverdueCount}
-                      dueSoonCount={reminderDueSoonCount}
-                    />
-                  </div>
-                )}
-
-                {/* Advanced filter bar */}
-                <AdvancedFilterBar
-                  filters={filterState}
-                  onChange={setFilterState}
-                  className="animate-fade-in"
+            <div className="px-4 py-[22px] md:px-[26px]">
+              {server.loading ? (
+                <LoadingSkeleton />
+              ) : listTodos.length === 0 ? (
+                <EmptyState onAdd={() => { setDefaultQuadrant('do'); setDialogOpen(true); }} />
+              ) : tasksMode === 'list' ? (
+                <TaskListView
+                  todos={listTodos}
+                  showDone={showDone}
+                  nextId={nextId}
+                  dragDisabled={activeFilterCount > 0}
+                  onStatusChange={handleStatusChange}
+                  onDelete={handleDelete}
+                  onOpen={handleOpenDetail}
+                  onAddToQuadrant={handleAddToQuadrant}
+                  onReorder={handleReorder}
+                  onToggleReminder={handleToggleReminder}
+                  notificationPermission={notificationPermission}
                 />
-
-                {/* Eisenhower Matrix — or empty state when list has no tasks */}
-                {listTodos.length === 0 ? (
-                  <EmptyState onAdd={() => { setDefaultQuadrant('do'); setDialogOpen(true); }} />
-                ) : (
-                  <EisenhowerMatrix
-                    todos={listTodos}
-                    onStatusChange={handleStatusChange}
-                    onDelete={handleDelete}
-                    onOpen={handleOpenDetail}
-                    onAddToQuadrant={handleAddToQuadrant}
-                    nextId={nextId}
-                    showDone={showDone}
-                    onToggleReminder={handleToggleReminder}
-                    notificationPermission={notificationPermission}
-                  />
-                )}
-
-                {/* Footer hint */}
-                {activeTodos.length > 0 && (
-                  <p className="text-center text-[10px] text-muted-foreground/50 pb-4 animate-fade-in">
-                    Click any task to open details · Tap ○ to advance status · + to add to a quadrant
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
+              ) : (
+                <EisenhowerMatrix
+                  todos={listTodos}
+                  onStatusChange={handleStatusChange}
+                  onDelete={handleDelete}
+                  onOpen={handleOpenDetail}
+                  onAddToQuadrant={handleAddToQuadrant}
+                  nextId={nextId}
+                  showDone={showDone}
+                  onToggleReminder={handleToggleReminder}
+                  notificationPermission={notificationPermission}
+                />
+              )}
+            </div>
+          </ViewLayout>
         )}
-      </main>
+      </AppShell>
 
       {/* In-app notification toasts */}
       <NotificationToast
@@ -1210,6 +996,34 @@ function App() {
         onClose={() => setShowTodayHistory(false)}
       />
 
+      {/* Reminder settings — reached from the account menu in the rail. */}
+      <Dialog open={showReminders} onOpenChange={setShowReminders}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="font-display text-[22px] font-normal">Reminders</DialogTitle>
+          </DialogHeader>
+          <RemindersSettingsPanel
+            permission={notificationPermission}
+            defaultMinutes={defaultReminderMinutes}
+            onRequestPermission={requestPermission}
+            onDefaultMinutesChange={setDefaultReminderMinutes}
+            activeReminderCount={activeReminderCount}
+            overdueCount={reminderOverdueCount}
+            dueSoonCount={reminderDueSoonCount}
+          />
+        </DialogContent>
+      </Dialog>
+
+      {/* Weekly progress — reached from the momentum foot. */}
+      <Dialog open={showStreak} onOpenChange={setShowStreak}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle className="font-display text-[22px] font-normal">Progress</DialogTitle>
+          </DialogHeader>
+          <StreakPanel todos={listTodos} listName={activeList?.name ?? 'this list'} />
+        </DialogContent>
+      </Dialog>
+
       {/* Task detail panel */}
       <TaskDetailPanel
         todo={detailTodo}
@@ -1221,8 +1035,12 @@ function App() {
         notificationPermission={notificationPermission}
         defaultReminderMinutes={defaultReminderMinutes}
       />
-    </div>
+    </>
   );
 }
+
+// Retained for the error states it renders; unused by the current layout,
+// which routes errors through SyncStatusBar.
+void ErrorBanner;
 
 export default App;

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { Plus, Trash2, Check, Pencil, ListTodo, X, StickyNote, Zap } from 'lucide-react';
+import { Plus, Trash2, Check, Pencil, ListTodo } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,6 +15,12 @@ import {
 } from '@/components/ui/alert-dialog';
 import type { KaizenList } from '@/types/todo';
 import { getListColorDot, LIST_COLORS } from '@/types/todo';
+import {
+  ContextSectionHeader,
+  contextIconButton,
+  contextRowClass,
+  useViewLayout,
+} from '@/components/shell/ViewLayout';
 
 interface ListSidebarProps {
   lists: KaizenList[];
@@ -24,16 +30,17 @@ interface ListSidebarProps {
   onCreateList: (name: string, color: string) => void;
   onRenameList: (id: string, name: string) => void;
   onDeleteList: (id: string) => void;
-  onClose?: () => void;
-  isMobile?: boolean;
-  activeView?: 'tasks' | 'notes' | 'automations';
-  onViewChange?: (view: 'tasks' | 'notes' | 'automations') => void;
-  notesCount?: number;
-  automationsCount?: number;
   /** True while the initial server load is in progress */
   loading?: boolean;
 }
 
+/**
+ * The tasks view's lists, in the shell's context column.
+ *
+ * It used to be a whole sidebar with its own header and a Tasks / Notes /
+ * Automations switcher. The switcher now lives in the icon rail; this is just
+ * the lists — as 36px pills, with create, rename and delete unchanged.
+ */
 export function ListSidebar({
   lists,
   activeListId,
@@ -42,14 +49,9 @@ export function ListSidebar({
   onCreateList,
   onRenameList,
   onDeleteList,
-  onClose,
-  isMobile,
-  activeView = 'tasks',
-  onViewChange,
-  notesCount = 0,
-  automationsCount = 0,
   loading = false,
 }: ListSidebarProps) {
+  const { closeContext } = useViewLayout();
   const [creatingNew, setCreatingNew] = useState(false);
   const [newName, setNewName] = useState('');
   const [newColor, setNewColor] = useState('emerald');
@@ -96,269 +98,171 @@ export function ListSidebar({
 
   return (
     <>
-      <aside
-        className={cn(
-          'flex flex-col h-full bg-card border-r border-border',
-          isMobile ? 'w-full' : 'w-64'
-        )}
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-4 pt-5 pb-3 flex-shrink-0">
-          <div className="flex items-center gap-2">
-            <ListTodo className="size-4 text-primary" />
-            <span className="text-sm font-semibold text-foreground">Kaizen</span>
-          </div>
-          {isMobile && onClose && (
-            <Button variant="ghost" size="icon-sm" onClick={onClose} aria-label="Close sidebar">
-              <X className="size-4" />
-            </Button>
-          )}
-        </div>
-
-        {/* View switcher */}
-        <div className="px-2 pb-2 flex-shrink-0 space-y-0.5">
-          {/* Tasks / Notes row */}
-          <div className="flex rounded-xl bg-muted/40 p-0.5 gap-0.5">
-            <button
-              type="button"
-              onClick={() => onViewChange?.('tasks')}
-              className={cn(
-                'flex-1 flex items-center justify-center gap-1.5 h-7 rounded-lg text-xs font-medium transition-all duration-150',
-                activeView === 'tasks'
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              <ListTodo className="size-3" />
-              Tasks
-            </button>
-            <button
-              type="button"
-              onClick={() => onViewChange?.('notes')}
-              className={cn(
-                'flex-1 flex items-center justify-center gap-1.5 h-7 rounded-lg text-xs font-medium transition-all duration-150',
-                activeView === 'notes'
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground'
-              )}
-            >
-              <StickyNote className="size-3" />
-              Notes
-              {notesCount > 0 && (
-                <span className={cn(
-                  'flex size-4 items-center justify-center rounded-full text-[9px] font-semibold tabular-nums',
-                  activeView === 'notes' ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground'
-                )}>
-                  {notesCount > 99 ? '99+' : notesCount}
-                </span>
-              )}
-            </button>
-          </div>
-          {/* Automations row */}
+      <ContextSectionHeader
+        label="Lists"
+        action={
           <button
             type="button"
-            onClick={() => onViewChange?.('automations')}
-            className={cn(
-              'w-full flex items-center gap-2 h-8 rounded-xl px-3 text-xs font-medium transition-all duration-150',
-              activeView === 'automations'
-                ? 'bg-primary/10 text-foreground'
-                : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
-            )}
+            onClick={() => setCreatingNew(true)}
+            className={contextIconButton}
+            aria-label="New list"
+            title="New list"
           >
-            <Zap className="size-3 flex-shrink-0" />
-            <span className="flex-1 text-left">Automations</span>
-            {automationsCount > 0 && (
-              <span className={cn(
-                'flex size-4 items-center justify-center rounded-full text-[9px] font-semibold tabular-nums',
-                activeView === 'automations' ? 'bg-primary/20 text-primary' : 'bg-muted text-muted-foreground'
-              )}>
-                {automationsCount > 99 ? '99+' : automationsCount}
-              </span>
-            )}
+            <Plus className="size-3.5" strokeWidth={2.75} />
           </button>
+        }
+      />
+
+      {/* Loading skeleton — shown while the initial server fetch is in progress */}
+      {loading && lists.length === 0 && (
+        <div className="space-y-1 px-1 animate-pulse" aria-hidden>
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="flex h-9 items-center gap-2.5 px-3">
+              <div className="size-2 rounded-full bg-a-line" />
+              <div className="h-3 rounded-full bg-a-line" style={{ width: `${55 + i * 15}%` }} />
+            </div>
+          ))}
         </div>
+      )}
 
-        {/* Notes view: placeholder in sidebar */}
-        {activeView === 'notes' && (
-          <div className="flex-1 flex flex-col items-center justify-center px-4 py-8 text-center">
-            <StickyNote className="size-8 text-muted-foreground/30 mb-3" />
-            <p className="text-xs text-muted-foreground/60 leading-relaxed">
-              Notes are shown in the main area. Select or create a note to get started.
-            </p>
-          </div>
-        )}
+      {!loading && lists.length === 0 && (
+        <div className="flex flex-col items-center px-4 py-8 text-center">
+          <ListTodo className="mb-2 size-6 text-a-faint/60" strokeWidth={2.25} />
+          <p className="text-[13px] leading-relaxed text-a-faint">No lists yet. Create one with +.</p>
+        </div>
+      )}
 
-        {/* Automations view: placeholder in sidebar */}
-        {activeView === 'automations' && (
-          <div className="flex-1 flex flex-col items-center justify-center px-4 py-8 text-center">
-            <Zap className="size-8 text-muted-foreground/30 mb-3" />
-            <p className="text-xs text-muted-foreground/60 leading-relaxed">
-              Automation rules are shown in the main area.
-            </p>
-          </div>
-        )}
+      <ul className="space-y-0.5">
+        {lists.map((list) => {
+          const isActive = list.id === activeListId;
+          const counts = todoCounts[list.id] ?? { active: 0, done: 0 };
+          const isRenaming = renamingId === list.id;
+          const dotClass = getListColorDot(list.color);
 
-        {/* Tasks view: list items */}
-        {activeView === 'tasks' && (
-          <div className="flex-1 overflow-y-auto px-2 space-y-0.5 pb-2">
-            {/* Loading skeleton — shown while initial server fetch is in progress */}
-            {loading && lists.length === 0 && (
-              <div className="space-y-1 px-1 pt-1 animate-pulse">
-                {[...Array(3)].map((_, i) => (
-                  <div key={i} className="flex items-center gap-2.5 rounded-xl px-3 py-2.5">
-                    <div className="size-2 rounded-full bg-muted-foreground/20 flex-shrink-0" />
-                    <div className="h-3 rounded bg-muted-foreground/15 flex-1" style={{ width: `${60 + i * 15}%` }} />
-                  </div>
-                ))}
-              </div>
-            )}
-            {/* Empty state — shown after load completes with no lists */}
-            {!loading && lists.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
-                <ListTodo className="size-7 text-muted-foreground/30 mb-2" />
-                <p className="text-xs text-muted-foreground/60 leading-relaxed">
-                  No lists yet. Create one below.
-                </p>
-              </div>
-            )}
-            {lists.map((list) => {
-              const isActive = list.id === activeListId;
-              const counts = todoCounts[list.id] ?? { active: 0, done: 0 };
-              const isRenaming = renamingId === list.id;
-              const dotClass = getListColorDot(list.color);
-
-              return (
-                <div
-                  key={list.id}
-                  className={cn(
-                    'group relative flex items-center gap-2.5 rounded-xl px-3 py-2.5 cursor-pointer transition-all duration-150',
-                    isActive
-                      ? 'bg-primary/10 text-foreground'
-                      : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'
-                  )}
-                  onClick={() => {
-                    if (!isRenaming) {
-                      onSelectList(list.id);
-                      if (isMobile && onClose) onClose();
-                    }
-                  }}
-                >
-                  <span className={cn('size-2 rounded-full flex-shrink-0', dotClass)} />
-
-                  {isRenaming ? (
-                    <input
-                      ref={renameInputRef}
-                      value={renameValue}
-                      onChange={(e) => setRenameValue(e.target.value)}
-                      onBlur={handleRenameCommit}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') handleRenameCommit();
-                        if (e.key === 'Escape') setRenamingId(null);
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                      className="flex-1 min-w-0 bg-transparent text-sm font-medium text-foreground outline-none border-b border-primary"
-                      aria-label="Rename list"
-                    />
-                  ) : (
-                    <span className="flex-1 min-w-0 truncate text-sm font-medium">{list.name}</span>
-                  )}
-
-                  {counts.active > 0 && !isRenaming && (
-                    <span
-                      className={cn(
-                        'flex-shrink-0 flex size-5 items-center justify-center rounded-full text-[10px] font-semibold tabular-nums transition-colors duration-150',
-                        isActive
-                          ? 'bg-primary/20 text-primary'
-                          : 'bg-muted text-muted-foreground group-hover:bg-muted/80'
-                      )}
-                    >
-                      {counts.active}
-                    </span>
-                  )}
-
-                  {!isRenaming && (
-                    <div className="absolute right-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity duration-150">
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleRenameStart(list); }}
-                        aria-label="Rename list"
-                        className="flex size-6 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150"
-                      >
-                        <Pencil className="size-3" />
-                      </button>
-                      {lists.length > 1 && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); setDeleteTarget(list); }}
-                          aria-label="Delete list"
-                          className="flex size-6 items-center justify-center rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors duration-150"
-                        >
-                          <Trash2 className="size-3" />
-                        </button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-
-            {/* New list form */}
-            {creatingNew && (
-              <div className="mt-1 rounded-xl border border-border bg-muted/30 p-3 space-y-2.5 animate-fade-in">
-                <Input
-                  ref={newInputRef}
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
+          if (isRenaming) {
+            return (
+              <li key={list.id} className={contextRowClass(true)}>
+                <span className={cn('size-2 flex-shrink-0 rounded-full', dotClass)} aria-hidden />
+                <input
+                  ref={renameInputRef}
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onBlur={handleRenameCommit}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleCreate();
-                    if (e.key === 'Escape') setCreatingNew(false);
+                    if (e.key === 'Enter') handleRenameCommit();
+                    if (e.key === 'Escape') setRenamingId(null);
                   }}
-                  placeholder="List name…"
-                  className="h-8 text-sm rounded-lg"
-                  aria-label="New list name"
+                  className="min-w-0 flex-1 border-b border-a-accent bg-transparent text-[14.5px] font-semibold text-a-ink outline-none"
+                  aria-label="Rename list"
                 />
-                <div className="flex items-center gap-1.5 flex-wrap">
-                  {LIST_COLORS.map((c) => (
-                    <button
-                      key={c.id}
-                      onClick={() => setNewColor(c.id)}
-                      aria-label={`Color: ${c.label}`}
-                      className={cn(
-                        'size-5 rounded-full transition-all duration-150',
-                        c.dot,
-                        newColor === c.id ? 'ring-2 ring-offset-1 ring-foreground/30 scale-110' : 'opacity-60 hover:opacity-100'
-                      )}
-                    />
-                  ))}
-                </div>
-                <div className="flex gap-1.5">
-                  <Button size="sm" onClick={handleCreate} disabled={!newName.trim()} className="h-7 rounded-lg text-xs flex-1">
-                    <Check className="size-3 mr-1" /> Create
-                  </Button>
-                  <Button size="sm" variant="ghost" onClick={() => { setCreatingNew(false); setNewName(''); }} className="h-7 rounded-lg text-xs">
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+              </li>
+            );
+          }
 
-        {/* New list button — only in tasks view */}
-        {activeView === 'tasks' && !creatingNew && (
-          <div className="px-2 pb-4 pt-1 border-t border-border/60 mt-1 flex-shrink-0">
+          return (
+            <li key={list.id} className="group relative">
+              <button
+                type="button"
+                onClick={() => { onSelectList(list.id); closeContext(); }}
+                aria-current={isActive ? 'true' : undefined}
+                className={contextRowClass(isActive)}
+              >
+                <span className={cn('size-2 flex-shrink-0 rounded-full', dotClass)} aria-hidden />
+                <span className={cn(
+                  'min-w-0 flex-1 truncate text-[14.5px]',
+                  isActive ? 'font-semibold text-a-ink' : 'text-a-muted',
+                )}>
+                  {list.name}
+                </span>
+                {counts.active > 0 && (
+                  <span
+                    className={cn(
+                      'text-[12.5px] tabular-nums transition-opacity duration-150',
+                      'group-hover:opacity-0 group-focus-within:opacity-0',
+                      isActive ? 'font-bold text-a-accent-700' : 'text-a-faint',
+                    )}
+                  >
+                    {counts.active}
+                    <span className="sr-only"> open</span>
+                  </span>
+                )}
+              </button>
+
+              {/* Siblings of the row button, not children: no nested interactive elements. */}
+              <div className="absolute top-1/2 right-2 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+                <button
+                  type="button"
+                  onClick={() => handleRenameStart(list)}
+                  aria-label={`Rename ${list.name}`}
+                  className={contextIconButton}
+                >
+                  <Pencil className="size-3" strokeWidth={2.75} />
+                </button>
+                {lists.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setDeleteTarget(list)}
+                    aria-label={`Delete ${list.name}`}
+                    className={cn(contextIconButton, 'hover:text-q-do')}
+                  >
+                    <Trash2 className="size-3" strokeWidth={2.75} />
+                  </button>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+
+      {creatingNew && (
+        <div className="mx-1 mt-2 space-y-2.5 rounded-[14px] bg-a-bg p-3 shadow-[inset_0_0_0_1px_var(--a-line)] animate-fade-in">
+          <Input
+            ref={newInputRef}
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleCreate();
+              if (e.key === 'Escape') setCreatingNew(false);
+            }}
+            placeholder="List name…"
+            className="h-8 rounded-full text-[14px]"
+            aria-label="New list name"
+          />
+          <div className="flex flex-wrap items-center gap-1.5" role="radiogroup" aria-label="List colour">
+            {LIST_COLORS.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                role="radio"
+                aria-checked={newColor === c.id}
+                onClick={() => setNewColor(c.id)}
+                aria-label={c.label}
+                className={cn(
+                  'size-5 rounded-full transition-all duration-150',
+                  c.dot,
+                  newColor === c.id
+                    ? 'scale-110 ring-2 ring-a-ink/40 ring-offset-2 ring-offset-a-bg'
+                    : 'opacity-60 hover:opacity-100',
+                )}
+              />
+            ))}
+          </div>
+          <div className="flex gap-1.5">
+            <Button size="sm" onClick={handleCreate} disabled={!newName.trim()} className="h-7 flex-1 rounded-full text-xs">
+              <Check className="mr-1 size-3" /> Create
+            </Button>
             <Button
-              variant="ghost"
               size="sm"
-              onClick={() => setCreatingNew(true)}
-              className="w-full h-8 rounded-xl text-xs text-muted-foreground hover:text-foreground gap-1.5 justify-start"
+              variant="ghost"
+              onClick={() => { setCreatingNew(false); setNewName(''); }}
+              className="h-7 rounded-full text-xs"
             >
-              <Plus className="size-3.5" />
-              New list
+              Cancel
             </Button>
           </div>
-        )}
-      </aside>
+        </div>
+      )}
 
-      {/* Delete confirmation dialog */}
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -371,7 +275,7 @@ export function ListSidebar({
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteConfirm}
-              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              className="bg-destructive text-a-bg hover:bg-destructive/90"
             >
               Delete list
             </AlertDialogAction>
