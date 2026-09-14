@@ -124,8 +124,9 @@ fs.writeFileSync(
     memory: 512,
     catalyst_auth: false,
     env_variables: {
-      // CATALYST_-prefixed names are rejected by AppSail as reserved.
-      APP_OWNER_ID: process.env['APPSAIL_OWNER_ID'] ?? 'hitlist-shared',
+      // APP_OWNER_ID is deliberately absent: users sign in with Catalyst, so
+      // every row is scoped to its author's user_id. Setting it would collapse
+      // all users back into one shared dataset.
       // The Slate-hosted frontend is a different origin, so it needs an
       // explicit CORS allowance. The AppSail-hosted copy is same-origin and
       // does not.

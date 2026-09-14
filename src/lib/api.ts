@@ -124,6 +124,11 @@ async function request<T>(
   const url = `${BASE_URL}/api${path}`;
   const res = await fetch(url, {
     headers: { 'Content-Type': 'application/json', ...options.headers },
+    // The server identifies the caller from their Catalyst session cookie, so
+    // it has to be sent. The default ('same-origin') covers the AppSail
+    // deployment but silently drops the cookie for the Slate build, which
+    // calls the API cross-origin — every request would then be a 401.
+    credentials: 'include',
     ...options,
   });
 
@@ -336,6 +341,7 @@ export async function checkServerHealth(): Promise<boolean> {
   try {
     const res = await fetch(`${BASE_URL}/api/health`, {
       method: 'GET',
+      credentials: 'include',
       signal: AbortSignal.timeout(4000),
     });
     if (!res.ok) return false;

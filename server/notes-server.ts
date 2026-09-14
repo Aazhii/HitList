@@ -199,13 +199,18 @@ async function getCurrentUserId(req: express.Request): Promise<string> {
     ?? (user as { user_id?: string | number; userId?: string | number } | null)?.userId;
 
   if (uid === undefined || uid === null || String(uid).trim() === '') {
-    // Behind the AppSail gateway this is the normal anonymous case, not an
-    // error: the gateway injected admin headers but there is no signed-in app
-    // user. Honour an explicitly configured single-owner deployment; otherwise
-    // it really is a 401.
+    // No signed-in app user. Behind the AppSail gateway this is the ordinary
+    // anonymous case — the gateway injects admin headers on every request, so
+    // initialize() succeeding proves nothing and getCurrentUser() is the real
+    // check.
+    //
+    // The app now signs users in with Catalyst, so this is a 401. The shared
+    // single-owner fallback remains only for a deployment that deliberately
+    // runs without end-user authentication, and it must be opted into with
+    // APP_OWNER_ID; defaulting to it would put every user back in one dataset.
     const shared = ownerForAnonymousGateway();
     if (shared) return shared;
-    throw new UnauthenticatedError('Catalyst session carries no user_id');
+    throw new UnauthenticatedError('No signed-in Catalyst user on this request');
   }
   return String(uid);
 }

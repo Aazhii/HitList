@@ -1,41 +1,36 @@
 /**
- * CatalystAuthGate — Local app-owned auth gate (v3).
+ * CatalystAuthGate — gates the app on a real Catalyst session.
  *
- * Routes: login | register | forgot-password | reset-password
- * No Catalyst/Zoho SDK dependency.
+ * Replaces the previous local gate, which read a session out of localStorage.
+ * That session was self-asserted: anyone could write one, it never left the
+ * browser, and the server could not trust it — which is why every row used to
+ * be owned by one shared key instead of by its author.
  *
- * Session bootstrap: getSession() is synchronous (localStorage read + expiry
- * check). A brief "sessionLoading" phase prevents any flash of auth screens
- * when the session is valid but the component hasn't painted yet.
+ * Now the browser proves identity with a Catalyst session cookie, and the
+ * server reads that same identity through the Node SDK. Both sides agree
+ * without our code having to be trusted.
  */
 import { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { Leaf, Loader2 } from 'lucide-react';
-import { getSession, logoutUser } from '@/lib/localAuth';
-import type { LocalSession } from '@/lib/localAuth';
-import { LoginPage } from '@/pages/LoginPage';
-import { RegisterPage } from '@/pages/RegisterPage';
-import { ForgotPassword } from '@/pages/ForgotPassword';
-import { ResetPassword } from '@/pages/ResetPassword';
+import { Leaf, Loader2, AlertCircle } from 'lucide-react';
+import {
+  waitForCatalyst,
+  getCurrentSession,
+  signOut as catalystSignOut,
+  type CatalystSession,
+} from '@/lib/catalystAuth';
+import { CatalystLoginPage } from '@/pages/CatalystLoginPage';
 
-// ── Auth page routing ─────────────────────────────────────────────────────────
-type AuthPage =
-  | { id: 'login'; successMessage?: string }
-  | { id: 'register' }
-  | { id: 'forgot' }
-  | { id: 'reset'; token: string };
-
-// ── User context ──────────────────────────────────────────────────────────────
-export interface LocalUserContextValue {
-  session: LocalSession | null;
-  isCatalyst: false;
+export interface CatalystUserContextValue {
+  session: CatalystSession | null;
+  isCatalyst: true;
   signOut: () => void;
-  /** Call after emailVerified changes to refresh context */
+  /** Re-reads the session from Catalyst. */
   refreshSession: () => void;
 }
 
-const CatalystUserContext = createContext<LocalUserContextValue>({
+const CatalystUserContext = createContext<CatalystUserContextValue>({
   session: null,
-  isCatalyst: false,
+  isCatalyst: true,
   signOut: () => {},
   refreshSession: () => {},
 });
@@ -44,89 +39,60 @@ export function useCatalystUser() {
   return useContext(CatalystUserContext);
 }
 
-// ── Auth Gate ─────────────────────────────────────────────────────────────────
+type Status =
+  | { phase: 'loading' }
+  | { phase: 'unavailable'; reason: string }
+  | { phase: 'ready' };
 
-interface Props {
-  children: React.ReactNode;
-}
+export function CatalystAuthGate({ children }: { children: React.ReactNode }) {
+  const [status, setStatus] = useState<Status>({ phase: 'loading' });
+  const [session, setSession] = useState<CatalystSession | null>(null);
 
-export function CatalystAuthGate({ children }: Props) {
-  // sessionLoading: true for one microtask tick so the app shell doesn't flash
-  // the login screen before the synchronous getSession() result is applied.
-  const [sessionLoading, setSessionLoading] = useState(true);
-  const [session, setSession] = useState<LocalSession | null>(null);
-  const [authPage, setAuthPage] = useState<AuthPage>({ id: 'login' });
-
-  // Bootstrap session on mount (synchronous, but deferred one tick for polish)
-  useEffect(() => {
-    const s = getSession();
-    setSession(s);
-    setSessionLoading(false);
+  const loadSession = useCallback(async () => {
+    // The SDK's credentials arrive asynchronously via init.js; calling before
+    // they land fails in ways that look like network errors.
+    const ready = await waitForCatalyst();
+    if (!ready) {
+      setStatus({
+        phase: 'unavailable',
+        reason:
+          'The Catalyst SDK did not initialise. This build must be served by Catalyst ' +
+          '(AppSail or Slate) so that /__catalyst/sdk/init.js is available.',
+      });
+      return;
+    }
+    setSession(await getCurrentSession());
+    setStatus({ phase: 'ready' });
   }, []);
 
-  const handleAuthenticated = useCallback((newSession: LocalSession) => {
-    setSession(newSession);
+  useEffect(() => { void loadSession(); }, [loadSession]);
+
+  // Catalyst returns the user to the app after login, so re-check on focus
+  // rather than leaving a signed-in user looking at the login form.
+  useEffect(() => {
+    function onFocus() { void getCurrentSession().then(setSession); }
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
   }, []);
 
   const signOut = useCallback(() => {
-    logoutUser();
     setSession(null);
-    setAuthPage({ id: 'login' });
+    catalystSignOut();
   }, []);
 
-  const refreshSession = useCallback(() => {
-    setSession(getSession());
-  }, []);
+  const refreshSession = useCallback(() => { void getCurrentSession().then(setSession); }, []);
 
-  // ── Session bootstrap loading ─────────────────────────────────────────────
-  if (sessionLoading) {
-    return <AuthLoadingScreen />;
-  }
+  if (status.phase === 'loading') return <AuthLoadingScreen />;
+  if (status.phase === 'unavailable') return <AuthUnavailableScreen reason={status.reason} />;
+  if (!session) return <CatalystLoginPage />;
 
-  // ── Not authenticated — show auth screens ─────────────────────────────────
-  if (!session) {
-    return (
-      <div className="min-h-svh bg-background">
-        {authPage.id === 'login' && (
-          <LoginPage
-            onNavigateRegister={() => setAuthPage({ id: 'register' })}
-            onNavigateForgot={() => setAuthPage({ id: 'forgot' })}
-            onAuthenticated={handleAuthenticated}
-            successMessage={authPage.id === 'login' ? authPage.successMessage : undefined}
-          />
-        )}
-        {authPage.id === 'register' && (
-          <RegisterPage
-            onNavigateLogin={() => setAuthPage({ id: 'login' })}
-            onAuthenticated={handleAuthenticated}
-          />
-        )}
-        {authPage.id === 'forgot' && (
-          <ForgotPassword
-            onNavigateLogin={() => setAuthPage({ id: 'login' })}
-            onNavigateReset={(token) => setAuthPage({ id: 'reset', token })}
-          />
-        )}
-        {authPage.id === 'reset' && (
-          <ResetPassword
-            token={authPage.token}
-            onNavigateLogin={(msg) => setAuthPage({ id: 'login', successMessage: msg })}
-            onAuthenticated={handleAuthenticated}
-          />
-        )}
-      </div>
-    );
-  }
-
-  // ── Authenticated — render app ────────────────────────────────────────────
   return (
-    <CatalystUserContext.Provider value={{ session, isCatalyst: false, signOut, refreshSession }}>
+    <CatalystUserContext.Provider value={{ session, isCatalyst: true, signOut, refreshSession }}>
       {children}
     </CatalystUserContext.Provider>
   );
 }
 
-// ── Loading screen ────────────────────────────────────────────────────────────
 export function AuthLoadingScreen() {
   return (
     <div className="min-h-svh bg-background flex flex-col items-center justify-center gap-4">
@@ -134,6 +100,25 @@ export function AuthLoadingScreen() {
         <Leaf className="size-6 text-primary" />
       </div>
       <Loader2 className="size-5 text-muted-foreground animate-spin" />
+    </div>
+  );
+}
+
+/**
+ * Shown when the SDK never initialises — running `vite` directly, for example,
+ * where /__catalyst/sdk/init.js does not exist. Says so plainly instead of
+ * leaving a blank screen or an endless spinner.
+ */
+function AuthUnavailableScreen({ reason }: { reason: string }) {
+  return (
+    <div className="min-h-svh bg-background flex flex-col items-center justify-center gap-4 px-6">
+      <div className="flex size-12 items-center justify-center rounded-2xl bg-destructive/10">
+        <AlertCircle className="size-6 text-destructive" />
+      </div>
+      <div className="max-w-md text-center space-y-1">
+        <h1 className="font-medium">Sign-in is unavailable</h1>
+        <p className="text-sm text-muted-foreground">{reason}</p>
+      </div>
     </div>
   );
 }
