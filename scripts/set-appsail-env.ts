@@ -28,6 +28,12 @@
  * The write REPLACES the whole variable set, so every variable the service
  * needs has to be sent together — which is why this script owns the full list
  * rather than patching one key.
+ *
+ * ORDER MATTERS. A deploy RESETS the service's environment, discarding anything
+ * set since the last one, so this runs AFTER the deploy and not before:
+ *
+ *   catalyst deploy appsail --name hitlist-api
+ *   pnpm catalyst:env
  */
 import { api, resolveTarget, type Target } from './lib/catalystAdmin.ts';
 
@@ -55,6 +61,10 @@ function variables(): Record<string, string> {
     DEFAULT_TIMEZONE: (process.env['DEFAULT_TIMEZONE'] ?? 'Asia/Kolkata').trim(),
     NOTIFY_FROM_EMAIL: (process.env['NOTIFY_FROM_EMAIL'] ?? '').trim(),
     NOTIFY_DISABLED_CHANNELS: (process.env['NOTIFY_DISABLED_CHANNELS'] ?? '').trim(),
+    // How often the in-process sweep runs. Unset means five minutes.
+    SWEEP_INTERVAL_MS: (process.env['SWEEP_INTERVAL_MS'] ?? '').trim(),
+    // Set to 1 to stop the service sweeping, leaving only the hourly cron.
+    SWEEP_DISABLED: (process.env['SWEEP_DISABLED'] ?? '').trim(),
   };
 
   return Object.fromEntries(Object.entries(all).filter(([, v]) => v !== ''));
