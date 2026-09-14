@@ -3,22 +3,25 @@ import type { KeyboardEvent } from 'react';
 import {
   Plus, Trash2, AlignLeft, AlignCenter, AlignRight,
   ChevronDown, ArrowLeft, ArrowRight, ArrowUp, ArrowDown,
-  MoreHorizontal, GripVertical, LayoutGrid,
+  MoreHorizontal,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { NoteBlock, TableData, ColumnAlign } from '@/types/notes';
 import { createEmptyTable } from '@/types/notes';
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Button } from '@/components/ui/button';
 
 const DEFAULT_COL_WIDTH = 140;
 const MIN_COL_WIDTH = 60;
+/** Width of the column that holds each row's menu. */
+const GUTTER_WIDTH = 32;
 
 interface TableBlockProps {
   block: NoteBlock;
@@ -27,13 +30,30 @@ interface TableBlockProps {
   onFocus: (id: string) => void;
 }
 
+/**
+ * A table block.
+ *
+ * The redesign removes six pieces of chrome that used to surround the grid: a
+ * toolbar with a row/column count, two keyboard legends, a dashed add-row strip,
+ * a dashed add-column rail (which was clipped by overflow-hidden on any wide
+ * table), a resize-hint footer, and an empty-state overlay.
+ *
+ * Every capability they carried is still reachable:
+ *   add row / add column   → the "+" on the bottom and right edges, on hover or focus
+ *   row operations         → each row's menu in the right-hand gutter
+ *   column operations      → the menu on each first-row cell, which also holds
+ *                            the header-row toggle and alignment
+ *   resize                 → the handle on each cell's right edge
+ *   keyboard               → unchanged; see handleCellKeyDown
+ */
 export function TableBlock({ block, isFocused, onUpdateTable, onFocus }: TableBlockProps) {
   const tableData = block.tableData ?? createEmptyTable();
   const { rows, hasHeader } = tableData;
   const numCols = rows[0]?.length ?? 3;
   const numRows = rows.length;
 
-  // Normalize widths/aligns arrays to match current col count
+  // Normalised to the current column count on every render. This is what makes
+  // adding and deleting columns safe when widths or aligns are missing or stale.
   const colWidths: number[] = Array.from({ length: numCols }, (_, i) =>
     tableData.colWidths?.[i] ?? DEFAULT_COL_WIDTH
   );
@@ -44,7 +64,6 @@ export function TableBlock({ block, isFocused, onUpdateTable, onFocus }: TableBl
   const cellRefs = useRef<Map<string, HTMLTextAreaElement>>(new Map());
   const [selectedCell, setSelectedCell] = useState<{ row: number; col: number } | null>(null);
   const [hoveredRow, setHoveredRow] = useState<number | null>(null);
-  const [hoveredCol, setHoveredCol] = useState<number | null>(null);
   const [tableHovered, setTableHovered] = useState(false);
 
   // Column resize state
@@ -172,6 +191,10 @@ export function TableBlock({ block, isFocused, onUpdateTable, onFocus }: TableBl
     onUpdateTable({ ...tableData, rows: newRows, colWidths: newWidths, colAligns: newAligns });
   }, [rows, numCols, colWidths, colAligns, tableData, onUpdateTable]);
 
+  const toggleHeader = useCallback(() => {
+    onUpdateTable({ ...tableData, rows, colWidths, colAligns, hasHeader: !hasHeader });
+  }, [rows, colWidths, colAligns, hasHeader, tableData, onUpdateTable]);
+
   // ── Column resize ───────────────────────────────────────────────────────────
   const startResize = useCallback((e: React.MouseEvent, colIdx: number) => {
     e.preventDefault();
@@ -240,7 +263,6 @@ export function TableBlock({ block, isFocused, onUpdateTable, onFocus }: TableBl
     }
   }, [numCols, numRows, addRowAfter]);
 
-  // ── Add row/col buttons ─────────────────────────────────────────────────────
   const addRow = useCallback(() => addRowAfter(numRows - 1), [addRowAfter, numRows]);
   const addCol = useCallback(() => addColAfter(numCols - 1), [addColAfter, numCols]);
 
@@ -249,228 +271,46 @@ export function TableBlock({ block, isFocused, onUpdateTable, onFocus }: TableBl
     return () => { resizeState.current = null; };
   }, []);
 
-  const alignIcon = (align: ColumnAlign) => {
-    if (align === 'center') return <AlignCenter className="size-3" />;
-    if (align === 'right') return <AlignRight className="size-3" />;
-    return <AlignLeft className="size-3" />;
-  };
-
-  // Derive column label: use header cell content if hasHeader, else "Col N"
+  /** Column name for menus: the header cell's text when there is one. */
   const getColLabel = (colIdx: number): string => {
-    if (hasHeader && rows[0]?.[colIdx]?.trim()) {
-      return rows[0][colIdx].trim();
-    }
-    return `Col ${colIdx + 1}`;
+    if (hasHeader && rows[0]?.[colIdx]?.trim()) return rows[0][colIdx].trim();
+    return `Column ${colIdx + 1}`;
   };
 
-  // Check if table is completely empty (all cells blank)
-  const isEmpty = rows.every((row) => row.every((cell) => cell.trim() === ''));
+  const tableWidth = colWidths.reduce((a, b) => a + b, 0) + GUTTER_WIDTH;
+  const showEdges = tableHovered || isFocused;
 
-  const tableWidth = colWidths.reduce((a, b) => a + b, 0) + 32;
+  // Idle icon buttons inside the grid: faint, tinted on hover, revealed on hover
+  // or keyboard focus, and kept visible while their menu is open.
+  const gridButton = cn(
+    'flex items-center justify-center rounded-[7px] text-a-faint transition-[opacity,background-color,color] duration-150',
+    'hover:bg-[color-mix(in_srgb,var(--a-ink)_9%,transparent)] hover:text-a-ink',
+    'focus-visible:opacity-100 data-[state=open]:opacity-100',
+  );
 
   return (
+    // Padding reserves room for the edge "+" buttons outside the grid's border,
+    // so they are not clipped by the grid's rounded overflow.
     <div
-      className={cn(
-        'rounded-xl border overflow-hidden transition-all duration-200 bg-card relative',
-        isFocused
-          ? 'border-primary/50 shadow-lg shadow-primary/5'
-          : tableHovered
-            ? 'border-border/80 shadow-sm'
-            : 'border-border/60'
-      )}
+      className="relative w-fit max-w-full pr-[34px] pb-[32px]"
       onClick={() => onFocus(block.id)}
       onMouseEnter={() => setTableHovered(true)}
       onMouseLeave={() => setTableHovered(false)}
     >
-        {/* ── Table toolbar ─────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-1.5 px-3 py-1.5 bg-muted/30 border-b border-border/50">
-        <LayoutGrid className="size-3 text-muted-foreground/50 flex-shrink-0" />
-        <span className="text-[10px] font-semibold text-muted-foreground mr-auto">
-          {numRows} rows · {numCols} cols
-        </span>
-
-        {/* Keyboard shortcuts */}
-        <span className="hidden sm:flex items-center gap-1.5 text-[9px] text-muted-foreground/50 mr-1.5">
-          <span className="flex items-center gap-0.5">
-            <kbd className="font-mono bg-muted/80 border border-border/70 px-1 py-px rounded text-[8px] leading-none shadow-[0_1px_0_0_hsl(var(--border)/0.5)]">Tab</kbd>
-            <span className="text-muted-foreground/40">next</span>
-          </span>
-          <span className="text-border/60">·</span>
-          <span className="flex items-center gap-0.5">
-            <kbd className="font-mono bg-muted/80 border border-border/70 px-1 py-px rounded text-[8px] leading-none shadow-[0_1px_0_0_hsl(var(--border)/0.5)]">⇧Tab</kbd>
-            <span className="text-muted-foreground/40">prev</span>
-          </span>
-          <span className="text-border/60">·</span>
-          <span className="flex items-center gap-0.5">
-            <kbd className="font-mono bg-muted/80 border border-border/70 px-1 py-px rounded text-[8px] leading-none shadow-[0_1px_0_0_hsl(var(--border)/0.5)]">↵</kbd>
-            <span className="text-muted-foreground/40">new row</span>
-          </span>
-          <span className="text-border/60">·</span>
-          <span className="flex items-center gap-0.5">
-            <kbd className="font-mono bg-muted/80 border border-border/70 px-1 py-px rounded text-[8px] leading-none shadow-[0_1px_0_0_hsl(var(--border)/0.5)]">Esc</kbd>
-            <span className="text-muted-foreground/40">exit</span>
-          </span>
-        </span>
-
-        {/* Header toggle */}
-        <button
-          type="button"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={() => onUpdateTable({ ...tableData, rows, colWidths, colAligns, hasHeader: !hasHeader })}
-          className={cn(
-            'h-5 px-2 rounded text-[9px] font-semibold transition-all duration-150 flex items-center gap-1',
-            hasHeader
-              ? 'text-primary bg-primary/10 hover:bg-primary/20 ring-1 ring-primary/20'
-              : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
-          )}
-          title={hasHeader ? 'Remove header row' : 'Add header row'}
-        >
-          Header
-        </button>
-
-        {/* Add column */}
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={addCol}
-          className="size-6 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md transition-colors duration-150"
-          title="Add column (right)  →"
-        >
-          <ArrowRight className="size-3" />
-        </Button>
-
-        {/* Add row */}
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={addRow}
-          className="size-6 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-md transition-colors duration-150"
-          title="Add row (bottom)  ↓"
-        >
-          <ArrowDown className="size-3" />
-        </Button>
-      </div>
-
-      {/* ── Table grid ────────────────────────────────────────────────────── */}
-      <div className="overflow-x-auto">
-        <table
-          className="border-collapse"
-          style={{ tableLayout: 'fixed', width: tableWidth }}
-        >
+      <div className="overflow-x-auto rounded-[16px] border border-a-line bg-a-bg">
+        <table className="border-collapse" style={{ tableLayout: 'fixed', width: tableWidth }}>
           <colgroup>
             {colWidths.map((w, i) => <col key={i} style={{ width: w }} />)}
-            {/* gutter col for row menus */}
-            <col style={{ width: 32 }} />
+            <col style={{ width: GUTTER_WIDTH }} />
           </colgroup>
 
           <tbody>
-            {/* ── Column header row (always shown above data) ── */}
-            <tr className="group/colheader">
-              {Array.from({ length: numCols }).map((_, colIdx) => (
-                <th
-                  key={colIdx}
-                  className={cn(
-                    'relative border-b border-r border-border/60 last:border-r-0 p-0 transition-colors duration-100',
-                    hoveredCol === colIdx
-                      ? 'bg-primary/8'
-                      : 'bg-muted/20'
-                  )}
-                  onMouseEnter={() => setHoveredCol(colIdx)}
-                  onMouseLeave={() => setHoveredCol(null)}
-                >
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <button
-                        type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        className={cn(
-                          'w-full flex items-center justify-between gap-1 px-2 py-1.5 text-left',
-                          'text-[10px] font-semibold text-muted-foreground uppercase tracking-wide',
-                          'hover:bg-muted/60 transition-colors duration-100 group/colbtn'
-                        )}
-                      >
-                        <span className="flex items-center gap-1 min-w-0">
-                          <span className="opacity-40 group-hover/colbtn:opacity-70 transition-opacity">
-                            {alignIcon(colAligns[colIdx])}
-                          </span>
-                          <span className="truncate">{getColLabel(colIdx)}</span>
-                        </span>
-                        <ChevronDown className="size-2.5 opacity-0 group-hover/colbtn:opacity-60 transition-opacity flex-shrink-0" />
-                      </button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-48">
-                      <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                        Column {colIdx + 1}
-                      </div>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onMouseDown={(e) => e.preventDefault()} onClick={() => addColBefore(colIdx)}>
-                        <ArrowLeft className="size-3.5" /> Insert left
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onMouseDown={(e) => e.preventDefault()} onClick={() => addColAfter(colIdx)}>
-                        <ArrowRight className="size-3.5" /> Insert right
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                        Align
-                      </div>
-                      {(['left', 'center', 'right'] as ColumnAlign[]).map((a) => (
-                        <DropdownMenuItem
-                          key={a}
-                          onMouseDown={(e) => e.preventDefault()}
-                          onClick={() => setColAlign(colIdx, a)}
-                          className={cn(colAligns[colIdx] === a && 'bg-muted')}
-                        >
-                          {a === 'left' && <AlignLeft className="size-3.5" />}
-                          {a === 'center' && <AlignCenter className="size-3.5" />}
-                          {a === 'right' && <AlignRight className="size-3.5" />}
-                          <span className="capitalize">{a}</span>
-                        </DropdownMenuItem>
-                      ))}
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem onMouseDown={(e) => e.preventDefault()} onClick={() => moveColLeft(colIdx)} disabled={colIdx === 0}>
-                        <ArrowLeft className="size-3.5" /> Move left
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onMouseDown={(e) => e.preventDefault()} onClick={() => moveColRight(colIdx)} disabled={colIdx >= numCols - 1}>
-                        <ArrowRight className="size-3.5" /> Move right
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => deleteColumn(colIdx)}
-                        disabled={numCols <= 1}
-                        className="text-destructive focus:text-destructive"
-                      >
-                        <Trash2 className="size-3.5" /> Delete column
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-
-                  {/* Column hover top-edge indicator bar */}
-                  <div className={cn(
-                    'absolute top-0 left-0 right-0 h-0.5 rounded-b-full transition-all duration-150 pointer-events-none z-20',
-                    hoveredCol === colIdx ? 'bg-primary/60 opacity-100' : 'opacity-0',
-                  )} />
-
-                  {/* Resize handle */}
-                  <div
-                    className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-primary/50 active:bg-primary/70 transition-colors duration-100 z-10 group/resize"
-                    onMouseDown={(e) => startResize(e, colIdx)}
-                  >
-                    <div className="absolute inset-y-2 right-0 w-px bg-border/60 group-hover/resize:bg-primary/60 transition-colors duration-100" />
-                  </div>
-                </th>
-              ))}
-              {/* gutter header */}
-              <th className="border-b border-border/60 bg-muted/20 w-8" />
-            </tr>
-
-            {/* ── Data rows ── */}
             {rows.map((row, rowIdx) => {
               const isHeader = hasHeader && rowIdx === 0;
+              const isFirstRow = rowIdx === 0;
+              const isLastRow = rowIdx === numRows - 1;
               const isRowHovered = hoveredRow === rowIdx;
-              const isRowSelected = selectedCell?.row === rowIdx;
+
               return (
                 <tr
                   key={rowIdx}
@@ -478,96 +318,150 @@ export function TableBlock({ block, isFocused, onUpdateTable, onFocus }: TableBl
                   onMouseEnter={() => setHoveredRow(rowIdx)}
                   onMouseLeave={() => setHoveredRow(null)}
                 >
-                   {row.map((cell, colIdx) => {
-                     const cellKey = getCellKey(rowIdx, colIdx);
-                     const isSelected = selectedCell?.row === rowIdx && selectedCell?.col === colIdx;
-                     const isColHovered = hoveredCol === colIdx;
-                     return (
-                       <td
-                         key={colIdx}
-                         className={cn(
-                           'relative border-b border-r border-border/40 last:border-r-0 p-0 transition-colors duration-100',
-                           isHeader && 'bg-muted/30',
-                           rowIdx === numRows - 1 && 'border-b-0',
-                           // Column highlight (lower priority than row/selected)
-                           !isHeader && isColHovered && !isRowHovered && !isSelected && 'bg-primary/[0.06]',
-                           // Row highlight
-                           !isHeader && isRowHovered && !isSelected && 'bg-muted/25',
-                           // Both row + col hovered
-                           !isHeader && isRowHovered && isColHovered && !isSelected && 'bg-primary/[0.08]',
-                           // Selected cell
-                           isSelected && 'bg-primary/10',
-                         )}
-                         onMouseEnter={() => setHoveredCol(colIdx)}
-                         onMouseLeave={() => setHoveredCol(null)}
-                       >
-                         {/* Selected cell border ring */}
-                         {isSelected && (
-                           <div className="absolute inset-0 ring-2 ring-inset ring-primary/60 pointer-events-none z-10 rounded-[1px]" />
-                         )}
-                         {/* Column hover top indicator */}
-                         {isColHovered && rowIdx === 0 && (
-                           <div className="absolute top-0 left-0 right-0 h-0.5 bg-primary/40 pointer-events-none z-10" />
-                         )}
-                         <textarea
-                           ref={(el) => {
-                             if (el) {
-                               cellRefs.current.set(cellKey, el);
-                               autoResizeCell(el);
-                             } else {
-                               cellRefs.current.delete(cellKey);
-                             }
-                           }}
-                           value={cell}
-                           onChange={(e) => {
-                             updateCell(rowIdx, colIdx, e.target.value);
-                             autoResizeCell(e.target);
-                           }}
-                           onKeyDown={(e) => handleCellKeyDown(e, rowIdx, colIdx)}
-                           onFocus={() => setSelectedCell({ row: rowIdx, col: colIdx })}
-                           onBlur={() => setSelectedCell(null)}
-                           rows={1}
-                           className={cn(
-                             'w-full resize-none bg-transparent outline-none border-none px-2.5 py-2 leading-relaxed overflow-hidden',
-                             'placeholder:text-muted-foreground/30 transition-colors duration-150',
-                             isHeader
-                               ? 'text-xs font-semibold text-foreground'
-                               : 'text-xs text-foreground',
-                             colAligns[colIdx] === 'center' && 'text-center',
-                             colAligns[colIdx] === 'right' && 'text-right',
-                           )}
-                           placeholder={isHeader ? (colIdx === 0 ? 'Column name…' : `Column ${colIdx + 1}`) : (isRowHovered ? '…' : '')}
-                           style={{ height: 'auto', minHeight: '34px' }}
-                         />
-                       </td>
-                     );
-                   })}
+                  {row.map((cell, colIdx) => {
+                    const cellKey = getCellKey(rowIdx, colIdx);
+                    const isSelected = selectedCell?.row === rowIdx && selectedCell?.col === colIdx;
+                    const align = colAligns[colIdx];
 
-                   {/* Row menu gutter */}
-                   <td className={cn(
-                     'w-8 p-0 border-b border-border/40 align-middle transition-colors duration-100',
-                     rowIdx === numRows - 1 && 'border-b-0',
-                     !isHeader && isRowHovered && !isRowSelected && 'bg-muted/20',
-                   )}>
+                    return (
+                      <td
+                        key={colIdx}
+                        className={cn(
+                          'group/cell relative p-0 align-top border-a-line-soft transition-colors duration-100',
+                          // Internal rules only — none on the last row or last data column.
+                          colIdx < numCols - 1 && 'border-r',
+                          !isLastRow && 'border-b',
+                          isHeader ? 'bg-a-surface' : isRowHovered && 'bg-a-row-hover',
+                        )}
+                      >
+                        {isSelected && (
+                          <div className="pointer-events-none absolute inset-0 z-10 shadow-[inset_0_0_0_1.5px_var(--a-accent)]" />
+                        )}
+
+                        {/* Column menu, on the first row's cells. */}
+                        {isFirstRow && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <button
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
+                                className={cn(gridButton, 'absolute right-1.5 top-[9px] z-20 size-5 opacity-0 group-hover/cell:opacity-100')}
+                                aria-label={`Options for ${getColLabel(colIdx)}`}
+                              >
+                                <ChevronDown className="size-3" strokeWidth={2.75} />
+                              </button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="start" className="w-52">
+                              <DropdownMenuLabel className="truncate">{getColLabel(colIdx)}</DropdownMenuLabel>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onMouseDown={(e) => e.preventDefault()} onClick={() => addColBefore(colIdx)}>
+                                <ArrowLeft className="size-3.5" /> Insert left
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onMouseDown={(e) => e.preventDefault()} onClick={() => addColAfter(colIdx)}>
+                                <ArrowRight className="size-3.5" /> Insert right
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              {(['left', 'center', 'right'] as ColumnAlign[]).map((a) => (
+                                <DropdownMenuItem
+                                  key={a}
+                                  onMouseDown={(e) => e.preventDefault()}
+                                  onClick={() => setColAlign(colIdx, a)}
+                                  className={cn(align === a && 'bg-accent')}
+                                >
+                                  {a === 'left' && <AlignLeft className="size-3.5" />}
+                                  {a === 'center' && <AlignCenter className="size-3.5" />}
+                                  {a === 'right' && <AlignRight className="size-3.5" />}
+                                  <span className="capitalize">Align {a}</span>
+                                </DropdownMenuItem>
+                              ))}
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onMouseDown={(e) => e.preventDefault()} onClick={() => moveColLeft(colIdx)} disabled={colIdx === 0}>
+                                <ArrowLeft className="size-3.5" /> Move left
+                              </DropdownMenuItem>
+                              <DropdownMenuItem onMouseDown={(e) => e.preventDefault()} onClick={() => moveColRight(colIdx)} disabled={colIdx >= numCols - 1}>
+                                <ArrowRight className="size-3.5" /> Move right
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              {/* Was a toolbar button. */}
+                              <DropdownMenuCheckboxItem
+                                checked={hasHeader}
+                                onMouseDown={(e) => e.preventDefault()}
+                                onCheckedChange={toggleHeader}
+                              >
+                                Header row
+                              </DropdownMenuCheckboxItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                variant="destructive"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => deleteColumn(colIdx)}
+                                disabled={numCols <= 1}
+                              >
+                                <Trash2 className="size-3.5" /> Delete column
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
+
+                        {/* Resize handle on the column's right edge. */}
+                        <div
+                          className="absolute right-0 top-0 bottom-0 z-10 w-1.5 cursor-col-resize transition-colors duration-100 hover:bg-a-accent/40 active:bg-a-accent/60"
+                          onMouseDown={(e) => startResize(e, colIdx)}
+                          aria-hidden
+                        />
+
+                        <textarea
+                          ref={(el) => {
+                            if (el) {
+                              cellRefs.current.set(cellKey, el);
+                              autoResizeCell(el);
+                            } else {
+                              cellRefs.current.delete(cellKey);
+                            }
+                          }}
+                          value={cell}
+                          onChange={(e) => {
+                            updateCell(rowIdx, colIdx, e.target.value);
+                            autoResizeCell(e.target);
+                          }}
+                          onKeyDown={(e) => handleCellKeyDown(e, rowIdx, colIdx)}
+                          onFocus={() => setSelectedCell({ row: rowIdx, col: colIdx })}
+                          onBlur={() => setSelectedCell(null)}
+                          rows={1}
+                          className={cn(
+                            'block w-full resize-none overflow-hidden border-none bg-transparent px-4 py-[11px] outline-none',
+                            'placeholder:text-a-faint/60',
+                            isHeader
+                              ? 'text-[12.5px] font-bold leading-[1.45] tracking-[0.04em] text-a-faint'
+                              : 'text-[15px] leading-[1.45] text-a-ink',
+                            // Leave room for the column menu on first-row cells.
+                            isFirstRow && 'pr-8',
+                            align === 'center' && 'text-center',
+                            align === 'right' && 'text-right tabular-nums',
+                          )}
+                          placeholder={isHeader ? (colIdx === 0 ? 'Column name…' : `Column ${colIdx + 1}`) : ''}
+                          aria-label={`Row ${rowIdx + 1}, ${getColLabel(colIdx)}`}
+                          style={{ height: 'auto', minHeight: '34px' }}
+                        />
+                      </td>
+                    );
+                  })}
+
+                  {/* Row menu gutter */}
+                  <td className={cn('p-0 align-middle', isHeader ? 'bg-a-surface' : isRowHovered && 'bg-a-row-hover')}>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <button
                           type="button"
                           onMouseDown={(e) => e.preventDefault()}
-                          className={cn(
-                            'size-6 mx-1 flex items-center justify-center rounded-md',
-                            'text-muted-foreground/40 hover:text-muted-foreground hover:bg-muted/60',
-                            'opacity-0 group-hover/row:opacity-100 transition-all duration-150'
-                          )}
-                          title="Row options"
+                          className={cn(gridButton, 'mx-1 size-6 opacity-0 group-hover/row:opacity-100')}
+                          aria-label={`Options for row ${rowIdx + 1}`}
                         >
-                          <MoreHorizontal className="size-3" />
+                          <MoreHorizontal className="size-3.5" strokeWidth={2.75} />
                         </button>
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end" className="w-44">
-                        <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                          Row {rowIdx + 1}
-                        </div>
+                        <DropdownMenuLabel>Row {rowIdx + 1}</DropdownMenuLabel>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem onMouseDown={(e) => e.preventDefault()} onClick={() => addRowBefore(rowIdx)}>
                           <ArrowUp className="size-3.5" /> Insert above
@@ -584,10 +478,10 @@ export function TableBlock({ block, isFocused, onUpdateTable, onFocus }: TableBl
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
+                          variant="destructive"
                           onMouseDown={(e) => e.preventDefault()}
                           onClick={() => deleteRow(rowIdx)}
                           disabled={numRows <= 1}
-                          className="text-destructive focus:text-destructive"
                         >
                           <Trash2 className="size-3.5" /> Delete row
                         </DropdownMenuItem>
@@ -601,102 +495,33 @@ export function TableBlock({ block, isFocused, onUpdateTable, onFocus }: TableBl
         </table>
       </div>
 
-      {/* ── Add row button — always visible dashed strip below table ───────── */}
-      <div
-        className={cn(
-          'flex items-center border-t border-dashed transition-all duration-200',
-          tableHovered || isFocused
-            ? 'border-primary/30 opacity-100'
-            : 'border-border/30 opacity-60'
-        )}
-      >
-        <button
-          type="button"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={addRow}
-          className={cn(
-            'flex-1 flex items-center justify-center gap-2 py-1.5 group/addrow',
-            'text-[11px] font-medium text-muted-foreground/40',
-            'hover:text-primary hover:bg-primary/5',
-            'transition-all duration-150'
-          )}
-          title="Add row  ↓"
-        >
-          <span className={cn(
-            'size-4 rounded-full flex items-center justify-center border border-dashed',
-            'border-muted-foreground/25 group-hover/addrow:border-primary/60 group-hover/addrow:bg-primary/10 group-hover/addrow:text-primary',
-            'transition-all duration-150'
-          )}>
-            <Plus className="size-2.5" />
-          </span>
-          <span className="group-hover/addrow:opacity-100 opacity-0 transition-opacity duration-150 text-primary text-[11px] font-medium">
-            Add row
-          </span>
-        </button>
+      {/* Edge add buttons: centred on the grid's right and bottom edges. */}
+      <div className="pointer-events-none absolute top-0 right-0 bottom-[32px] flex w-[26px] items-center justify-center">
+        <EdgeAddButton visible={showEdges} label="Add column" onClick={addCol} />
       </div>
-
-      {/* ── Empty state overlay ─────────────────────────────────────────── */}
-      {isEmpty && !isFocused && !tableHovered && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
-          <div className="flex flex-col items-center gap-2 px-4 py-3 rounded-xl bg-muted/20 border border-dashed border-border/40 backdrop-blur-[1px]">
-            <div className="flex items-center gap-2">
-              <LayoutGrid className="size-4 text-muted-foreground/30" />
-              <p className="text-xs text-muted-foreground/50 select-none font-medium tracking-tight">
-                Empty table — click to start editing
-              </p>
-            </div>
-            <div className="flex items-center gap-1.5 text-[9px] text-muted-foreground/30 select-none">
-              <kbd className="font-mono bg-muted/60 border border-border/50 px-1 py-px rounded text-[8px] leading-none">Tab</kbd>
-              <span>navigate</span>
-              <span className="text-border/50">·</span>
-              <kbd className="font-mono bg-muted/60 border border-border/50 px-1 py-px rounded text-[8px] leading-none">↵</kbd>
-              <span>new row</span>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Add column button — prominent dashed strip right of table ─────── */}
-      <div
-        className={cn(
-          'absolute top-0 bottom-0 flex items-center transition-all duration-200',
-          tableHovered || isFocused ? 'opacity-100' : 'opacity-0 pointer-events-none'
-        )}
-        style={{ left: tableWidth + 1 }}
-      >
-        <button
-          type="button"
-          onMouseDown={(e) => e.preventDefault()}
-          onClick={addCol}
-          className={cn(
-            'flex flex-col items-center justify-center w-7 h-full group/addcol',
-            'text-muted-foreground/40 hover:text-primary',
-            'border-l border-dashed border-primary/30 hover:bg-primary/5',
-            'transition-all duration-150 rounded-r-xl'
-          )}
-          title="Add column  →"
-        >
-          <span className={cn(
-            'size-4 rounded-full flex items-center justify-center border border-dashed',
-            'border-muted-foreground/30 group-hover/addcol:border-primary/60 group-hover/addcol:bg-primary/10 group-hover/addcol:text-primary',
-            'transition-all duration-150'
-          )}>
-            <Plus className="size-2.5 group-hover/addcol:scale-110 transition-transform duration-150" />
-          </span>
-        </button>
-      </div>
-
-      {/* ── Footer: resize hint ───────────────────────────────────────────── */}
-      <div className={cn(
-        'flex items-center justify-end px-3 py-1 border-t border-border/30 bg-muted/5',
-        'transition-all duration-200',
-        tableHovered || isFocused ? 'opacity-100' : 'opacity-40'
-      )}>
-        <span className="text-[9px] text-muted-foreground/40 flex items-center gap-1.5">
-          <GripVertical className="size-2.5" />
-          <span>Drag column edge to resize</span>
-        </span>
+      <div className="pointer-events-none absolute left-0 right-[34px] bottom-0 flex h-[26px] items-center justify-center">
+        <EdgeAddButton visible={showEdges} label="Add row" onClick={addRow} />
       </div>
     </div>
+  );
+}
+
+function EdgeAddButton({ visible, label, onClick }: { visible: boolean; label: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={(e) => { e.stopPropagation(); onClick(); }}
+      aria-label={label}
+      title={label}
+      className={cn(
+        'flex size-[22px] items-center justify-center rounded-full bg-a-surface text-a-faint shadow-[var(--a-shadow-sm)]',
+        'transition-[opacity,color] duration-150 hover:text-a-ink',
+        // Reachable by keyboard even while visually hidden.
+        visible ? 'pointer-events-auto opacity-100' : 'opacity-0 focus-visible:pointer-events-auto focus-visible:opacity-100',
+      )}
+    >
+      <Plus className="size-[13px]" strokeWidth={2.75} />
+    </button>
   );
 }
