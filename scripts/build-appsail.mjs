@@ -133,6 +133,31 @@ fs.writeFileSync(
       ALLOWED_ORIGINS: process.env['APPSAIL_ALLOWED_ORIGINS']
         ?? 'https://hitlist-kgewwunu.onslate.in,https://hitlist-eqrgelva.onslate.in,'
           + 'https://hitlist-api-50045863073.development.catalystappsail.in',
+
+      // ── Notification delivery ──
+      //
+      // Names without a CATALYST_ prefix, deliberately: AppSail rejects that
+      // prefix on user-supplied environment variables.
+
+      // Shared secret the cron presents as X-Tick-Secret. The sweep endpoint
+      // refuses to run without it rather than defaulting to open, so leaving
+      // it unset disables delivery rather than exposing it. Register the cron
+      // with the SAME value: `TICK_SECRET=... pnpm catalyst:cron`.
+      TICK_SECRET: process.env['TICK_SECRET'] ?? '',
+
+      // The zone a task's dueDate + dueTime are read in when the request
+      // carries no X-Timezone header — the cron's own calls, for instance.
+      DEFAULT_TIMEZONE: process.env['DEFAULT_TIMEZONE'] ?? 'Asia/Kolkata',
+
+      // Must be a sender REGISTERED in Catalyst. An unregistered address fails
+      // with 404 INVALID_ID "No such from_email", which reads like a bad route
+      // rather than a configuration problem. Unset means the email channel
+      // skips, and the entry still delivers in-app.
+      NOTIFY_FROM_EMAIL: process.env['NOTIFY_FROM_EMAIL'] ?? '',
+
+      // Kill switch, comma-separated: email, webpush, inapp. A channel listed
+      // here is skipped without spending the entry's retry budget.
+      NOTIFY_DISABLED_CHANNELS: process.env['NOTIFY_DISABLED_CHANNELS'] ?? '',
     },
   }, null, 2)}\n`
 );
