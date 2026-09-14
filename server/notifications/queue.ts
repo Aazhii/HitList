@@ -24,6 +24,7 @@
  * would be no protection at all.
  */
 import type { CatalystApp } from './types.ts';
+import { zcqlString, unwrapRows, str, num } from './zcql.ts';
 import { QUEUE_TABLE } from '../catalyst/schema.ts';
 
 // ── Status ────────────────────────────────────────────────────────────────────
@@ -81,23 +82,11 @@ export interface QueueRow extends QueueEntry {
   claimToken: string;
 }
 
-// ── ZCQL helpers ──────────────────────────────────────────────────────────────
-
-/**
- * Renders a value as a quoted ZCQL string literal.
- *
- * SQL escapes a quote by DOUBLING it, not by backslashing — see
- * docs/catalyst/03-datastore.md. Returning the complete quoted literal means a
- * caller cannot forget the quotes.
- */
-function zcqlString(value: string): string {
-  const cleaned = value.replace(/[\u0000-\u001f\u007f]/g, '');
-  return `'${cleaned.replace(/'/g, "''")}'`;
-}
+// ── ZCQL helpers ─────────────────────────────────────────────────────────────
 
 /** ZCQL returns rows keyed by table name rather than flat. */
 function unwrap(results: Array<Record<string, unknown>>): Array<Record<string, unknown>> {
-  return results.map((r) => (r[QUEUE_TABLE] ?? r) as Record<string, unknown>);
+  return unwrapRows(results, QUEUE_TABLE);
 }
 
 const SELECT_COLUMNS =
@@ -105,12 +94,6 @@ const SELECT_COLUMNS =
   'Channels,Title,Body,Payload,AttemptCount,SentAt,ClaimToken';
 
 function toQueueRow(row: Record<string, unknown>): QueueRow {
-  const str = (v: unknown): string => (v === null || v === undefined ? '' : String(v));
-  const num = (v: unknown): number => {
-    const n = Number(v);
-    return Number.isFinite(n) ? n : 0;
-  };
-
   let payload: Record<string, unknown> | undefined;
   const rawPayload = str(row['Payload']);
   if (rawPayload) {

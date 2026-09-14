@@ -77,6 +77,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { baasProxy } from './catalyst/baasProxy.ts';
 import { runSweep, describeSweep } from './notifications/sweep.ts';
+import { listInbox, markRead, markAllRead, removeEntry } from './notifications/inbox.ts';
 import {
   syncTaskReminder,
   cancelTaskReminders,
@@ -1214,6 +1215,85 @@ app.get('/api/health', (req, res) => {
     catalystMode: describeMode(req, standaloneConfig),
     lastCatalystMode,
   });
+});
+
+// ── In-app inbox ──────────────────────────────────────────────────────────────
+//
+// What the bell reads. Rows arrive only from the `inapp` delivery channel, so
+// every entry here corresponds to something that was scheduled and actually
+// fired — unlike the localStorage records these replace, which were recomputed
+// from the task list on every poll and so could show a notification for
+// something that had never been delivered.
+
+/** GET /api/notifications — newest first. */
+app.get('/api/notifications', async (req, res) => {
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+
+  if (!catalystAvailable) { res.json([]); return; }
+
+  try {
+    res.json(await listInbox(initCatalyst(req) as unknown as NotificationApp, ownerId));
+  } catch (e) {
+    sendError(res, '[GET /api/notifications]', e);
+  }
+});
+
+/** PATCH /api/notifications/:id/read */
+app.patch('/api/notifications/:id/read', async (req, res) => {
+  if (!assertSafeId(req.params.id, res)) return;
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+
+  if (!catalystAvailable) { res.status(404).json({ error: 'Not found' }); return; }
+
+  try {
+    const ok = await markRead(
+      initCatalyst(req) as unknown as NotificationApp, ownerId, req.params.id,
+    );
+    // A 404 covers both "no such id" and "not yours" — telling the two apart
+    // would confirm to a caller that someone else's notification exists.
+    if (!ok) { res.status(404).json({ error: 'Not found' }); return; }
+    res.sendStatus(204);
+  } catch (e) {
+    sendError(res, '[PATCH /api/notifications/:id/read]', e);
+  }
+});
+
+/** PATCH /api/notifications/read-all */
+app.patch('/api/notifications/read-all', async (req, res) => {
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+
+  if (!catalystAvailable) { res.json({ updated: 0 }); return; }
+
+  try {
+    const updated = await markAllRead(
+      initCatalyst(req) as unknown as NotificationApp, ownerId,
+    );
+    res.json({ updated });
+  } catch (e) {
+    sendError(res, '[PATCH /api/notifications/read-all]', e);
+  }
+});
+
+/** DELETE /api/notifications/:id — dismiss for good. */
+app.delete('/api/notifications/:id', async (req, res) => {
+  if (!assertSafeId(req.params.id, res)) return;
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+
+  if (!catalystAvailable) { res.sendStatus(204); return; }
+
+  try {
+    const ok = await removeEntry(
+      initCatalyst(req) as unknown as NotificationApp, ownerId, req.params.id,
+    );
+    if (!ok) { res.status(404).json({ error: 'Not found' }); return; }
+    res.sendStatus(204);
+  } catch (e) {
+    sendError(res, '[DELETE /api/notifications/:id]', e);
+  }
 });
 
 // ── Reminder scheduling ───────────────────────────────────────────────────────
