@@ -351,6 +351,54 @@ export const statsApi = {
   },
 };
 
+// ── Notification inbox ────────────────────────────────────────────────────────
+
+/** One delivered notification, as the server stores it. */
+export interface ApiNotification {
+  id: string;
+  title: string;
+  body: string;
+  kind: string;
+  sourceType: string;
+  sourceId: string;
+  /** Epoch ms it was read, or 0 while unread. */
+  readAt: number;
+  createdAt: number;
+  payload?: Record<string, unknown>;
+}
+
+export const notificationApi = {
+  /** GET /api/notifications — newest first. */
+  list(): Promise<ApiNotification[]> {
+    return get<ApiNotification[]>('/notifications');
+  },
+
+  /** PATCH /api/notifications/:id/read */
+  markRead(id: string): Promise<void> {
+    return patch<void>(`/notifications/${id}/read`);
+  },
+
+  /** PATCH /api/notifications/read-all */
+  markAllRead(): Promise<{ updated: number }> {
+    return patch<{ updated: number }>('/notifications/read-all');
+  },
+
+  /** DELETE /api/notifications/:id — dismiss for good. */
+  remove(id: string): Promise<void> {
+    return del<void>(`/notifications/${id}`);
+  },
+
+  /**
+   * POST /api/reminders/backfill
+   *
+   * Queues reminders for tasks that predate the queue. Idempotent, so the
+   * client can call it on sign-in without tracking whether it already has.
+   */
+  backfill(): Promise<{ scanned: number; enqueued: number; failed: number }> {
+    return post<{ scanned: number; enqueued: number; failed: number }>('/reminders/backfill', {});
+  },
+};
+
 // ── Health check ─────────────────────────────────────────────────────────────
 
 /**
