@@ -76,6 +76,8 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { baasProxy } from './catalyst/baasProxy.ts';
+import { runSweep, describeSweep } from './notifications/sweep.ts';
+import type { CatalystApp as NotificationApp } from './notifications/types.ts';
 import {
   readStandaloneConfig, initCatalystApp, describeMode, getCliApp, cliProject, region,
   ownerForAdminMode, ownerForAnonymousGateway, hasGatewayHeaders,
@@ -1159,6 +1161,89 @@ app.get('/api/health', (req, res) => {
     lastCatalystMode,
   });
 });
+
+// ── Scheduled sweep ───────────────────────────────────────────────────────────
+//
+// Called by a Catalyst cron every few minutes; see
+// docs/catalyst/12-scheduling-and-delivery.md for the cron definition.
+//
+// Why an external cron rather than an interval inside this process: AppSail
+// auto-scales to 1–5 instances, so a setInterval would run on every one of them
+// and fire each reminder up to five times. A cron calling one endpoint is
+// single-writer by construction. The queue's claim still guards against a
+// retried or overlapping tick.
+
+/** Shared secret for the tick endpoint. */
+function tickSecret(): string {
+  return (process.env['TICK_SECRET'] ?? '').trim();
+}
+
+/**
+ * Runs one sweep.
+ *
+ * Not under the normal owner-scoping middleware: the caller is Catalyst's cron,
+ * not a signed-in user, and it sweeps across all owners. It is protected by a
+ * shared secret instead — and refuses to run at all when that secret is unset,
+ * rather than defaulting to open. An endpoint that delivers notifications for
+ * every user is not one to leave unauthenticated by accident.
+ */
+app.post('/api/internal/tick', async (req, res) => {
+  const secret = tickSecret();
+  if (!secret) {
+    console.error('[kaizen] /api/internal/tick refused: TICK_SECRET is not set');
+    res.status(503).json({
+      error: 'not_configured',
+      message: 'TICK_SECRET is not set, so the sweep endpoint is disabled',
+    });
+    return;
+  }
+
+  const presented = String(req.headers['x-tick-secret'] ?? '');
+  // Length-independent comparison; the secret is short and the endpoint is
+  // remote, but there is no reason to leak timing.
+  if (presented.length !== secret.length || !timingSafeEqual(presented, secret)) {
+    res.status(401).json({ error: 'unauthenticated', message: 'Invalid tick secret' });
+    return;
+  }
+
+  if (!catalystAvailable) {
+    // The JSON-file fallback has no queue; say so rather than silently
+    // reporting a successful sweep that did nothing.
+    res.status(503).json({
+      error: 'datastore_unavailable',
+      message: 'The sweep requires the Catalyst backend',
+    });
+    return;
+  }
+
+  try {
+    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const report = await runSweep(catalyst);
+
+    if (report.due > 0 || report.failed > 0) {
+      console.log(`[kaizen] sweep ${describeSweep(report)}`);
+      for (const line of report.details) console.log(`[kaizen]   ${line}`);
+    }
+
+    res.json({
+      ok: true,
+      due: report.due,
+      delivered: report.delivered,
+      failed: report.failed,
+      purged: report.purged,
+      durationMs: report.durationMs,
+    });
+  } catch (e) {
+    sendError(res, '[POST /api/internal/tick]', e);
+  }
+});
+
+/** Constant-time string comparison. */
+function timingSafeEqual(a: string, b: string): boolean {
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
 
 // ── Setup / table status ──────────────────────────────────────────────────────
 //
