@@ -13,6 +13,7 @@
     "start": "pnpm run build && NODE_ENV=production pnpm run server",
     "preview:server": "NODE_ENV=production pnpm run server",
     "catalyst:setup": "node --env-file-if-exists=.env.local --import tsx scripts/catalyst-setup.ts",
+    "catalyst:cron": "node --env-file-if-exists=.env.local --import tsx scripts/register-cron.ts",
     "build:appsail": "tsc -b && vite build --mode appsail && node scripts/build-appsail.mjs",
     "appsail:url": "node --import tsx scripts/appsail-url.mjs",
     "lock:npm": "rm -rf .lockgen && mkdir -p .lockgen && cp package.json .lockgen/ && npm install --package-lock-only --no-audit --no-fund --prefix .lockgen && mv .lockgen/package-lock.json package-lock.json && rm -rf .lockgen",
