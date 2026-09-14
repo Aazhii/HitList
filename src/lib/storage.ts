@@ -394,6 +394,13 @@ function migrateTodo(raw: Record<string, unknown>, defaultListId: string, index:
     quadrant: (['do', 'schedule', 'delegate', 'eliminate'].includes(raw.quadrant as string)
       ? raw.quadrant
       : 'schedule') as Quadrant,
+    // Reminder settings were absent here, so every load silently dropped them.
+    // mockApi calls loadAppState() on each operation, which meant enabling a
+    // reminder was erased by the very next read — the setting never survived
+    // long enough to be scheduled, let alone delivered.
+    reminderEnabled: typeof raw.reminderEnabled === 'boolean' ? raw.reminderEnabled : undefined,
+    reminderMinutesBefore:
+      typeof raw.reminderMinutesBefore === 'number' ? raw.reminderMinutesBefore : undefined,
   };
 }
 
