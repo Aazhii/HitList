@@ -353,11 +353,16 @@
  * Below 560px there is no honest way to fit the form, so the lock is released
  * and the page scrolls — clipping the button would be worse.
  */
-.login-organic { --o-auth-h: 340px; }
+/* Sized to the tallest ordinary step rather than guessed at. Adding up the
+   theme's own metrics for the password step — field 48 + 18, button 52 + 16,
+   the username/Change row ~20 + 20, and the links row ~20 + 16 — comes to about
+   210px. 230 leaves headroom without reopening a gap under the shorter email
+   step. Was 340, which left ~130px of dead space inside the card. */
+.login-organic { --o-auth-h: 230px; }
 
-@media (max-height: 780px) { .login-organic { --o-auth-h: 320px; } }
-@media (max-height: 700px) { .login-organic { --o-auth-h: 300px; } }
-@media (max-height: 640px) { .login-organic { --o-auth-h: 280px; } }
+@media (max-height: 760px) { .login-organic { --o-auth-h: 220px; } }
+@media (max-height: 680px) { .login-organic { --o-auth-h: 210px; } }
+@media (max-height: 620px) { .login-organic { --o-auth-h: 200px; } }
 
 .login-organic .o-auth-well { display: block; height: var(--o-auth-h); }
 .login-organic .o-auth-well iframe {

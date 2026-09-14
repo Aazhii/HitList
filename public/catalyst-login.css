@@ -1518,19 +1518,18 @@ html, body {
 .line { background: var(--o-divider); height: 1px; }
 
 /* ── Headings ─────────────────────────────────────────────────────────────────
-   .signin_head is NOT only the "Sign in" title — Catalyst reuses it for the
-   OTP, recovery and password-expiry steps, so hiding it strands those screens
-   without a title. Demote it to a quiet step label instead. */
+   .signin_head is hidden. On the email and password steps it renders the literal
+   "Sign in", directly beneath the card's own display heading of the same word —
+   duplicated text costing ~32px of the iframe's fixed height.
+
+   Catalyst does reuse it for the OTP, recovery and password-expiry steps, so
+   this does drop their titles. Those screens stay legible on their own: each
+   has a labelled field ("Enter OTP") and its own action links ("Sign in using
+   password", "Resend OTP"). If a step ever turns out to be ambiguous without
+   it, restore this to the muted 13px label rather than the base sheet's
+   original size — and add ~32px to --o-auth-h in src/index.css. */
 .signin_head,
-#headtitle {
-  font-family: var(--o-font-body);
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.4;
-  color: var(--o-muted);
-  margin: 0 0 14px;
-  padding-top: 0;
-}
+#headtitle { display: none; }
 .text16, .signup_text { font-size: 14px; color: var(--o-muted); }
 .titlename, .service_name { display: none !important; }  /* base sheet already hides these */
 
