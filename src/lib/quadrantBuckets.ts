@@ -10,16 +10,18 @@
 import { QUADRANTS } from '@/types/todo';
 import type { Quadrant, Todo, TodoStatus } from '@/types/todo';
 
-/** In progress first, then to do, then done. */
-export const STATUS_ORDER: Record<TodoStatus, number> = {
-  'in-progress': 0,
-  todo: 1,
-  done: 2,
-};
-
+/**
+ * Done last; otherwise the user's own order.
+ *
+ * This used to put in-progress tasks first, then to-do, then done. Once tasks
+ * can be dragged into order, that fights the user: a to-do dragged above an
+ * in-progress task would snap straight back below it. The order someone chose
+ * by hand now wins, in both the list and the matrix, so the two agree.
+ */
 export function compareTasks(a: Todo, b: Todo): number {
-  const byStatus = STATUS_ORDER[a.status] - STATUS_ORDER[b.status];
-  return byStatus !== 0 ? byStatus : a.order - b.order;
+  const aDone = a.status === 'done' ? 1 : 0;
+  const bDone = b.status === 'done' ? 1 : 0;
+  return aDone !== bDone ? aDone - bDone : a.order - b.order;
 }
 
 /**

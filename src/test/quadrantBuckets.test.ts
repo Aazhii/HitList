@@ -43,7 +43,8 @@ describe('bucketByQuadrant', () => {
     expect(bucketByQuadrant([done], true).get('do')!.map((t) => t.id)).toEqual(['d']);
   });
 
-  it('sorts in progress, then to do, then done, then by order', () => {
+  it('puts done tasks last and otherwise follows the user\'s order', () => {
+    // In-progress no longer jumps the queue: a hand-dragged order must stick.
     const tasks = [
       todo({ id: 'done', status: 'done', order: 0 }),
       todo({ id: 'todo-2', status: 'todo', order: 2 }),
@@ -51,7 +52,7 @@ describe('bucketByQuadrant', () => {
       todo({ id: 'todo-1', status: 'todo', order: 1 }),
     ];
     const ids = bucketByQuadrant(tasks, true).get('do')!.map((t) => t.id);
-    expect(ids).toEqual(['wip', 'todo-1', 'todo-2', 'done']);
+    expect(ids).toEqual(['todo-1', 'todo-2', 'wip', 'done']);
   });
 
   it('does not reorder or mutate its input', () => {
@@ -72,9 +73,16 @@ describe('bucketByQuadrant', () => {
 });
 
 describe('compareTasks', () => {
-  it('orders by status before order', () => {
+  it('follows the user\'s order, not the status', () => {
+    // In-progress used to jump ahead; with drag-to-reorder it must not.
     const wip = todo({ status: 'in-progress', order: 100 });
     const early = todo({ status: 'todo', order: 0 });
-    expect(compareTasks(wip, early)).toBeLessThan(0);
+    expect(compareTasks(wip, early)).toBeGreaterThan(0);
+  });
+
+  it('puts a done task after an active one regardless of order', () => {
+    const done = todo({ status: 'done', order: 0 });
+    const late = todo({ status: 'todo', order: 100 });
+    expect(compareTasks(done, late)).toBeGreaterThan(0);
   });
 });
