@@ -21,7 +21,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { Button } from '@/components/ui/button';
 import { StatusBox } from '@/components/ui/status-box';
 import { SlashMenu, filterSlashCommands } from '@/components/notes/SlashMenu';
 import { TableBlock } from '@/components/notes/TableBlock';
@@ -908,38 +907,6 @@ export function NoteEditor({
         Click to add more…
       </button>
     </div>
-  );
-}
-
-// ── Block type selector (exported for external use) ────────────────────────────
-export function BlockTypeButton({
-  currentType,
-  onChangeType,
-}: {
-  currentType: BlockType;
-  onChangeType: (type: BlockType) => void;
-}) {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="xs" className="h-6 gap-1 text-muted-foreground hover:text-foreground rounded-lg px-2">
-          {BLOCK_ICONS[currentType]}
-          <span className="text-[10px]">{BLOCK_TYPE_LABELS[currentType]}</span>
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="w-40">
-        {BLOCK_TYPES.map((type) => (
-          <DropdownMenuItem
-            key={type}
-            onClick={() => onChangeType(type)}
-            className={cn(type === currentType && 'bg-muted')}
-          >
-            {BLOCK_ICONS[type]}
-            <span className="text-xs">{BLOCK_TYPE_LABELS[type]}</span>
-          </DropdownMenuItem>
-        ))}
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 

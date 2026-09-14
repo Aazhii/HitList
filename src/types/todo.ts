@@ -174,8 +174,6 @@ export interface NotificationRecord {
   seenInToast?: boolean;  // whether it has been shown in the toast stack
 }
 
-export type SortOption = 'created' | 'due-date' | 'status' | 'order';
-export type GroupOption = 'none' | 'category';
 
 export const LIST_COLORS = [
   { id: 'emerald', label: 'Emerald', dot: 'bg-emerald-500' },
