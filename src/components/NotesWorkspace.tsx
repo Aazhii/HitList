@@ -161,7 +161,7 @@ function EmojiPicker({ emoji, onSelect }: { emoji: string; onSelect: (emoji: str
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="text-5xl leading-none mb-4 block hover:scale-105 transition-transform duration-150 cursor-pointer focus:outline-none"
+          className="mb-[14px] block cursor-pointer text-[46px] leading-none transition-transform duration-150 hover:scale-105"
           aria-label="Change note emoji"
         >
           {emoji}
@@ -225,85 +225,72 @@ function NoteDetail({
     // The one scroller for the note pane. The header lives inside it, so the
     // title scrolls away with the content rather than pinning above it.
     <ScrollArea className="h-full">
-    <div className="animate-fade-in">
-      {/* Note header */}
-      <div className="px-8 pt-10 pb-4">
-        {/* Emoji */}
-        <EmojiPicker
-          emoji={note.emoji ?? '📝'}
-          onSelect={(e) => onUpdateEmoji(note.id, e)}
-        />
+      <div className="animate-fade-in px-4 pb-24 pt-[46px] md:px-8">
+        {/* One reading column: a 720px measure plus the 44px gutter that holds
+            block controls. The title, metadata and body share its left edge. */}
+        <div className="mx-auto w-full max-w-[calc(var(--a-measure)+var(--a-gutter))]">
+          <div className="md:pl-[var(--a-gutter)]">
+            <EmojiPicker
+              emoji={note.emoji ?? '📝'}
+              onSelect={(e) => onUpdateEmoji(note.id, e)}
+            />
 
-        {/* Title */}
-        <textarea
-          ref={titleRef}
-          value={note.title}
-          onChange={(e) => onUpdateTitle(note.id, e.target.value)}
-          placeholder="Untitled"
-          rows={1}
-          className={cn(
-            'w-full resize-none bg-transparent outline-none border-none p-0',
-            'text-3xl font-bold tracking-tight text-foreground leading-tight',
-            'placeholder:text-muted-foreground/30 field-sizing-content',
-          )}
-          aria-label="Note title"
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              // Focus first block
-              if (firstBlockRef.current) {
-                const el = document.querySelector<HTMLTextAreaElement>(
-                  `[aria-label^="Block 1:"]`
-                );
-                el?.focus();
-              }
-            }
-          }}
-        />
+            <textarea
+              ref={titleRef}
+              value={note.title}
+              onChange={(e) => onUpdateTitle(note.id, e.target.value)}
+              placeholder="Untitled"
+              rows={1}
+              className={cn(
+                'w-full resize-none border-none bg-transparent p-0 outline-none field-sizing-content',
+                'font-display text-[42px] leading-[1.08] tracking-[-0.015em] text-a-ink',
+                'placeholder:text-a-faint/40',
+              )}
+              aria-label="Note title"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  // Focus first block
+                  if (firstBlockRef.current) {
+                    const el = document.querySelector<HTMLTextAreaElement>(
+                      `[aria-label^="Block 1:"]`
+                    );
+                    el?.focus();
+                  }
+                }
+              }}
+            />
 
-        {/* Metadata */}
-        <div className="flex items-center gap-3 mt-3 text-xs text-muted-foreground/60">
-          <span className="flex items-center gap-1">
-            <Clock className="size-3" />
-            Edited {formatNoteDate(note.updatedAt)}
-          </span>
-          <span>·</span>
-          <span>{note.blocks.length} block{note.blocks.length !== 1 ? 's' : ''}</span>
+            <p className="mt-[14px] flex items-center gap-2 text-[13.5px] text-a-faint">
+              <span>Edited {formatNoteDate(note.updatedAt)}</span>
+              <span aria-hidden>·</span>
+              <span>{note.blocks.length} block{note.blocks.length !== 1 ? 's' : ''}</span>
+            </p>
+
+            <div className="mt-[22px] mb-2 h-px bg-a-line" />
+
+            {/* Keyboard hints — restyled, not removed: this is where "/" is taught
+                now that the per-row "/cmd" badge is gone. */}
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pb-3 text-[12px] text-a-faint">
+              {([['/', 'commands'], ['↵', 'new block'], ['Tab', 'table cells']] as const).map(([key, label]) => (
+                <span key={key} className="flex items-center gap-1.5">
+                  <kbd className="rounded-[5px] bg-a-surface px-1.5 font-mono text-[11px] text-a-muted">{key}</kbd>
+                  {label}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          <NoteEditor
+            blocks={note.blocks}
+            onUpdateBlock={(blockId, changes) => onUpdateBlock(note.id, blockId, changes)}
+            onAddBlock={(afterBlockId, type) => onAddBlock(note.id, afterBlockId, type)}
+            onDeleteBlock={(blockId) => onDeleteBlock(note.id, blockId)}
+            onChangeBlockType={(blockId, type) => onChangeBlockType(note.id, blockId, type)}
+            onMoveBlock={(blockId, direction) => onMoveBlock(note.id, blockId, direction)}
+          />
         </div>
       </div>
-
-      <Separator className="mx-8 w-auto" />
-
-      {/* Slash command hint */}
-      <div className="px-8 pt-2 pb-1 flex items-center gap-2 flex-wrap">
-        <span className="text-[10px] text-muted-foreground/35 font-medium flex items-center gap-1">
-          <kbd className="font-mono bg-muted/50 px-1 py-px rounded border border-border/40 text-[9px] text-muted-foreground/60">/</kbd>
-          <span>commands</span>
-        </span>
-        <span className="text-muted-foreground/20 text-[10px]">·</span>
-        <span className="text-[10px] text-muted-foreground/35 font-medium flex items-center gap-1">
-          <kbd className="font-mono bg-muted/50 px-1 py-px rounded border border-border/40 text-[9px] text-muted-foreground/60">↵</kbd>
-          <span>new block</span>
-        </span>
-        <span className="text-muted-foreground/20 text-[10px]">·</span>
-        <span className="text-[10px] text-muted-foreground/35 font-medium flex items-center gap-1">
-          <kbd className="font-mono bg-muted/50 px-1 py-px rounded border border-border/40 text-[9px] text-muted-foreground/60">Tab</kbd>
-          <span>table cells</span>
-        </span>
-      </div>
-
-      {/* Editor */}
-      <div className="px-8 py-4 pb-24">
-        <NoteEditor
-          blocks={note.blocks}
-          onUpdateBlock={(blockId, changes) => onUpdateBlock(note.id, blockId, changes)}
-          onAddBlock={(afterBlockId, type) => onAddBlock(note.id, afterBlockId, type)}
-          onDeleteBlock={(blockId) => onDeleteBlock(note.id, blockId)}
-          onChangeBlockType={(blockId, type) => onChangeBlockType(note.id, blockId, type)}
-          onMoveBlock={(blockId, direction) => onMoveBlock(note.id, blockId, direction)}
-        />
-      </div>
-    </div>
     </ScrollArea>
   );
 }

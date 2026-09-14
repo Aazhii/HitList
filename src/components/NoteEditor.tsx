@@ -6,7 +6,7 @@ import {
   Plus, GripVertical, Trash2, ArrowUp, ArrowDown,
   Type, Heading1, Heading2, Heading3, List, ListOrdered,
   CheckSquare, Quote, Minus, Code2, Table2,
-  Bold, Italic, Underline, Strikethrough, Slash,
+  Bold, Italic, Underline, Strikethrough,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { NoteBlock, BlockType, TableData } from '@/types/notes';
@@ -15,27 +15,32 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
+import { StatusBox } from '@/components/ui/status-box';
 import { SlashMenu, filterSlashCommands } from '@/components/notes/SlashMenu';
 import { TableBlock } from '@/components/notes/TableBlock';
 import { computeNumberedOrdinals } from '@/lib/noteBlocks';
 
 // ── Block type icon map ────────────────────────────────────────────────────────
+const ICON = 'size-3.5';
+const STROKE = 2.75;
+
 const BLOCK_ICONS: Record<BlockType, React.ReactNode> = {
-  paragraph: <Type className="size-3.5" />,
-  heading1:  <Heading1 className="size-3.5" />,
-  heading2:  <Heading2 className="size-3.5" />,
-  heading3:  <Heading3 className="size-3.5" />,
-  bullet:    <List className="size-3.5" />,
-  numbered:  <ListOrdered className="size-3.5" />,
-  todo:      <CheckSquare className="size-3.5" />,
-  quote:     <Quote className="size-3.5" />,
-  divider:   <Minus className="size-3.5" />,
-  code:      <Code2 className="size-3.5" />,
-  table:     <Table2 className="size-3.5" />,
+  paragraph: <Type className={ICON} strokeWidth={STROKE} />,
+  heading1:  <Heading1 className={ICON} strokeWidth={STROKE} />,
+  heading2:  <Heading2 className={ICON} strokeWidth={STROKE} />,
+  heading3:  <Heading3 className={ICON} strokeWidth={STROKE} />,
+  bullet:    <List className={ICON} strokeWidth={STROKE} />,
+  numbered:  <ListOrdered className={ICON} strokeWidth={STROKE} />,
+  todo:      <CheckSquare className={ICON} strokeWidth={STROKE} />,
+  quote:     <Quote className={ICON} strokeWidth={STROKE} />,
+  divider:   <Minus className={ICON} strokeWidth={STROKE} />,
+  code:      <Code2 className={ICON} strokeWidth={STROKE} />,
+  table:     <Table2 className={ICON} strokeWidth={STROKE} />,
 };
 
 const BLOCK_TYPES: BlockType[] = [
@@ -43,18 +48,40 @@ const BLOCK_TYPES: BlockType[] = [
   'bullet', 'numbered', 'todo', 'quote', 'divider', 'code', 'table',
 ];
 
-// ── Block content styling ──────────────────────────────────────────────────────
+// ── Type scale ─────────────────────────────────────────────────────────────────
+// The handoff's editor scale. Body text moves from 14px to 16.5px / 1.68.
+// H1 and H2 use the display face, which has a single weight — never bold it.
+// Quote is no longer italic or muted: it was the least readable text on the page.
 function getBlockTextClass(type: BlockType): string {
   switch (type) {
-    case 'heading1': return 'text-2xl font-bold tracking-tight text-foreground leading-tight';
-    case 'heading2': return 'text-xl font-semibold tracking-tight text-foreground leading-snug';
-    case 'heading3': return 'text-base font-semibold text-foreground leading-snug';
-    case 'quote':    return 'text-sm italic text-muted-foreground leading-relaxed';
-    case 'code':     return 'text-sm font-mono text-foreground leading-relaxed';
-    case 'bullet':   return 'text-sm text-foreground leading-relaxed';
-    case 'numbered': return 'text-sm text-foreground leading-relaxed';
-    case 'todo':     return 'text-sm text-foreground leading-relaxed';
-    default:         return 'text-sm text-foreground leading-relaxed';
+    case 'heading1': return 'font-display text-[34px] leading-[1.12] tracking-[-0.015em] text-a-ink';
+    case 'heading2': return 'font-display text-[27px] leading-[1.2] tracking-[-0.01em] text-a-ink';
+    case 'heading3': return 'text-[19px] leading-[1.35] font-bold text-a-ink';
+    case 'quote':    return 'text-[17px] leading-[1.6] text-a-ink';
+    case 'code':     return 'font-mono text-[13.5px] leading-[1.7] text-a-ink';
+    default:         return 'text-[16.5px] leading-[1.68] text-a-ink';
+  }
+}
+
+/** Space around each block type, per the scale. */
+const ROW_SPACING: Partial<Record<BlockType, string>> = {
+  heading1: 'mt-[30px] mb-[4px]',
+  heading2: 'mt-[26px] mb-[4px]',
+  heading3: 'mt-[20px] mb-[4px]',
+  bullet:   'py-[2px]',
+  numbered: 'py-[2px]',
+  todo:     'py-[2px]',
+  code:     'my-[6px]',
+  divider:  'py-[26px]',
+  table:    'py-[6px]',
+};
+
+/** The quote rule and the code panel wrap the text itself. */
+function getContentWrapperClass(type: BlockType): string {
+  switch (type) {
+    case 'quote': return 'border-l-[3px] border-a-accent pl-5';
+    case 'code':  return 'rounded-[16px] bg-a-surface-2 px-5 py-4';
+    default:      return '';
   }
 }
 
@@ -72,25 +99,24 @@ function getBlockPlaceholder(type: BlockType): string {
   }
 }
 
-// Per-type top offset so the 24px grip button's center aligns with the
-// vertical midpoint of the first text line's cap-height.
-//
-// Formula: mt = (line-height / 2) - (button-height / 2)
-//   heading1  text-2xl  leading-tight  → lh ≈ 30px  → mt = 15 - 12 = 3px
-//   heading2  text-xl   leading-snug   → lh ≈ 28px  → mt = 14 - 12 = 2px
-//   heading3  text-base leading-snug   → lh ≈ 24px  → mt = 12 - 12 = 0px
-//   code/quote text-sm  leading-relaxed→ lh ≈ 23px  → mt = 11 - 12 = -1px → 0
-//   paragraph  text-sm  leading-relaxed→ lh ≈ 23px  → mt ≈ 0px
-function getControlsTopOffset(type: BlockType): string {
-  switch (type) {
-    case 'heading1': return 'mt-[3px]';
-    case 'heading2': return 'mt-[2px]';
-    case 'heading3': return 'mt-0';
-    case 'code':     return 'mt-[6px]';   // code block has py-2 wrapper padding
-    case 'quote':    return 'mt-0';
-    default:         return 'mt-0';
-  }
-}
+// Offset of the 22px gutter controls, so their centre sits on the centre of the
+// block's first line: top = lineHeight / 2 − 11.
+//   heading1  34px × 1.12 = 38.1 → 19.0 − 11 = 8
+//   heading2  27px × 1.20 = 32.4 → 16.2 − 11 = 5
+//   heading3  19px × 1.35 = 25.7 → 12.8 − 11 = 2
+//   body    16.5px × 1.68 = 27.7 → 13.9 − 11 = 3   (paragraph, lists, to-do)
+//   quote     17px × 1.60 = 27.2 → 13.6 − 11 = 3
+//   code    16px panel padding + (13.5px × 1.70) / 2 − 11 = 16
+//   table   the header row is ~40px tall → 20 − 11 = 9
+//   divider the 1px rule is the whole content box → −11 + 1 = −10
+const CONTROLS_TOP: Partial<Record<BlockType, string>> = {
+  heading1: 'top-[8px]',
+  heading2: 'top-[5px]',
+  heading3: 'top-[2px]',
+  code:     'top-[16px]',
+  table:    'top-[9px]',
+  divider:  'top-[-10px]',
+};
 
 // ── Caret position helper ──────────────────────────────────────────────────────
 function getCaretCoordinates(el: HTMLTextAreaElement, position: number): { top: number; left: number } {
@@ -168,7 +194,7 @@ function useAutoResize(ref: React.RefObject<HTMLTextAreaElement | null>, value: 
   }, [ref, value]);
 }
 
-// ── Block controls (grip + plus + type menu) ───────────────────────────────────
+// ── Gutter controls (add + options menu) ───────────────────────────────────────
 interface BlockControlsProps {
   block: NoteBlock;
   index: number;
@@ -180,35 +206,38 @@ interface BlockControlsProps {
   onMoveDown: (id: string) => void;
 }
 
+const GUTTER_BUTTON = cn(
+  'flex size-[22px] items-center justify-center rounded-[7px] text-a-faint transition-colors duration-150',
+  'hover:bg-[color-mix(in_srgb,var(--a-ink)_9%,transparent)] hover:text-a-ink',
+  'data-[state=open]:bg-[color-mix(in_srgb,var(--a-ink)_9%,transparent)] data-[state=open]:text-a-ink',
+);
+
 function BlockControls({ block, index, total, onAddAfter, onDelete, onChangeType, onMoveUp, onMoveDown }: BlockControlsProps) {
   return (
-    <div className="flex items-center gap-0.5 flex-shrink-0">
-      {/* Add block */}
-      <Button
-        variant="ghost"
-        size="icon-xs"
+    <>
+      <button
+        type="button"
         onClick={() => onAddAfter(block.id)}
-        className="size-5 text-muted-foreground/40 hover:text-primary hover:bg-primary/10 rounded transition-all duration-150"
+        className={GUTTER_BUTTON}
         aria-label="Add block below"
-        title="Add block below (or type / for commands)"
+        title="Add block below"
       >
-        <Plus className="size-3" />
-      </Button>
+        <Plus className="size-3.5" strokeWidth={STROKE} />
+      </button>
 
-      {/* Grip + type/move/delete menu */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            className="size-5 text-muted-foreground/40 hover:text-foreground hover:bg-muted/80 rounded cursor-grab active:cursor-grabbing transition-all duration-150"
+          <button
+            type="button"
+            className={GUTTER_BUTTON}
             aria-label="Block options"
-            title="Click for options · drag to reorder"
+            // Not "drag to reorder": there is no drag, and the old title said there was.
+            title="Move, turn into, or delete"
           >
-            <GripVertical className="size-3.5" />
-          </Button>
+            <GripVertical className="size-3.5" strokeWidth={STROKE} />
+          </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-44">
+        <DropdownMenuContent align="start" className="w-48">
           {index > 0 && (
             <DropdownMenuItem onClick={() => onMoveUp(block.id)}>
               <ArrowUp className="size-3.5" /> Move up
@@ -221,13 +250,11 @@ function BlockControls({ block, index, total, onAddAfter, onDelete, onChangeType
           )}
           {(index > 0 || index < total - 1) && <DropdownMenuSeparator />}
 
-          <div className="px-2 py-1 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-            Turn into
-          </div>
+          <DropdownMenuLabel>Turn into</DropdownMenuLabel>
           {BLOCK_TYPES.filter((t) => t !== block.type).map((type) => (
             <DropdownMenuItem key={type} onClick={() => onChangeType(block.id, type)}>
               {BLOCK_ICONS[type]}
-              <span className="text-xs">{BLOCK_TYPE_LABELS[type]}</span>
+              <span>{BLOCK_TYPE_LABELS[type]}</span>
             </DropdownMenuItem>
           ))}
           <DropdownMenuSeparator />
@@ -236,25 +263,7 @@ function BlockControls({ block, index, total, onAddAfter, onDelete, onChangeType
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-    </div>
-  );
-}
-
-// ── Slash command hint badge ────────────────────────────────────────────────────
-function SlashHint({ visible }: { visible: boolean }) {
-  return (
-    <span
-      className={cn(
-        'inline-flex items-center gap-0.5 h-4 px-1.5 rounded text-[9px] font-mono font-semibold select-none flex-shrink-0',
-        'bg-primary/8 text-primary/50 border border-primary/15',
-        'transition-all duration-200',
-        visible ? 'opacity-100 translate-x-0' : 'opacity-30 translate-x-0',
-      )}
-      title="Type / to insert a block"
-    >
-      <Slash className="size-2.5" />
-      <span className="text-[8px] tracking-tight">cmd</span>
-    </span>
+    </>
   );
 }
 
@@ -280,6 +289,17 @@ interface BlockRowProps {
   onSlashOpen: (blockId: string, pos: { top: number; left: number }) => void;
 }
 
+/**
+ * One block: a 44px gutter holding its controls, then the content.
+ *
+ * No chrome until the pointer is on the row. The old row drew, on every block,
+ * a hover background, a left accent bar, an add button, a grip and a "/cmd"
+ * badge. What remains is one faint hover tint and the two gutter controls.
+ * The "/" affordance the badge advertised is still in the empty paragraph's
+ * placeholder and in the hint row above the editor.
+ *
+ * Below `md` the gutter is hidden rather than shrunk.
+ */
 function BlockRow({
   block, index, ordinal, total, focusedId,
   onFocus, onChange, onToggleCheck, onKeyDown,
@@ -293,33 +313,43 @@ function BlockRow({
 
   useAutoResize(taRef, block.content);
 
-  // Shared left-side controls strip: grip + plus + slash hint
-  const sharedControls = (
-    <div className={cn(
-      'flex items-center gap-0.5 flex-shrink-0 transition-all duration-150 select-none',
-      showControls ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-1',
-    )}>
-      <BlockControls
-        block={block} index={index} total={total}
-        onAddAfter={onAddAfter} onDelete={onDelete}
-        onChangeType={onChangeType} onMoveUp={onMoveUp} onMoveDown={onMoveDown}
-      />
+  const gutter = (
+    <div className="relative hidden w-[var(--a-gutter)] flex-shrink-0 select-none md:block">
+      <div
+        className={cn(
+          'absolute right-2 flex gap-[2px] transition-opacity duration-150',
+          CONTROLS_TOP[block.type] ?? 'top-[3px]',
+          // Also kept visible while a control has keyboard focus or its menu is open.
+          showControls ? 'opacity-100' : 'opacity-0 focus-within:opacity-100 has-[[data-state=open]]:opacity-100',
+        )}
+      >
+        <BlockControls
+          block={block} index={index} total={total}
+          onAddAfter={onAddAfter} onDelete={onDelete}
+          onChangeType={onChangeType} onMoveUp={onMoveUp} onMoveDown={onMoveDown}
+        />
+      </div>
     </div>
   );
+
+  const rowProps = {
+    className: cn(
+      'relative flex rounded-[10px] transition-colors duration-150 first:mt-0',
+      ROW_SPACING[block.type] ?? 'py-[3px]',
+      hovered && 'bg-a-row-hover',
+    ),
+    onMouseEnter: () => setHovered(true),
+    onMouseLeave: () => setHovered(false),
+  };
 
   // ── Divider ──────────────────────────────────────────────────────────────────
   if (block.type === 'divider') {
     return (
-      <div
-        className={cn(
-          'relative flex items-center gap-2 py-2 px-1 rounded-lg transition-all duration-150',
-          hovered ? 'bg-muted/20' : 'bg-transparent',
-        )}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
-      >
-        {sharedControls}
-        <hr className="flex-1 border-border/60" />
+      <div {...rowProps}>
+        {gutter}
+        <div className="flex flex-1 items-center">
+          <hr className="h-px w-full border-0 bg-a-line" />
+        </div>
       </div>
     );
   }
@@ -327,26 +357,9 @@ function BlockRow({
   // ── Table ────────────────────────────────────────────────────────────────────
   if (block.type === 'table') {
     return (
-      <div
-        className={cn(
-          'relative flex items-start gap-1.5 py-1 px-1 rounded-xl transition-all duration-150',
-          hovered ? 'bg-muted/20' : 'bg-transparent',
-        )}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
-      >
-        {/* Controls aligned to table toolbar height (~30px) → mt-[7px] */}
-        <div className={cn(
-          'flex items-center gap-0.5 mt-[7px] flex-shrink-0 transition-all duration-150 select-none',
-          showControls ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-1',
-        )}>
-          <BlockControls
-            block={block} index={index} total={total}
-            onAddAfter={onAddAfter} onDelete={onDelete}
-            onChangeType={onChangeType} onMoveUp={onMoveUp} onMoveDown={onMoveDown}
-          />
-        </div>
-        <div className="flex-1 min-w-0">
+      <div {...rowProps}>
+        {gutter}
+        <div className="min-w-0 flex-1">
           <TableBlock
             block={block}
             isFocused={isFocused}
@@ -360,83 +373,38 @@ function BlockRow({
 
   // ── Text-based blocks ────────────────────────────────────────────────────────
   return (
-    <div
-      className={cn(
-        'relative flex items-start gap-1.5 px-1 rounded-lg transition-all duration-150 group/blockrow',
-        hovered ? 'bg-muted/20' : 'bg-transparent',
-        isFocused && !hovered && 'bg-muted/10',
-      )}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      {/* Subtle left accent bar on hover/focus */}
-      <div className={cn(
-        'absolute left-0 top-1 bottom-1 w-0.5 rounded-full transition-all duration-200',
-        isFocused ? 'bg-primary/50 opacity-100' : hovered ? 'bg-primary/25 opacity-100' : 'opacity-0',
-      )} />
+    <div {...rowProps}>
+      {gutter}
 
-      {/* Controls — self-start + per-type top margin to align grip with text cap-height */}
-      <div className={cn(
-        'flex items-center gap-1 self-start flex-shrink-0 transition-all duration-150 select-none',
-        getControlsTopOffset(block.type),
-        showControls ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-1',
-      )}>
-        <BlockControls
-          block={block} index={index} total={total}
-          onAddAfter={onAddAfter} onDelete={onDelete}
-          onChangeType={onChangeType} onMoveUp={onMoveUp} onMoveDown={onMoveDown}
-        />
-      </div>
-
-      {/* Slash hint — always visible for empty paragraph blocks, outside controls opacity */}
-      {block.type === 'paragraph' && block.content === '' && (
-        <div className={cn(
-          'self-start flex-shrink-0 transition-all duration-200 select-none',
-          getControlsTopOffset(block.type),
-          showControls ? 'opacity-100' : 'opacity-40',
-        )}>
-          <SlashHint visible={showControls} />
-        </div>
-      )}
-
-      {/* Block content area */}
-      <div className={cn(
-        'flex items-start gap-2 flex-1 min-w-0',
-        block.type === 'quote' && 'border-l-2 border-primary/40 pl-3',
-        block.type === 'code' && 'bg-muted/50 rounded-lg px-3 py-2',
-      )}>
-        {/* Bullet marker */}
+      <div className={cn('flex min-w-0 flex-1 items-start', getContentWrapperClass(block.type))}>
         {block.type === 'bullet' && (
-          <span className="mt-[8px] size-1.5 rounded-full bg-muted-foreground/50 flex-shrink-0" />
+          <span
+            aria-hidden
+            className="mr-3 mt-[10px] size-1.5 flex-shrink-0 rounded-full bg-[color-mix(in_srgb,var(--a-ink)_45%,transparent)]"
+          />
         )}
-        {/* Numbered marker */}
+
         {block.type === 'numbered' && (
-          <span className="mt-[3px] text-xs font-medium tabular-nums text-muted-foreground flex-shrink-0 w-5 text-right leading-relaxed">
+          <span
+            aria-hidden
+            className="mr-2.5 w-[22px] flex-shrink-0 text-right text-[16.5px] leading-[1.68] tabular-nums text-a-muted"
+          >
             {ordinal ?? 1}.
           </span>
         )}
-        {/* Todo checkbox */}
+
         {block.type === 'todo' && (
-          <button
-            type="button"
-            onClick={() => onToggleCheck(block.id)}
-            className={cn(
-              'mt-[3px] size-4 rounded flex-shrink-0 border-2 flex items-center justify-center transition-all duration-150',
-              block.checked
-                ? 'bg-primary border-primary'
-                : 'border-muted-foreground/40 hover:border-primary/60'
-            )}
-            aria-label={block.checked ? 'Uncheck' : 'Check'}
-          >
-            {block.checked && (
-              <svg viewBox="0 0 10 8" className="size-2.5 text-primary-foreground fill-current">
-                <path d="M1 4l3 3 5-6" stroke="currentColor" strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            )}
-          </button>
+          // The wrapper takes the 19px box's layout size; StatusBox's own padding
+          // gives it a 44px hit area without pushing the text sideways.
+          <span className="mr-3 mt-[4px] flex flex-shrink-0">
+            <StatusBox
+              state={block.checked ? 'done' : 'todo'}
+              label={block.content.trim() || 'To-do'}
+              onClick={() => onToggleCheck(block.id)}
+            />
+          </span>
         )}
 
-        {/* Textarea */}
         <textarea
           ref={(el) => {
             taRef.current = el;
@@ -466,13 +434,13 @@ function BlockRow({
           placeholder={getBlockPlaceholder(block.type)}
           rows={1}
           className={cn(
-            'flex-1 min-w-0 resize-none bg-transparent outline-none border-none p-0 leading-relaxed overflow-hidden',
-            'placeholder:text-muted-foreground/35 focus:placeholder:text-muted-foreground/50 transition-colors duration-150',
+            'min-w-0 flex-1 resize-none overflow-hidden border-none bg-transparent p-0 outline-none',
+            'placeholder:text-a-faint/55',
             getBlockTextClass(block.type),
-            block.type === 'todo' && block.checked && 'line-through text-muted-foreground/60',
+            block.type === 'todo' && block.checked && 'text-a-faint line-through decoration-[1.5px]',
           )}
           style={{ height: 'auto' }}
-          aria-label={`Block ${index + 1}: ${BLOCK_TYPE_LABELS[block.type]}`}
+          aria-label={`Block ${index + 1}: ${BLOCK_TYPE_LABELS[block.type] ?? 'Text'}`}
           spellCheck
         />
       </div>
@@ -693,7 +661,7 @@ export function NoteEditor({
       )}
 
       {/* Blocks */}
-      <div className="space-y-0.5">
+      <div>
         {blocks.map((block, index) => (
           <BlockRow
             key={block.id}
@@ -732,7 +700,7 @@ export function NoteEditor({
             }
           }
         }}
-        className="w-full mt-2 py-6 text-left text-xs text-muted-foreground/25 hover:text-muted-foreground/50 transition-colors duration-200 cursor-text"
+        className="mt-2 w-full cursor-text py-6 text-left text-[13.5px] text-a-faint/60 transition-colors duration-200 hover:text-a-faint md:pl-[var(--a-gutter)]"
         aria-label="Add new block"
       >
         Click to add more…
