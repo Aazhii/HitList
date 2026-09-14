@@ -19,7 +19,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
-import { SlashMenu, SLASH_COMMANDS } from '@/components/notes/SlashMenu';
+import { SlashMenu, filterSlashCommands } from '@/components/notes/SlashMenu';
 import { TableBlock } from '@/components/notes/TableBlock';
 
 // ── Block type icon map ────────────────────────────────────────────────────────
@@ -596,13 +596,8 @@ export function NoteEditor({
 
     // Slash menu navigation
     if (slashState && slashState.blockId === blockId) {
-      const filtered = SLASH_COMMANDS.filter(
-        (cmd, i, arr) =>
-          arr.findIndex((c) => c.type === cmd.type) === i &&
-          (slashState.query === '' ||
-            cmd.trigger.startsWith(slashState.query) ||
-            cmd.label.toLowerCase().includes(slashState.query))
-      );
+      // The same list the menu renders, so ↵ picks the highlighted command.
+      const filtered = filterSlashCommands(slashState.query);
 
       if (e.key === 'ArrowDown') {
         e.preventDefault();
