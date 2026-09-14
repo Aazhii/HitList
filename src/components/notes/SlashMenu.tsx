@@ -1,7 +1,7 @@
 import { useRef, useEffect } from 'react';
 import {
   Type, Heading1, Heading2, Heading3, List, ListOrdered,
-  CheckSquare, Quote, Minus, Code2, Table2,
+  CheckSquare, Quote, Minus, Code2, Table2, Lightbulb,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { BlockType } from '@/types/notes';
@@ -26,6 +26,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { trigger: 'numbered', label: 'Numbered list', description: 'Ordered list',          type: 'numbered',  icon: <ListOrdered className={ICON} strokeWidth={STROKE} /> },
   { trigger: 'todo',     label: 'To-do',         description: 'Checkbox list',         type: 'todo',      icon: <CheckSquare className={ICON} strokeWidth={STROKE} /> },
   { trigger: 'quote',    label: 'Quote',         description: 'Highlighted quote',     type: 'quote',     icon: <Quote className={ICON} strokeWidth={STROKE} /> },
+  { trigger: 'callout',  label: 'Callout',       description: 'Tinted note with an emoji', type: 'callout', icon: <Lightbulb className={ICON} strokeWidth={STROKE} /> },
   { trigger: 'divider',  label: 'Divider',       description: 'Horizontal rule',       type: 'divider',   icon: <Minus className={ICON} strokeWidth={STROKE} /> },
   { trigger: 'code',     label: 'Code',          description: 'Code block',            type: 'code',      icon: <Code2 className={ICON} strokeWidth={STROKE} /> },
   { trigger: 'table',    label: 'Table',         description: 'Insert a table',        type: 'table',     icon: <Table2 className={ICON} strokeWidth={STROKE} /> },

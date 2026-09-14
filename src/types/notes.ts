@@ -13,7 +13,11 @@ export type BlockType =
   | 'quote'
   | 'divider'
   | 'code'
-  | 'table';
+  | 'table'
+  | 'callout';
+
+/** A callout's tint: terracotta, or sage. */
+export type CalloutTone = 'accent' | 'sage';
 
 // ── Table data ────────────────────────────────────────────────────────────────
 
@@ -41,6 +45,13 @@ export interface NoteBlock {
   content: string;
   checked?: boolean;    // for todo blocks
   tableData?: TableData; // for table blocks
+  /**
+   * Callout blocks only. Optional, like `checked` and `tableData`, so no
+   * existing note needs migrating — and the server stores blocks as opaque
+   * JSON, so it needs no change either.
+   */
+  emoji?: string;
+  tone?: CalloutTone;
 }
 
 export interface Note {
@@ -65,6 +76,7 @@ export const BLOCK_TYPE_LABELS: Record<BlockType, string> = {
   divider: 'Divider',
   code: 'Code',
   table: 'Table',
+  callout: 'Callout',
 };
 
 export const NOTE_EMOJIS = ['📝', '💡', '🗒️', '🔖', '⭐', '🎯', '🧠', '🌱', '🔥', '📌', '💭', '🚀'];
@@ -78,6 +90,7 @@ export function createEmptyBlock(type: BlockType = 'paragraph'): NoteBlock {
     content: '',
     checked: type === 'todo' ? false : undefined,
     tableData: type === 'table' ? createEmptyTable() : undefined,
+    ...(type === 'callout' ? { emoji: '💡', tone: 'accent' as const } : {}),
   };
 }
 

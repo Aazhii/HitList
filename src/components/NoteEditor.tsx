@@ -5,17 +5,19 @@ import {
 import {
   Plus, GripVertical, Trash2, ArrowUp, ArrowDown,
   Type, Heading1, Heading2, Heading3, List, ListOrdered,
-  CheckSquare, Quote, Minus, Code2, Table2,
+  CheckSquare, Quote, Minus, Code2, Table2, Lightbulb,
   Bold, Italic, Underline, Strikethrough,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { NoteBlock, BlockType, TableData } from '@/types/notes';
-import { BLOCK_TYPE_LABELS, createEmptyBlock } from '@/types/notes';
+import type { NoteBlock, BlockType, TableData, CalloutTone } from '@/types/notes';
+import { BLOCK_TYPE_LABELS, NOTE_EMOJIS, createEmptyBlock } from '@/types/notes';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
@@ -43,11 +45,12 @@ const BLOCK_ICONS: Record<BlockType, React.ReactNode> = {
   divider:   <Minus className={ICON} strokeWidth={STROKE} />,
   code:      <Code2 className={ICON} strokeWidth={STROKE} />,
   table:     <Table2 className={ICON} strokeWidth={STROKE} />,
+  callout:   <Lightbulb className={ICON} strokeWidth={STROKE} />,
 };
 
 const BLOCK_TYPES: BlockType[] = [
   'paragraph', 'heading1', 'heading2', 'heading3',
-  'bullet', 'numbered', 'todo', 'quote', 'divider', 'code', 'table',
+  'bullet', 'numbered', 'todo', 'quote', 'callout', 'divider', 'code', 'table',
 ];
 
 // ── Type scale ─────────────────────────────────────────────────────────────────
@@ -61,6 +64,8 @@ function getBlockTextClass(type: BlockType): string {
     case 'heading3': return 'text-[19px] leading-[1.35] font-bold text-a-ink';
     case 'quote':    return 'text-[17px] leading-[1.6] text-a-ink';
     case 'code':     return 'font-mono text-[13.5px] leading-[1.7] text-a-ink';
+    // Colour comes from the callout's tone; see BlockRow.
+    case 'callout':  return 'text-[15.5px] leading-[1.62]';
     default:         return 'text-[16.5px] leading-[1.68] text-a-ink';
   }
 }
@@ -74,16 +79,18 @@ const ROW_SPACING: Partial<Record<BlockType, string>> = {
   numbered: 'py-[2px]',
   todo:     'py-[2px]',
   code:     'my-[6px]',
+  callout:  'py-[8px]',
   divider:  'py-[26px]',
   table:    'py-[6px]',
 };
 
-/** The quote rule and the code panel wrap the text itself. */
-function getContentWrapperClass(type: BlockType): string {
-  switch (type) {
-    case 'quote': return 'border-l-[3px] border-a-accent pl-5';
-    case 'code':  return 'rounded-[16px] bg-a-surface-2 px-5 py-4';
-    default:      return '';
+/** The quote rule, the code panel and the callout tint wrap the text itself. */
+function getContentWrapperClass(block: NoteBlock): string {
+  switch (block.type) {
+    case 'quote':   return 'border-l-[3px] border-a-accent pl-5';
+    case 'code':    return 'rounded-[16px] bg-a-surface-2 px-5 py-4';
+    case 'callout': return cn('rounded-[18px] px-5 py-4', block.tone === 'sage' ? 'bg-a-sage-tint' : 'bg-a-accent-tint');
+    default:        return '';
   }
 }
 
@@ -97,6 +104,7 @@ function getBlockPlaceholder(type: BlockType): string {
     case 'bullet':   return 'List item';
     case 'numbered': return 'List item';
     case 'todo':     return 'To-do';
+    case 'callout':  return 'Callout…';
     default:         return "Type '/' for commands…";
   }
 }
@@ -109,6 +117,7 @@ function getBlockPlaceholder(type: BlockType): string {
 //   body    16.5px × 1.68 = 27.7 → 13.9 − 11 = 3   (paragraph, lists, to-do)
 //   quote     17px × 1.60 = 27.2 → 13.6 − 11 = 3
 //   code    16px panel padding + (13.5px × 1.70) / 2 − 11 = 16
+//   callout 8px row padding… measured from content: 16px panel + (15.5 × 1.62) / 2 − 11 = 18
 //   table   the header row is ~40px tall → 20 − 11 = 9
 //   divider the 1px rule is the whole content box → −11 + 1 = −10
 const CONTROLS_TOP: Partial<Record<BlockType, string>> = {
@@ -116,6 +125,7 @@ const CONTROLS_TOP: Partial<Record<BlockType, string>> = {
   heading2: 'top-[5px]',
   heading3: 'top-[2px]',
   code:     'top-[16px]',
+  callout:  'top-[18px]',
   table:    'top-[9px]',
   divider:  'top-[-10px]',
 };
@@ -328,6 +338,8 @@ interface BlockRowProps {
   onSlashOpen: (blockId: string, pos: { top: number; left: number }) => void;
   /** The textarea's selection may have changed; re-evaluate the format toolbar. */
   onSelectionChange: (id: string) => void;
+  /** Non-content fields, such as a callout's emoji and tone. */
+  onUpdateMeta: (id: string, changes: Partial<Pick<NoteBlock, 'emoji' | 'tone'>>) => void;
 }
 
 /**
@@ -345,7 +357,7 @@ function BlockRow({
   block, index, ordinal, total, focusedId,
   onFocus, onChange, onToggleCheck, onKeyDown,
   onAddAfter, onDelete, onChangeType, onMoveUp, onMoveDown,
-  onUpdateTable, textareaRef, onSlashOpen, onSelectionChange,
+  onUpdateTable, textareaRef, onSlashOpen, onSelectionChange, onUpdateMeta,
 }: BlockRowProps) {
   const [hovered, setHovered] = useState(false);
   const isFocused = focusedId === block.id;
@@ -391,6 +403,8 @@ function BlockRow({
   const textClass = cn(
     getBlockTextClass(block.type),
     block.type === 'todo' && block.checked && 'text-a-faint line-through decoration-[1.5px]',
+    // Callout text on its tint: accent-700 and sage-ink both clear 4.5:1.
+    block.type === 'callout' && (block.tone === 'sage' ? 'text-a-sage-ink' : 'text-a-accent-700'),
   );
 
   // ── Divider ──────────────────────────────────────────────────────────────────
@@ -427,7 +441,48 @@ function BlockRow({
     <div {...rowProps}>
       {gutter}
 
-      <div className={cn('flex min-w-0 flex-1 items-start', getContentWrapperClass(block.type))}>
+      <div className={cn('flex min-w-0 flex-1 items-start', getContentWrapperClass(block))}>
+        {block.type === 'callout' && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button
+                type="button"
+                className="mr-3.5 flex-shrink-0 rounded-[8px] text-[19px] leading-[1.4] transition-transform duration-150 hover:scale-110"
+                aria-label="Change callout emoji and colour"
+              >
+                {block.emoji ?? '💡'}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-56">
+              <div className="grid grid-cols-6 gap-1 p-1">
+                {NOTE_EMOJIS.map((em) => (
+                  <button
+                    key={em}
+                    type="button"
+                    onClick={() => onUpdateMeta(block.id, { emoji: em })}
+                    aria-label={`Use ${em}`}
+                    className={cn(
+                      'rounded-[8px] p-1.5 text-center text-lg transition-colors duration-100 hover:bg-accent',
+                      (block.emoji ?? '💡') === em && 'bg-accent',
+                    )}
+                  >
+                    {em}
+                  </button>
+                ))}
+              </div>
+              <DropdownMenuSeparator />
+              <DropdownMenuLabel>Colour</DropdownMenuLabel>
+              <DropdownMenuRadioGroup
+                value={block.tone ?? 'accent'}
+                onValueChange={(v) => onUpdateMeta(block.id, { tone: v as CalloutTone })}
+              >
+                <DropdownMenuRadioItem value="accent">Terracotta</DropdownMenuRadioItem>
+                <DropdownMenuRadioItem value="sage">Sage</DropdownMenuRadioItem>
+              </DropdownMenuRadioGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+
         {block.type === 'bullet' && (
           <span
             aria-hidden
@@ -828,6 +883,7 @@ export function NoteEditor({
             textareaRef={registerRef}
             onSlashOpen={handleSlashOpen}
             onSelectionChange={handleSelectionChange}
+            onUpdateMeta={onUpdateBlock}
           />
         ))}
       </div>
