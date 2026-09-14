@@ -1,3 +1,5 @@
+import { stripInline } from '@/lib/inlineMarkdown';
+
 // ── Note Block Types ──────────────────────────────────────────────────────────
 
 export type BlockType =
@@ -107,10 +109,18 @@ export function formatNoteDate(ts: number): string {
   return new Date(ts).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
+/**
+ * The first line of readable text in a note, for the sidebar and for search.
+ *
+ * Inline formatting markers are stripped, so the preview reads "a bold idea"
+ * rather than "a **bold** idea", and searching for "bold idea" finds it. Code
+ * blocks are left alone: a `*` there is content, not a mark.
+ */
 export function getNotePreview(note: Note): string {
   for (const block of note.blocks) {
     if (block.type === 'divider' || block.type === 'table') continue;
-    const text = block.content.trim();
+    const plain = block.type === 'code' ? block.content : stripInline(block.content);
+    const text = plain.trim();
     if (text) return text.slice(0, 120);
   }
   return '';
