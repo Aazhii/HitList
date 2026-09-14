@@ -34,7 +34,6 @@ import { DEFAULT_REMINDER_MINUTES, isNotificationSupported } from '@/lib/notific
 import { Toaster, toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { SlateBadge } from '@/components/slate-badge';
 import { MomentumBar } from '@/components/MomentumBar';
 import { TodayHistoryPanel } from '@/components/TodayHistoryPanel';
 import { ListSidebar } from '@/components/ListSidebar';
@@ -1178,8 +1177,6 @@ function App() {
           </div>
         )}
       </main>
-
-      <SlateBadge />
 
       {/* In-app notification toasts */}
       <NotificationToast
