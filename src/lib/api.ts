@@ -4,7 +4,7 @@
  * Wraps all Spring Boot REST endpoints with full TypeScript types.
  * Mirrors the frontend Todo / KaizenList / KaizenStats interfaces.
  *
- * Base URL: http://localhost:8080/api  (override via VITE_API_BASE_URL)
+ * Base URL: same origin (override via VITE_API_BASE_URL)
  */
 
 // ── Types ────────────────────────────────────────────────────────────────────
