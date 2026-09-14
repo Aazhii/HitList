@@ -141,6 +141,10 @@ export const SCHEMA: TableSpec[] = [
         note: 'Rendered at enqueue, so a tick does no formatting work' },
       { name: 'Body', type: 'text' },
       { name: 'Payload', type: 'text', note: 'JSON for deep-linking' },
+      { name: 'ClaimToken', type: 'varchar', maxLength: 64,
+        note: 'Optimistic lock. Catalyst has no conditional UPDATE and reports no ' +
+              'affected-row count, so a claimer writes its token and re-reads to ' +
+              'confirm it won. Without this, two sweeps both deliver.' },
       { name: 'AttemptCount', type: 'int' },
       { name: 'LastError', type: 'text' },
       { name: 'SentAt', type: 'bigint' },

@@ -91,6 +91,8 @@ function fakeCatalyst() {
         const limit = Number(query.match(/LIMIT (\d+)/)?.[1] ?? Infinity);
 
         let out = rows.slice();
+        const rowId = query.match(/ROWID = (\d+)/)?.[1];
+        if (rowId) out = out.filter((r) => r.ROWID === rowId);
         const status = eq('Status');
         if (status) out = out.filter((r) => r.Status === status);
         const sourceType = eq('SourceType');
