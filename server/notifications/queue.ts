@@ -24,7 +24,7 @@
  * would be no protection at all.
  */
 import type { CatalystApp } from './types.ts';
-import { zcqlString, unwrapRows, str, num } from './zcql.ts';
+import { zcqlString, zcqlRowId, unwrapRows, str, num } from './zcql.ts';
 import { QUEUE_TABLE } from '../catalyst/schema.ts';
 
 // ── Status ────────────────────────────────────────────────────────────────────
@@ -207,6 +207,64 @@ export async function findDue(
   return unwrap(results).map(toQueueRow);
 }
 
+/**
+ * How long a row may sit in SENDING before another sweep may take it back.
+ *
+ * A claim is only ever held for the length of one delivery, so anything still
+ * SENDING after this was abandoned — the instance died mid-delivery, or the
+ * request was cut off. Generous enough that a slow-but-live delivery is never
+ * stolen from underneath itself.
+ */
+export const CLAIM_TIMEOUT_MS = 10 * 60 * 1000;
+
+/**
+ * Rows abandoned mid-delivery, returned to PENDING.
+ *
+ * Without this, a sweep that dies after claiming leaves the row SENDING
+ * forever: findDue only selects PENDING, so nothing ever looks at it again and
+ * the notification is silently lost. That is the one outcome the whole design
+ * is meant to prevent, and it is invisible — no error, no retry, no record.
+ *
+ * Found the hard way. A row-id rounding bug made every claim's verification
+ * fail, and every swept row ended up stranded in SENDING with no error
+ * recorded. The rounding is fixed; this is the backstop for every other way a
+ * delivery can be interrupted.
+ *
+ * Reclaiming risks delivering twice if the original delivery did in fact
+ * complete after the timeout. That is the right trade at ten minutes: a
+ * duplicate is an annoyance, a silently dropped reminder is the bug.
+ */
+export async function reclaimStale(
+  app: CatalystApp,
+  now: number,
+  limit: number = SWEEP_LIMIT,
+): Promise<number> {
+  const cutoff = now - CLAIM_TIMEOUT_MS;
+  const results = await app.zcql().executeZCQLQuery(
+    `SELECT ROWID, AttemptCount FROM ${QUEUE_TABLE} ` +
+    `WHERE Status = ${zcqlString(QueueStatus.SENDING)} AND UpdatedAt <= ${Math.floor(cutoff)} ` +
+    `LIMIT ${Number(limit)}`,
+  );
+
+  const rows = unwrap(results);
+  let reclaimed = 0;
+  for (const row of rows) {
+    const attempts = num(row['AttemptCount']);
+    // The attempt was already counted when the row was claimed, so a stranded
+    // row must not get an unlimited number of second chances.
+    const exhausted = attempts >= MAX_ATTEMPTS;
+    await setStatus(app, str(row['ROWID']), {
+      Status: exhausted ? QueueStatus.FAILED : QueueStatus.PENDING,
+      ClaimToken: '',
+      LastError: exhausted
+        ? 'abandoned mid-delivery, and out of attempts'
+        : 'abandoned mid-delivery; returned to the queue',
+    });
+    reclaimed++;
+  }
+  return reclaimed;
+}
+
 /** Pending entries for a source, used when cancelling. */
 export async function findPendingForSource(
   app: CatalystApp,
@@ -262,7 +320,7 @@ export async function claim(app: CatalystApp, row: QueueRow): Promise<boolean> {
   });
 
   const results = await app.zcql().executeZCQLQuery(
-    `SELECT ClaimToken FROM ${QUEUE_TABLE} WHERE ROWID = ${Number(row.rowId)}`,
+    `SELECT ClaimToken FROM ${QUEUE_TABLE} WHERE ROWID = ${zcqlRowId(row.rowId)}`,
   );
   const current = unwrap(results)[0];
   return current !== undefined && String(current['ClaimToken'] ?? '') === token;

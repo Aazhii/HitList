@@ -1835,6 +1835,7 @@ app.post('/api/internal/tick', async (req, res) => {
       due: report.due,
       delivered: report.delivered,
       failed: report.failed,
+      reclaimed: report.reclaimed,
       purged: report.purged,
       durationMs: report.durationMs,
     });

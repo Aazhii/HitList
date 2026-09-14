@@ -53,7 +53,15 @@ export function fakeCatalyst(options: FakeOptions = {}): Fake {
   };
   const sentEmails: Array<{ to: string; subject: string }> = [];
   const sentPush: Array<{ message: string; recipients: string[] }> = [];
-  let nextRowId = 1000;
+  // Catalyst row ids are BigInt and exceed Number.MAX_SAFE_INTEGER
+  // (9007199254740991). Using realistic ones is not cosmetic: small ids let
+  // code that coerces an id through Number() pass here and fail in
+  // production, which is exactly what happened.
+  //
+  // The start value ends in 9 on purpose. A round number like ...086000 is
+  // exactly representable as a double and round-trips through Number()
+  // unchanged, so it would hide the very bug these ids exist to expose.
+  let nextRowId = 69251000000086009n;
 
   const app: CatalystApp = {
     datastore: () => ({
@@ -123,8 +131,19 @@ export function fakeCatalyst(options: FakeOptions = {}): Fake {
         // Unquoted equality, which is how ROWID and the bigint columns are
         // compared. Without this the predicate is silently ignored and a query
         // meant to select one row returns every row.
+        //
+        // Compared as digit strings first, then numerically. A ROWID exceeds
+        // Number.MAX_SAFE_INTEGER, so comparing through Number() makes two
+        // adjacent rows indistinguishable — the very bug realistic ids exist
+        // here to catch.
         for (const [, col, value] of query.matchAll(/(\w+)\s*=\s*(-?\d+)(?!\d)/g)) {
-          out = out.filter((r) => Number(r[col] ?? NaN) === Number(value));
+          out = out.filter((r) => {
+            const stored = String(r[col] ?? '');
+            if (stored === value) return true;
+            const a = Number(stored);
+            const b = Number(value);
+            return Number.isSafeInteger(a) && Number.isSafeInteger(b) && a === b;
+          });
         }
         for (const [, col, op, value] of query.matchAll(/(\w+)\s*(<=|>=|<|>)\s*(-?\d+)/g)) {
           const n = Number(value);

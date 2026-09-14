@@ -1,8 +1,9 @@
 /**
  * The sweep — what a cron tick actually runs.
  *
- * Three phases:
+ * Four phases:
  *
+ *   RECLAIM return rows abandoned mid-delivery to the queue
  *   DRAIN  deliver everything in the queue whose FireAt has arrived
  *   PLAN   enqueue the next firing of every automation rule that is due
  *   PURGE  clear delivered rows and old run records past retention
@@ -28,6 +29,7 @@ import {
   markSent,
   markFailed,
   markUndeliverable,
+  reclaimStale,
   purgeOldEntries,
   SWEEP_LIMIT,
   type QueueRow,
@@ -46,6 +48,8 @@ export interface SweepReport {
   rulesDue: number;
   /** Rules that enqueued a firing. */
   rulesPlanned: number;
+  /** Rows abandoned mid-delivery and returned to the queue. */
+  reclaimed: number;
   /** Delivered rows and old runs removed past their retention windows. */
   purged: number;
   /** Milliseconds the tick took, so a slow sweep is visible in the logs. */
@@ -60,6 +64,8 @@ export interface SweepOptions {
   skipPurge?: boolean;
   /** Skip rule planning this tick. */
   skipPlan?: boolean;
+  /** Skip reclaiming abandoned rows this tick. */
+  skipReclaim?: boolean;
 }
 
 /**
@@ -79,8 +85,23 @@ export async function runSweep(
 
   const report: SweepReport = {
     due: 0, delivered: 0, failed: 0, rulesDue: 0, rulesPlanned: 0,
-    purged: 0, durationMs: 0, details: [],
+    reclaimed: 0, purged: 0, durationMs: 0, details: [],
   };
+
+  // ── RECLAIM ──
+  // Before draining, so a row freed this tick is delivered on this tick rather
+  // than waiting for the next one.
+  if (!options.skipReclaim) {
+    try {
+      report.reclaimed = await reclaimStale(app, now, limit);
+      if (report.reclaimed > 0) {
+        report.details.push(`reclaimed ${report.reclaimed} abandoned mid-delivery`);
+      }
+    } catch (e) {
+      // Never fail a tick over the backstop; the rows stay stranded one longer.
+      report.details.push(`reclaim failed: ${String(e)}`);
+    }
+  }
 
   // ── DRAIN ──
   const dueRows = await findDue(app, now, limit);
@@ -195,5 +216,5 @@ async function planDueRules(app: CatalystApp, now: number, report: SweepReport):
 export function describeSweep(report: SweepReport): string {
   return `due=${report.due} delivered=${report.delivered} failed=${report.failed} ` +
     `rulesDue=${report.rulesDue} rulesPlanned=${report.rulesPlanned} ` +
-    `purged=${report.purged} in ${report.durationMs}ms`;
+    `reclaimed=${report.reclaimed} purged=${report.purged} in ${report.durationMs}ms`;
 }

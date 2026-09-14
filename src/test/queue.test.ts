@@ -29,6 +29,8 @@ import {
   type QueueEntry,
 } from '../../server/notifications/queue.ts';
 import { fakeCatalyst, QUEUE_TABLE } from './helpers/fakeCatalyst.ts';
+import { reclaimStale, CLAIM_TIMEOUT_MS } from '../../server/notifications/queue.ts';
+import { zcqlRowId } from '../../server/notifications/zcql.ts';
 
 const TABLE = QUEUE_TABLE;
 
@@ -297,5 +299,94 @@ describe('retention', () => {
 
     expect(await purgeOldEntries(fake.app, now)).toBe(0);
     expect(fake.rows).toHaveLength(2);
+  });
+});
+
+describe('row ids are BigInt', () => {
+  it('renders a row id without rounding it', () => {
+    // Catalyst ids exceed Number.MAX_SAFE_INTEGER. Number('69251000000086009')
+    // is 69251000000086010 — a different, usually non-existent row. Passing a
+    // claim's verification through Number() made every claim fail against the
+    // live project and stranded every swept row in SENDING.
+    expect(zcqlRowId('69251000000086009')).toBe('69251000000086009');
+    // Compared as a string: the numeric literal would itself be rounded by the
+    // parser, so the two sides would agree for the wrong reason.
+    expect(String(Number('69251000000086009'))).toBe('69251000000086010');
+  });
+
+  it('refuses anything that is not a row id rather than coercing it', () => {
+    // A silent coercion is what caused the problem, so there is none here.
+    expect(() => zcqlRowId("1 OR 1=1")).toThrow();
+    expect(() => zcqlRowId('')).toThrow();
+  });
+
+  it('claims a row whose id is too large for a JS number', async () => {
+    const fake = fakeCatalyst({ onlyTable: QUEUE_TABLE });
+    await enqueue(fake.app, entry({ fireAt: Date.now() - 1000 }));
+    const [row] = await findDue(fake.app, Date.now());
+
+    // The regression: this returned false for every row against real Catalyst.
+    expect(Number(row.rowId)).toBeGreaterThan(Number.MAX_SAFE_INTEGER);
+    expect(await claim(fake.app, row)).toBe(true);
+  });
+});
+
+describe('reclaiming an abandoned claim', () => {
+  async function claimed(fake: ReturnType<typeof fakeCatalyst>) {
+    await enqueue(fake.app, entry({ fireAt: Date.now() - 1000 }));
+    const [row] = await findDue(fake.app, Date.now());
+    await claim(fake.app, row);
+    return row;
+  }
+
+  it('returns a long-stranded row to the queue', async () => {
+    // Without this a sweep that dies mid-delivery loses the notification
+    // silently: findDue only selects PENDING, so nothing looks at it again.
+    const fake = fakeCatalyst({ onlyTable: QUEUE_TABLE });
+    await claimed(fake);
+    const later = Date.now() + CLAIM_TIMEOUT_MS + 1000;
+
+    expect(await reclaimStale(fake.app, later)).toBe(1);
+    expect(fake.rows[0].Status).toBe(QueueStatus.PENDING);
+    expect(await findDue(fake.app, later)).toHaveLength(1);
+  });
+
+  it('leaves a delivery still in progress alone', async () => {
+    // A slow but live delivery must not have its row stolen underneath it.
+    const fake = fakeCatalyst({ onlyTable: QUEUE_TABLE });
+    await claimed(fake);
+
+    expect(await reclaimStale(fake.app, Date.now() + 1000)).toBe(0);
+    expect(fake.rows[0].Status).toBe(QueueStatus.SENDING);
+  });
+
+  it('records why the row came back', async () => {
+    const fake = fakeCatalyst({ onlyTable: QUEUE_TABLE });
+    await claimed(fake);
+
+    await reclaimStale(fake.app, Date.now() + CLAIM_TIMEOUT_MS + 1000);
+
+    expect(fake.rows[0].LastError).toContain('abandoned mid-delivery');
+    expect(fake.rows[0].ClaimToken).toBe('');
+  });
+
+  it('does not hand a stranded row unlimited second chances', async () => {
+    // The attempt was already counted at claim time, so a row that strands on
+    // every attempt must still run out rather than cycling forever.
+    const fake = fakeCatalyst({ onlyTable: QUEUE_TABLE });
+    await enqueue(fake.app, entry({ fireAt: Date.now() - 1000 }));
+
+    for (let i = 0; i < MAX_ATTEMPTS; i++) {
+      const [row] = await findDue(fake.app, Date.now());
+      await claim(fake.app, row);
+      await reclaimStale(fake.app, Date.now() + CLAIM_TIMEOUT_MS + 1000);
+    }
+
+    expect(fake.rows[0].Status).toBe(QueueStatus.FAILED);
+  });
+
+  it('does nothing when nothing is stranded', async () => {
+    const fake = fakeCatalyst({ onlyTable: QUEUE_TABLE });
+    expect(await reclaimStale(fake.app, Date.now())).toBe(0);
   });
 });
