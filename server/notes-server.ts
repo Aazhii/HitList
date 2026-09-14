@@ -84,6 +84,7 @@ import {
   type AutomationRule, type RuleRow,
 } from './automations/rules.ts';
 import { initialTrigger } from './automations/planner.ts';
+import { syncTaskRules, cancelTaskRules } from './automations/taskTriggers.ts';
 import { listRuns, listRunsForRule, recordRun } from './automations/runs.ts';
 import { channelsFor, renderRule } from './automations/planner.ts';
 import { enqueue, cancelPendingFor } from './notifications/queue.ts';
@@ -1647,28 +1648,27 @@ async function syncReminderFor(
   req: express.Request,
   ownerId: string,
   task: DbTask,
+  previousStatus?: string,
 ): Promise<void> {
   if (!catalystAvailable) return;  // the JSON-file fallback has no queue
 
-  const ctx: ReminderContext = {
-    ownerId,
-    email: (await getCurrentIdentity(req)).email,
-    timeZone: resolveTimeZone(req.headers['x-timezone']),
+  const catalyst = initCatalyst(req) as unknown as NotificationApp;
+  const email = (await getCurrentIdentity(req)).email;
+  const timeZone = resolveTimeZone(req.headers['x-timezone']);
+
+  const ctx: ReminderContext = { ownerId, email, timeZone };
+  const schedulable = {
+    id: task.id,
+    title: task.title,
+    status: task.status,
+    dueDate: task.dueDate,
+    dueTime: task.dueTime,
+    reminderEnabled: task.reminderEnabled,
+    reminderMinutesBefore: task.reminderMinutesBefore,
   };
 
-  const result = await syncTaskReminder(
-    initCatalyst(req) as unknown as NotificationApp,
-    ctx,
-    {
-      id: task.id,
-      title: task.title,
-      status: task.status,
-      dueDate: task.dueDate,
-      dueTime: task.dueTime,
-      reminderEnabled: task.reminderEnabled,
-      reminderMinutesBefore: task.reminderMinutesBefore,
-    },
-  );
+  // The task's own reminder, set on the task itself.
+  const result = await syncTaskReminder(catalyst, ctx, schedulable);
 
   // Only the interesting outcomes reach the log. "nothing to schedule" is the
   // common case and would drown everything else.
@@ -1676,18 +1676,36 @@ async function syncReminderFor(
   else if (result.enqueued || result.cancelled > 0) {
     console.log(`[kaizen] reminder ${task.id}: ${result.detail}`);
   }
+
+  // The owner's automation rules that hang off a task rather than a clock:
+  // due-date, overdue, and status-change. These cannot be found by
+  // NextTriggerAt, so the write path is the only place they can be evaluated.
+  const rules = await syncTaskRules(
+    catalyst, { ownerId, timeZone, email, previousStatus }, schedulable,
+  );
+  if (rules.error) console.warn(`[kaizen] task rules ${task.id}: ${rules.error}`);
+  else if (rules.enqueued > 0 || rules.cancelled > 0) {
+    console.log(
+      `[kaizen] task rules ${task.id}: queued ${rules.enqueued}, withdrew ${rules.cancelled}`,
+    );
+    for (const line of rules.details) console.log(`[kaizen]   ${line}`);
+  }
 }
 
-/** Withdraws a deleted task's queued reminders. */
-async function cancelRemindersFor(req: express.Request, taskId: string): Promise<void> {
+/** Withdraws everything a deleted task had queued — its reminder and its rules. */
+async function cancelRemindersFor(
+  req: express.Request, ownerId: string, taskId: string,
+): Promise<void> {
   if (!catalystAvailable) return;
 
-  const result = await cancelTaskReminders(
-    initCatalyst(req) as unknown as NotificationApp,
-    taskId,
-  );
+  const catalyst = initCatalyst(req) as unknown as NotificationApp;
+
+  const result = await cancelTaskReminders(catalyst, taskId);
   if (result.error) console.warn(`[kaizen] reminder ${taskId}: ${result.detail}`);
   else if (result.cancelled > 0) console.log(`[kaizen] reminder ${taskId}: ${result.detail}`);
+
+  const rules = await cancelTaskRules(catalyst, ownerId, taskId);
+  if (rules > 0) console.log(`[kaizen] task rules ${taskId}: withdrew ${rules}`);
 }
 
 /**
@@ -2102,7 +2120,7 @@ app.put('/api/tasks/:id', async (req, res) => {
 
       const updated: DbTask = { ...existing, ...body, id: req.params.id, ownerId, updatedAt: now };
       await catalystUpdateRow(req, getTasksTable(), rowId, taskToRow(updated));
-      await syncReminderFor(req, ownerId, updated);
+      await syncReminderFor(req, ownerId, updated, existing.status);
       res.json(dbTaskToApi(updated));
     } else {
       const db = readTasksDb();
@@ -2139,7 +2157,7 @@ app.patch('/api/tasks/:id/status', async (req, res) => {
       if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
       const updated: DbTask = { ...existing, status, updatedAt: now };
       await catalystUpdateRow(req, getTasksTable(), rowId, taskToRow(updated));
-      await syncReminderFor(req, ownerId, updated);
+      await syncReminderFor(req, ownerId, updated, existing.status);
       res.json(dbTaskToApi(updated));
     } else {
       const db = readTasksDb();
@@ -2173,7 +2191,7 @@ app.patch('/api/tasks/:id/complete', async (req, res) => {
       await catalystUpdateRow(req, getTasksTable(), rowId, taskToRow(updated));
       // Completion withdraws the reminder; syncTaskReminder reaches that via
       // status === 'DONE', so there is one code path deciding what is due.
-      await syncReminderFor(req, ownerId, updated);
+      await syncReminderFor(req, ownerId, updated, existing.status);
       res.json(dbTaskToApi(updated));
     } else {
       const db = readTasksDb();
@@ -2238,7 +2256,7 @@ app.delete('/api/tasks/:id', async (req, res) => {
       const rowId = await catalystGetRowId(req, getTasksTable(), 'TaskId', req.params.id);
       if (!rowId) { res.status(404).json({ error: 'Not found' }); return; }
       await catalystDeleteRow(req, getTasksTable(), rowId);
-      await cancelRemindersFor(req, req.params.id);
+      await cancelRemindersFor(req, ownerId, req.params.id);
       res.sendStatus(204);
     } else {
       const db = readTasksDb();

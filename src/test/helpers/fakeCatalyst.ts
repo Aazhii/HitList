@@ -101,9 +101,23 @@ export function fakeCatalyst(options: FakeOptions = {}): Fake {
         tables[table] ??= [];
         let out = tables[table].slice();
 
+        // IN lists, before plain equality: the quoted values inside an IN
+        // would otherwise be invisible, and the clause silently ignored.
+        const inClauses = new Set<string>();
+        for (const [whole, col, list] of query.matchAll(/(\w+)\s+IN\s*\(([^)]*)\)/gi)) {
+          inClauses.add(whole);
+          const allowed = new Set(
+            [...list.matchAll(/'([^']*)'/g)].map((m) => m[1]),
+          );
+          out = out.filter((r) => allowed.has(r[col] ?? ''));
+        }
+        // Equality must not re-read the values inside an IN list as its own.
+        let rest = query;
+        for (const clause of inClauses) rest = rest.replace(clause, '');
+
         // Generic predicates, applied to whatever columns the query names, so
         // a new query does not need a new clause here.
-        for (const [, col, value] of query.matchAll(/(\w+)\s*=\s*'([^']*)'/g)) {
+        for (const [, col, value] of rest.matchAll(/(\w+)\s*=\s*'([^']*)'/g)) {
           out = out.filter((r) => (r[col] ?? '') === value);
         }
         // Unquoted equality, which is how ROWID and the bigint columns are
