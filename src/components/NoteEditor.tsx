@@ -1,5 +1,5 @@
 import {
-  useRef, useEffect, useCallback, useState,
+  useRef, useEffect, useCallback, useState, useMemo,
   KeyboardEvent,
 } from 'react';
 import {
@@ -21,6 +21,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { SlashMenu, filterSlashCommands } from '@/components/notes/SlashMenu';
 import { TableBlock } from '@/components/notes/TableBlock';
+import { computeNumberedOrdinals } from '@/lib/noteBlocks';
 
 // ── Block type icon map ────────────────────────────────────────────────────────
 const BLOCK_ICONS: Record<BlockType, React.ReactNode> = {
@@ -261,6 +262,8 @@ function SlashHint({ visible }: { visible: boolean }) {
 interface BlockRowProps {
   block: NoteBlock;
   index: number;
+  /** For numbered blocks: its position within its own list run. */
+  ordinal?: number;
   total: number;
   focusedId: string | null;
   onFocus: (id: string) => void;
@@ -278,7 +281,7 @@ interface BlockRowProps {
 }
 
 function BlockRow({
-  block, index, total, focusedId,
+  block, index, ordinal, total, focusedId,
   onFocus, onChange, onToggleCheck, onKeyDown,
   onAddAfter, onDelete, onChangeType, onMoveUp, onMoveDown,
   onUpdateTable, textareaRef, onSlashOpen,
@@ -409,7 +412,7 @@ function BlockRow({
         {/* Numbered marker */}
         {block.type === 'numbered' && (
           <span className="mt-[3px] text-xs font-medium tabular-nums text-muted-foreground flex-shrink-0 w-5 text-right leading-relaxed">
-            {index + 1}.
+            {ordinal ?? 1}.
           </span>
         )}
         {/* Todo checkbox */}
@@ -506,6 +509,10 @@ export function NoteEditor({
 
   const textareaRefs = useRef<Map<string, HTMLTextAreaElement>>(new Map());
   const pendingFocusId = useRef<string | null>(null);
+
+  // Numbered lists count within their own run. Computed once here rather than
+  // per row, because a row alone cannot see where its list started.
+  const numberedOrdinals = useMemo(() => computeNumberedOrdinals(blocks), [blocks]);
 
   const registerRef = useCallback((el: HTMLTextAreaElement | null, id: string) => {
     if (el) textareaRefs.current.set(id, el);
@@ -692,6 +699,7 @@ export function NoteEditor({
             key={block.id}
             block={block}
             index={index}
+            ordinal={numberedOrdinals.get(block.id)}
             total={blocks.length}
             focusedId={focusedId}
             onFocus={setFocusedId}
