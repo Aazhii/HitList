@@ -20,19 +20,16 @@ POST {apiHost}/baas/v1/project/{projectId}/cron
 
 ```json
 {
-  "cron_name": "hitlist_reminder_tick",
+  "cron_name": "hitlist_notification_sweep",
   "description": "Drains the notification queue",
-  "cron_type": "Periodic",
+  "cron_type": "CronExpression",
+  "cron_expression": "*/5 * * * *",
   "cron_status": true,
-  "cron_detail": {
-    "hour": 0, "minute": 5, "second": 0,
-    "timezone": "Asia/Kolkata",
-    "repetition_type": "every"
-  },
+  "cron_detail": { "timezone": "Asia/Kolkata" },
   "job_meta": {
-    "job_name": "hitlist_reminder_tick_job",
+    "job_name": "notification_sweep",
     "target_type": "AppSail",
-    "target_name": "hitlist-api",
+    "target_id": "69251000000070009",
     "url": "/api/internal/tick",
     "request_method": "POST",
     "headers": { "x-tick-secret": "…" }
@@ -40,20 +37,31 @@ POST {apiHost}/baas/v1/project/{projectId}/cron
 }
 ```
 
-Verified end to end: created (`200`, id returned, `target_type: AppSail`) and deleted (`200`).
+`url` is **relative**; Catalyst resolves it against the service. `target_id` (the service id
+from `GET /appsail`) and `target_name` both work.
 
-### Two validation rules that are not in any doc
+Verified end to end: created (`200`, the stored record echoes `target_type: AppSail` and the
+expression verbatim) and deleted (`200`). The project had **no jobpools at all** at the time,
+which is what proves none is required.
 
-`[VERIFIED]` Both are rejected with `400 INVALID_INPUT` and a message that does name the
+### Three validation rules that are not in any doc
+
+`[VERIFIED]` All three are rejected with `400 INVALID_INPUT` and a message that does name the
 problem, so they cost minutes rather than hours — but only if you read it:
 
 | Rule | Error |
 |---|---|
 | `cron_name` and `job_name` accept **only alphanumerics and underscores** — no hyphens | `cron_name must contain only alphanumeric and underscore` |
 | `request_method` is **required** on an AppSail or Webhook target | `The Request Method value cannot be empty` |
+| A `Periodic` cron cannot run more often than **once an hour** | `Invalid input value for Periodic Schedule.Minimum Schedule time must be 60 minutes` |
 
 The hyphen rule bites because service names *may* contain hyphens — `target_name` is
 `hitlist-api` while `cron_name` cannot be.
+
+**The 60-minute floor is the one that changes designs.** `Periodic` looks like the obvious type
+for "every five minutes" and is not usable for it. `CronExpression` has no such floor:
+`*/5 * * * *` is accepted and stored verbatim. If you want a sub-hourly schedule, that is the
+only cron type that will give you one.
 
 ### Cron types
 
@@ -61,10 +69,10 @@ The hyphen rule bites because service names *may* contain hyphens — `target_na
 
 | Type | `cron_detail` | Use |
 |---|---|---|
-| `Periodic` | `{ hour, minute, second, repetition_type: 'every', timezone? }` | Every N minutes — a sweep |
+| `Periodic` | `{ hour, minute, second, repetition_type: 'every', timezone? }` | Every N **hours** — see the 60-minute floor above `[VERIFIED]` |
 | `OneTime` | `{ time_of_execution }` (epoch **ms**, as a string) `, timezone?` | A single event at an exact moment |
 | `Calender` | daily / monthly / yearly variants | Fixed calendar times |
-| `CronExpression` | `{ timezone? }` plus a top-level `cron_expression` | UNIX expression |
+| `CronExpression` | `{ timezone? }` plus a top-level `cron_expression` | UNIX expression — **the only way to run sub-hourly** `[VERIFIED]` |
 
 `OneTime` with millisecond precision is genuinely useful for "remind me at 15:45" — but note
 that it creates a cloud object per reminder, which then has to be kept in step with every edit
