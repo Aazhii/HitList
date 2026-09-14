@@ -78,6 +78,14 @@ import { fileURLToPath } from 'node:url';
 import { baasProxy } from './catalyst/baasProxy.ts';
 import { runSweep, describeSweep } from './notifications/sweep.ts';
 import { listInbox, markRead, markAllRead, removeEntry } from './notifications/inbox.ts';
+import { cancelPendingFor } from './notifications/queue.ts';
+import {
+  listRules, getRule, insertRule, updateRule, deleteRule,
+  TRIGGER_TYPES, RULE_STATUSES, URGENCIES, OFFSET_UNITS,
+  type AutomationRule, type RuleRow,
+} from './automations/rules.ts';
+import { initialTrigger } from './automations/planner.ts';
+import { listRuns, listRunsForRule } from './automations/runs.ts';
 import {
   syncTaskReminder,
   cancelTaskReminders,
@@ -924,6 +932,27 @@ function optEnum<T extends string>(
   return upper;
 }
 
+/**
+ * Optional member of a fixed set, preserving case.
+ *
+ * optEnum upper-cases, which suits the task columns (TODO, HIGH). The
+ * automation vocabulary is lower-case and hyphenated — 'due-date', 'active',
+ * 'critical' — and upper-casing it would make every value fail its own
+ * allow-list.
+ */
+function optLowerEnum<T extends string>(
+  errs: FieldErrors, field: string, value: unknown, allowed: readonly T[], fallback: T
+): T {
+  if (value === undefined || value === null || value === '') return fallback;
+  if (typeof value !== 'string') { errs.add(field, 'must be a string'); return fallback; }
+  const lower = value.trim().toLowerCase() as T;
+  if (!allowed.includes(lower)) {
+    errs.add(field, `must be one of ${allowed.join(', ')}`);
+    return fallback;
+  }
+  return lower;
+}
+
 /** Optional finite number. Rejects NaN, Infinity and numeric strings that are not. */
 function optNumber(
   errs: FieldErrors, field: string, value: unknown, fallback: number, min = Number.NEGATIVE_INFINITY
@@ -1215,6 +1244,238 @@ app.get('/api/health', (req, res) => {
     catalystMode: describeMode(req, standaloneConfig),
     lastCatalystMode,
   });
+});
+
+// ── Automation rules ─────────────────────────────────────────────────────────
+//
+// Until now these lived only in the browser's localStorage, and nothing
+// anywhere read one and decided to fire it. A user could configure a rule, see
+// it listed as active with a next-run time, and nothing would ever happen.
+// Moving them here is what makes them executable — the sweep's PLAN phase
+// queries this table; see server/automations/planner.ts.
+
+const RECURRENCE_FREQS = ['daily', 'weekdays', 'weekly', 'monthly'] as const;
+
+/** The API shape, which mirrors src/types/automation.ts. */
+function ruleToApi(rule: AutomationRule) {
+  return {
+    id: rule.id,
+    name: rule.name,
+    description: rule.description || undefined,
+    taskId: rule.taskId || undefined,
+    triggerType: rule.triggerType,
+    status: rule.status,
+    urgency: rule.urgency,
+    reminderOffset: rule.offsetValue > 0
+      ? { value: rule.offsetValue, unit: rule.offsetUnit }
+      : undefined,
+    recurrence: {
+      frequency: rule.recurrenceFreq,
+      time: rule.recurrenceTime,
+      dayOfWeek: rule.recurrenceDayOfWeek,
+      dayOfMonth: rule.recurrenceDayOfMonth,
+    },
+    notifyInApp: rule.notifyInApp,
+    notifyBrowser: rule.notifyBrowser,
+    notifyEmail: rule.notifyEmail,
+    createdAt: rule.createdAt,
+    updatedAt: rule.updatedAt,
+    lastTriggeredAt: rule.lastTriggeredAt || undefined,
+    nextTriggerAt: rule.nextTriggerAt || undefined,
+  };
+}
+
+/** Validates a rule body. Returns undefined when anything is wrong. */
+function parseRuleBody(
+  body: Record<string, unknown>, errs: FieldErrors,
+): Omit<AutomationRule, 'id' | 'ownerId' | 'createdAt' | 'updatedAt' |
+                        'lastTriggeredAt' | 'nextTriggerAt' |
+                        'ownerTimezone' | 'ownerEmail'> | undefined {
+  const name = reqString(errs, 'name', body['name'], 255);
+
+  const offset = (body['reminderOffset'] ?? {}) as Record<string, unknown>;
+  const recurrence = (body['recurrence'] ?? {}) as Record<string, unknown>;
+
+  const parsed = {
+    name: name ?? '',
+    description: optString(errs, 'description', body['description'], 2000),
+    taskId: optString(errs, 'taskId', body['taskId'], 64),
+    triggerType: optLowerEnum(errs, 'triggerType', body['triggerType'], TRIGGER_TYPES, 'due-date'),
+    status: optLowerEnum(errs, 'status', body['status'], RULE_STATUSES, 'draft'),
+    urgency: optLowerEnum(errs, 'urgency', body['urgency'], URGENCIES, 'medium'),
+    offsetValue: optNumber(errs, 'reminderOffset.value', offset['value'], 0, 0),
+    offsetUnit: optLowerEnum(errs, 'reminderOffset.unit', offset['unit'], OFFSET_UNITS, 'minutes'),
+    recurrenceFreq: optLowerEnum(
+      errs, 'recurrence.frequency', recurrence['frequency'], RECURRENCE_FREQS, 'daily',
+    ),
+    recurrenceTime: optTime(errs, 'recurrence.time', recurrence['time']),
+    recurrenceDayOfWeek: optNumber(errs, 'recurrence.dayOfWeek', recurrence['dayOfWeek'], 0, 0),
+    recurrenceDayOfMonth: optNumber(errs, 'recurrence.dayOfMonth', recurrence['dayOfMonth'], 1, 1),
+    notifyInApp: optBoolean(errs, 'notifyInApp', body['notifyInApp'], true),
+    notifyBrowser: optBoolean(errs, 'notifyBrowser', body['notifyBrowser'], false),
+    notifyEmail: optBoolean(errs, 'notifyEmail', body['notifyEmail'], false),
+  };
+
+  // A schedule-driven rule with no time cannot be planned, and would sit
+  // inert with nothing saying why. Reject it at the door instead.
+  const scheduled = parsed.triggerType === 'recurring' || parsed.triggerType === 'daily-digest';
+  if (scheduled && !parsed.recurrenceTime) {
+    errs.add('recurrence.time', 'is required for a recurring or digest rule');
+  }
+
+  return errs.ok && name !== undefined ? parsed : undefined;
+}
+
+/** The owner context a rule carries so the cron can fire it without a session. */
+async function ruleOwnerContext(
+  req: express.Request, ownerId: string,
+): Promise<{ ownerTimezone: string; ownerEmail: string }> {
+  return {
+    ownerTimezone: resolveTimeZone(req.headers['x-timezone']),
+    ownerEmail: (await getCurrentIdentity(req)).email,
+  };
+}
+
+app.get('/api/automation-rules', async (req, res) => {
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  if (!catalystAvailable) { res.json([]); return; }
+
+  try {
+    const rules = await listRules(initCatalyst(req) as unknown as NotificationApp, ownerId);
+    res.json(rules.map(ruleToApi));
+  } catch (e) {
+    sendError(res, '[GET /api/automation-rules]', e);
+  }
+});
+
+app.post('/api/automation-rules', async (req, res) => {
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+
+  const errs = new FieldErrors();
+  const fields = parseRuleBody((req.body ?? {}) as Record<string, unknown>, errs);
+  if (!fields) { errs.send(res); return; }
+
+  const now = Date.now();
+  const owner = await ruleOwnerContext(req, ownerId);
+
+  const rule: AutomationRule = {
+    id: randomUUID(),
+    ownerId,
+    ...fields,
+    ...owner,
+    lastTriggeredAt: 0,
+    nextTriggerAt: 0,
+    createdAt: now,
+    updatedAt: now,
+  };
+  // Compute when it first fires, so an active rule is due without waiting for
+  // an edit. Non-schedule triggers get 0 and stay out of the planning query.
+  rule.nextTriggerAt = initialTrigger({ ...rule, rowId: '' }, owner.ownerTimezone, now);
+
+  try {
+    await insertRule(initCatalyst(req) as unknown as NotificationApp, rule);
+    res.status(201).json(ruleToApi(rule));
+  } catch (e) {
+    sendError(res, '[POST /api/automation-rules]', e);
+  }
+});
+
+app.put('/api/automation-rules/:id', async (req, res) => {
+  if (!assertSafeId(req.params.id, res)) return;
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+
+  const errs = new FieldErrors();
+  const fields = parseRuleBody((req.body ?? {}) as Record<string, unknown>, errs);
+  if (!fields) { errs.send(res); return; }
+
+  try {
+    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const existing = await getRule(catalyst, ownerId, req.params.id);
+    if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
+
+    const now = Date.now();
+    const owner = await ruleOwnerContext(req, ownerId);
+    const updated: RuleRow = {
+      ...existing, ...fields, ...owner,
+      id: req.params.id, ownerId, updatedAt: now,
+    };
+
+    // Re-plan on every edit. The schedule may have moved, the rule may have
+    // been paused, or its trigger type changed — all of which change whether
+    // and when it is next due, and none of which the tick could infer.
+    updated.nextTriggerAt = initialTrigger(updated, owner.ownerTimezone, now);
+
+    await updateRule(catalyst, existing.rowId, updated);
+    res.json(ruleToApi(updated));
+  } catch (e) {
+    sendError(res, '[PUT /api/automation-rules/:id]', e);
+  }
+});
+
+app.delete('/api/automation-rules/:id', async (req, res) => {
+  if (!assertSafeId(req.params.id, res)) return;
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  if (!catalystAvailable) { res.sendStatus(204); return; }
+
+  try {
+    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const existing = await getRule(catalyst, ownerId, req.params.id);
+    if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
+
+    await deleteRule(catalyst, existing.rowId);
+    // Withdraw anything the rule had already queued but not yet delivered —
+    // deleting a rule should not leave one last notification in flight.
+    await cancelPendingFor(catalyst, 'RULE', req.params.id);
+    res.sendStatus(204);
+  } catch (e) {
+    sendError(res, '[DELETE /api/automation-rules/:id]', e);
+  }
+});
+
+// ── Automation runs ──────────────────────────────────────────────────────────
+//
+// The audit trail. `useAutomationRuns` has been polling
+// /api/automation-runs/recent every 30 seconds against a server with no such
+// route; this is the endpoint it was written for.
+
+app.get('/api/automation-runs/recent', async (req, res) => {
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  if (!catalystAvailable) { res.json([]); return; }
+
+  const limit = Number(req.query['limit'] ?? 20);
+  try {
+    const runs = await listRuns(
+      initCatalyst(req) as unknown as NotificationApp,
+      ownerId,
+      Number.isFinite(limit) ? limit : 20,
+    );
+    res.json(runs);
+  } catch (e) {
+    sendError(res, '[GET /api/automation-runs/recent]', e);
+  }
+});
+
+app.get('/api/automation-runs/rule/:id', async (req, res) => {
+  if (!assertSafeId(req.params.id, res)) return;
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  if (!catalystAvailable) { res.json([]); return; }
+
+  try {
+    const runs = await listRunsForRule(
+      initCatalyst(req) as unknown as NotificationApp, ownerId, req.params.id,
+    );
+    res.json(runs);
+  } catch (e) {
+    sendError(res, '[GET /api/automation-runs/rule/:id]', e);
+  }
 });
 
 // ── In-app inbox ──────────────────────────────────────────────────────────────
