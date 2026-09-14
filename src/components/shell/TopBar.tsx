@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Menu } from 'lucide-react';
+import { Menu, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useViewLayout } from '@/components/shell/ViewLayout';
 
@@ -19,7 +19,7 @@ interface TopBarProps {
  * Below `md` it also carries the button that opens the context column's sheet.
  */
 export function TopBar({ dotClass, title, subtitle, actions }: TopBarProps) {
-  const { openContext } = useViewLayout();
+  const { openContext, toggleCollapsed, collapsible, collapsed } = useViewLayout();
 
   return (
     <header className="flex h-14 flex-shrink-0 items-center gap-3 border-b border-a-line px-3 md:px-[26px]">
@@ -31,6 +31,23 @@ export function TopBar({ dotClass, title, subtitle, actions }: TopBarProps) {
       >
         <Menu className="size-[18px]" strokeWidth={2.75} />
       </button>
+
+      {/* Desktop only, and only for views that allow it — Notes, which used to
+          let its list be hidden for a wider editor. */}
+      {collapsible && (
+        <button
+          type="button"
+          onClick={toggleCollapsed}
+          aria-expanded={!collapsed}
+          aria-label={collapsed ? 'Show sidebar' : 'Hide sidebar'}
+          title={collapsed ? 'Show sidebar' : 'Hide sidebar'}
+          className="-ml-2 hidden size-9 flex-shrink-0 items-center justify-center rounded-full text-a-muted transition-colors duration-150 hover:bg-a-row-hover hover:text-a-ink md:flex"
+        >
+          {collapsed
+            ? <PanelLeftOpen className="size-[18px]" strokeWidth={2.5} />
+            : <PanelLeftClose className="size-[18px]" strokeWidth={2.5} />}
+        </button>
+      )}
 
       {dotClass && <span className={cn('size-[9px] flex-shrink-0 rounded-full', dotClass)} aria-hidden />}
 

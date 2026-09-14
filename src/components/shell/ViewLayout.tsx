@@ -7,11 +7,19 @@ interface ViewLayoutContextValue {
   openContext: () => void;
   /** Closes it — for example after choosing a list. No-op on desktop. */
   closeContext: () => void;
+  /** On desktop, hides or shows a collapsible column. */
+  toggleCollapsed: () => void;
+  /** This view lets the column be hidden on desktop. */
+  collapsible: boolean;
+  collapsed: boolean;
 }
 
 const ViewLayoutContext = createContext<ViewLayoutContextValue>({
   openContext: () => {},
   closeContext: () => {},
+  toggleCollapsed: () => {},
+  collapsible: false,
+  collapsed: false,
 });
 
 export function useViewLayout() {
@@ -51,6 +59,8 @@ interface ViewLayoutProps {
   topBar: ReactNode;
   /** When false, `children` manage their own scrolling. */
   scrollMain?: boolean;
+  /** Lets the column be hidden on desktop from the top bar, for a wider main area. */
+  collapsible?: boolean;
   children: ReactNode;
 }
 
@@ -71,10 +81,12 @@ export function ViewLayout({
   contextFoot,
   topBar,
   scrollMain = true,
+  collapsible = false,
   children,
 }: ViewLayoutProps) {
   const isDesktop = useIsDesktop();
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
   // Leaving the mobile layout must not strand an open sheet.
   useEffect(() => {
@@ -84,7 +96,10 @@ export function ViewLayout({
   const value = useMemo<ViewLayoutContextValue>(() => ({
     openContext: () => setSheetOpen(true),
     closeContext: () => setSheetOpen(false),
-  }), []);
+    toggleCollapsed: () => setCollapsed((c) => !c),
+    collapsible,
+    collapsed: collapsible && collapsed,
+  }), [collapsible, collapsed]);
 
   const column = (
     <div className="flex h-full min-h-0 flex-col">
@@ -98,7 +113,7 @@ export function ViewLayout({
   return (
     <ViewLayoutContext.Provider value={value}>
       <div className="flex min-h-0 min-w-0 flex-1">
-        {isDesktop && (
+        {isDesktop && !(collapsible && collapsed) && (
           <aside
             aria-label={contextLabel}
             className="w-[248px] flex-shrink-0 border-r border-a-line bg-a-surface"
