@@ -1,0 +1,292 @@
+/* ═════════════════════════════════════════════════════════════════════════════
+ * ORGANIC THEME — appended to Catalyst's embedded_signin.css
+ *
+ * Everything above this line is Catalyst's own sheet, unmodified, as their docs
+ * require ("begin styling your login element after the last line of code… do
+ * not alter the code that is already present"). That sheet is not decoration:
+ * it carries the rules that hide the steps which are not currently active —
+ *
+ *   #otp_container, #enableotpoption, #mfa_ga_container, #mfa_otp_container,
+ *   #mfa_totp_container, #recoverybtn, #recovery_container, #enableforgot,
+ *   #enablesaml, .trustbrowser_ui, #backup_ver_container, #backup_container,
+ *   #enablemore, .password_expiry_container, .terminate_session_container
+ *   { display: none }
+ *   #captcha_container { display: none }   .fielderror { display: none }
+ *   .backbtn { display: none }   #recoverOption, #verify_totp_container,
+ *   #verify_qr_container { display: none }
+ *
+ * — which is why a theme-only sheet renders every step at once. Catalyst's JS
+ * toggles these on, so the base rules must stay. Nothing below re-declares a
+ * display value on any of those containers.
+ *
+ * The iframe is its own document: it inherits no fonts and no CSS variables
+ * from the page, so everything it needs is declared here.
+ * ════════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --o-bg: #f5ead8;          /* card ground — the iframe must disappear into it */
+  --o-surface: #ebddc5;     /* field fill */
+  --o-text: #201e1d;
+  --o-muted: #4a453f;
+  --o-divider: rgba(32, 30, 29, 0.16);
+  --o-accent: #3f6b8a;
+  --o-accent-600: #335873;
+  --o-accent-700: #26435a;
+  --o-danger: #7d2415;
+  --o-danger-bg: #f7e0d6;
+  --o-font-body: 'Figtree', ui-sans-serif, system-ui, sans-serif;
+  --o-font-display: 'Caprasimo', ui-serif, Georgia, serif;
+}
+
+/* ── Shell ────────────────────────────────────────────────────────────────────
+   Catalyst's shell is a 520px fixed card with its own shadow, a 7% top margin
+   and a Zoho background image. Inside our card that has to become a plain
+   transparent block. Layout only — no visibility touched. */
+html, body {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--o-text);
+  font-family: var(--o-font-body);
+  -webkit-font-smoothing: antialiased;
+}
+.bg_one { display: none; }                 /* Zoho's page backdrop */
+.portal_logo { display: none; }            /* the card already carries the mark */
+
+.signin_container,
+.mod_container,
+.trustdevicebox {
+  width: 100%;
+  max-width: none;
+  min-height: 0;
+  margin: 0;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+  overflow: visible;
+}
+.signin_box {
+  width: 100%;
+  min-height: 0;
+  padding: 0;
+  float: none;
+  display: block;
+  background: transparent;
+  border-right: none;
+  overflow: visible;
+}
+.rightside_box { display: none; }          /* second column; we render one card */
+.line { background: var(--o-divider); height: 1px; }
+
+/* ── Headings ─────────────────────────────────────────────────────────────────
+   .signin_head is NOT only the "Sign in" title — Catalyst reuses it for the
+   OTP, recovery and password-expiry steps, so hiding it strands those screens
+   without a title. Demote it to a quiet step label instead. */
+.signin_head,
+#headtitle {
+  font-family: var(--o-font-body);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--o-muted);
+  margin: 0 0 14px;
+  padding-top: 0;
+}
+.text16, .signup_text { font-size: 14px; color: var(--o-muted); }
+.titlename, .service_name { display: none !important; }  /* base sheet already hides these */
+
+/* ── Fields ───────────────────────────────────────────────────────────────────
+   Catalyst indents text with text-indent and overrides #login_id with
+   !important, so horizontal space must come from padding, not text-indent. */
+.textbox_div { margin-bottom: 18px; }
+.textbox_label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--o-muted);
+  padding-bottom: 8px;
+}
+.textbox,
+#login_id,
+#password,
+#cpassword,
+#verify_totp,
+.text_box,
+.cntrysearch {
+  height: 48px;
+  box-sizing: border-box;
+  padding: 12px 18px;
+  text-indent: 0;
+  font-family: var(--o-font-body);
+  font-size: 15px;
+  color: var(--o-text);
+  caret-color: var(--o-accent);
+  background: var(--o-surface);
+  border: 1px solid var(--o-divider);
+  border-radius: 999px;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+.textbox:valid { border: 1px solid var(--o-divider); }   /* base sheet sets a 2px grey ring */
+.textbox:hover { border-color: rgba(32, 30, 29, 0.45); }
+.textbox:focus,
+#login_id:focus,
+#password:focus,
+#cpassword:focus {
+  border: 1px solid var(--o-accent);
+  box-shadow: 0 0 0 3px rgba(63, 107, 138, 0.26);
+}
+::placeholder { color: rgba(32, 30, 29, 0.5); opacity: 1; }
+
+/* The eye icon is positioned against the base sheet's 44px field; our field is
+   48px with 18px of side padding, so it needs re-seating. */
+.show_hide_password {
+  font-size: 22px;
+  color: var(--o-muted);
+  top: -35px;
+  right: 18px;
+  height: 22px;
+}
+
+/* ── Errors ───────────────────────────────────────────────────────────────────
+   .fielderror stays display:none — Catalyst's JS reveals it. Colour only. */
+.errorlabel, .field_error, .pass_policy_error { color: var(--o-danger); }
+.fielderror { font-size: 13px; margin-top: 8px; }
+.fielderror a { color: var(--o-accent-700); }
+.errorborder:focus,
+.textbox.errorborder,
+#login_id.errorborder,
+#password.errorborder {
+  border: 1px solid var(--o-danger);
+  border-bottom: 1px solid var(--o-danger);   /* base sheet sets only a bottom rule */
+  box-shadow: 0 0 0 3px rgba(125, 36, 21, 0.18);
+}
+.pass_policy { color: var(--o-muted); font-size: 13px; }
+
+/* ── Buttons ──────────────────────────────────────────────────────────────── */
+.btn {
+  height: 52px;
+  border-radius: 999px;
+  font-family: var(--o-font-display);
+  font-size: 17px;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;          /* base sheet uppercases */
+  margin-bottom: 18px;
+  transition: background-color 120ms ease;
+}
+.blue {
+  background-color: var(--o-accent);
+  color: var(--o-bg);
+  box-shadow: none;
+}
+.blue:hover { background-color: var(--o-accent-600); box-shadow: none; }
+.blue:active { background-color: var(--o-accent-700); }
+.btn:focus-visible { outline: 2px solid var(--o-accent); outline-offset: 2px; }
+.grey { background-color: transparent; color: var(--o-text); border: 1px solid var(--o-divider); }
+.grey:hover { background-color: rgba(32, 30, 29, 0.07); }
+.green { background-color: #56633f; color: var(--o-bg); box-shadow: none; }
+.signupbtn { width: 100%; }
+
+/* Loading spinner rings are drawn in white against the button fill — they read
+   correctly on the accent, so only the track tint is adjusted. */
+.loadwithbtn { border-color: var(--o-bg); border-left-color: transparent; }
+.loadwithbtn:before { border-color: rgba(245, 234, 216, 0.3); }
+.notnowbtn .loadwithbtn { border: 3px solid var(--o-text); border-left: 3px solid transparent; }
+
+/* ── Links and literals ───────────────────────────────────────────────────────
+   "Forgot Password", "Change", "Sign up", recovery options. */
+.bluetext,
+.bluetext_action,
+.bluetext_action a,
+#forgotpassword > a,
+.fielderror a,
+.changeuser {
+  color: var(--o-accent-700);
+  font-family: var(--o-font-body);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.bluetext:hover,
+.bluetext_action:hover,
+#forgotpassword > a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.textbox_actions, .textbox_actions_saml, .textbox_actions_more { margin-top: 16px; }
+
+.hellouser { margin-bottom: 20px; }
+.username, .menutext {
+  font-family: var(--o-font-body);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--o-text);
+}
+.Notyou { font-size: 14px; color: var(--o-muted); }
+.user_info { border-color: var(--o-divider); border-radius: 16px; }
+.nonclickelem { color: var(--o-muted); }
+
+/* ── Social logins ────────────────────────────────────────────────────────── */
+.fed_div { border-radius: 999px; overflow: hidden; }
+.zoho_fed_box { background-color: var(--o-surface); }
+
+/* ── OTP / CAPTCHA ────────────────────────────────────────────────────────────
+   #captcha_container keeps the base sheet's display:none. */
+#captcha, #bcaptcha { background: var(--o-surface); }
+#captcha_img, #bcaptcha_img { background-color: transparent; }
+.reloadcaptcha { filter: saturate(0) brightness(0.5); }
+
+/* ── Checkboxes ("trust this browser", "remember me") ─────────────────────── */
+.checkbox { border-color: var(--o-divider); background-color: var(--o-bg); border-radius: 5px; }
+.checkbox_check:checked ~ .checkbox,
+#terminate_session_form .checkbox_check:checked ~ .checkbox {
+  background-color: var(--o-accent);
+  border-color: var(--o-accent);
+}
+.checkbox_label { font-size: 14px; color: var(--o-muted); }
+
+/* ── Toasts ───────────────────────────────────────────────────────────────── */
+.Alert, .Errormsg { background-color: var(--o-text); border-radius: 16px; }
+.error_icon { background-color: var(--o-danger); }
+.alert_message, .error_message { font-family: var(--o-font-body); }
+
+/* Recovery / option rows — the base sheet bleeds them out by the old 50px
+   padding, which no longer exists. */
+.options, .optionstry { padding: 16px 0; }
+.problemsignincon, .recoverymodes, .addaptivetfalist, #recoverymodeContainer {
+  width: auto;
+  margin: 0;
+}
+.options:hover, .optionstry:hover { background-color: rgba(32, 30, 29, 0.05); }
+.img_option, .img_option_try { color: var(--o-accent); }
+.option_description { color: var(--o-muted); }
+.backoption { color: var(--o-muted); }
+.backoption:hover { background: rgba(32, 30, 29, 0.07); }
+.hover-tool-tip { background: var(--o-bg); border-radius: 16px; box-shadow: 0 3px 10px rgba(46,43,37,0.16); }
+
+/* ── The narrow-viewport trap ─────────────────────────────────────────────────
+   The iframe is ~400px wide, so Catalyst's own @media (max-width: 600px) block
+   ALWAYS applies here: it strips .textbox back to a transparent, bottom-border
+   only field and re-rounds the button at 4px. Re-assert the pill inside the
+   same query or the fields silently revert. */
+@media only screen and (max-width: 600px) {
+  .signin_container { width: 100%; margin: 0; }
+  .signin_box { width: 100%; padding: 0; }
+  .textbox, #login_id, #password, #cpassword, #verify_totp {
+    background-color: var(--o-surface);
+    border: 1px solid var(--o-divider);
+    border-radius: 999px;
+    text-indent: 0;
+    padding: 12px 18px;
+  }
+  .textbox:focus, #login_id:focus, #password:focus {
+    border: 1px solid var(--o-accent);
+    box-shadow: 0 0 0 3px rgba(63, 107, 138, 0.26);
+  }
+  .errorborder:focus, .textbox.errorborder {
+    border: 1px solid var(--o-danger);
+    border-bottom: 1px solid var(--o-danger);
+  }
+  #captcha_img, #captcha, #bcaptcha_img, #bcaptcha {
+    border: 1px solid var(--o-divider);
+    border-radius: 999px;
+  }
+  .btn { margin-top: 0; border-radius: 999px; }
+  ::placeholder { font-weight: 400; }
+}
