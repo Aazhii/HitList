@@ -138,6 +138,12 @@ fs.writeFileSync(
       //
       // Names without a CATALYST_ prefix, deliberately: AppSail rejects that
       // prefix on user-supplied environment variables.
+      //
+      // IMPORTANT: this block seeds a service when it is first created and is
+      // IGNORED on redeploy — verified by baking TICK_SECRET in here, deploying
+      // successfully, and finding the live service still answering
+      // "TICK_SECRET is not set". Use `pnpm catalyst:env` to set them on a
+      // service that already exists.
 
       // Shared secret the cron presents as X-Tick-Secret. The sweep endpoint
       // refuses to run without it rather than defaulting to open, so leaving
