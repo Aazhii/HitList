@@ -16,6 +16,14 @@ export interface QuadrantConfig {
   badgeClass: string;        // badge color
   headerClass: string;       // header bg
   emptyIcon: string;
+  /** Organic theme: the quadrant's ink as text. Clears 4.5:1 on its own tint. */
+  inkClass: string;
+  /** Organic theme: the quadrant's tint as a background. */
+  tintClass: string;
+  /** Organic theme: the ink as a fill, for the small group-header dot. */
+  dotClass: string;
+  /** Organic theme: a 1px inset ring in the ink at 25% — the "Add here" row. */
+  ringClass: string;
 }
 
 export const QUADRANTS: QuadrantConfig[] = [
@@ -29,9 +37,13 @@ export const QUADRANTS: QuadrantConfig[] = [
     isImportant: true,
     accentClass: 'border-rose-500/40 ring-rose-500/10',
     bgClass: 'bg-rose-500/[0.03]',
-    badgeClass: 'bg-rose-500/15 text-rose-600 dark:text-rose-400',
+    badgeClass: 'bg-q-do-bg text-q-do',
     headerClass: 'bg-rose-500/8 border-rose-500/20',
     emptyIcon: '🔥',
+    inkClass: 'text-q-do',
+    tintClass: 'bg-q-do-bg',
+    dotClass: 'bg-q-do',
+    ringClass: 'shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--a-q-do)_25%,transparent)]',
   },
   {
     id: 'schedule',
@@ -43,9 +55,13 @@ export const QUADRANTS: QuadrantConfig[] = [
     isImportant: true,
     accentClass: 'border-blue-500/40 ring-blue-500/10',
     bgClass: 'bg-blue-500/[0.03]',
-    badgeClass: 'bg-blue-500/15 text-blue-600 dark:text-blue-400',
+    badgeClass: 'bg-q-schedule-bg text-q-schedule',
     headerClass: 'bg-blue-500/8 border-blue-500/20',
     emptyIcon: '📅',
+    inkClass: 'text-q-schedule',
+    tintClass: 'bg-q-schedule-bg',
+    dotClass: 'bg-q-schedule',
+    ringClass: 'shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--a-q-schedule)_25%,transparent)]',
   },
   {
     id: 'delegate',
@@ -57,9 +73,13 @@ export const QUADRANTS: QuadrantConfig[] = [
     isImportant: false,
     accentClass: 'border-amber-500/40 ring-amber-500/10',
     bgClass: 'bg-amber-500/[0.03]',
-    badgeClass: 'bg-amber-500/15 text-amber-600 dark:text-amber-400',
+    badgeClass: 'bg-q-delegate-bg text-q-delegate',
     headerClass: 'bg-amber-500/8 border-amber-500/20',
     emptyIcon: '🤝',
+    inkClass: 'text-q-delegate',
+    tintClass: 'bg-q-delegate-bg',
+    dotClass: 'bg-q-delegate',
+    ringClass: 'shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--a-q-delegate)_25%,transparent)]',
   },
   {
     id: 'eliminate',
@@ -71,9 +91,13 @@ export const QUADRANTS: QuadrantConfig[] = [
     isImportant: false,
     accentClass: 'border-border ring-border/10',
     bgClass: 'bg-muted/20',
-    badgeClass: 'bg-muted text-muted-foreground',
+    badgeClass: 'bg-q-eliminate-bg text-q-eliminate',
     headerClass: 'bg-muted/40 border-border',
     emptyIcon: '🗑️',
+    inkClass: 'text-q-eliminate',
+    tintClass: 'bg-q-eliminate-bg',
+    dotClass: 'bg-q-eliminate',
+    ringClass: 'shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--a-q-eliminate)_25%,transparent)]',
   },
 ];
 

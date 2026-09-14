@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { MatrixTaskCard } from '@/components/MatrixTaskCard';
 import { QUADRANTS } from '@/types/todo';
 import type { Todo, TodoStatus, Quadrant } from '@/types/todo';
+import { bucketByQuadrant } from '@/lib/quadrantBuckets';
 
 interface EisenhowerMatrixProps {
   todos: Todo[];
@@ -40,26 +41,7 @@ export function EisenhowerMatrix({
   onToggleReminder,
   notificationPermission,
 }: EisenhowerMatrixProps) {
-  const todosByQuadrant = useMemo(() => {
-    const map = new Map<Quadrant, Todo[]>();
-    for (const q of QUADRANTS) map.set(q.id, []);
-    for (const todo of todos) {
-      if (!showDone && todo.status === 'done') continue;
-      const bucket = map.get(todo.quadrant) ?? [];
-      bucket.push(todo);
-      map.set(todo.quadrant, bucket);
-    }
-    // Sort each quadrant: in-progress first, then todo, then done; within each by order
-    for (const [key, bucket] of map.entries()) {
-      const statusOrder: Record<TodoStatus, number> = { 'in-progress': 0, todo: 1, done: 2 };
-      map.set(key, bucket.sort((a, b) => {
-        const sd = statusOrder[a.status] - statusOrder[b.status];
-        if (sd !== 0) return sd;
-        return a.order - b.order;
-      }));
-    }
-    return map;
-  }, [todos, showDone]);
+  const todosByQuadrant = useMemo(() => bucketByQuadrant(todos, showDone), [todos, showDone]);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-fade-in">

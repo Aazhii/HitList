@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import { getCategoryConfig } from '@/types/todo';
 import type { Todo, TodoStatus } from '@/types/todo';
 import { isNotificationSupported, getReminderStatus } from '@/lib/notifications';
+import { getDueInfo } from '@/lib/dueInfo';
 
 interface MatrixTaskCardProps {
   todo: Todo;
@@ -30,66 +31,10 @@ interface MatrixTaskCardProps {
 }
 
 // ── Due-time helpers ────────────────────────────────────────────────────────
-
-export interface DueInfo {
-  label: string;
-  isOverdue: boolean;
-  isUrgentSoon: boolean; // within 2 hours
-  isToday: boolean;
-}
-
-export function getDueInfo(dueDate?: string, dueTime?: string): DueInfo | null {
-  if (!dueDate) return null;
-
-  const now = new Date();
-  let dueTs: Date;
-
-  if (dueTime) {
-    dueTs = new Date(`${dueDate}T${dueTime}:00`);
-  } else {
-    // End of day
-    dueTs = new Date(`${dueDate}T23:59:59`);
-  }
-
-  const diffMs = dueTs.getTime() - now.getTime();
-  const diffMins = diffMs / 60000;
-  const diffDays = diffMs / (1000 * 60 * 60 * 24);
-
-  if (diffMs < 0) {
-    // Overdue
-    const absMins = Math.abs(diffMins);
-    if (absMins < 60) return { label: `${Math.round(absMins)}m overdue`, isOverdue: true, isUrgentSoon: false, isToday: false };
-    const absHrs = Math.floor(absMins / 60);
-    if (absHrs < 24) return { label: `${absHrs}h overdue`, isOverdue: true, isUrgentSoon: false, isToday: false };
-    const absDays = Math.floor(absHrs / 24);
-    return { label: `${absDays}d overdue`, isOverdue: true, isUrgentSoon: false, isToday: false };
-  }
-
-  if (diffMins <= 120 && dueTime) {
-    // Urgent soon (within 2 hours, only when time is set)
-    if (diffMins < 60) return { label: `${Math.round(diffMins)}m left`, isOverdue: false, isUrgentSoon: true, isToday: true };
-    return { label: `${Math.floor(diffMins / 60)}h ${Math.round(diffMins % 60)}m left`, isOverdue: false, isUrgentSoon: true, isToday: true };
-  }
-
-  // Today
-  const todayMidnight = new Date();
-  todayMidnight.setHours(0, 0, 0, 0);
-  const tomorrowMidnight = new Date(todayMidnight);
-  tomorrowMidnight.setDate(tomorrowMidnight.getDate() + 1);
-
-  if (dueTs < tomorrowMidnight) {
-    if (dueTime) {
-      return { label: `Today ${dueTs.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`, isOverdue: false, isUrgentSoon: false, isToday: true };
-    }
-    return { label: 'Due today', isOverdue: false, isUrgentSoon: false, isToday: true };
-  }
-
-  if (diffDays < 2) return { label: 'Due tomorrow', isOverdue: false, isUrgentSoon: false, isToday: false };
-  if (diffDays <= 7) return { label: `Due in ${Math.ceil(diffDays)}d`, isOverdue: false, isUrgentSoon: false, isToday: false };
-
-  const label = dueTs.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  return { label, isOverdue: false, isUrgentSoon: false, isToday: false };
-}
+// Moved to lib/dueInfo.ts so the list view shares them. Re-exported so existing
+// imports from this module keep working.
+export { getDueInfo } from '@/lib/dueInfo';
+export type { DueInfo } from '@/lib/dueInfo';
 
 // ── Component ────────────────────────────────────────────────────────────────
 
