@@ -11,6 +11,11 @@ export function setActiveUserId(userId: string | null): void {
   _activeUserId = userId;
 }
 
+/** The signed-in user App set, for other per-user storage such as notes. */
+export function getActiveUserId(): string | null {
+  return _activeUserId;
+}
+
 function getStorageKey(): string {
   return _activeUserId ? `${BASE_STORAGE_KEY}-${_activeUserId}` : BASE_STORAGE_KEY;
 }

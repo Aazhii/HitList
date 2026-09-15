@@ -6,7 +6,9 @@
  */
 import { useState, useCallback, useEffect, useRef } from 'react';
 import type { Note, NoteBlock, BlockType } from '@/types/notes';
-import { createNewNote, createEmptyBlock, NOTES_STORAGE_KEY } from '@/types/notes';
+import { createNewNote, createEmptyBlock } from '@/types/notes';
+import { getActiveUserId } from '@/lib/storage';
+import { claimLegacyNotes, notesStorageKey } from '@/lib/notesStorage';
 import { notesSyncService } from '@/services/notesSyncService';
 import type { NotePayload } from '@/services/notesSyncService';
 
@@ -14,13 +16,15 @@ import type { NotePayload } from '@/services/notesSyncService';
 
 function persistLocal(notes: Note[]) {
   try {
-    localStorage.setItem(NOTES_STORAGE_KEY, JSON.stringify(notes));
+    localStorage.setItem(notesStorageKey(getActiveUserId()), JSON.stringify(notes));
   } catch { /* quota exceeded — ignore */ }
 }
 
 function loadLocalNotes(): Note[] {
   try {
-    const raw = localStorage.getItem(NOTES_STORAGE_KEY);
+    // One-time move from the old key every account shared; see lib/notesStorage.
+    claimLegacyNotes(localStorage, getActiveUserId());
+    const raw = localStorage.getItem(notesStorageKey(getActiveUserId()));
     if (!raw) return [];
     return JSON.parse(raw) as Note[];
   } catch {
