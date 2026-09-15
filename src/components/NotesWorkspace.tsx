@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Note } from '@/types/notes';
-import { NOTE_EMOJIS, formatNoteDate, getNotePreview } from '@/types/notes';
+import { NOTE_EMOJIS, NOTE_SYNC_LIMIT, NOTE_SYNC_WARN, formatNoteDate, getNotePreview } from '@/types/notes';
 import type { BlockType } from '@/types/notes';
 import { useNotes } from '@/hooks/useNotes';
 import type { SaveStatus } from '@/hooks/useNotes';
@@ -195,6 +195,10 @@ function NoteDetail({
     el.style.height = `${el.scrollHeight}px`;
   }, [note.title]);
 
+  // Exactly what is sent to the server (useNotes.noteToPayload), so the count
+  // shown is the count the 10,000-character limit applies to.
+  const syncSize = JSON.stringify(note.blocks).length;
+
   // Track first block id for Enter-from-title focus
   useEffect(() => {
     firstBlockRef.current = note.blocks[0]?.id ?? null;
@@ -241,10 +245,23 @@ function NoteDetail({
               }}
             />
 
-            <p className="mt-[14px] flex items-center gap-2 text-[13.5px] text-a-faint">
+            <p className="mt-[14px] flex flex-wrap items-center gap-x-2 gap-y-1 text-[13.5px] text-a-faint">
               <span>Edited {formatNoteDate(note.updatedAt)}</span>
               <span aria-hidden>·</span>
               <span>{note.blocks.length} block{note.blocks.length !== 1 ? 's' : ''}</span>
+              {syncSize > NOTE_SYNC_WARN && (
+                <>
+                  <span aria-hidden>·</span>
+                  <span
+                    role={syncSize > NOTE_SYNC_LIMIT ? 'alert' : undefined}
+                    className={syncSize > NOTE_SYNC_LIMIT ? 'font-semibold text-q-do' : 'text-q-delegate'}
+                  >
+                    {syncSize > NOTE_SYNC_LIMIT
+                      ? `Too long to sync: ${syncSize.toLocaleString()} of ${NOTE_SYNC_LIMIT.toLocaleString()} characters. Shorten it or move part into another note.`
+                      : `${syncSize.toLocaleString()} of ${NOTE_SYNC_LIMIT.toLocaleString()} characters`}
+                  </span>
+                </>
+              )}
             </p>
 
             <div className="mt-[22px] mb-2 h-px bg-a-line" />

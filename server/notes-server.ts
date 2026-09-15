@@ -91,7 +91,8 @@ import {
 } from './automations/steps.ts';
 import { listRuns, listRunsForRule, recordRun } from './automations/runs.ts';
 import { channelsFor, renderRule } from './automations/planner.ts';
-import { enqueue, cancelPendingFor } from './notifications/queue.ts';
+import { enqueue, cancelPendingForRule } from './notifications/queue.ts';
+import { dayKeyInZone, streakDays } from './stats/days.ts';
 import {
   syncTaskReminder,
   cancelTaskReminders,
@@ -387,7 +388,7 @@ async function probeCatalystTables(req: express.Request): Promise<boolean> {
     try {
       await app.zcql().executeZCQLQuery(`SELECT ROWID FROM ${table.name} LIMIT 1`);
     } catch (e) {
-      const msg = String(e);
+      const msg = describeError(e);
       if (/not found|does not exist|invalid table|no such table/i.test(msg)) {
         missing.push(table.name);
       } else {
@@ -883,7 +884,7 @@ async function catalystGetOwnerRows<T>(
     );
     return results.map((r) => converter(r[table] as ICatalystRow));
   } catch (e: unknown) {
-    const msg = String(e);
+    const msg = describeError(e);
     // If the OwnerId column doesn't exist yet (e.g. testTable freshly created
     // before column provisioning completes), fall back to a full table scan
     // and filter in-process. This prevents a hard 500 on first-run.
@@ -1572,8 +1573,9 @@ app.delete('/api/automation-rules/:id', async (req, res) => {
 
     await deleteRule(catalyst, existing.rowId);
     // Withdraw anything the rule had already queued but not yet delivered —
-    // deleting a rule should not leave one last notification in flight.
-    await cancelPendingFor(catalyst, 'RULE', req.params.id);
+    // its own firings and every per-task firing. Deleting a rule should not
+    // leave one last notification in flight.
+    await cancelPendingForRule(catalyst, ownerId, req.params.id);
     res.sendStatus(204);
   } catch (e) {
     sendError(res, '[DELETE /api/automation-rules/:id]', e);
@@ -2034,7 +2036,7 @@ app.get('/api/setup', async (req, res) => {
       await app2.zcql().executeZCQLQuery(`SELECT ROWID FROM ${name} LIMIT 1`);
       tableStatus[name] = 'ok';
     } catch (e: unknown) {
-      const msg = String(e);
+      const msg = describeError(e);
       tableStatus[name] = /not found|does not exist|invalid table|no such table/i.test(msg)
         ? 'missing'
         : 'error';
@@ -2165,13 +2167,10 @@ app.get('/api/tasks/today-history', async (req, res) => {
       tasks = tasks.filter((t) => t.ownerId === ownerId);
     }
 
-    const today = new Date();
-    const isToday = (ts: number) => {
-      const d = new Date(ts);
-      return d.getFullYear() === today.getFullYear() &&
-             d.getMonth()    === today.getMonth() &&
-             d.getDate()     === today.getDate();
-    };
+    // The user's calendar day, not the server's — production runs in UTC.
+    const zone = resolveTimeZone(req.headers['x-timezone']);
+    const todayKey = dayKeyInZone(Date.now(), zone);
+    const isToday = (ts: number) => dayKeyInZone(ts, zone) === todayKey;
 
     const { listId } = req.query as Record<string, string>;
     tasks = tasks.filter((t) => t.status === 'DONE' && t.completedAt && isToday(t.completedAt));
@@ -2631,39 +2630,16 @@ app.get('/api/stats/momentum', async (req, res) => {
     if (listId) tasks = tasks.filter((t) => t.listId === listId);
 
     const doneTasks = tasks.filter((t) => t.status === 'DONE');
-    const today = new Date();
-    const isToday = (ts: number) => {
-      const d = new Date(ts);
-      return d.getFullYear() === today.getFullYear() &&
-             d.getMonth()    === today.getMonth() &&
-             d.getDate()     === today.getDate();
-    };
+    // The user's calendar day, not the server's — production runs in UTC.
+    const zone = resolveTimeZone(req.headers['x-timezone']);
+    const todayKey = dayKeyInZone(Date.now(), zone);
+    const isToday = (ts: number) => dayKeyInZone(ts, zone) === todayKey;
 
     const todayCompleted = doneTasks.filter((t) => t.completedAt && isToday(t.completedAt)).length;
     const totalCompleted = doneTasks.length;
 
-    // Streak: count consecutive days (including today) that had at least one completion
-    const daySet = new Set<string>();
-    for (const t of doneTasks) {
-      if (t.completedAt) {
-        const d = new Date(t.completedAt);
-        daySet.add(`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`);
-      }
-    }
-    let streak = 0;
-    const cursor = new Date();
-    for (let i = 0; i < 365; i++) {
-      const key = `${cursor.getFullYear()}-${cursor.getMonth()}-${cursor.getDate()}`;
-      if (daySet.has(key)) {
-        streak++;
-        cursor.setDate(cursor.getDate() - 1);
-      } else if (i === 0) {
-        // Today has no completions yet — check yesterday to keep streak alive
-        cursor.setDate(cursor.getDate() - 1);
-      } else {
-        break;
-      }
-    }
+    // Streak: consecutive days with a completion, in the user's zone.
+    const streak = streakDays(doneTasks.map((t) => t.completedAt), zone, Date.now());
 
     res.json({
       streak,
@@ -2709,6 +2685,25 @@ async function catalystFindNote(
  */
 function noteOwner(note: DbNote): string {
   return note.ownerId || LOCAL_DEV_OWNER;
+}
+
+/**
+ * A note's blocks are one Catalyst Text column, which holds 10,000 characters.
+ * Nothing checked that: an oversized note reached the datastore, failed with an
+ * unnamed 400, and the client retried the same payload forever. Rejecting it
+ * here names the field, and notesSyncService stops retrying a rejected note.
+ */
+const MAX_NOTE_BLOCKS_LEN = 10_000;
+
+function assertNoteFits(body: Partial<DbNote>, res: express.Response): boolean {
+  if (typeof body.blocksJson !== 'string' || body.blocksJson.length <= MAX_NOTE_BLOCKS_LEN) return true;
+  const errs = new FieldErrors();
+  errs.add(
+    'blocksJson',
+    `is ${body.blocksJson.length} characters; a note can hold at most ${MAX_NOTE_BLOCKS_LEN}`,
+  );
+  errs.send(res);
+  return false;
 }
 
 /** Reads the owner's notes from the JSON-file store. */
@@ -2771,6 +2766,7 @@ app.post('/api/notes', async (req, res) => {
   if (!body.id || !body.title) { res.status(400).json({ error: 'id and title are required' }); return; }
   // The note id is client-supplied here, so it gets the same check as a path param.
   if (!assertSafeId(body.id, res)) return;
+  if (!assertNoteFits(body, res)) return;
 
   const note: DbNote = {
     id:         body.id,
@@ -2826,6 +2822,7 @@ app.put('/api/notes/:id', async (req, res) => {
   if (!ownerId) return;
 
   const body = req.body as Partial<DbNote>;
+  if (!assertNoteFits(body, res)) return;
 
   try {
     if (catalystAvailable) {

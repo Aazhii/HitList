@@ -93,6 +93,24 @@ const SELECT_COLUMNS =
   'ROWID,QueueId,OwnerId,FireAt,Status,DedupeKey,Kind,SourceType,SourceId,' +
   'Channels,Title,Body,Payload,AttemptCount,SentAt,ClaimToken';
 
+/**
+ * SourceId is varchar(64), and Catalyst silently truncates a longer value on
+ * write. A rule's per-task source is `${ruleId}:${taskId}` — 73 characters —
+ * so every such row was stored as its first 64 while the cancel lookups
+ * searched for all 73 and matched nothing: firings were never withdrawn when a
+ * due date moved or a task was completed. Verified against the live project.
+ *
+ * Clamping on write AND on lookup makes the two agree, and matches the rows
+ * already stored, so nothing needs migrating. The cost is that two sources
+ * sharing their first 64 characters would collide — for `${uuid}:${uuid}`,
+ * two tasks under one rule whose ids share their first 27 characters.
+ */
+export const SOURCE_ID_MAX = 64;
+
+export function sourceKey(sourceId: string): string {
+  return sourceId.slice(0, SOURCE_ID_MAX);
+}
+
 function toQueueRow(row: Record<string, unknown>): QueueRow {
   let payload: Record<string, unknown> | undefined;
   const rawPayload = str(row['Payload']);
@@ -145,7 +163,7 @@ export async function enqueue(app: CatalystApp, entry: QueueEntry): Promise<bool
       DedupeKey: entry.dedupeKey,
       Kind: entry.kind,
       SourceType: entry.sourceType,
-      SourceId: entry.sourceId,
+      SourceId: sourceKey(entry.sourceId),
       Channels: entry.channels.join(','),
       ClaimToken: '',
       Title: entry.title.slice(0, 255),
@@ -273,7 +291,7 @@ export async function findPendingForSource(
 ): Promise<QueueRow[]> {
   const results = await app.zcql().executeZCQLQuery(
     `SELECT ${SELECT_COLUMNS} FROM ${QUEUE_TABLE} ` +
-    `WHERE SourceType = ${zcqlString(sourceType)} AND SourceId = ${zcqlString(sourceId)} ` +
+    `WHERE SourceType = ${zcqlString(sourceType)} AND SourceId = ${zcqlString(sourceKey(sourceId))} ` +
     `AND Status = ${zcqlString(QueueStatus.PENDING)}`,
   );
   return unwrap(results).map(toQueueRow);
@@ -393,6 +411,45 @@ export async function cancelPendingFor(
     await setStatus(app, row.rowId, { Status: QueueStatus.CANCELLED });
   }
   return rows.length;
+}
+
+/**
+ * Withdraws everything a deleted rule had queued: its own scheduled firings
+ * (SourceId = ruleId) and every per-task firing (SourceId = `ruleId:taskId`).
+ *
+ * Deleting a rule used to cancel only the first kind, so per-task firings
+ * stayed PENDING and delivered from a rule that no longer existed. No ZCQL
+ * prefix match has been verified against this project, so the owner's pending
+ * RULE rows are read a page at a time and the prefix is matched here. All pages
+ * are read before anything is cancelled, so cancelling cannot shift the paging.
+ */
+export async function cancelPendingForRule(
+  app: CatalystApp,
+  ownerId: string,
+  ruleId: string,
+): Promise<number> {
+  const PAGE = 300;
+  const perTask = sourceKey(`${ruleId}:`);
+  const matches: QueueRow[] = [];
+
+  for (let offset = 0; ; offset += PAGE) {
+    const results = await app.zcql().executeZCQLQuery(
+      `SELECT ${SELECT_COLUMNS} FROM ${QUEUE_TABLE} ` +
+      `WHERE OwnerId = ${zcqlString(ownerId)} AND SourceType = ${zcqlString('RULE')} ` +
+      `AND Status = ${zcqlString(QueueStatus.PENDING)} ` +
+      `ORDER BY FireAt ASC LIMIT ${offset},${PAGE}`,
+    );
+    const page = unwrap(results).map(toQueueRow);
+    for (const row of page) {
+      if (row.sourceId === ruleId || row.sourceId.startsWith(perTask)) matches.push(row);
+    }
+    if (page.length < PAGE) break;
+  }
+
+  for (const row of matches) {
+    await setStatus(app, row.rowId, { Status: QueueStatus.CANCELLED });
+  }
+  return matches.length;
 }
 
 /**

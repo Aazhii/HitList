@@ -42,6 +42,35 @@ const HEALTH_URL = '/api/health';
 const FLUSH_DEBOUNCE_MS = 600;
 const HEALTH_CHECK_INTERVAL_MS = 15_000;
 
+// ── Errors ────────────────────────────────────────────────────────────────────
+
+/**
+ * The server refused the note itself — too large, or otherwise invalid — as
+ * opposed to being unreachable. Retrying the same payload cannot succeed, so it
+ * is not retried, and it does not mark the server offline. The note stays in
+ * localStorage; the next edit tries again.
+ */
+export class NoteRejectedError extends Error {
+  readonly httpStatus: number;
+  constructor(httpStatus: number, message: string) {
+    super(message);
+    this.name = 'NoteRejectedError';
+    this.httpStatus = httpStatus;
+  }
+}
+
+async function syncError(method: string, res: Response): Promise<Error> {
+  if (res.status === 400 || res.status === 413 || res.status === 422) {
+    let detail = '';
+    try {
+      const body = (await res.json()) as { message?: string; fields?: Record<string, string> };
+      detail = Object.values(body.fields ?? {})[0] ?? body.message ?? '';
+    } catch { /* no JSON body */ }
+    return new NoteRejectedError(res.status, detail || `${method} ${res.status}`);
+  }
+  return new Error(`${method} ${res.status}`);
+}
+
 // ── Service ───────────────────────────────────────────────────────────────────
 
 class NotesSyncService {
@@ -151,6 +180,7 @@ class NotesSyncService {
     this.queue.clear();
 
     let anyError = false;
+    let anyRejected = false;
 
     for (const op of ops) {
       try {
@@ -159,7 +189,14 @@ class NotesSyncService {
         } else if (op.payload) {
           await this.apiUpsert(op.payload);
         }
-      } catch {
+      } catch (e) {
+        if (e instanceof NoteRejectedError) {
+          // The server is up and refused this note. Keep it locally and stop
+          // retrying it; a later edit is queued again as usual.
+          anyRejected = true;
+          console.warn(`[notes] server rejected note ${op.noteId}: ${e.message}`);
+          continue;
+        }
         anyError = true;
         // Re-queue failed op (only if a newer op hasn't replaced it)
         if (!this.queue.has(op.noteId)) {
@@ -180,7 +217,7 @@ class NotesSyncService {
     } else {
       this.serverReachable = true;
       localStorage.setItem('kaizen-notes-server-ok', 'true');
-      this.setStatus('synced');
+      this.setStatus(anyRejected ? 'error' : 'synced');
     }
   }
 
@@ -201,11 +238,11 @@ class NotesSyncService {
         body: JSON.stringify(payload),
         signal: AbortSignal.timeout(8000),
       });
-      if (!createRes.ok) throw new Error(`POST ${createRes.status}`);
+      if (!createRes.ok) throw await syncError('POST', createRes);
       return;
     }
 
-    if (!res.ok) throw new Error(`PUT ${res.status}`);
+    if (!res.ok) throw await syncError('PUT', res);
   }
 
   private async apiDelete(noteId: string): Promise<void> {

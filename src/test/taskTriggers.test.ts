@@ -536,3 +536,45 @@ describe('backfillTaskRules — several steps', () => {
     expect(await findPendingForSource(fake.app, 'RULE', 'r1:t1')).toHaveLength(2);
   });
 });
+
+/**
+ * With realistic ids the per-task SourceId is 73 characters, which Catalyst
+ * stores as 64. Short test ids like 'r1:t1' hid that these never cancelled.
+ */
+describe('realistic ids — firings are withdrawn', () => {
+  const RULE_ID = '5f0c9a2e-8d1b-4e6f-9a3c-2b7d4e1f8a90';
+  const TASK_ID = 'c3e1b7d2-4a5f-4c8e-9b1d-7f2a6e3c5b41';
+  const pending = (fake: ReturnType<typeof fakeCatalyst>) =>
+    fake.tables[QUEUE_TABLE].filter((r) => r.Status === 'PENDING');
+
+  it('replaces the old steps when the due date moves', async () => {
+    const fake = fakeCatalyst();
+    await seedRule(fake.app, rule({ id: RULE_ID, offsetSteps: [-60, -5] }));
+
+    await syncTaskRules(fake.app, ctx, task({ id: TASK_ID }), NOW);
+    const moved = await syncTaskRules(fake.app, ctx, task({ id: TASK_ID, dueDate: '2030-06-16' }), NOW);
+
+    expect(moved.cancelled).toBe(2);
+    expect(pending(fake)).toHaveLength(2);
+  });
+
+  it('withdraws every step once the task is done', async () => {
+    const fake = fakeCatalyst();
+    await seedRule(fake.app, rule({ id: RULE_ID, offsetSteps: [-60, -5, 0] }));
+
+    await syncTaskRules(fake.app, ctx, task({ id: TASK_ID }), NOW);
+    const done = await syncTaskRules(fake.app, ctx, task({ id: TASK_ID, status: 'DONE' }), NOW);
+
+    expect(done.cancelled).toBe(3);
+    expect(pending(fake)).toHaveLength(0);
+  });
+
+  it('withdraws them when the task is deleted', async () => {
+    const fake = fakeCatalyst();
+    await seedRule(fake.app, rule({ id: RULE_ID, offsetSteps: [-60, -5] }));
+
+    await syncTaskRules(fake.app, ctx, task({ id: TASK_ID }), NOW);
+    expect(await cancelTaskRules(fake.app, ctx.ownerId, TASK_ID)).toBe(2);
+    expect(pending(fake)).toHaveLength(0);
+  });
+});

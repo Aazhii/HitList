@@ -21,7 +21,9 @@ import {
   markSent,
   markFailed,
   cancelPendingFor,
+  cancelPendingForRule,
   cancelSupersededFor,
+  SOURCE_ID_MAX,
   purgeOldEntries,
   QueueStatus,
   MAX_ATTEMPTS,
@@ -388,5 +390,104 @@ describe('reclaiming an abandoned claim', () => {
   it('does nothing when nothing is stranded', async () => {
     const fake = fakeCatalyst({ onlyTable: QUEUE_TABLE });
     expect(await reclaimStale(fake.app, Date.now())).toBe(0);
+  });
+});
+
+/**
+ * Verified live: SourceId is varchar(64), Catalyst truncates silently, and a
+ * rule's per-task source is `${ruleId}:${taskId}` — 73 characters. The cancel
+ * lookups searched for all 73 and matched nothing, so escalation firings were
+ * never withdrawn. The fake now truncates the way Catalyst does, so these fail
+ * if the clamp is ever removed.
+ */
+describe('rule firings — the 64-character SourceId', () => {
+  let fake: ReturnType<typeof fakeCatalyst>;
+  beforeEach(() => { fake = fakeCatalyst({ onlyTable: QUEUE_TABLE }); });
+
+  const RULE = '5f0c9a2e-8d1b-4e6f-9a3c-2b7d4e1f8a90';
+  const TASK_A = 'c3e1b7d2-4a5f-4c8e-9b1d-7f2a6e3c5b41';
+  const TASK_B = '9d4f2a6b-1c3e-4b7a-8f5d-3e9c1a7b2d64';
+  const firing = (taskId: string, dedupeKey: string, over: Partial<QueueEntry> = {}) =>
+    entry({ sourceType: 'RULE', sourceId: `${RULE}:${taskId}`, dedupeKey, ...over });
+
+  it('stores the source as its first 64 characters, as Catalyst does', async () => {
+    await enqueue(fake.app, firing(TASK_A, 'k1'));
+    expect(`${RULE}:${TASK_A}`).toHaveLength(73);
+    expect(fake.rows[0].SourceId).toHaveLength(SOURCE_ID_MAX);
+  });
+
+  it('cancels a firing by the full source it was created with', async () => {
+    await enqueue(fake.app, firing(TASK_A, 'k1'));
+
+    expect(await cancelPendingFor(fake.app, 'RULE', `${RULE}:${TASK_A}`)).toBe(1);
+    expect(await findPendingForSource(fake.app, 'RULE', `${RULE}:${TASK_A}`)).toHaveLength(0);
+  });
+
+  it('keeps the current step and cancels the superseded one', async () => {
+    await enqueue(fake.app, firing(TASK_A, 'old'));
+    await enqueue(fake.app, firing(TASK_A, 'new'));
+
+    expect(await cancelSupersededFor(fake.app, 'RULE', `${RULE}:${TASK_A}`, ['new'])).toBe(1);
+    const pending = await findPendingForSource(fake.app, 'RULE', `${RULE}:${TASK_A}`);
+    expect(pending.map((r) => r.dedupeKey)).toEqual(['new']);
+  });
+
+  it('matches rows stored before the fix, which already hold the 64-character prefix', async () => {
+    // Written straight to the table, the way production rows already are.
+    await fake.app.datastore().table(QUEUE_TABLE).insertRow({
+      QueueId: 'q-legacy', OwnerId: 'user-1', FireAt: String(Date.now() + 60_000),
+      Status: QueueStatus.PENDING, DedupeKey: 'legacy', Kind: 'AUTOMATION',
+      SourceType: 'RULE', SourceId: `${RULE}:${TASK_A}`.slice(0, 64),
+    });
+
+    expect(await cancelPendingFor(fake.app, 'RULE', `${RULE}:${TASK_A}`)).toBe(1);
+  });
+
+  it('leaves another task under the same rule alone', async () => {
+    await enqueue(fake.app, firing(TASK_A, 'a'));
+    await enqueue(fake.app, firing(TASK_B, 'b'));
+
+    await cancelPendingFor(fake.app, 'RULE', `${RULE}:${TASK_A}`);
+    expect(await findPendingForSource(fake.app, 'RULE', `${RULE}:${TASK_B}`)).toHaveLength(1);
+  });
+});
+
+/** Deleting a rule used to cancel only SourceId = ruleId, leaving per-task firings pending. */
+describe('cancelPendingForRule', () => {
+  let fake: ReturnType<typeof fakeCatalyst>;
+  beforeEach(() => { fake = fakeCatalyst({ onlyTable: QUEUE_TABLE }); });
+
+  const RULE = '5f0c9a2e-8d1b-4e6f-9a3c-2b7d4e1f8a90';
+  const OTHER_RULE = '7a1d3c5e-2b4f-4e6a-8c9d-1f3e5a7b9c02';
+  const TASK_A = 'c3e1b7d2-4a5f-4c8e-9b1d-7f2a6e3c5b41';
+  const TASK_B = '9d4f2a6b-1c3e-4b7a-8f5d-3e9c1a7b2d64';
+
+  it("withdraws the rule's own firings and every per-task firing", async () => {
+    await enqueue(fake.app, entry({ sourceType: 'RULE', sourceId: RULE, dedupeKey: 'own' }));
+    await enqueue(fake.app, entry({ sourceType: 'RULE', sourceId: `${RULE}:${TASK_A}`, dedupeKey: 'a' }));
+    await enqueue(fake.app, entry({ sourceType: 'RULE', sourceId: `${RULE}:${TASK_B}`, dedupeKey: 'b' }));
+
+    expect(await cancelPendingForRule(fake.app, 'user-1', RULE)).toBe(3);
+    expect(fake.rows.every((r) => r.Status === QueueStatus.CANCELLED)).toBe(true);
+  });
+
+  it("leaves another rule's firings and another owner's rows alone", async () => {
+    await enqueue(fake.app, entry({ sourceType: 'RULE', sourceId: `${RULE}:${TASK_A}`, dedupeKey: 'mine' }));
+    await enqueue(fake.app, entry({ sourceType: 'RULE', sourceId: `${OTHER_RULE}:${TASK_A}`, dedupeKey: 'other-rule' }));
+    await enqueue(fake.app, entry({ ownerId: 'user-2', sourceType: 'RULE', sourceId: `${RULE}:${TASK_A}`, dedupeKey: 'other-owner' }));
+    await enqueue(fake.app, entry({ sourceType: 'TASK', sourceId: TASK_A, dedupeKey: 'reminder' }));
+
+    expect(await cancelPendingForRule(fake.app, 'user-1', RULE)).toBe(1);
+    const pending = fake.rows.filter((r) => r.Status === QueueStatus.PENDING).map((r) => r.DedupeKey).sort();
+    expect(pending).toEqual(['other-owner', 'other-rule', 'reminder']);
+  });
+
+  it('reads past one 300-row page', async () => {
+    for (let i = 0; i < 305; i++) {
+      await enqueue(fake.app, entry({
+        sourceType: 'RULE', sourceId: `${RULE}:task-${String(i).padStart(4, '0')}`, dedupeKey: `k${i}`,
+      }));
+    }
+    expect(await cancelPendingForRule(fake.app, 'user-1', RULE)).toBe(305);
   });
 });

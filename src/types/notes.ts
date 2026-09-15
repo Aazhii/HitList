@@ -90,6 +90,14 @@ export const NOTE_EMOJIS = ['📝', '💡', '🗒️', '🔖', '⭐', '🎯', '�
 
 export const NOTES_STORAGE_KEY = 'kaizen-notes-v1';
 
+/**
+ * A note's blocks are saved as one JSON string in a Catalyst Text column, which
+ * holds at most 10,000 characters. The editor warns from NOTE_SYNC_WARN; the
+ * server rejects anything over the limit.
+ */
+export const NOTE_SYNC_LIMIT = 10_000;
+export const NOTE_SYNC_WARN = 9_000;
+
 export function createEmptyBlock(type: BlockType = 'paragraph'): NoteBlock {
   return {
     id: crypto.randomUUID(),

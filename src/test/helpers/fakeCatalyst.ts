@@ -14,6 +14,8 @@
  *   - every column read back as a string, as the datastore does, so code that
  *     assumes numbers survive a round trip is caught here rather than in
  *     production
+ *   - varchar columns silently truncated to their schema length on write, as
+ *     Catalyst does
  *
  * It is not a SQL engine. `executeZCQLQuery` reads the table out of the FROM
  * clause and applies whatever equality and numeric comparisons the query
@@ -24,6 +26,27 @@
  */
 import { expect } from 'vitest';
 import type { CatalystApp } from '../../../server/notifications/types.ts';
+import { SCHEMA } from '../../../server/catalyst/schema.ts';
+
+/**
+ * varchar limits from the real schema. Catalyst truncates a longer value
+ * silently on write — verified live, where every 73-character rule SourceId
+ * was stored as its first 64. Without this the fake stored the full string,
+ * so the cancel bug that caused could not fail a test.
+ */
+const VARCHAR_MAX: Record<string, Record<string, number>> = Object.fromEntries(
+  SCHEMA.map((t) => [
+    t.name,
+    Object.fromEntries(
+      t.columns.filter((c) => c.type === 'varchar' && c.maxLength).map((c) => [c.name, c.maxLength!]),
+    ),
+  ]),
+);
+
+function clampColumn(table: string, column: string, value: string): string {
+  const max = VARCHAR_MAX[table]?.[column];
+  return max !== undefined ? value.slice(0, max) : value;
+}
 
 export const QUEUE_TABLE = 'KaizenNotificationQueue';
 export const INBOX_TABLE = 'KaizenNotifications';
@@ -83,7 +106,7 @@ export function fakeCatalyst(options: FakeOptions = {}): Fake {
               }
             }
             const stored: Record<string, string> = { ROWID: String(nextRowId++) };
-            for (const [k, v] of Object.entries(row)) stored[k] = String(v ?? '');
+            for (const [k, v] of Object.entries(row)) stored[k] = clampColumn(name, k, String(v ?? ''));
             rows.push(stored);
             return stored;
           },
@@ -91,7 +114,7 @@ export function fakeCatalyst(options: FakeOptions = {}): Fake {
             const found = rows.find((r) => r.ROWID === String(row.ROWID));
             if (!found) throw new Error('no such row');
             for (const [k, v] of Object.entries(row)) {
-              if (k !== 'ROWID') found[k] = String(v ?? '');
+              if (k !== 'ROWID') found[k] = clampColumn(name, k, String(v ?? ''));
             }
             return found;
           },
@@ -167,8 +190,11 @@ export function fakeCatalyst(options: FakeOptions = {}): Fake {
           });
         }
 
-        const limit = Number(query.match(/LIMIT (\d+)/)?.[1] ?? Infinity);
-        return out.slice(0, limit).map((r) => ({ [table]: { ...r } }));
+        // `LIMIT n`, or MySQL-style `LIMIT offset,n`, which is how ZCQL pages.
+        const limitMatch = query.match(/LIMIT\s+(\d+)(?:\s*,\s*(\d+))?/i);
+        const offset = limitMatch?.[2] !== undefined ? Number(limitMatch[1]) : 0;
+        const limit = limitMatch ? Number(limitMatch[2] ?? limitMatch[1]) : Infinity;
+        return out.slice(offset, offset + limit).map((r) => ({ [table]: { ...r } }));
       },
     }),
 
