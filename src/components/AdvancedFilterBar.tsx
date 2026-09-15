@@ -38,7 +38,7 @@ interface AdvancedFilterBarProps {
   className?: string;
   /** Custom fields, to filter, sort and group by. */
   fieldDefs?: FieldDef[];
-  /** Grouping by a field applies to the list and the table, not the matrix. */
+  /** Grouping by a field applies to the list, the table and the board, not the matrix. */
   layout?: TaskLayout;
 }
 
@@ -264,7 +264,7 @@ export function AdvancedFilterBar({ filters, onChange, className, fieldDefs = []
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">
-                    <span className="text-muted-foreground">{layout === 'table' ? 'No grouping' : 'Group by quadrant'}</span>
+                    <span className="text-muted-foreground">{layout === 'table' ? 'No grouping' : layout === 'board' ? 'Choose a field for columns' : 'Group by quadrant'}</span>
                   </SelectItem>
                   {selectFields.map((d) => (
                     <SelectItem key={d.id} value={d.id}>Group by {d.name}</SelectItem>

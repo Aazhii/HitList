@@ -31,6 +31,7 @@ import { StreakPanel } from '@/components/StreakPanel';
 import { EisenhowerMatrix } from '@/components/EisenhowerMatrix';
 import { TaskListView } from '@/components/tasks/TaskListView';
 import { TaskTableView } from '@/components/tasks/TaskTableView';
+import { TaskBoardView } from '@/components/tasks/TaskBoardView';
 import { TaskDetailPanel } from '@/components/TaskDetailPanel';
 import { AppShell } from '@/components/shell/AppShell';
 import { IconRail, type AppView } from '@/components/shell/IconRail';
@@ -1058,7 +1059,7 @@ function App() {
             label="Task view"
             value={tasksMode}
             onChange={setTasksMode}
-            options={[{ value: 'list', label: 'List' }, { value: 'matrix', label: 'Matrix' }, { value: 'table', label: 'Table' }]}
+            options={[{ value: 'list', label: 'List' }, { value: 'matrix', label: 'Matrix' }, { value: 'table', label: 'Table' }, { value: 'board', label: 'Board' }]}
           />
 
           {/* One quiet pill for everything that narrows or tidies the view. It
@@ -1250,6 +1251,27 @@ function App() {
                   onOpen={handleOpenDetail}
                   onAddToQuadrant={handleAddToQuadrant}
                   onReorder={handleReorder}
+                  onToggleReminder={handleToggleReminder}
+                  onOpenNote={handleOpenSourceNote}
+                  notificationPermission={notificationPermission}
+                />
+              ) : tasksMode === 'board' ? (
+                <TaskBoardView
+                  todos={visibleTodos}
+                  showDone={showDoneEffective}
+                  compare={crossQuadrantCompare}
+                  groupField={groupField}
+                  fieldDefs={taskFields.fields}
+                  fieldValues={taskFields.values}
+                  fieldsOnline={taskFields.online}
+                  fieldsLoading={taskFields.loading}
+                  nextId={nextId}
+                  onGroupFieldChange={(fieldId) => setFilterState({ ...filterState, groupBy: fieldId })}
+                  onManageFields={() => setFieldsManagerOpen(true)}
+                  onSetFieldValue={(taskId, fieldId, value) => { void taskFields.setValue(taskId, fieldId, value); }}
+                  onStatusChange={handleStatusChange}
+                  onDelete={handleDelete}
+                  onOpen={handleOpenDetail}
                   onToggleReminder={handleToggleReminder}
                   onOpenNote={handleOpenSourceNote}
                   notificationPermission={notificationPermission}

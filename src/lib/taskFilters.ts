@@ -336,8 +336,9 @@ export interface TaskGroup {
 
 /**
  * Tasks grouped by a select field: one group per option, in the field's order,
- * then one for tasks with no value (only when there are some). A value naming a
- * deleted option counts as no value.
+ * then one for tasks with no value — only when there are some, unless
+ * `includeEmpty` (a board needs that column as somewhere to drop). A value
+ * naming a deleted option counts as no value.
  */
 export function groupByField(
   todos: readonly Todo[],
@@ -345,6 +346,7 @@ export function groupByField(
   compare: TaskCompare,
   def: FieldDef,
   values: TaskFieldValues,
+  options: { includeEmpty?: boolean } = {},
 ): TaskGroup[] {
   const groups: TaskGroup[] = def.options.map((o) => ({ key: o.id, label: o.label, color: o.color, tasks: [] }));
   const empty: TaskGroup = { key: FIELD_EMPTY, label: `No ${def.name}`, color: null, tasks: [] };
@@ -357,5 +359,5 @@ export function groupByField(
   }
   for (const g of groups) g.tasks.sort(compare);
   empty.tasks.sort(compare);
-  return empty.tasks.length ? [...groups, empty] : groups;
+  return empty.tasks.length || options.includeEmpty ? [...groups, empty] : groups;
 }

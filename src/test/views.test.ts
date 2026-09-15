@@ -43,7 +43,7 @@ describe('parseViewBody', () => {
   });
 
   it('names every invalid field', () => {
-    const parsed = parseViewBody({ name: '', layout: 'board', scopeListId: 'bad id!', filters: [], showDone: 'yes', viewOrder: -1 });
+    const parsed = parseViewBody({ name: '', layout: 'gallery', scopeListId: 'bad id!', filters: [], showDone: 'yes', viewOrder: -1 });
     expect(parsed.ok).toBe(false);
     // `in`, not `!parsed.ok`: the app tsconfig does not narrow on a false literal.
     if ('errors' in parsed) {
@@ -112,11 +112,13 @@ describe('normaliseFilters — custom fields', () => {
 });
 
 describe('table layout and field sorts', () => {
-  it('accepts the table layout and reads it back from a row', () => {
-    const parsed = parseViewBody({ name: 'Everything', layout: 'table' });
-    expect(parsed.ok).toBe(true);
-    if (parsed.ok) expect(parsed.value.layout).toBe('table');
-    expect(toView({ ROWID: '1', ...toRow(view({ layout: 'table' })) }).layout).toBe('table');
+  it('accepts the table and board layouts and reads them back from a row', () => {
+    for (const layout of ['table', 'board'] as const) {
+      const parsed = parseViewBody({ name: 'Everything', layout });
+      expect(parsed.ok).toBe(true);
+      if (parsed.ok) expect(parsed.value.layout).toBe(layout);
+      expect(toView({ ROWID: '1', ...toRow(view({ layout })) }).layout).toBe(layout);
+    }
   });
 
   it('keeps a field or quadrant sort, and drops a malformed one', () => {

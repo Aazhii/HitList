@@ -256,3 +256,13 @@ describe('sorting and grouping by custom fields', () => {
     expect(normaliseFilters({ sortBy: 'field:not valid!' }).sortBy).toBe('order');
   });
 });
+
+describe('groupByField — includeEmpty', () => {
+  it('keeps the no-value group when asked, even with nothing in it', () => {
+    const def: FieldDef = { id: 's', name: 'Stage', kind: 'select', options: [{ id: 'o', label: 'One', color: 'sage' }], fieldOrder: 0, showOnCard: false, createdAt: 1, updatedAt: 1 };
+    const t = todo({ text: 'x' });
+    const vals: TaskFieldValues = { [t.id]: { s: 'o' } };
+    expect(groupByField([t], false, compareTasks, def, vals).map((g) => g.key)).toEqual(['o']);
+    expect(groupByField([t], false, compareTasks, def, vals, { includeEmpty: true }).map((g) => g.key)).toEqual(['o', FIELD_EMPTY]);
+  });
+});

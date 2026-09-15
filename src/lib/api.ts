@@ -501,7 +501,7 @@ export const automationApi = {
 // ── Saved views ───────────────────────────────────────────────────────────────
 
 /** How the tasks page shows tasks. */
-export type TaskLayout = 'list' | 'matrix' | 'table';
+export type TaskLayout = 'list' | 'matrix' | 'table' | 'board';
 
 export interface ApiSavedView {
   id: string;
