@@ -3,8 +3,11 @@
 export type AutomationStatus = 'active' | 'paused' | 'draft';
 
 export type TriggerType =
-  | 'due-date'      // fire N minutes/hours before due date
-  | 'overdue'       // fire when task becomes overdue
+  // A task's due date, plus a list of offsets — which is why "overdue" is no
+  // longer a separate choice in the form: an offset can simply be after due.
+  // Rules stored as 'overdue' keep working and keep firing where they did.
+  | 'due-date'
+  | 'overdue'       // legacy; read as a single firing at the due instant
   | 'recurring'     // fire on a recurring schedule
   | 'status-change' // fire when task status changes
   | 'daily-digest'; // fire once per day as a summary
@@ -36,10 +39,13 @@ export interface AutomationRule {
   triggerType: TriggerType;
   status: AutomationStatus;
   urgency: UrgencyLevel;
-  reminderOffset?: ReminderOffset;      // for due-date trigger
+  /** Signed minutes from the due instant, one per firing. See lib/reminderSteps. */
+  offsetMinutes?: number[];
+  reminderOffset?: ReminderOffset;      // legacy single offset; first step
   recurrence?: RecurrenceSchedule;      // for recurring / daily-digest
   notifyInApp: boolean;
   notifyBrowser: boolean;
+  notifyEmail?: boolean;
   createdAt: number;
   updatedAt: number;
   lastTriggeredAt?: number;
@@ -55,9 +61,8 @@ export interface AutomationRuleFormValues {
   triggerType: TriggerType;
   status: AutomationStatus;
   urgency: UrgencyLevel;
-  // reminder offset
-  offsetValue: string;      // string for input binding
-  offsetUnit: ReminderOffsetUnit;
+  /** The escalation steps, as signed minutes. Edited as rows; see ReminderStepList. */
+  offsetMinutes: number[];
   // recurrence
   recurrenceFrequency: RecurrenceFrequency;
   recurrenceTime: string;
@@ -65,11 +70,12 @@ export interface AutomationRuleFormValues {
   recurrenceDayOfMonth: string;
   notifyInApp: boolean;
   notifyBrowser: boolean;
+  notifyEmail: boolean;
 }
 
 export const TRIGGER_TYPE_LABELS: Record<TriggerType, string> = {
-  'due-date':     'Before due date',
-  'overdue':      'When overdue',
+  'due-date':     'Task due date',
+  'overdue':      'Task due date',
   'recurring':    'Recurring schedule',
   'status-change':'On status change',
   'daily-digest': 'Daily digest',

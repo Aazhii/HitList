@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Zap, Bell, Monitor, Info } from 'lucide-react';
+import { Zap, Bell, Mail, Monitor, Info } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,9 +26,10 @@ import type {
   UrgencyLevel,
   AutomationStatus,
   RecurrenceFrequency,
-  ReminderOffsetUnit,
 } from '@/types/automation';
 import { TRIGGER_TYPE_LABELS, URGENCY_LABELS } from '@/types/automation';
+import { ReminderStepList } from '@/components/automations/ReminderStepList';
+import { MAX_STEPS, normaliseSteps, toMinutes } from '@/lib/reminderSteps';
 
 // ── Default form values ───────────────────────────────────────────────────────
 
@@ -41,14 +42,22 @@ function defaultValues(rule?: AutomationRule): AutomationRuleFormValues {
       triggerType: rule.triggerType,
       status: rule.status,
       urgency: rule.urgency,
-      offsetValue: String(rule.reminderOffset?.value ?? 30),
-      offsetUnit: rule.reminderOffset?.unit ?? 'minutes',
+      // Rules written before steps existed arrive with the server's derived
+      // single step, so an old rule opens showing exactly when it fires.
+      offsetMinutes: rule.offsetMinutes?.length
+        ? [...rule.offsetMinutes]
+        : [toMinutes({
+            value: rule.reminderOffset?.value ?? 30,
+            unit: rule.reminderOffset?.unit ?? 'minutes',
+            direction: 'before',
+          })],
       recurrenceFrequency: rule.recurrence?.frequency ?? 'daily',
       recurrenceTime: rule.recurrence?.time ?? '09:00',
       recurrenceDayOfWeek: String(rule.recurrence?.dayOfWeek ?? 1),
       recurrenceDayOfMonth: String(rule.recurrence?.dayOfMonth ?? 1),
       notifyInApp: rule.notifyInApp,
       notifyBrowser: rule.notifyBrowser,
+      notifyEmail: rule.notifyEmail ?? false,
     };
   }
   return {
@@ -58,14 +67,14 @@ function defaultValues(rule?: AutomationRule): AutomationRuleFormValues {
     triggerType: 'due-date',
     status: 'active',
     urgency: 'medium',
-    offsetValue: '30',
-    offsetUnit: 'minutes',
+    offsetMinutes: [-30],
     recurrenceFrequency: 'daily',
     recurrenceTime: '09:00',
     recurrenceDayOfWeek: '1',
     recurrenceDayOfMonth: '1',
     notifyInApp: true,
     notifyBrowser: false,
+    notifyEmail: false,
   };
 }
 
@@ -73,7 +82,7 @@ function defaultValues(rule?: AutomationRule): AutomationRuleFormValues {
 
 interface FormErrors {
   name?: string;
-  offsetValue?: string;
+  offsetMinutes?: string;
   recurrenceTime?: string;
   notifications?: string;
 }
@@ -81,9 +90,15 @@ interface FormErrors {
 function validate(values: AutomationRuleFormValues): FormErrors {
   const errors: FormErrors = {};
   if (!values.name.trim()) errors.name = 'Rule name is required.';
-  if (values.triggerType === 'due-date') {
-    const n = parseInt(values.offsetValue, 10);
-    if (isNaN(n) || n < 1) errors.offsetValue = 'Enter a positive number.';
+  if (isTaskDriven(values.triggerType)) {
+    const steps = values.offsetMinutes;
+    if (steps.length === 0) {
+      errors.offsetMinutes = 'Add at least one step.';
+    } else if (steps.length > MAX_STEPS) {
+      errors.offsetMinutes = `At most ${MAX_STEPS} steps.`;
+    } else if (normaliseSteps(steps).length !== steps.length) {
+      errors.offsetMinutes = 'Two steps fire at the same moment — change or remove one.';
+    }
   }
   if (
     (values.triggerType === 'recurring' || values.triggerType === 'daily-digest') &&
@@ -91,7 +106,7 @@ function validate(values: AutomationRuleFormValues): FormErrors {
   ) {
     errors.recurrenceTime = 'Time is required.';
   }
-  if (!values.notifyInApp && !values.notifyBrowser) {
+  if (!values.notifyInApp && !values.notifyBrowser && !values.notifyEmail) {
     errors.notifications = 'Enable at least one notification channel.';
   }
   return errors;
@@ -144,13 +159,27 @@ interface AutomationRuleFormProps {
   onSubmit: (values: AutomationRuleFormValues) => void;
 }
 
+/**
+ * The triggers offered. "When overdue" is gone as a separate choice: a step can
+ * simply be after the due time, which is what makes one rule able to escalate
+ * either side of it. Rules already stored as 'overdue' keep that type — see
+ * triggerOf — so editing one never changes when it fires.
+ */
 const TRIGGER_TYPES: TriggerType[] = [
   'due-date',
-  'overdue',
   'recurring',
   'daily-digest',
   'status-change',
 ];
+
+function isTaskDriven(type: TriggerType): boolean {
+  return type === 'due-date' || type === 'overdue';
+}
+
+/** Which card is lit: a stored 'overdue' rule is the same thing as 'due-date'. */
+function triggerOf(type: TriggerType): TriggerType {
+  return type === 'overdue' ? 'due-date' : type;
+}
 
 const URGENCY_LEVELS: UrgencyLevel[] = ['low', 'medium', 'high', 'critical'];
 
@@ -215,7 +244,7 @@ export function AutomationRuleForm({
   };
 
   const isEditing = !!editingRule;
-  const showOffsetFields = values.triggerType === 'due-date';
+  const showOffsetFields = isTaskDriven(values.triggerType);
   const showRecurrenceFields =
     values.triggerType === 'recurring' || values.triggerType === 'daily-digest';
 
@@ -289,10 +318,13 @@ export function AutomationRuleForm({
                 <button
                   key={type}
                   type="button"
-                  onClick={() => set('triggerType', type)}
+                  // Keep a stored 'overdue' rule on its own type rather than
+                  // rewriting it to 'due-date' on save: the two behave the
+                  // same, and not churning the row is the safer default.
+                  onClick={() => set('triggerType', isTaskDriven(values.triggerType) && type === 'due-date' ? values.triggerType : type)}
                   className={cn(
                     'flex flex-col items-start rounded-xl px-3 py-2.5 text-left border transition-all duration-150',
-                    values.triggerType === type
+                    triggerOf(values.triggerType) === type
                       ? 'border-primary/40 bg-primary/8 ring-1 ring-primary/20'
                       : 'border-border bg-card hover:border-border/80'
                   )}
@@ -305,39 +337,15 @@ export function AutomationRuleForm({
             </div>
           </div>
 
-          {/* Reminder offset (due-date trigger) */}
+          {/* Escalation steps (due-date trigger) */}
           {showOffsetFields && (
             <div className="space-y-1.5 animate-fade-in">
-              <SectionLabel>Remind me</SectionLabel>
-              <div className="flex items-center gap-2">
-                <Input
-                  type="number"
-                  min={1}
-                  max={999}
-                  value={values.offsetValue}
-                  onChange={(e) => set('offsetValue', e.target.value)}
-                  className={cn(
-                    'h-9 w-24 text-xs rounded-xl text-center',
-                    errors.offsetValue && 'border-destructive'
-                  )}
-                />
-                <Select
-                  value={values.offsetUnit}
-                  onValueChange={(v) => set('offsetUnit', v as ReminderOffsetUnit)}
-                >
-                  <SelectTrigger className="h-9 text-xs rounded-xl flex-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="minutes">minutes before due</SelectItem>
-                    <SelectItem value="hours">hours before due</SelectItem>
-                    <SelectItem value="days">days before due</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {errors.offsetValue && (
-                <p className="text-xs text-destructive animate-fade-in">{errors.offsetValue}</p>
-              )}
+              <SectionLabel>Notify me</SectionLabel>
+              <ReminderStepList
+                steps={values.offsetMinutes}
+                onChange={(steps) => set('offsetMinutes', steps)}
+                error={errors.offsetMinutes}
+              />
             </div>
           )}
 
@@ -464,7 +472,22 @@ export function AutomationRuleForm({
                 <Monitor className="size-3" />
                 Browser
               </ToggleChip>
+              <ToggleChip
+                active={values.notifyEmail}
+                onClick={() => set('notifyEmail', !values.notifyEmail)}
+              >
+                <Mail className="size-3" />
+                Email
+              </ToggleChip>
             </div>
+            {values.notifyEmail && (
+              // Better to say so than to offer a switch that quietly does
+              // nothing: the server skips email until a sender is configured.
+              <p className="text-[11px] text-muted-foreground">
+                Email needs a verified sender address on the server (NOTIFY_FROM_EMAIL).
+                Until then these arrive in-app and in the browser only.
+              </p>
+            )}
             {errors.notifications && (
               <p className="text-xs text-destructive animate-fade-in flex items-center gap-1">
                 <Info className="size-3" />

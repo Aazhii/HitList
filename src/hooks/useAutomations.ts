@@ -18,6 +18,7 @@ import type {
   AutomationRule, AutomationRuleFormValues, AutomationStatus,
 } from '@/types/automation';
 import { automationApi, isNetworkError, type ApiAutomationRule, type AutomationRuleInput } from '@/lib/api';
+import { normaliseSteps } from '@/lib/reminderSteps';
 
 const STORAGE_KEY = 'kaizen-automations-v1';
 
@@ -55,6 +56,7 @@ function fromApi(rule: ApiAutomationRule, todos: { id: string; text: string }[])
     triggerType: rule.triggerType,
     status: rule.status,
     urgency: rule.urgency,
+    offsetMinutes: rule.offsetMinutes,
     reminderOffset: rule.reminderOffset,
     recurrence: rule.recurrence,
     notifyInApp: rule.notifyInApp,
@@ -69,6 +71,7 @@ function fromApi(rule: ApiAutomationRule, todos: { id: string; text: string }[])
 /** The form's strings, parsed into what the API expects. */
 function formValuesToInput(values: AutomationRuleFormValues): AutomationRuleInput {
   const scheduled = values.triggerType === 'recurring' || values.triggerType === 'daily-digest';
+  const taskDriven = values.triggerType === 'due-date' || values.triggerType === 'overdue';
 
   return {
     name: values.name.trim(),
@@ -77,9 +80,7 @@ function formValuesToInput(values: AutomationRuleFormValues): AutomationRuleInpu
     triggerType: values.triggerType,
     status: values.status,
     urgency: values.urgency,
-    reminderOffset: values.triggerType === 'due-date'
-      ? { value: Math.max(1, parseInt(values.offsetValue, 10) || 1), unit: values.offsetUnit }
-      : undefined,
+    offsetMinutes: taskDriven ? normaliseSteps(values.offsetMinutes) : undefined,
     recurrence: scheduled
       ? {
           frequency: values.recurrenceFrequency,
@@ -92,7 +93,7 @@ function formValuesToInput(values: AutomationRuleFormValues): AutomationRuleInpu
       : undefined,
     notifyInApp: values.notifyInApp,
     notifyBrowser: values.notifyBrowser,
-    notifyEmail: false,
+    notifyEmail: values.notifyEmail,
   };
 }
 
@@ -233,11 +234,12 @@ export function useAutomations(todos: { id: string; text: string }[]): UseAutoma
         triggerType: existing.triggerType,
         status,
         urgency: existing.urgency,
+        offsetMinutes: existing.offsetMinutes,
         reminderOffset: existing.reminderOffset,
         recurrence: existing.recurrence,
         notifyInApp: existing.notifyInApp,
         notifyBrowser: existing.notifyBrowser,
-        notifyEmail: false,
+        notifyEmail: existing.notifyEmail ?? false,
       });
       setRules((prev) => prev.map((r) => (r.id === id ? fromApi(saved, todosRef.current) : r)));
       setError(null);

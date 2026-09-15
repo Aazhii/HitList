@@ -427,6 +427,14 @@ export interface ApiAutomationRule {
   triggerType: 'due-date' | 'overdue' | 'recurring' | 'status-change' | 'daily-digest';
   status: 'active' | 'paused' | 'draft';
   urgency: 'low' | 'medium' | 'high' | 'critical';
+  /**
+   * Signed minutes from the due instant, one per firing: -60 is an hour
+   * before, 0 is when it falls due, 30 is half an hour after. The server fills
+   * this in for rules written before it existed, so it is always the truth
+   * about when a task-driven rule fires.
+   */
+  offsetMinutes?: number[];
+  /** The single offset the first step describes. Superseded by offsetMinutes. */
   reminderOffset?: ApiReminderOffset;
   recurrence?: ApiRecurrence;
   notifyInApp: boolean;

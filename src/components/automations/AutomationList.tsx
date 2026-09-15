@@ -14,6 +14,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { summarise } from '@/lib/reminderSteps';
 import { Button } from '@/components/ui/button';
 import type { AutomationRule, TriggerType, UrgencyLevel, AutomationStatus } from '@/types/automation';
 import { TRIGGER_TYPE_LABELS, URGENCY_LABELS } from '@/types/automation';
@@ -83,10 +84,14 @@ function formatNextTrigger(ts: number): string {
 }
 
 function formatOffset(rule: AutomationRule): string {
+  // A rule fires at each of its steps, so the summary lists them rather than
+  // naming one offset: "1 hour before due, then 5 minutes before due".
+  if (rule.offsetMinutes?.length) return summarise(rule.offsetMinutes);
   if (rule.triggerType === 'due-date' && rule.reminderOffset) {
     const { value, unit } = rule.reminderOffset;
     return `${value} ${unit} before due`;
   }
+  if (rule.triggerType === 'overdue') return 'when it falls due';
   if (rule.recurrence) {
     const { frequency, time, dayOfWeek, dayOfMonth } = rule.recurrence;
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
