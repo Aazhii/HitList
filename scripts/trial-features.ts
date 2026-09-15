@@ -55,6 +55,7 @@ show(rows);
 
 if (wanted.size === 0) process.exit(0);
 
+// Values as strings: the row API rejects a JSON boolean or number with INVALID_INPUT.
 const now = Date.now();
 for (const [key, enabled] of wanted) {
   const row = rows.find((r) => r.FeatureKey.trim().toLowerCase() === key);
@@ -67,9 +68,9 @@ for (const [key, enabled] of wanted) {
     continue;
   }
   if (row) {
-    await api(target, 'PATCH', `/table/${TRIAL_FEATURES_TABLE}/row`, [{ ROWID: row.ROWID, Enabled: enabled, UpdatedAt: now }]);
+    await api(target, 'PATCH', `/table/${TRIAL_FEATURES_TABLE}/row`, [{ ROWID: row.ROWID, Enabled: String(enabled), UpdatedAt: String(now) }]);
   } else {
-    await api(target, 'POST', `/table/${TRIAL_FEATURES_TABLE}/row`, [{ FeatureKey: key, Enabled: enabled, UpdatedAt: now }]);
+    await api(target, 'POST', `/table/${TRIAL_FEATURES_TABLE}/row`, [{ FeatureKey: key, Enabled: String(enabled), UpdatedAt: String(now) }]);
   }
   console.log(`[features] ${row ? 'updated' : 'inserted'} ${key} = ${enabled}`);
 }
