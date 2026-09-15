@@ -26,6 +26,7 @@
 import type { CatalystApp } from '../notifications/types.ts';
 import { enqueue, type QueueEntry } from '../notifications/queue.ts';
 import { nextRecurrence, recurrenceDedupeKey, type Recurrence } from './recurrence.ts';
+import { humanDuration } from '../notifications/schedule.ts';
 import { markTriggered, parkRule, type RuleRow } from './rules.ts';
 import { recordRun } from './runs.ts';
 
@@ -85,9 +86,24 @@ export function initialTrigger(rule: RuleRow, timeZone: string, from = Date.now(
   return nextRecurrence(recurrenceOf(rule), timeZone, from) ?? 0;
 }
 
-/** What the notification says. Rendered here so the sweep does no formatting. */
-export function renderRule(rule: RuleRow): { title: string; body: string } {
+/**
+ * What the notification says. Rendered here so the sweep does no formatting.
+ *
+ * `step` is the firing's offset in signed minutes from the task's due instant,
+ * and is what makes the body worth reading: the same rule saying "Due in 1
+ * hour" and later "Overdue by 30 minutes" beats it saying "This automation
+ * fired." twice. Schedule-driven rules pass no step and are unchanged.
+ */
+export function renderRule(rule: RuleRow, step?: number): { title: string; body: string } {
   const title = rule.name || 'Automation';
+
+  if (step !== undefined) {
+    const when = step < 0 ? `Due in ${humanDuration(step)}`
+      : step === 0 ? 'Due now'
+      : `Overdue by ${humanDuration(step)}`;
+    // The description is the user's own words, so it leads when they wrote one.
+    return { title, body: rule.description ? `${rule.description} · ${when}` : when };
+  }
 
   if (rule.triggerType === 'daily-digest') {
     return {

@@ -42,6 +42,7 @@ function rule(over: Partial<RuleRow> = {}): RuleRow {
     urgency: 'medium',
     offsetValue: 0,
     offsetUnit: 'minutes',
+    offsetSteps: [],
     recurrenceFreq: 'daily',
     recurrenceTime: '09:00',
     recurrenceDayOfWeek: 0,

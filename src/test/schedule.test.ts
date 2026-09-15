@@ -17,6 +17,7 @@ import {
   isValidTime,
   planTaskReminder,
   reminderDedupeKey,
+  humanDuration,
   renderReminder,
   DEFAULT_REMINDER_MINUTES,
   type SchedulableTask,
@@ -189,5 +190,22 @@ describe('renderReminder', () => {
   it('carries the task title', () => {
     expect(renderReminder({ id: 'x', title: 'Ship it', status: 'todo' }, 15).title)
       .toBe('Ship it');
+  });
+});
+
+describe('humanDuration', () => {
+  it('promotes only exact multiples, so the wording is never a rounded lie', () => {
+    expect(humanDuration(45)).toBe('45 minutes');
+    expect(humanDuration(60)).toBe('1 hour');
+    expect(humanDuration(90)).toBe('90 minutes');
+    expect(humanDuration(120)).toBe('2 hours');
+    expect(humanDuration(1440)).toBe('1 day');
+    expect(humanDuration(2880)).toBe('2 days');
+  });
+
+  it('reads a signed step as a span', () => {
+    expect(humanDuration(-60)).toBe('1 hour');
+    expect(humanDuration(1)).toBe('1 minute');
+    expect(humanDuration(0)).toBe('no time');
   });
 });

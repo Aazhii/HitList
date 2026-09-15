@@ -407,12 +407,16 @@ export async function cancelSupersededFor(
   app: CatalystApp,
   sourceType: QueueEntry['sourceType'],
   sourceId: string,
-  keepDedupeKey: string,
+  // A list, not one key: a rule fires at several steps, and each one's pending
+  // row is a sibling of the others rather than something they supersede.
+  // Keeping only the current key here would have each step cancel the rest.
+  keepDedupeKeys: readonly string[],
 ): Promise<number> {
+  const keep = new Set(keepDedupeKeys);
   const rows = await findPendingForSource(app, sourceType, sourceId);
   let cancelled = 0;
   for (const row of rows) {
-    if (row.dedupeKey === keepDedupeKey) continue;
+    if (keep.has(row.dedupeKey)) continue;
     await setStatus(app, row.rowId, { Status: QueueStatus.CANCELLED });
     cancelled++;
   }

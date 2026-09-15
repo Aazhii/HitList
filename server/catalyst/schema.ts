@@ -178,6 +178,13 @@ export const SCHEMA: TableSpec[] = [
       { name: 'Urgency', type: 'varchar', maxLength: 16, note: 'low | medium | high | critical' },
       { name: 'OffsetValue', type: 'int' },
       { name: 'OffsetUnit', type: 'varchar', maxLength: 16, note: 'minutes | hours | days' },
+      // Added after launch. A rule used to fire once, at OffsetValue before the
+      // due instant; it now fires once per step, which is what lets one rule
+      // escalate. Empty on rules written before this column, and read back
+      // through stepsForRule() as the single step those columns described —
+      // see server/automations/steps.ts.
+      { name: 'OffsetSteps', type: 'varchar', maxLength: 255,
+        note: 'Signed minutes from the due instant, comma separated: -60,-5,0,30' },
       { name: 'RecurrenceFreq', type: 'varchar', maxLength: 16,
         note: 'daily | weekdays | weekly | monthly' },
       { name: 'RecurrenceTime', type: 'varchar', maxLength: 5, note: 'HH:MM, local to the owner' },

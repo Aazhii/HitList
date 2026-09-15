@@ -81,11 +81,14 @@ import { startScheduler, schedulerEnabled, intervalFromEnv } from './notificatio
 import { listInbox, markRead, markAllRead, removeEntry } from './notifications/inbox.ts';
 import {
   listRules, getRule, insertRule, updateRule, deleteRule,
-  TRIGGER_TYPES, RULE_STATUSES, URGENCIES, OFFSET_UNITS,
+  TRIGGER_TYPES, RULE_STATUSES, URGENCIES, OFFSET_UNITS, setStepsColumnAvailable,
   type AutomationRule, type RuleRow,
 } from './automations/rules.ts';
 import { initialTrigger } from './automations/planner.ts';
 import { syncTaskRules, cancelTaskRules, backfillTaskRules } from './automations/taskTriggers.ts';
+import {
+  MAX_STEPS, MAX_STEP_MINUTES, legacyOffsetMinutes, normaliseSteps, stepsForRule,
+} from './automations/steps.ts';
 import { listRuns, listRunsForRule, recordRun } from './automations/runs.ts';
 import { channelsFor, renderRule } from './automations/planner.ts';
 import { enqueue, cancelPendingFor } from './notifications/queue.ts';
@@ -355,7 +358,7 @@ function initCatalystAsUser(req: express.Request) {
 //     typing every column as `text`. Schema changes belong in
 //     `pnpm catalyst:setup`, which knows the real column types.
 
-import { SCHEMA, TABLE_NAMES, TASKS_TABLE, LISTS_TABLE, NOTES_TABLE } from './catalyst/schema.ts';
+import { SCHEMA, TABLE_NAMES, TASKS_TABLE, LISTS_TABLE, NOTES_TABLE, RULES_TABLE } from './catalyst/schema.ts';
 
 /**
  * Checks that every table in the schema is queryable.
@@ -626,35 +629,60 @@ function getTasksTable(): string { return TASKS_TABLE; }
 const TASKS_COLS = 'TaskId,OwnerId,Title,Status,Quadrant,TaskPriority,Note,DueDate,DueTime,Category,ListId,TaskOrder,ReminderEnabled,ReminderMinutesBefore,CompletedAt,CreatedAt,UpdatedAt';
 
 /**
- * Whether KaizenTasks has the SourceNoteId/SourceBlockId columns.
+ * Columns added after launch, and whether the table actually has them yet.
  *
- * They were added after launch by `pnpm catalyst:setup`. Selecting a column
- * that does not exist fails the whole query, so if this server were deployed
- * before the columns were created, naming them would break every task read for
- * every user. Instead the server checks once, and until the columns exist it
- * reads and writes exactly the columns it always did: links are simply not
- * stored. null = not checked yet.
+ * They arrive with `pnpm catalyst:setup`. Selecting a column that does not
+ * exist fails the WHOLE query, so naming one before it is created would break
+ * every read of that table for every user — a deploy landing ahead of the
+ * schema step must not be able to do that. So each is probed once and the
+ * feature it carries simply stays off until it is there.
+ *
+ * A failure that is not "no such column" is deliberately not cached: it is a
+ * network or credential blip, and the next request checks again.
  */
-let taskLinkColumns: boolean | null = null;
+const optionalColumns = new Map<string, boolean>();
 
-async function ensureTaskLinkColumns(req: express.Request): Promise<boolean> {
-  if (taskLinkColumns !== null || !catalystAvailable) return taskLinkColumns ?? false;
+async function hasOptionalColumn(
+  req: express.Request, table: string, column: string, whatItCosts: string,
+): Promise<boolean> {
+  const key = `${table}.${column}`;
+  const known = optionalColumns.get(key);
+  if (known !== undefined) return known;
+  if (!catalystAvailable) return false;
+
   try {
-    await initCatalyst(req).zcql().executeZCQLQuery(`SELECT SourceNoteId FROM ${TASKS_TABLE} LIMIT 1`);
-    taskLinkColumns = true;
+    await initCatalyst(req).zcql().executeZCQLQuery(`SELECT ${column} FROM ${table} LIMIT 1`);
+    optionalColumns.set(key, true);
+    return true;
   } catch (e) {
-    const msg = describeError(e);
-    if (/column|invalid|not found|no such|does not exist/i.test(msg)) {
-      taskLinkColumns = false;
+    if (/column|invalid|not found|no such|does not exist/i.test(describeError(e))) {
+      optionalColumns.set(key, false);
       console.warn(
-        `[kaizen] ${TASKS_TABLE}.SourceNoteId is missing — note links will not be stored until ` +
-        '`pnpm catalyst:setup` adds it. Existing task reads and writes are unaffected.'
+        `[kaizen] ${key} is missing — ${whatItCosts} until \`pnpm catalyst:setup\` adds it. ` +
+        'Existing reads and writes are unaffected.'
       );
     }
-    // Anything else (a network or credential blip) is not cached, so the next
-    // request checks again. Until then this request behaves as before.
+    return false;
   }
-  return taskLinkColumns ?? false;
+}
+
+/** Whether KaizenTasks has the note-link columns. */
+let taskLinkColumns = false;
+
+async function ensureTaskLinkColumns(req: express.Request): Promise<boolean> {
+  taskLinkColumns = await hasOptionalColumn(
+    req, TASKS_TABLE, 'SourceNoteId', 'note links will not be stored',
+  );
+  return taskLinkColumns;
+}
+
+/** Whether KaizenAutomationRules has the escalation-steps column. */
+async function ensureRuleStepsColumn(req: express.Request): Promise<boolean> {
+  const available = await hasOptionalColumn(
+    req, RULES_TABLE, 'OffsetSteps', 'a rule will fire at one offset rather than several',
+  );
+  setStepsColumnAvailable(available);
+  return available;
 }
 
 /** The task columns to SELECT, given what the table has. */
@@ -972,6 +1000,32 @@ function optString(
   if (typeof value !== 'string') { errs.add(field, 'must be a string'); return fallback; }
   if (value.length > maxLen)     { errs.add(field, `must be at most ${maxLen} characters`); return fallback; }
   return value;
+}
+
+/**
+ * The firing steps of a rule: signed minutes from the due instant.
+ *
+ * Absent is legitimate — an older client sends a single `reminderOffset`
+ * instead — so only a present-but-wrong value is an error.
+ */
+function optSteps(errs: FieldErrors, value: unknown): number[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) { errs.add('offsetMinutes', 'must be an array of minutes'); return []; }
+  if (value.length > MAX_STEPS) {
+    errs.add('offsetMinutes', `must have at most ${MAX_STEPS} entries`);
+    return [];
+  }
+  for (const entry of value) {
+    if (typeof entry !== 'number' || !Number.isFinite(entry)) {
+      errs.add('offsetMinutes', 'must contain only numbers');
+      return [];
+    }
+    if (Math.abs(entry) > MAX_STEP_MINUTES) {
+      errs.add('offsetMinutes', 'must be within a year of the due date');
+      return [];
+    }
+  }
+  return normaliseSteps(value as number[]);
 }
 
 /** Optional id: '' clears; anything else must be a safe id. */
@@ -1336,6 +1390,10 @@ function ruleToApi(rule: AutomationRule) {
     triggerType: rule.triggerType,
     status: rule.status,
     urgency: rule.urgency,
+    // Signed minutes from the due instant, one per firing. Derived for rules
+    // written before the column existed, so a client never has to know which.
+    offsetMinutes: stepsForRule(rule),
+    // The single offset the first step describes. Kept for older clients.
     reminderOffset: rule.offsetValue > 0
       ? { value: rule.offsetValue, unit: rule.offsetUnit }
       : undefined,
@@ -1384,6 +1442,7 @@ function parseRuleBody(
     notifyInApp: optBoolean(errs, 'notifyInApp', body['notifyInApp'], true),
     notifyBrowser: optBoolean(errs, 'notifyBrowser', body['notifyBrowser'], false),
     notifyEmail: optBoolean(errs, 'notifyEmail', body['notifyEmail'], false),
+    offsetSteps: optSteps(errs, body['offsetMinutes']),
   };
 
   // A schedule-driven rule with no time cannot be planned, and would sit
@@ -1391,6 +1450,15 @@ function parseRuleBody(
   const scheduled = parsed.triggerType === 'recurring' || parsed.triggerType === 'daily-digest';
   if (scheduled && !parsed.recurrenceTime) {
     errs.add('recurrence.time', 'is required for a recurring or digest rule');
+  }
+
+  // A task-driven rule needs at least one firing. An older client sends none,
+  // and its single reminderOffset becomes that one step, so both shapes work.
+  const taskDriven = parsed.triggerType === 'due-date' || parsed.triggerType === 'overdue';
+  if (taskDriven && parsed.offsetSteps.length === 0) {
+    parsed.offsetSteps = parsed.triggerType === 'overdue'
+      ? [0]
+      : [-legacyOffsetMinutes(parsed.offsetValue, parsed.offsetUnit)];
   }
 
   return errs.ok && name !== undefined ? parsed : undefined;
@@ -1410,6 +1478,7 @@ app.get('/api/automation-rules', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
   if (!catalystAvailable) { res.json([]); return; }
+  await ensureRuleStepsColumn(req);
 
   try {
     const rules = await listRules(initCatalyst(req) as unknown as NotificationApp, ownerId);
@@ -1423,6 +1492,7 @@ app.post('/api/automation-rules', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
   if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  await ensureRuleStepsColumn(req);
 
   const errs = new FieldErrors();
   const fields = parseRuleBody((req.body ?? {}) as Record<string, unknown>, errs);
@@ -1458,6 +1528,7 @@ app.put('/api/automation-rules/:id', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
   if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  await ensureRuleStepsColumn(req);
 
   const errs = new FieldErrors();
   const fields = parseRuleBody((req.body ?? {}) as Record<string, unknown>, errs);
@@ -1492,6 +1563,7 @@ app.delete('/api/automation-rules/:id', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
   if (!catalystAvailable) { res.sendStatus(204); return; }
+  await ensureRuleStepsColumn(req);
 
   try {
     const catalyst = initCatalyst(req) as unknown as NotificationApp;
@@ -1549,6 +1621,7 @@ app.post('/api/automation-runs/trigger/:id', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
   if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  await ensureRuleStepsColumn(req);
 
   try {
     const catalyst = initCatalyst(req) as unknown as NotificationApp;
@@ -1748,6 +1821,7 @@ async function syncReminderFor(
   // The owner's automation rules that hang off a task rather than a clock:
   // due-date, overdue, and status-change. These cannot be found by
   // NextTriggerAt, so the write path is the only place they can be evaluated.
+  await ensureRuleStepsColumn(req);
   const rules = await syncTaskRules(
     catalyst, { ownerId, timeZone, email, previousStatus }, schedulable,
   );
@@ -1819,6 +1893,8 @@ app.post('/api/reminders/backfill', async (req, res) => {
     }));
 
     const out = await backfillReminders(catalyst, ctx, schedulable);
+
+    await ensureRuleStepsColumn(req);
 
     // The owner's task-driven rules, against the tasks that already exist. A
     // rule is otherwise only evaluated when a task is written, so one created
@@ -2989,6 +3065,12 @@ async function settleBackend(): Promise<void> {
     const tablesOk = await probeCatalystTables({} as express.Request);
     if (tablesOk) {
       console.log('[kaizen] Catalyst DataStore tables verified');
+      // Settle the after-launch columns here too, so the in-process sweep
+      // knows about them before any request has arrived to probe them. Under
+      // the gateway there are no credentials yet and this is a no-op; the
+      // per-request probes cover that case.
+      await ensureTaskLinkColumns({} as express.Request);
+      await ensureRuleStepsColumn({} as express.Request);
       return;
     }
     console.warn('[kaizen] Catalyst DataStore tables unavailable — using JSON-file fallback.');

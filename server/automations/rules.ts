@@ -14,6 +14,7 @@ import type { CatalystApp } from '../notifications/types.ts';
 import { RULES_TABLE } from '../catalyst/schema.ts';
 import { zcqlString, unwrapRows, str, num } from '../notifications/zcql.ts';
 import type { RecurrenceFrequency } from './recurrence.ts';
+import { formatSteps, legacyColumnsFor, parseSteps } from './steps.ts';
 
 export const TRIGGER_TYPES = [
   'due-date', 'overdue', 'recurring', 'status-change', 'daily-digest',
@@ -39,8 +40,18 @@ export interface AutomationRule {
   triggerType: TriggerType;
   status: RuleStatus;
   urgency: Urgency;
+  /**
+   * Legacy single offset. Kept in step with the first entry of `offsetSteps`
+   * on every write, so a rolled-back server still fires something sensible.
+   */
   offsetValue: number;
   offsetUnit: OffsetUnit;
+  /**
+   * Signed minutes relative to the due instant, one per firing: -60 is an hour
+   * before, 0 is when it falls due, 30 is half an hour after. Empty for a rule
+   * written before the column existed — read it through stepsForRule().
+   */
+  offsetSteps: number[];
   recurrenceFreq: RecurrenceFrequency;
   recurrenceTime: string;
   recurrenceDayOfWeek: number;
@@ -76,6 +87,29 @@ const SELECT_COLUMNS =
   'OwnerEmail,LastTriggeredAt,NextTriggerAt,CreatedAt,UpdatedAt';
 
 /**
+ * OffsetSteps was added after launch, so it is selected only once the table is
+ * known to have it. Naming a column that does not exist fails the whole query,
+ * which would break every rule read for every user — see ruleColumns().
+ */
+const STEPS_COLUMN = 'OffsetSteps';
+
+let hasStepsColumn = false;
+
+/** Told by the server once it has probed the table. */
+export function setStepsColumnAvailable(available: boolean): void {
+  hasStepsColumn = available;
+}
+
+export function stepsColumnAvailable(): boolean {
+  return hasStepsColumn;
+}
+
+/** The columns to select, given what the table has. */
+export function ruleColumns(): string {
+  return hasStepsColumn ? `${SELECT_COLUMNS},${STEPS_COLUMN}` : SELECT_COLUMNS;
+}
+
+/**
  * The datastore hands booleans back inconsistently across SDK versions —
  * `true`, `'true'`, and `'1'` have all been observed — so normalise rather
  * than trusting any single form.
@@ -99,6 +133,7 @@ export function toRule(row: Record<string, unknown>): RuleRow {
     urgency: str(row['Urgency']) as Urgency,
     offsetValue: num(row['OffsetValue']),
     offsetUnit: (str(row['OffsetUnit']) || 'minutes') as OffsetUnit,
+    offsetSteps: parseSteps(row[STEPS_COLUMN]),
     recurrenceFreq: (str(row['RecurrenceFreq']) || 'daily') as RecurrenceFrequency,
     recurrenceTime: str(row['RecurrenceTime']),
     recurrenceDayOfWeek: num(row['RecurrenceDayOfWeek']),
@@ -116,6 +151,12 @@ export function toRule(row: Record<string, unknown>): RuleRow {
 }
 
 export function toRow(rule: AutomationRule): Record<string, string> {
+  // The legacy pair always describes the earliest step, so the two never
+  // disagree and an older build reading only them still fires sensibly.
+  const legacy = rule.offsetSteps.length
+    ? legacyColumnsFor(rule.offsetSteps)
+    : { value: rule.offsetValue, unit: rule.offsetUnit };
+
   return {
     RuleId: rule.id,
     OwnerId: rule.ownerId,
@@ -125,8 +166,9 @@ export function toRow(rule: AutomationRule): Record<string, string> {
     TriggerType: rule.triggerType,
     RuleStatus: rule.status,
     Urgency: rule.urgency,
-    OffsetValue: String(rule.offsetValue),
-    OffsetUnit: rule.offsetUnit,
+    OffsetValue: String(legacy.value),
+    OffsetUnit: legacy.unit,
+    ...(hasStepsColumn ? { [STEPS_COLUMN]: formatSteps(rule.offsetSteps) } : {}),
     RecurrenceFreq: rule.recurrenceFreq,
     RecurrenceTime: rule.recurrenceTime,
     RecurrenceDayOfWeek: String(rule.recurrenceDayOfWeek),
@@ -147,7 +189,7 @@ export function toRow(rule: AutomationRule): Record<string, string> {
 
 export async function listRules(app: CatalystApp, ownerId: string): Promise<RuleRow[]> {
   const results = await app.zcql().executeZCQLQuery(
-    `SELECT ${SELECT_COLUMNS} FROM ${RULES_TABLE} ` +
+    `SELECT ${ruleColumns()} FROM ${RULES_TABLE} ` +
     `WHERE OwnerId = ${zcqlString(ownerId)} ORDER BY CreatedAt DESC`,
   );
   return unwrapRows(results, RULES_TABLE).map(toRule);
@@ -158,7 +200,7 @@ export async function getRule(
   app: CatalystApp, ownerId: string, ruleId: string,
 ): Promise<RuleRow | null> {
   const results = await app.zcql().executeZCQLQuery(
-    `SELECT ${SELECT_COLUMNS} FROM ${RULES_TABLE} ` +
+    `SELECT ${ruleColumns()} FROM ${RULES_TABLE} ` +
     `WHERE RuleId = ${zcqlString(ruleId)} AND OwnerId = ${zcqlString(ownerId)} LIMIT 1`,
   );
   const rows = unwrapRows(results, RULES_TABLE);
@@ -179,7 +221,7 @@ export async function findDueRules(
   app: CatalystApp, now: number, limit = 100,
 ): Promise<RuleRow[]> {
   const results = await app.zcql().executeZCQLQuery(
-    `SELECT ${SELECT_COLUMNS} FROM ${RULES_TABLE} ` +
+    `SELECT ${ruleColumns()} FROM ${RULES_TABLE} ` +
     `WHERE RuleStatus = 'active' AND NextTriggerAt > 0 AND NextTriggerAt <= ${Math.floor(now)} ` +
     `ORDER BY NextTriggerAt ASC LIMIT ${limit}`,
   );
@@ -196,7 +238,7 @@ export async function findRulesByTrigger(
   app: CatalystApp, ownerId: string, triggerType: TriggerType,
 ): Promise<RuleRow[]> {
   const results = await app.zcql().executeZCQLQuery(
-    `SELECT ${SELECT_COLUMNS} FROM ${RULES_TABLE} ` +
+    `SELECT ${ruleColumns()} FROM ${RULES_TABLE} ` +
     `WHERE OwnerId = ${zcqlString(ownerId)} AND RuleStatus = 'active' ` +
     `AND TriggerType = ${zcqlString(triggerType)}`,
   );

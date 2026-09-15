@@ -124,7 +124,7 @@ export async function syncTaskReminder(
       },
     });
 
-    const cancelled = await cancelSupersededFor(app, 'TASK', task.id, plan.dedupeKey);
+    const cancelled = await cancelSupersededFor(app, 'TASK', task.id, [plan.dedupeKey]);
 
     return {
       enqueued,

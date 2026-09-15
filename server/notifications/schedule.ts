@@ -179,12 +179,27 @@ export function renderReminder(task: SchedulableTask, minutesBefore: number): {
   title: string;
   body: string;
 } {
-  const when = minutesBefore >= 60 && minutesBefore % 60 === 0
-    ? `${minutesBefore / 60} hour${minutesBefore === 60 ? '' : 's'}`
-    : `${minutesBefore} minutes`;
-
   return {
     title: task.title,
-    body: `Due in ${when}.`,
+    body: `Due in ${humanDuration(minutesBefore)}.`,
   };
+}
+
+/**
+ * A span of minutes in words: "45 minutes", "1 hour", "2 days".
+ *
+ * Shared with the automation rules, so a reminder and a rule describing the
+ * same gap never word it differently. Only exact multiples are promoted to a
+ * larger unit — 90 minutes stays "90 minutes" rather than becoming a rounded
+ * "1 hour", which would be a lie about when the notification arrived.
+ */
+export function humanDuration(minutes: number): string {
+  const n = Math.abs(Math.round(minutes));
+  if (n === 0) return 'no time';
+
+  const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
+
+  if (n % (24 * 60) === 0) return plural(n / (24 * 60), 'day');
+  if (n % 60 === 0) return plural(n / 60, 'hour');
+  return plural(n, 'minute');
 }

@@ -253,7 +253,7 @@ describe('cancellation', () => {
     await enqueue(fake.app, entry({ dedupeKey: 'old' }));
     await enqueue(fake.app, entry({ dedupeKey: 'new' }));
 
-    expect(await cancelSupersededFor(fake.app, 'TASK', 't1', 'new')).toBe(1);
+    expect(await cancelSupersededFor(fake.app, 'TASK', 't1', ['new'])).toBe(1);
 
     const pending = await findPendingForSource(fake.app, 'TASK', 't1');
     expect(pending.map((r) => r.dedupeKey)).toEqual(['new']);
@@ -262,7 +262,7 @@ describe('cancellation', () => {
   it('is a no-op when nothing was superseded', async () => {
     // Safe to call on every task write, including saves that changed nothing.
     await enqueue(fake.app, entry({ dedupeKey: 'current' }));
-    expect(await cancelSupersededFor(fake.app, 'TASK', 't1', 'current')).toBe(0);
+    expect(await cancelSupersededFor(fake.app, 'TASK', 't1', ['current'])).toBe(0);
     expect(await findPendingForSource(fake.app, 'TASK', 't1')).toHaveLength(1);
   });
 

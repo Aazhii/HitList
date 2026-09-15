@@ -24,19 +24,14 @@ import type { CatalystApp } from '../notifications/types.ts';
 import { enqueue, cancelSupersededFor, cancelPendingFor } from '../notifications/queue.ts';
 import { zcqlString, unwrapRows } from '../notifications/zcql.ts';
 import { RULES_TABLE } from '../catalyst/schema.ts';
-import { toRule, type RuleRow } from './rules.ts';
+import { toRule, ruleColumns, type RuleRow } from './rules.ts';
+import { stepsForRule } from './steps.ts';
 import { channelsFor, renderRule } from './planner.ts';
 import { recordRun } from './runs.ts';
 import { zonedToEpoch, END_OF_DAY, type SchedulableTask } from '../notifications/schedule.ts';
 
 /** The triggers this module owns. */
 const TASK_TRIGGERS = ['due-date', 'overdue', 'status-change'] as const;
-
-const SELECT_COLUMNS =
-  'ROWID,RuleId,OwnerId,Name,Description,TaskId,TriggerType,RuleStatus,Urgency,' +
-  'OffsetValue,OffsetUnit,RecurrenceFreq,RecurrenceTime,RecurrenceDayOfWeek,' +
-  'RecurrenceDayOfMonth,NotifyInApp,NotifyBrowser,NotifyEmail,OwnerTimezone,' +
-  'OwnerEmail,LastTriggeredAt,NextTriggerAt,CreatedAt,UpdatedAt';
 
 /**
  * The owner's active task-driven rules, in one query.
@@ -47,7 +42,7 @@ const SELECT_COLUMNS =
 export async function findTaskRules(app: CatalystApp, ownerId: string): Promise<RuleRow[]> {
   const list = TASK_TRIGGERS.map(zcqlString).join(', ');
   const results = await app.zcql().executeZCQLQuery(
-    `SELECT ${SELECT_COLUMNS} FROM ${RULES_TABLE} ` +
+    `SELECT ${ruleColumns()} FROM ${RULES_TABLE} ` +
     `WHERE OwnerId = ${zcqlString(ownerId)} AND RuleStatus = 'active' ` +
     `AND TriggerType IN (${list})`,
   );
@@ -100,33 +95,48 @@ export function fireAtFor(
   timeZone: string,
   now: number,
 ): number | null {
+  const firings = firingsFor(rule, task, timeZone, now);
+  return firings.length ? firings[0].fireAt : null;
+}
+
+/** One firing of a rule against a task: the step, and when it lands. */
+export interface Firing {
+  /** Signed minutes from the due instant; undefined for a status change. */
+  step?: number;
+  fireAt: number;
+}
+
+/**
+ * Every instant a rule fires for a task.
+ *
+ * A due-date rule used to fire once. It now fires once per step, which is what
+ * lets one rule escalate — an hour before, then five minutes before, then again
+ * when it is overdue — instead of needing a rule per notification.
+ *
+ * An empty list means the rule has nothing to fire for this task: no due date,
+ * the task is done, or the date will not parse.
+ */
+export function firingsFor(
+  rule: RuleRow,
+  task: SchedulableTask,
+  timeZone: string,
+  now: number,
+): Firing[] {
   // A completed task has nothing left to remind anyone about.
-  if (task.status === 'DONE' || task.status === 'done') return null;
+  if (task.status === 'DONE' || task.status === 'done') return [];
 
-  switch (rule.triggerType) {
-    case 'due-date': {
-      if (!task.dueDate) return null;
-      const dueAt = zonedToEpoch(task.dueDate, task.dueTime || END_OF_DAY, timeZone);
-      return dueAt === null ? null : dueAt - offsetMs(rule);
-    }
+  // An event, not a schedule. It fires now, and only when the status actually
+  // moved — re-saving a task with the same status must not produce a
+  // notification; the caller checks that.
+  if (rule.triggerType === 'status-change') return [{ fireAt: now }];
 
-    case 'overdue': {
-      if (!task.dueDate) return null;
-      const dueAt = zonedToEpoch(task.dueDate, task.dueTime || END_OF_DAY, timeZone);
-      // Fires at the due instant itself: "overdue" begins the moment it passes.
-      return dueAt;
-    }
+  if (rule.triggerType !== 'due-date' && rule.triggerType !== 'overdue') return [];
+  if (!task.dueDate) return [];
 
-    case 'status-change': {
-      // An event, not a schedule. It fires now, and only when the status
-      // actually moved — re-saving a task with the same status must not
-      // produce a notification.
-      return now;
-    }
+  const dueAt = zonedToEpoch(task.dueDate, task.dueTime || END_OF_DAY, timeZone);
+  if (dueAt === null) return [];
 
-    default:
-      return null;
-  }
+  return stepsForRule(rule).map((step) => ({ step, fireAt: dueAt + step * 60_000 }));
 }
 
 /**
@@ -202,7 +212,7 @@ export async function backfillTaskRules(
   }
 }
 
-/** One rule against one task. Accumulates into `result`. */
+/** One rule against one task, across every step it fires at. */
 async function applyRuleToTask(
   app: CatalystApp,
   ctx: TaskTriggerContext,
@@ -221,56 +231,66 @@ async function applyRuleToTask(
     if (ctx.previousStatus === undefined || ctx.previousStatus === task.status) return;
   }
 
-  const fireAt = fireAtFor(rule, task, ctx.timeZone, now);
+  const firings = firingsFor(rule, task, ctx.timeZone, now);
 
-  if (fireAt === null) {
+  if (firings.length === 0) {
     // The rule no longer has anything to fire for this task — the due date
     // was cleared, or the task was completed. Withdraw what it had queued.
     result.cancelled += await cancelPendingFor(app, 'RULE', `${rule.id}:${task.id}`);
     return;
   }
 
-  if (skipStaleLeadTime && fireAt < now && rule.triggerType !== 'overdue') return;
-
-  const { title, body } = renderRule(rule);
   const channels = channelsFor(rule);
-  const dedupeKey = taskRuleDedupeKey(rule.id, task.id, fireAt);
+  // Every step's key, so the supersede pass below keeps the siblings and
+  // cancels only rows from a schedule that no longer applies.
+  const live: string[] = [];
 
-  const enqueued = await enqueue(app, {
-    ownerId: ctx.ownerId,
-    fireAt,
-    dedupeKey,
-    kind: 'AUTOMATION',
-    sourceType: 'RULE',
-    // Scoped to the task, so cancelling one task's firing cannot withdraw
-    // the same rule's firing for a different task.
-    sourceId: `${rule.id}:${task.id}`,
-    channels,
-    title,
-    body: `${body} — ${task.title}`,
-    payload: {
-      email: ctx.email,
-      ruleId: rule.id,
-      taskId: task.id,
-      urgency: rule.urgency,
-    },
-  });
+  for (const { step, fireAt } of firings) {
+    const dedupeKey = taskRuleDedupeKey(rule.id, task.id, fireAt);
+    live.push(dedupeKey);
+
+    // Catching up on an existing task: a lead-time warning whose moment has
+    // gone is not news, it is wrong ("due in 1 day" for yesterday). An at- or
+    // after-due firing is still true however late it is, which is the point.
+    if (skipStaleLeadTime && fireAt < now && (step ?? 0) < 0) continue;
+
+    const { title, body } = renderRule(rule, step);
+
+    const enqueued = await enqueue(app, {
+      ownerId: ctx.ownerId,
+      fireAt,
+      dedupeKey,
+      kind: 'AUTOMATION',
+      sourceType: 'RULE',
+      // Scoped to the task, so cancelling one task's firing cannot withdraw
+      // the same rule's firing for a different task.
+      sourceId: `${rule.id}:${task.id}`,
+      channels,
+      title,
+      body: `${body} — ${task.title}`,
+      payload: {
+        email: ctx.email,
+        ruleId: rule.id,
+        taskId: task.id,
+        urgency: rule.urgency,
+        step,
+      },
+    });
+
+    if (enqueued) {
+      result.enqueued++;
+      result.details.push(`${rule.id} → ${task.id} at ${new Date(fireAt).toISOString()}`);
+      await recordRun(app, {
+        ownerId: ctx.ownerId, ruleId: rule.id, ruleName: rule.name, triggeredAt: now,
+        status: 'SUCCESS', detail: `queued for ${task.title}`, channels,
+      });
+    }
+  }
 
   // status-change fires once per event, so there is nothing to supersede:
   // each transition is its own instant and its own key.
   if (rule.triggerType !== 'status-change') {
-    result.cancelled += await cancelSupersededFor(
-      app, 'RULE', `${rule.id}:${task.id}`, dedupeKey,
-    );
-  }
-
-  if (enqueued) {
-    result.enqueued++;
-    result.details.push(`${rule.id} → ${task.id} at ${new Date(fireAt).toISOString()}`);
-    await recordRun(app, {
-      ownerId: ctx.ownerId, ruleId: rule.id, ruleName: rule.name, triggeredAt: now,
-      status: 'SUCCESS', detail: `queued for ${task.title}`, channels,
-    });
+    result.cancelled += await cancelSupersededFor(app, 'RULE', `${rule.id}:${task.id}`, live);
   }
 }
 

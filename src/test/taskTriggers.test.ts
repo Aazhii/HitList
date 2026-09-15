@@ -16,6 +16,7 @@ import { describe, it, expect } from 'vitest';
 import {
   syncTaskRules,
   backfillTaskRules,
+  firingsFor,
   cancelTaskRules,
   fireAtFor,
   offsetMs,
@@ -47,6 +48,7 @@ function rule(over: Partial<RuleRow> = {}): RuleRow {
     urgency: 'medium',
     offsetValue: 30,
     offsetUnit: 'minutes',
+    offsetSteps: [],
     recurrenceFreq: 'daily',
     recurrenceTime: '09:00',
     recurrenceDayOfWeek: 0,
@@ -90,6 +92,7 @@ async function seedRule(app: ReturnType<typeof fakeCatalyst>['app'], r: RuleRow)
     Urgency: r.urgency,
     OffsetValue: String(r.offsetValue),
     OffsetUnit: r.offsetUnit,
+    OffsetSteps: r.offsetSteps.join(','),
     NotifyInApp: String(r.notifyInApp),
     NotifyBrowser: String(r.notifyBrowser),
     NotifyEmail: String(r.notifyEmail),
@@ -415,5 +418,121 @@ describe('backfillTaskRules', () => {
       .slice(before)
       .filter((q) => q.includes('KaizenAutomationRules'));
     expect(ruleQueries).toHaveLength(1);
+  });
+});
+
+describe('firingsFor — several steps in one rule', () => {
+  const steps = rule({ offsetSteps: [-60, -5, 0, 30] });
+
+  it('fires once per step, relative to the due instant', () => {
+    const out = firingsFor(steps, task(), IST, NOW);
+
+    expect(out.map((f) => f.step)).toEqual([-60, -5, 0, 30]);
+    expect(out.map((f) => f.fireAt - DUE_AT)).toEqual([
+      -60 * 60_000, -5 * 60_000, 0, 30 * 60_000,
+    ]);
+  });
+
+  it('gives a completed task nothing, however many steps the rule has', () => {
+    expect(firingsFor(steps, task({ status: 'DONE' }), IST, NOW)).toEqual([]);
+  });
+
+  it('gives a task with no due date nothing', () => {
+    expect(firingsFor(steps, task({ dueDate: undefined }), IST, NOW)).toEqual([]);
+  });
+});
+
+describe('syncTaskRules — several steps', () => {
+  it('queues one entry per step', async () => {
+    const fake = fakeCatalyst();
+    await seedRule(fake.app, rule({ offsetSteps: [-60, -5, 0] }));
+
+    const out = await syncTaskRules(fake.app, ctx, task(), NOW);
+
+    expect(out.enqueued).toBe(3);
+    expect(fake.tables[QUEUE_TABLE].map((r) => Number(r.FireAt) - DUE_AT).sort((a, b) => a - b))
+      .toEqual([-60 * 60_000, -5 * 60_000, 0]);
+  });
+
+  /**
+   * The bug this change could easily have introduced: the supersede pass used
+   * to keep one dedupe key, so each step would have cancelled its siblings and
+   * a four-step rule would have delivered once.
+   */
+  it('leaves its own sibling steps pending on a re-save', async () => {
+    const fake = fakeCatalyst();
+    await seedRule(fake.app, rule({ offsetSteps: [-60, -5, 0] }));
+
+    await syncTaskRules(fake.app, ctx, task(), NOW);
+    const again = await syncTaskRules(fake.app, ctx, task(), NOW);
+
+    expect(again.enqueued).toBe(0);
+    expect(again.cancelled).toBe(0);
+    const pending = await findPendingForSource(fake.app, 'RULE', 'r1:t1');
+    expect(pending).toHaveLength(3);
+  });
+
+  it('replaces every step when the due date moves', async () => {
+    const fake = fakeCatalyst();
+    await seedRule(fake.app, rule({ offsetSteps: [-60, -5] }));
+
+    await syncTaskRules(fake.app, ctx, task(), NOW);
+    const moved = await syncTaskRules(fake.app, ctx, task({ dueDate: '2030-06-16' }), NOW);
+
+    expect(moved.enqueued).toBe(2);
+    expect(moved.cancelled).toBe(2);
+    const pending = await findPendingForSource(fake.app, 'RULE', 'r1:t1');
+    expect(pending).toHaveLength(2);
+  });
+
+  it('withdraws every step once the task is done', async () => {
+    const fake = fakeCatalyst();
+    await seedRule(fake.app, rule({ offsetSteps: [-60, -5, 0] }));
+
+    await syncTaskRules(fake.app, ctx, task(), NOW);
+    const done = await syncTaskRules(fake.app, ctx, task({ status: 'DONE' }), NOW);
+
+    expect(done.cancelled).toBe(3);
+    expect(await findPendingForSource(fake.app, 'RULE', 'r1:t1')).toHaveLength(0);
+  });
+
+  it('says how far off each firing is, rather than "this automation fired"', async () => {
+    const fake = fakeCatalyst();
+    await seedRule(fake.app, rule({ description: '', offsetSteps: [-60, 0, 30] }));
+
+    await syncTaskRules(fake.app, ctx, task(), NOW);
+
+    expect(fake.tables[QUEUE_TABLE].map((r) => r.Body).sort()).toEqual([
+      'Due in 1 hour — Prepare the deck',
+      'Due now — Prepare the deck',
+      'Overdue by 30 minutes — Prepare the deck',
+    ]);
+  });
+});
+
+describe('backfillTaskRules — several steps', () => {
+  const afterDue = DUE_AT + 60 * 60_000;
+
+  it('skips the lead-time steps that have passed and keeps the overdue ones', async () => {
+    const fake = fakeCatalyst();
+    await seedRule(fake.app, rule({ offsetSteps: [-60, -5, 0, 30, 120] }));
+
+    // An hour past due: -60, -5, 0 and +30 are behind us; only +120 is ahead.
+    const out = await backfillTaskRules(fake.app, ctx, [task()], afterDue);
+
+    expect(fake.tables[QUEUE_TABLE].map((r) => Number(r.FireAt) - DUE_AT).sort((a, b) => a - b))
+      .toEqual([0, 30 * 60_000, 120 * 60_000]);
+    expect(out.enqueued).toBe(3);
+  });
+
+  it('does not cancel the steps it deliberately skipped', async () => {
+    const fake = fakeCatalyst();
+    await seedRule(fake.app, rule({ offsetSteps: [-60, 30] }));
+
+    await syncTaskRules(fake.app, ctx, task(), NOW);      // both queued, before due
+    const out = await backfillTaskRules(fake.app, ctx, [task()], afterDue);
+
+    expect(out.cancelled).toBe(0);
+    expect(await findPendingForSource(fake.app, 'RULE', 'r1:t1')).toHaveLength(2);
   });
 });
