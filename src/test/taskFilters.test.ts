@@ -6,8 +6,11 @@ import {
   countActiveFilters,
   normaliseFilters,
   sameFilters,
+  FIELD_EMPTY,
+  FIELD_SET,
   type FilterState,
 } from '@/lib/taskFilters';
+import type { FieldDef, TaskFieldValues } from '@/types/fields';
 import { compareTasks } from '@/lib/quadrantBuckets';
 import type { Todo } from '@/types/todo';
 
@@ -124,5 +127,52 @@ describe('normaliseFilters / sameFilters', () => {
   it('compares filters by what they show', () => {
     expect(sameFilters({ quadrant: 'DO' }, { ...DEFAULT_FILTERS, quadrant: 'DO', priority: 'HIGH' })).toBe(true);
     expect(sameFilters({ quadrant: 'DO' }, { quadrant: 'SCHEDULE' })).toBe(false);
+  });
+});
+
+describe('applyTaskFilters — custom fields', () => {
+  const defs: FieldDef[] = [
+    { id: 'effort', name: 'Effort', kind: 'select', options: [{ id: 'lo', label: 'Low', color: 'sage' }, { id: 'hi', label: 'High', color: 'do' }], fieldOrder: 0, showOnCard: true, createdAt: 1, updatedAt: 1 },
+    { id: 'ctx', name: 'Context', kind: 'multi', options: [{ id: 'home', label: 'Home', color: 'accent' }, { id: 'office', label: 'Office', color: 'sage' }], fieldOrder: 1, showOnCard: true, createdAt: 1, updatedAt: 1 },
+    { id: 'blocked', name: 'Blocked', kind: 'checkbox', options: [], fieldOrder: 2, showOnCard: true, createdAt: 1, updatedAt: 1 },
+  ];
+  const a = todo({ text: 'a' }); const b = todo({ text: 'b' }); const c = todo({ text: 'c' });
+  const values: TaskFieldValues = {
+    [a.id]: { effort: 'hi', ctx: ['home', 'office'], blocked: true },
+    [b.id]: { effort: 'lo', ctx: ['office'] },
+    [c.id]: {},
+  };
+  const run = (fields: Record<string, string[]>) =>
+    ids(applyTaskFilters([a, b, c], f({ fields }), NOW, { defs, values }));
+
+  it('matches a select option, and any of several', () => {
+    expect(run({ effort: ['hi'] })).toEqual(['a']);
+    expect(run({ effort: ['hi', 'lo'] })).toEqual(['a', 'b']);
+  });
+
+  it('matches a multi-select that contains the option', () => {
+    expect(run({ ctx: ['home'] })).toEqual(['a']);
+    expect(run({ ctx: ['office'] })).toEqual(['a', 'b']);
+  });
+
+  it('filters on having a value or not — checked and unchecked for a checkbox', () => {
+    expect(run({ blocked: [FIELD_SET] })).toEqual(['a']);
+    expect(run({ blocked: [FIELD_EMPTY] })).toEqual(['b', 'c']);
+    expect(run({ effort: [FIELD_EMPTY] })).toEqual(['c']);
+  });
+
+  it('combines fields with AND', () => {
+    expect(run({ effort: ['lo', 'hi'], ctx: ['home'] })).toEqual(['a']);
+  });
+
+  it('ignores a filter on a field that no longer exists, instead of hiding everything', () => {
+    expect(run({ deleted: ['x'] })).toEqual(['a', 'b', 'c']);
+    expect(ids(applyTaskFilters([a, b, c], f({ fields: { effort: ['hi'] } }), NOW))).toEqual(['a', 'b', 'c']);
+  });
+
+  it('counts field filters and group-by as active, and compares them regardless of order', () => {
+    expect(countActiveFilters(f({ fields: { effort: ['hi'], ctx: [] }, groupBy: 'effort' }))).toBe(2);
+    expect(sameFilters(f({ fields: { effort: ['hi', 'lo'] } }), f({ fields: { effort: ['lo', 'hi'] } }))).toBe(true);
+    expect(sameFilters(f({ fields: { effort: ['hi'] } }), f({}))).toBe(false);
   });
 });

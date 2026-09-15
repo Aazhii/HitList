@@ -19,7 +19,7 @@ describe('normaliseFilters', () => {
     });
     expect(out).toEqual({
       search: 'x'.repeat(200), status: '', quadrant: 'DO', due: 'overdue',
-      dueAfter: '', dueBefore: '2030-06-20', sortBy: 'order', sortDir: 'asc',
+      dueAfter: '', dueBefore: '2030-06-20', sortBy: 'order', sortDir: 'asc', fields: {}, groupBy: '',
     });
     expect(out).not.toHaveProperty('priority');
   });
@@ -96,5 +96,17 @@ describe('storage', () => {
 
     await deleteView(fake.app, row.rowId);
     expect(await getView(fake.app, 'user-1', 'v1')).toBeNull();
+  });
+});
+
+describe('normaliseFilters — custom fields', () => {
+  it('keeps valid field choices and the group-by field, and drops the rest', () => {
+    const out = normaliseFilters({
+      fields: { effort: ['hi', '__set__', 'bad id!', 7], 'bad key!': ['x'], empty: [], notArray: 'x' },
+      groupBy: 'effort',
+    });
+    expect(out.fields).toEqual({ effort: ['hi', '__set__'] });
+    expect(out.groupBy).toBe('effort');
+    expect(normaliseFilters({ fields: [1], groupBy: 'no spaces allowed' })).toMatchObject({ fields: {}, groupBy: '' });
   });
 });

@@ -16,6 +16,7 @@
  */
 import { getCategoryConfig, type Todo } from '@/types/todo';
 import { compareTasks, type TaskCompare } from '@/lib/quadrantBuckets';
+import type { FieldDef, TaskFieldValues } from '@/types/fields';
 
 /** Relative, so a saved "Overdue" view is still right tomorrow. */
 export type DuePreset = '' | 'overdue' | 'today' | 'next7' | 'none';
@@ -34,7 +35,19 @@ export interface FilterState {
   dueBefore: string;
   sortBy: TaskSortKey;
   sortDir: 'asc' | 'desc';
+  /**
+   * Custom field filters: field id → option ids and/or FIELD_SET / FIELD_EMPTY.
+   * A task matches a field when it matches any of its choices.
+   */
+  fields: Record<string, string[]>;
+  /** '' groups the list by quadrant; otherwise a select field's id. */
+  groupBy: string;
 }
+
+/** Choice meaning "has any value" — for a checkbox, "checked". */
+export const FIELD_SET = '__set__';
+/** Choice meaning "has no value" — for a checkbox, "unchecked". */
+export const FIELD_EMPTY = '__empty__';
 
 export const DEFAULT_FILTERS: FilterState = {
   search: '',
@@ -45,6 +58,8 @@ export const DEFAULT_FILTERS: FilterState = {
   dueBefore: '',
   sortBy: 'order',
   sortDir: 'asc',
+  fields: {},
+  groupBy: '',
 };
 
 export function countActiveFilters(f: FilterState): number {
@@ -57,7 +72,25 @@ export function countActiveFilters(f: FilterState): number {
   if (f.dueBefore) n++;
   if (f.sortBy !== 'order') n++;
   if (f.sortDir === 'desc') n++;
+  n += Object.values(f.fields ?? {}).filter((choices) => choices.length > 0).length;
+  if (f.groupBy) n++;
   return n;
+}
+
+
+const FIELD_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const FIELD_CHOICE = /^(?:__set__|__empty__|[A-Za-z0-9_-]{1,16})$/;
+
+/** Per-field filter choices: valid ids only, no empty entries, capped. */
+function normaliseFieldFilters(raw: unknown): Record<string, string[]> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out: Record<string, string[]> = {};
+  for (const [id, choices] of Object.entries(raw as Record<string, unknown>).slice(0, 30)) {
+    if (!FIELD_ID.test(id) || !Array.isArray(choices)) continue;
+    const kept = [...new Set(choices.filter((c): c is string => typeof c === 'string' && FIELD_CHOICE.test(c)))].slice(0, 50);
+    if (kept.length) out[id] = kept;
+  }
+  return out;
 }
 
 const DUE_PRESETS: readonly DuePreset[] = ['', 'overdue', 'today', 'next7', 'none'];
@@ -83,6 +116,8 @@ export function normaliseFilters(raw: unknown): FilterState {
     dueBefore: DATE_KEY.test(text(o.dueBefore)) ? text(o.dueBefore) : '',
     sortBy: oneOf(o.sortBy, SORT_KEYS, 'order'),
     sortDir: o.sortDir === 'desc' ? 'desc' : 'asc',
+    fields: normaliseFieldFilters(o.fields),
+    groupBy: typeof o.groupBy === 'string' && FIELD_ID.test(o.groupBy) ? o.groupBy : '',
   };
 }
 
@@ -90,7 +125,10 @@ export function normaliseFilters(raw: unknown): FilterState {
 export function sameFilters(a: unknown, b: unknown): boolean {
   const x = normaliseFilters(a);
   const y = normaliseFilters(b);
-  return (Object.keys(x) as Array<keyof FilterState>).every((k) => x[k] === y[k]);
+  const canonical = (fields: Record<string, string[]>) =>
+    JSON.stringify(Object.keys(fields).sort().map((k) => [k, [...fields[k]].sort()]));
+  return (Object.keys(x) as Array<keyof FilterState>).every((k) =>
+    k === 'fields' ? canonical(x.fields) === canonical(y.fields) : x[k] === y[k]);
 }
 
 const STATUS: Record<string, Todo['status']> = { TODO: 'todo', IN_PROGRESS: 'in-progress', DONE: 'done' };
@@ -115,7 +153,18 @@ function dueInstant(t: Todo): number | null {
   return Number.isNaN(ts) ? null : ts;
 }
 
-export function applyTaskFilters(todos: readonly Todo[], f: FilterState, now: Date = new Date()): Todo[] {
+export function applyTaskFilters(
+  todos: readonly Todo[],
+  f: FilterState,
+  now: Date = new Date(),
+  /** Custom fields and values. Field filters are skipped without them. */
+  custom?: { defs: FieldDef[]; values: TaskFieldValues },
+): Todo[] {
+  // Only fields that still exist: a saved view whose field was deleted must
+  // not quietly hide every task.
+  const known = new Set((custom?.defs ?? []).map((d) => d.id));
+  const fieldFilters = Object.entries(f.fields ?? {}).filter(([id, choices]) => known.has(id) && choices.length > 0);
+
   const needle = f.search.trim().toLowerCase();
   const status = STATUS[f.status];
   const quadrant = QUADRANT[f.quadrant];
@@ -149,6 +198,16 @@ export function applyTaskFilters(todos: readonly Todo[], f: FilterState, now: Da
       case 'none':
         if (t.dueDate) return false;
         break;
+    }
+
+    for (const [fieldId, choices] of fieldFilters) {
+      const value = custom?.values[t.id]?.[fieldId];
+      const matches = choices.some((choice) => {
+        if (choice === FIELD_SET) return value !== undefined;
+        if (choice === FIELD_EMPTY) return value === undefined;
+        return Array.isArray(value) ? value.includes(choice) : value === choice;
+      });
+      if (!matches) return false;
     }
     return true;
   });

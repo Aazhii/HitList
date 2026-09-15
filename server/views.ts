@@ -36,6 +36,24 @@ export interface ViewFilters {
   dueBefore: string;
   sortBy: string;
   sortDir: 'asc' | 'desc';
+  /** Custom field filters: field id → option ids and/or '__set__' / '__empty__'. */
+  fields: Record<string, string[]>;
+  /** '' = group by quadrant; otherwise a select field's id. */
+  groupBy: string;
+}
+
+const FIELD_ID = /^[A-Za-z0-9_-]{1,64}$/;
+const FIELD_CHOICE = /^(?:__set__|__empty__|[A-Za-z0-9_-]{1,16})$/;
+
+function normaliseFieldFilters(raw: unknown): Record<string, string[]> {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const out: Record<string, string[]> = {};
+  for (const [id, choices] of Object.entries(raw as Record<string, unknown>).slice(0, 30)) {
+    if (!FIELD_ID.test(id) || !Array.isArray(choices)) continue;
+    const kept = [...new Set(choices.filter((c): c is string => typeof c === 'string' && FIELD_CHOICE.test(c)))].slice(0, 50);
+    if (kept.length) out[id] = kept;
+  }
+  return out;
 }
 
 export interface SavedView {
@@ -72,6 +90,8 @@ export function normaliseFilters(raw: unknown): ViewFilters {
     dueBefore: DATE_KEY.test(text(o['dueBefore'])) ? text(o['dueBefore']) : '',
     sortBy: oneOf(o['sortBy'], SORT_KEYS, 'order'),
     sortDir: o['sortDir'] === 'desc' ? 'desc' : 'asc',
+    fields: normaliseFieldFilters(o['fields']),
+    groupBy: typeof o['groupBy'] === 'string' && FIELD_ID.test(o['groupBy']) ? o['groupBy'] : '',
   };
 }
 
