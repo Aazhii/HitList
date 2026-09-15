@@ -14,13 +14,22 @@
  * priority, so filtering by it could only hide every task — the quadrant is
  * the priority model.
  */
-import { getCategoryConfig, type Todo } from '@/types/todo';
+import { QUADRANTS, getCategoryConfig, type Todo } from '@/types/todo';
 import { compareTasks, type TaskCompare } from '@/lib/quadrantBuckets';
-import type { FieldDef, TaskFieldValues } from '@/types/fields';
+import type { FieldDef, FieldValue, OptionColor, TaskFieldValues } from '@/types/fields';
 
 /** Relative, so a saved "Overdue" view is still right tomorrow. */
 export type DuePreset = '' | 'overdue' | 'today' | 'next7' | 'none';
-export type TaskSortKey = 'order' | 'created' | 'due-date' | 'status' | 'title';
+export type TaskSortKey = 'order' | 'created' | 'due-date' | 'status' | 'title' | 'quadrant';
+/** Sorting by a custom field: `field:<field id>`. */
+export type FieldSortKey = `field:${string}`;
+
+export const fieldSortKey = (fieldId: string): FieldSortKey => `field:${fieldId}`;
+
+/** The field a sort key names, or null for a built-in sort. */
+export function sortFieldId(sortBy: string): string | null {
+  return sortBy.startsWith('field:') ? sortBy.slice('field:'.length) : null;
+}
 
 export interface FilterState {
   search: string;
@@ -33,14 +42,14 @@ export interface FilterState {
   dueAfter: string;
   /** YYYY-MM-DD or '' — inclusive. */
   dueBefore: string;
-  sortBy: TaskSortKey;
+  sortBy: TaskSortKey | FieldSortKey;
   sortDir: 'asc' | 'desc';
   /**
    * Custom field filters: field id → option ids and/or FIELD_SET / FIELD_EMPTY.
    * A task matches a field when it matches any of its choices.
    */
   fields: Record<string, string[]>;
-  /** '' groups the list by quadrant; otherwise a select field's id. */
+  /** A select field's id to group by. '' = quadrants in the list, no groups in the table. */
   groupBy: string;
 }
 
@@ -94,7 +103,8 @@ function normaliseFieldFilters(raw: unknown): Record<string, string[]> {
 }
 
 const DUE_PRESETS: readonly DuePreset[] = ['', 'overdue', 'today', 'next7', 'none'];
-const SORT_KEYS: readonly TaskSortKey[] = ['order', 'created', 'due-date', 'status', 'title'];
+const SORT_KEYS: readonly TaskSortKey[] = ['order', 'created', 'due-date', 'status', 'title', 'quadrant'];
+const FIELD_SORT = /^field:[A-Za-z0-9_-]{1,64}$/;
 const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
@@ -114,7 +124,9 @@ export function normaliseFilters(raw: unknown): FilterState {
     due: oneOf(o.due, DUE_PRESETS, ''),
     dueAfter: DATE_KEY.test(text(o.dueAfter)) ? text(o.dueAfter) : '',
     dueBefore: DATE_KEY.test(text(o.dueBefore)) ? text(o.dueBefore) : '',
-    sortBy: oneOf(o.sortBy, SORT_KEYS, 'order'),
+    sortBy: typeof o.sortBy === 'string' && FIELD_SORT.test(o.sortBy)
+      ? (o.sortBy as FieldSortKey)
+      : oneOf(o.sortBy, SORT_KEYS, 'order'),
     sortDir: o.sortDir === 'desc' ? 'desc' : 'asc',
     fields: normaliseFieldFilters(o.fields),
     groupBy: typeof o.groupBy === 'string' && FIELD_ID.test(o.groupBy) ? o.groupBy : '',
@@ -214,13 +226,46 @@ export function applyTaskFilters(
 }
 
 const STATUS_RANK: Record<string, number> = { 'in-progress': 0, todo: 1, done: 2 };
+const QUADRANT_RANK: Record<string, number> = Object.fromEntries(QUADRANTS.map((q, i) => [q.id, i]));
+
+/**
+ * What a task sorts by for one field. null = no value, which sorts last in
+ * either direction. Select and multi sort by the field's option order, so the
+ * order the user gave the options is the order they sort in.
+ */
+export function fieldSortValue(def: FieldDef, value: FieldValue | undefined): number | string | null {
+  if (value === undefined) return null;
+  const optionIndex = (id: string) => def.options.findIndex((o) => o.id === id);
+  switch (def.kind) {
+    case 'select': {
+      const i = typeof value === 'string' ? optionIndex(value) : -1;
+      return i >= 0 ? i : null;
+    }
+    case 'multi': {
+      const found = (Array.isArray(value) ? value : []).map(optionIndex).filter((i) => i >= 0);
+      return found.length ? Math.min(...found) : null;
+    }
+    case 'number': return typeof value === 'number' ? value : null;
+    case 'date': return typeof value === 'string' && value ? value : null;
+    case 'text': return typeof value === 'string' && value.trim() ? value.trim().toLowerCase() : null;
+    case 'checkbox': return value === true ? 0 : null;
+  }
+}
 
 /**
  * How tasks are ordered within a quadrant. Done stays last whichever way the
  * rest is sorted, as it does in manual order, and ties fall back to the user's
  * own order so equal keys don't shuffle between renders.
+ *
+ * Sorting by a field that no longer exists falls back to the manual order.
  */
-export function compareForFilters(f: Pick<FilterState, 'sortBy' | 'sortDir'>): TaskCompare {
+export function compareForFilters(
+  f: Pick<FilterState, 'sortBy' | 'sortDir'>,
+  custom?: { defs: FieldDef[]; values: TaskFieldValues },
+): TaskCompare {
+  const fieldId = sortFieldId(f.sortBy);
+  const fieldDef = fieldId ? custom?.defs.find((d) => d.id === fieldId) : undefined;
+  if (fieldId && !fieldDef) return compareTasks;
   if (f.sortBy === 'order' && f.sortDir === 'asc') return compareTasks;
   const dir = f.sortDir === 'desc' ? -1 : 1;
 
@@ -228,15 +273,18 @@ export function compareForFilters(f: Pick<FilterState, 'sortBy' | 'sortDir'>): T
     const done = (a.status === 'done' ? 1 : 0) - (b.status === 'done' ? 1 : 0);
     if (done !== 0) return done;
 
-    if (f.sortBy === 'due-date') {
-      const ad = dueInstant(a);
-      const bd = dueInstant(b);
-      // No due date sorts after the rest in either direction.
-      if (ad === null || bd === null) {
-        if (ad === bd) return a.order - b.order;
-        return ad === null ? 1 : -1;
+    if (f.sortBy === 'due-date' || fieldDef) {
+      const av = fieldDef ? fieldSortValue(fieldDef, custom?.values[a.id]?.[fieldDef.id]) : dueInstant(a);
+      const bv = fieldDef ? fieldSortValue(fieldDef, custom?.values[b.id]?.[fieldDef.id]) : dueInstant(b);
+      // No value sorts after the rest in either direction.
+      if (av === null || bv === null) {
+        if (av === bv) return a.order - b.order;
+        return av === null ? 1 : -1;
       }
-      return (ad - bd) * dir || a.order - b.order;
+      const key = typeof av === 'number' && typeof bv === 'number'
+        ? av - bv
+        : String(av).localeCompare(String(bv));
+      return key * dir || a.order - b.order;
     }
 
     let key: number;
@@ -244,8 +292,70 @@ export function compareForFilters(f: Pick<FilterState, 'sortBy' | 'sortDir'>): T
       case 'created': key = a.createdAt - b.createdAt; break;
       case 'title': key = a.text.localeCompare(b.text); break;
       case 'status': key = (STATUS_RANK[a.status] ?? 1) - (STATUS_RANK[b.status] ?? 1); break;
+      case 'quadrant': key = (QUADRANT_RANK[a.quadrant] ?? 0) - (QUADRANT_RANK[b.quadrant] ?? 0); break;
       default: key = a.order - b.order;
     }
     return key * dir || a.order - b.order;
   };
+}
+
+/**
+ * The same ordering for tasks from several quadrants in one run — the table,
+ * and list groups by field. A task's manual order only means something inside
+ * its quadrant, so the manual order here is quadrant first, then that order.
+ */
+export function compareAcrossQuadrants(
+  f: Pick<FilterState, 'sortBy' | 'sortDir'>,
+  custom?: { defs: FieldDef[]; values: TaskFieldValues },
+): TaskCompare {
+  const within = compareForFilters(f, custom);
+  const manual = f.sortBy === 'order' || (sortFieldId(f.sortBy) !== null && within === compareTasks);
+  if (!manual) return within;
+  const dir = f.sortDir === 'desc' ? -1 : 1;
+  return (a, b) => {
+    const done = (a.status === 'done' ? 1 : 0) - (b.status === 'done' ? 1 : 0);
+    if (done !== 0) return done;
+    const q = (QUADRANT_RANK[a.quadrant] ?? 0) - (QUADRANT_RANK[b.quadrant] ?? 0);
+    return (q || a.order - b.order) * dir;
+  };
+}
+
+/** The select field the filter groups by, if it still exists and is still a select. */
+export function groupFieldFor(f: Pick<FilterState, 'groupBy'>, defs: readonly FieldDef[]): FieldDef | null {
+  if (!f.groupBy) return null;
+  return defs.find((d) => d.id === f.groupBy && d.kind === 'select') ?? null;
+}
+
+export interface TaskGroup {
+  /** An option id, or FIELD_EMPTY for tasks with no value. */
+  key: string;
+  label: string;
+  color: OptionColor | null;
+  tasks: Todo[];
+}
+
+/**
+ * Tasks grouped by a select field: one group per option, in the field's order,
+ * then one for tasks with no value (only when there are some). A value naming a
+ * deleted option counts as no value.
+ */
+export function groupByField(
+  todos: readonly Todo[],
+  showDone: boolean,
+  compare: TaskCompare,
+  def: FieldDef,
+  values: TaskFieldValues,
+): TaskGroup[] {
+  const groups: TaskGroup[] = def.options.map((o) => ({ key: o.id, label: o.label, color: o.color, tasks: [] }));
+  const empty: TaskGroup = { key: FIELD_EMPTY, label: `No ${def.name}`, color: null, tasks: [] };
+  const byKey = new Map(groups.map((g) => [g.key, g]));
+
+  for (const t of todos) {
+    if (!showDone && t.status === 'done') continue;
+    const value = values[t.id]?.[def.id];
+    (typeof value === 'string' ? byKey.get(value) ?? empty : empty).tasks.push(t);
+  }
+  for (const g of groups) g.tasks.sort(compare);
+  empty.tasks.sort(compare);
+  return empty.tasks.length ? [...groups, empty] : groups;
 }

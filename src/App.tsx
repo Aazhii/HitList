@@ -30,6 +30,7 @@ import { ListSidebar } from '@/components/ListSidebar';
 import { StreakPanel } from '@/components/StreakPanel';
 import { EisenhowerMatrix } from '@/components/EisenhowerMatrix';
 import { TaskListView } from '@/components/tasks/TaskListView';
+import { TaskTableView } from '@/components/tasks/TaskTableView';
 import { TaskDetailPanel } from '@/components/TaskDetailPanel';
 import { AppShell } from '@/components/shell/AppShell';
 import { IconRail, type AppView } from '@/components/shell/IconRail';
@@ -37,7 +38,10 @@ import { ViewLayout } from '@/components/shell/ViewLayout';
 import { TopBar, TopBarToggle, topBarPill, topBarPrimary } from '@/components/shell/TopBar';
 import { UserMenu } from '@/components/shell/UserMenu';
 import { loadAppState, saveAppState, setActiveUserId } from '@/lib/storage';
-import { applyTaskFilters, compareForFilters, normaliseFilters, sameFilters } from '@/lib/taskFilters';
+import {
+  applyTaskFilters, compareAcrossQuadrants, compareForFilters, groupFieldFor, normaliseFilters, sameFilters,
+} from '@/lib/taskFilters';
+import type { TaskLayout } from '@/lib/api';
 import { useSavedViews } from '@/hooks/useSavedViews';
 import type { ApiSavedView } from '@/lib/api';
 import { SavedViewsSection } from '@/components/tasks/SavedViewsSection';
@@ -399,7 +403,7 @@ function App() {
   /** A task to write an escalation rule for — set from the task detail panel. */
   const [pendingEscalationTaskId, setPendingEscalationTaskId] = useState<string | null>(null);
   // List vs Matrix is a mode within Tasks, remembered across reloads.
-  const [tasksMode, setTasksMode] = useLocalStorage<'list' | 'matrix'>('hitlist-tasks-mode', 'matrix');
+  const [tasksMode, setTasksMode] = useLocalStorage<TaskLayout>('hitlist-tasks-mode', 'matrix');
 
   // ── Notifications ─────────────────────────────────────────────────────────
   const { permission: notificationPermission, requestPermission } = useNotifications(todos);
@@ -424,16 +428,6 @@ function App() {
     [todos, activeListId]
   );
 
-  // What the list and matrix show: the active list, narrowed by the filter bar.
-  // Filtered here and not on the server on purpose — `todos` also feeds list
-  // counts, reminders, note chips and the offline copy, and a filtered fetch
-  // would replace all of them with the subset. See lib/taskFilters.
-  const visibleTodos = useMemo(
-    () => applyTaskFilters(listTodos, filterState),
-    [listTodos, filterState]
-  );
-  const taskCompare = useMemo(() => compareForFilters(filterState), [filterState]);
-
   // ── Saved views ───────────────────────────────────────────────────────────
   const notifyViewError = useCallback((message: string) => toast.error(message, { duration: 3000 }), []);
   const savedViews = useSavedViews(notifyViewError);
@@ -441,6 +435,27 @@ function App() {
   // ── Custom task fields ────────────────────────────────────────────────────
   const taskFields = useTaskFields(notifyViewError);
   const [fieldsManagerOpen, setFieldsManagerOpen] = useState(false);
+
+  // What the list and matrix show: the active list, narrowed by the filter bar.
+  // Filtered here and not on the server on purpose — `todos` also feeds list
+  // counts, reminders, note chips and the offline copy, and a filtered fetch
+  // would replace all of them with the subset. See lib/taskFilters.
+  const fieldContext = useMemo(
+    () => ({ defs: taskFields.fields, values: taskFields.values }),
+    [taskFields.fields, taskFields.values]
+  );
+  const visibleTodos = useMemo(
+    () => applyTaskFilters(listTodos, filterState, undefined, fieldContext),
+    [listTodos, filterState, fieldContext]
+  );
+  const taskCompare = useMemo(() => compareForFilters(filterState, fieldContext), [filterState, fieldContext]);
+  // The table, and list groups by field, mix tasks from every quadrant.
+  const crossQuadrantCompare = useMemo(
+    () => compareAcrossQuadrants(filterState, fieldContext),
+    [filterState, fieldContext]
+  );
+  const groupField = useMemo(() => groupFieldFor(filterState, taskFields.fields), [filterState, taskFields.fields]);
+
   const taskPanelFields = {
     defs: taskFields.fields,
     values: taskFields.values,
@@ -732,12 +747,13 @@ function App() {
   );
 
   const handleUpdate = useCallback(
-    async (id: string, changes: Partial<Todo>) => {
+    async (id: string, changes: Partial<Todo>, options?: { quiet?: boolean }) => {
       const prevTodo = todos.find((t) => t.id === id);
       // Optimistic update
       setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, ...changes } : t)));
       setDetailTodo((prev) => (prev?.id === id ? { ...prev, ...changes } : prev));
-      toast.success('Task updated', { duration: 1500 });
+      // Quiet for edits in table cells, which would otherwise toast on every cell.
+      if (!options?.quiet) toast.success('Task updated', { duration: 1500 });
 
       // Always route through server hook — uses mockApi when offline
       const quadrantMap: Record<Quadrant, import('@/lib/api').Quadrant> = {
@@ -1042,7 +1058,7 @@ function App() {
             label="Task view"
             value={tasksMode}
             onChange={setTasksMode}
-            options={[{ value: 'list', label: 'List' }, { value: 'matrix', label: 'Matrix' }]}
+            options={[{ value: 'list', label: 'List' }, { value: 'matrix', label: 'Matrix' }, { value: 'table', label: 'Table' }]}
           />
 
           {/* One quiet pill for everything that narrows or tidies the view. It
@@ -1060,7 +1076,7 @@ function App() {
               </button>
             </PopoverTrigger>
             <PopoverContent align="end" className="w-[min(92vw,560px)] p-3">
-              <AdvancedFilterBar filters={filterState} onChange={setFilterState} />
+              <AdvancedFilterBar filters={filterState} onChange={setFilterState} fieldDefs={taskFields.fields} layout={tasksMode} />
               <div className="mt-3 flex items-center justify-between gap-3 border-t border-a-line-soft pt-3">
                 <label className="flex cursor-pointer items-center gap-2.5 text-[13.5px] text-a-ink">
                   <Switch checked={showDone} onCheckedChange={setShowDone} />
@@ -1224,6 +1240,8 @@ function App() {
                   compare={taskCompare}
                   fieldDefs={taskFields.fields}
                   fieldValues={taskFields.values}
+                  groupField={groupField}
+                  groupCompare={crossQuadrantCompare}
                   showDone={showDoneEffective}
                   nextId={nextId}
                   dragDisabled={activeFilterCount > 0}
@@ -1235,6 +1253,22 @@ function App() {
                   onToggleReminder={handleToggleReminder}
                   onOpenNote={handleOpenSourceNote}
                   notificationPermission={notificationPermission}
+                />
+              ) : tasksMode === 'table' ? (
+                <TaskTableView
+                  todos={visibleTodos}
+                  showDone={showDoneEffective}
+                  compare={crossQuadrantCompare}
+                  sortBy={filterState.sortBy}
+                  sortDir={filterState.sortDir}
+                  onSortChange={(sortBy, sortDir) => setFilterState({ ...filterState, sortBy, sortDir })}
+                  groupField={groupField}
+                  fieldDefs={taskFields.fields}
+                  fieldValues={taskFields.values}
+                  onStatusChange={handleStatusChange}
+                  onUpdate={(id, changes) => { void handleUpdate(id, changes, { quiet: true }); }}
+                  onSetFieldValue={(taskId, fieldId, value) => { void taskFields.setValue(taskId, fieldId, value); }}
+                  onOpen={handleOpenDetail}
                 />
               ) : (
                 <EisenhowerMatrix

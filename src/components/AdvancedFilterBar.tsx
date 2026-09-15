@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Search, X, SlidersHorizontal, ArrowUpDown, ChevronDown } from 'lucide-react';
+import { Search, X, SlidersHorizontal, ArrowUpDown, ChevronDown, Rows3 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -10,8 +10,22 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
-import { DEFAULT_FILTERS, countActiveFilters, type FilterState } from '@/lib/taskFilters';
+import {
+  DEFAULT_FILTERS, FIELD_EMPTY, FIELD_SET, countActiveFilters, fieldSortKey, type FilterState,
+} from '@/lib/taskFilters';
+import { OPTION_DOT_CLASS } from '@/lib/fieldValues';
+import type { TaskLayout } from '@/lib/api';
+import type { FieldDef } from '@/types/fields';
 
 // The filter model lives in lib/taskFilters, where it is applied and tested.
 // Re-exported so existing imports from this module keep working.
@@ -22,9 +36,13 @@ interface AdvancedFilterBarProps {
   filters:   FilterState;
   onChange:  (f: FilterState) => void;
   className?: string;
+  /** Custom fields, to filter, sort and group by. */
+  fieldDefs?: FieldDef[];
+  /** Grouping by a field applies to the list and the table, not the matrix. */
+  layout?: TaskLayout;
 }
 
-export function AdvancedFilterBar({ filters, onChange, className }: AdvancedFilterBarProps) {
+export function AdvancedFilterBar({ filters, onChange, className, fieldDefs = [], layout = 'list' }: AdvancedFilterBarProps) {
   const [expanded, setExpanded] = useState(false);
   const [localSearch, setLocalSearch] = useState(filters.search);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -45,6 +63,14 @@ export function AdvancedFilterBar({ filters, onChange, className }: AdvancedFilt
   const set = (key: keyof FilterState, val: string) => {
     onChange({ ...filters, [key]: val });
   };
+
+  const setFieldChoices = (fieldId: string, choices: string[]) => {
+    const next = { ...filters.fields };
+    if (choices.length) next[fieldId] = choices; else delete next[fieldId];
+    onChange({ ...filters, fields: next });
+  };
+
+  const selectFields = fieldDefs.filter((d) => d.kind === 'select');
 
   const clearAll = () => {
     setLocalSearch('');
@@ -92,6 +118,10 @@ export function AdvancedFilterBar({ filters, onChange, className }: AdvancedFilt
               <SelectItem value="due-date">Due date</SelectItem>
               <SelectItem value="status">Status</SelectItem>
               <SelectItem value="title">Title</SelectItem>
+              <SelectItem value="quadrant">Quadrant</SelectItem>
+              {fieldDefs.map((d) => (
+                <SelectItem key={d.id} value={fieldSortKey(d.id)}>{d.name}</SelectItem>
+              ))}
             </SelectContent>
           </Select>
           <Button
@@ -214,8 +244,113 @@ export function AdvancedFilterBar({ filters, onChange, className }: AdvancedFilt
               aria-label="Due before date"
             />
           </div>
+
+          {/* Custom fields: one menu each. */}
+          {fieldDefs.map((def) => (
+            <FieldFilterMenu
+              key={def.id}
+              field={def}
+              chosen={filters.fields[def.id] ?? []}
+              onChange={(choices) => setFieldChoices(def.id, choices)}
+            />
+          ))}
+
+          {layout !== 'matrix' && selectFields.length > 0 && (
+            <div className="flex items-center gap-1">
+              <Rows3 className="size-3.5 text-muted-foreground/70 flex-shrink-0" aria-hidden />
+              <Select value={filters.groupBy || '__none__'} onValueChange={(v) => set('groupBy', v === '__none__' ? '' : v)}>
+                <SelectTrigger size="sm" className="h-7 rounded-xl border-border/60 bg-muted/40 text-xs px-2.5 gap-1 min-w-[120px]" aria-label="Group by">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">
+                    <span className="text-muted-foreground">{layout === 'table' ? 'No grouping' : 'Group by quadrant'}</span>
+                  </SelectItem>
+                  {selectFields.map((d) => (
+                    <SelectItem key={d.id} value={d.id}>Group by {d.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+interface FieldFilterMenuProps {
+  field: FieldDef;
+  chosen: string[];
+  onChange: (choices: string[]) => void;
+}
+
+/**
+ * The choices for one custom field. A task matches when it matches any ticked
+ * choice; the menu stays open while ticking, so several can be picked at once.
+ */
+function FieldFilterMenu({ field, chosen, onChange }: FieldFilterMenuProps) {
+  const picked = new Set(chosen);
+  const toggle = (choice: string) => {
+    const next = new Set(picked);
+    if (next.has(choice)) next.delete(choice); else next.add(choice);
+    onChange([...next]);
+  };
+  const isCheckbox = field.kind === 'checkbox';
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className={cn(
+            'flex h-7 items-center gap-1.5 rounded-xl border px-2.5 text-xs transition-colors duration-150',
+            chosen.length
+              ? 'border-primary/30 bg-primary/10 text-primary'
+              : 'border-border/60 bg-muted/40 text-muted-foreground hover:text-foreground',
+          )}
+          aria-label={`Filter by ${field.name}${chosen.length ? ` (${chosen.length} chosen)` : ''}`}
+        >
+          {field.name}
+          {chosen.length > 0 && <span className="font-bold tabular-nums">{chosen.length}</span>}
+          <ChevronDown className="size-3" aria-hidden />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-52">
+        <DropdownMenuLabel>{field.name}</DropdownMenuLabel>
+        {(field.kind === 'select' || field.kind === 'multi') && field.options.map((o) => (
+          <DropdownMenuCheckboxItem
+            key={o.id}
+            checked={picked.has(o.id)}
+            onCheckedChange={() => toggle(o.id)}
+            onSelect={(e) => e.preventDefault()}
+          >
+            <span className={cn('size-2 rounded-full', OPTION_DOT_CLASS[o.color])} aria-hidden />
+            {o.label}
+          </DropdownMenuCheckboxItem>
+        ))}
+        {(field.kind === 'select' || field.kind === 'multi') && field.options.length > 0 && <DropdownMenuSeparator />}
+        <DropdownMenuCheckboxItem
+          checked={picked.has(FIELD_SET)}
+          onCheckedChange={() => toggle(FIELD_SET)}
+          onSelect={(e) => e.preventDefault()}
+        >
+          {isCheckbox ? 'Checked' : 'Has a value'}
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuCheckboxItem
+          checked={picked.has(FIELD_EMPTY)}
+          onCheckedChange={() => toggle(FIELD_EMPTY)}
+          onSelect={(e) => e.preventDefault()}
+        >
+          {isCheckbox ? 'Unchecked' : 'Empty'}
+        </DropdownMenuCheckboxItem>
+        {chosen.length > 0 && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => onChange([])}>Clear {field.name}</DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

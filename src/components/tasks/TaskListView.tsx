@@ -4,6 +4,9 @@
  * The same tasks as the matrix, bucketed by the same function, so switching
  * between List and Matrix never changes what is shown or in what order.
  *
+ * Grouped by a select field instead when the filter asks for it: one group per
+ * option, and dragging is off, since manual order belongs to quadrants.
+ *
  * Tasks can be dragged to reorder within a quadrant, or into another quadrant.
  * Each quadrant group is also a drop target in its own right, so an empty
  * quadrant can receive a task. Done tasks do not move.
@@ -29,7 +32,9 @@ import { Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { QUADRANTS } from '@/types/todo';
 import type { Quadrant, QuadrantConfig, Todo, TodoStatus } from '@/types/todo';
-import { bucketByQuadrant } from '@/lib/quadrantBuckets';
+import { bucketByQuadrant, compareTasks } from '@/lib/quadrantBuckets';
+import { groupByField, type TaskGroup } from '@/lib/taskFilters';
+import { OPTION_DOT_CLASS } from '@/lib/fieldValues';
 import type { TaskCompare } from '@/lib/quadrantBuckets';
 import type { FieldDef, TaskFieldValues } from '@/types/fields';
 import { computeReorder, quadrantDropId, type ReorderChange } from '@/lib/reorder';
@@ -54,6 +59,10 @@ interface TaskListViewProps {
   onOpenNote?: (noteId: string) => void;
   fieldDefs?: FieldDef[];
   fieldValues?: TaskFieldValues;
+  /** A select field to group by instead of quadrants. */
+  groupField?: FieldDef | null;
+  /** Order within a field group, where tasks from every quadrant mix. */
+  groupCompare?: TaskCompare;
 }
 
 export function TaskListView({
@@ -72,8 +81,14 @@ export function TaskListView({
   onOpenNote,
   fieldDefs,
   fieldValues,
+  groupField,
+  groupCompare,
 }: TaskListViewProps) {
   const buckets = useMemo(() => bucketByQuadrant(todos, showDone, compare), [todos, showDone, compare]);
+  const fieldGroups = useMemo(
+    () => (groupField ? groupByField(todos, showDone, groupCompare ?? compare ?? compareTasks, groupField, fieldValues ?? {}) : null),
+    [todos, showDone, groupCompare, compare, groupField, fieldValues],
+  );
 
   const sensors = useSensors(
     // A small distance, so a click on the grip is not mistaken for a drag.
@@ -96,7 +111,23 @@ export function TaskListView({
       onDragEnd={handleDragEnd}
     >
       <div className="mx-auto w-full max-w-[880px] space-y-7 animate-fade-in">
-        {QUADRANTS.map((q) => (
+        {fieldGroups && fieldGroups.map((group) => (
+          <FieldGroup
+            key={group.key}
+            fieldId={groupField!.id}
+            group={group}
+            nextId={nextId}
+            onStatusChange={onStatusChange}
+            onDelete={onDelete}
+            onOpen={onOpen}
+            onToggleReminder={onToggleReminder}
+            notificationPermission={notificationPermission}
+            onOpenNote={onOpenNote}
+            fieldDefs={fieldDefs}
+            fieldValues={fieldValues}
+          />
+        ))}
+        {!fieldGroups && QUADRANTS.map((q) => (
           <QuadrantGroup
             key={q.id}
             quadrant={q}
@@ -119,7 +150,60 @@ export function TaskListView({
   );
 }
 
-interface QuadrantGroupProps extends Omit<TaskListViewProps, 'todos' | 'showDone' | 'onReorder' | 'compare'> {
+type GroupRowProps = Pick<TaskListViewProps,
+  'nextId' | 'onStatusChange' | 'onDelete' | 'onOpen' | 'onToggleReminder' |
+  'notificationPermission' | 'onOpenNote' | 'fieldDefs' | 'fieldValues'>;
+
+/** One option's tasks when grouping by a field. Not a drop target: a drag cannot set a field. */
+function FieldGroup({
+  fieldId, group, nextId, onStatusChange, onDelete, onOpen, onToggleReminder,
+  notificationPermission, onOpenNote, fieldDefs, fieldValues,
+}: GroupRowProps & { fieldId: string; group: TaskGroup }) {
+  const openCount = group.tasks.filter((t) => t.status !== 'done').length;
+  const headingId = `field-group-${fieldId}-${group.key}`;
+
+  return (
+    <section aria-labelledby={headingId}>
+      <header className="mb-1.5 flex items-center gap-2.5 px-1">
+        <span
+          className={cn('size-[9px] flex-shrink-0 rounded-full', group.color ? OPTION_DOT_CLASS[group.color] : 'shadow-[inset_0_0_0_1.5px_var(--a-line)]')}
+          aria-hidden
+        />
+        <h2 id={headingId} className="font-display text-[17px] leading-tight text-a-ink">{group.label}</h2>
+        <span className="text-[12.5px] font-bold tabular-nums text-a-muted">
+          {openCount}
+          <span className="sr-only"> open</span>
+        </span>
+        <span className="h-px flex-1 bg-a-line-soft" aria-hidden />
+      </header>
+
+      <SortableContext items={group.tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+        {group.tasks.map((todo, i) => (
+          <TaskRow
+            key={todo.id}
+            todo={todo}
+            index={i}
+            isNext={todo.id === nextId}
+            dragDisabled
+            onStatusChange={onStatusChange}
+            onDelete={onDelete}
+            onOpen={onOpen}
+            onToggleReminder={onToggleReminder}
+            notificationPermission={notificationPermission}
+            onOpenNote={onOpenNote}
+            fieldDefs={fieldDefs}
+            fieldValues={fieldValues?.[todo.id]}
+          />
+        ))}
+      </SortableContext>
+      {group.tasks.length === 0 && (
+        <p className="px-3 py-2 text-[13.5px] text-a-faint">No tasks</p>
+      )}
+    </section>
+  );
+}
+
+interface QuadrantGroupProps extends Omit<TaskListViewProps, 'todos' | 'showDone' | 'onReorder' | 'compare' | 'groupField' | 'groupCompare'> {
   quadrant: QuadrantConfig;
   tasks: Todo[];
 }

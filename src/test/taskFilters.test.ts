@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_FILTERS,
   applyTaskFilters,
+  compareAcrossQuadrants,
   compareForFilters,
+  groupByField,
+  groupFieldFor,
   countActiveFilters,
   normaliseFilters,
   sameFilters,
@@ -174,5 +177,82 @@ describe('applyTaskFilters — custom fields', () => {
     expect(countActiveFilters(f({ fields: { effort: ['hi'], ctx: [] }, groupBy: 'effort' }))).toBe(2);
     expect(sameFilters(f({ fields: { effort: ['hi', 'lo'] } }), f({ fields: { effort: ['lo', 'hi'] } }))).toBe(true);
     expect(sameFilters(f({ fields: { effort: ['hi'] } }), f({}))).toBe(false);
+  });
+});
+
+describe('sorting and grouping by custom fields', () => {
+  const effort: FieldDef = {
+    id: 'effort', name: 'Effort', kind: 'select',
+    options: [{ id: 'lo', label: 'Low', color: 'sage' }, { id: 'mid', label: 'Mid', color: 'accent' }, { id: 'hi', label: 'High', color: 'do' }],
+    fieldOrder: 0, showOnCard: false, createdAt: 1, updatedAt: 1,
+  };
+  const points: FieldDef = { id: 'points', name: 'Points', kind: 'number', options: [], fieldOrder: 1, showOnCard: false, createdAt: 1, updatedAt: 1 };
+  const text: FieldDef = { id: 'memo', name: 'Memo', kind: 'text', options: [], fieldOrder: 2, showOnCard: false, createdAt: 1, updatedAt: 1 };
+  const defs = [effort, points, text];
+
+  const a = todo({ text: 'a', quadrant: 'schedule', order: 1 });
+  const b = todo({ text: 'b', quadrant: 'do', order: 5 });
+  const c = todo({ text: 'c', quadrant: 'do', order: 2 });
+  const done = todo({ text: 'done', quadrant: 'do', order: 0, status: 'done' });
+  const values: TaskFieldValues = {
+    [a.id]: { effort: 'hi', points: 3 },
+    [b.id]: { effort: 'lo', points: 10 },
+    [c.id]: { effort: 'gone' },
+    [done.id]: { effort: 'lo' },
+  };
+  const custom = { defs, values };
+  const sorted = (over: Partial<FilterState>, list = [a, b, c]) =>
+    ids([...list].sort(compareForFilters(f(over), custom)));
+
+  it('sorts a select by the option order, with no value last in both directions', () => {
+    expect(sorted({ sortBy: 'field:effort' })).toEqual(['b', 'a', 'c']);
+    expect(sorted({ sortBy: 'field:effort', sortDir: 'desc' })).toEqual(['a', 'b', 'c']);
+  });
+
+  it('sorts numbers as numbers, not as text', () => {
+    expect(sorted({ sortBy: 'field:points' })).toEqual(['a', 'b', 'c']);
+  });
+
+  it('keeps done tasks last when sorting by a field', () => {
+    expect(sorted({ sortBy: 'field:effort' }, [done, a, b])).toEqual(['b', 'a', 'done']);
+  });
+
+  it('falls back to the manual order when the sort field no longer exists', () => {
+    expect(compareForFilters(f({ sortBy: 'field:deleted' }), custom)).toBe(compareTasks);
+  });
+
+  it('sorts by quadrant', () => {
+    expect(sorted({ sortBy: 'quadrant' })).toEqual(['c', 'b', 'a']);
+  });
+
+  it('orders tasks from several quadrants by quadrant, then manual order', () => {
+    expect(ids([a, b, c].sort(compareAcrossQuadrants(DEFAULT_FILTERS, custom)))).toEqual(['c', 'b', 'a']);
+    expect(ids([a, b, c].sort(compareAcrossQuadrants(f({ sortBy: 'title' }), custom)))).toEqual(['a', 'b', 'c']);
+  });
+
+  it('groups by a select in option order, counting a deleted option as no value', () => {
+    const groups = groupByField([a, b, c, done], false, compareAcrossQuadrants(DEFAULT_FILTERS, custom), effort, values);
+    expect(groups.map((g) => [g.label, ids(g.tasks)])).toEqual([
+      ['Low', ['b']], ['Mid', []], ['High', ['a']], ['No Effort', ['c']],
+    ]);
+  });
+
+  it('adds the no-value group only when a task needs it, and shows done tasks when asked', () => {
+    const groups = groupByField([a, b, done], true, compareTasks, effort, values);
+    expect(groups.map((g) => g.key)).toEqual(['lo', 'mid', 'hi']);
+    expect(ids(groups[0].tasks)).toEqual(['b', 'done']);
+  });
+
+  it('only groups by a select field that still exists', () => {
+    expect(groupFieldFor({ groupBy: 'effort' }, defs)).toBe(effort);
+    expect(groupFieldFor({ groupBy: 'points' }, defs)).toBeNull();
+    expect(groupFieldFor({ groupBy: 'deleted' }, defs)).toBeNull();
+    expect(groupFieldFor({ groupBy: '' }, defs)).toBeNull();
+  });
+
+  it('keeps a field or quadrant sort when normalising, and drops a malformed one', () => {
+    expect(normaliseFilters({ sortBy: 'field:effort' }).sortBy).toBe('field:effort');
+    expect(normaliseFilters({ sortBy: 'quadrant' }).sortBy).toBe('quadrant');
+    expect(normaliseFilters({ sortBy: 'field:not valid!' }).sortBy).toBe('order');
   });
 });

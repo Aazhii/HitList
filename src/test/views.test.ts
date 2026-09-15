@@ -110,3 +110,18 @@ describe('normaliseFilters — custom fields', () => {
     expect(normaliseFilters({ fields: [1], groupBy: 'no spaces allowed' })).toMatchObject({ fields: {}, groupBy: '' });
   });
 });
+
+describe('table layout and field sorts', () => {
+  it('accepts the table layout and reads it back from a row', () => {
+    const parsed = parseViewBody({ name: 'Everything', layout: 'table' });
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) expect(parsed.value.layout).toBe('table');
+    expect(toView({ ROWID: '1', ...toRow(view({ layout: 'table' })) }).layout).toBe('table');
+  });
+
+  it('keeps a field or quadrant sort, and drops a malformed one', () => {
+    expect(normaliseFilters({ sortBy: 'field:effort' }).sortBy).toBe('field:effort');
+    expect(normaliseFilters({ sortBy: 'quadrant' }).sortBy).toBe('quadrant');
+    expect(normaliseFilters({ sortBy: 'field:not valid!' }).sortBy).toBe('order');
+  });
+});

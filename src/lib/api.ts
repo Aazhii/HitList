@@ -500,10 +500,13 @@ export const automationApi = {
 
 // ── Saved views ───────────────────────────────────────────────────────────────
 
+/** How the tasks page shows tasks. */
+export type TaskLayout = 'list' | 'matrix' | 'table';
+
 export interface ApiSavedView {
   id: string;
   name: string;
-  layout: 'list' | 'matrix';
+  layout: TaskLayout;
   /** A list the view opens; null = whichever list is open. */
   scopeListId: string | null;
   filters: import('./taskFilters').FilterState;

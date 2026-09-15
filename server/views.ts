@@ -12,7 +12,7 @@ import type { CatalystApp } from './notifications/types.ts';
 import { VIEWS_TABLE } from './catalyst/schema.ts';
 import { zcqlString, unwrapRows, str, num } from './notifications/zcql.ts';
 
-export const VIEW_LAYOUTS = ['list', 'matrix'] as const;
+export const VIEW_LAYOUTS = ['list', 'matrix', 'table'] as const;
 export type ViewLayout = typeof VIEW_LAYOUTS[number];
 
 /** Enough for any real use; a cap so a runaway client cannot fill the table. */
@@ -22,7 +22,9 @@ export const MAX_VIEW_NAME = 100;
 const STATUSES = ['', 'TODO', 'IN_PROGRESS', 'DONE'] as const;
 const QUADRANTS = ['', 'DO', 'SCHEDULE', 'DELEGATE', 'ELIMINATE'] as const;
 const DUE_PRESETS = ['', 'overdue', 'today', 'next7', 'none'] as const;
-const SORT_KEYS = ['order', 'created', 'due-date', 'status', 'title'] as const;
+const SORT_KEYS = ['order', 'created', 'due-date', 'status', 'title', 'quadrant'] as const;
+/** Sorting by a custom field. */
+const FIELD_SORT = /^field:[A-Za-z0-9_-]{1,64}$/;
 const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
 const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/;
 
@@ -88,7 +90,7 @@ export function normaliseFilters(raw: unknown): ViewFilters {
     due: oneOf(o['due'], DUE_PRESETS, ''),
     dueAfter: DATE_KEY.test(text(o['dueAfter'])) ? text(o['dueAfter']) : '',
     dueBefore: DATE_KEY.test(text(o['dueBefore'])) ? text(o['dueBefore']) : '',
-    sortBy: oneOf(o['sortBy'], SORT_KEYS, 'order'),
+    sortBy: typeof o['sortBy'] === 'string' && FIELD_SORT.test(o['sortBy']) ? o['sortBy'] : oneOf(o['sortBy'], SORT_KEYS, 'order'),
     sortDir: o['sortDir'] === 'desc' ? 'desc' : 'asc',
     fields: normaliseFieldFilters(o['fields']),
     groupBy: typeof o['groupBy'] === 'string' && FIELD_ID.test(o['groupBy']) ? o['groupBy'] : '',
@@ -117,7 +119,7 @@ export function parseViewBody(body: Record<string, unknown>): ParsedView {
 
   const layout = body['layout'] ?? 'list';
   if (typeof layout !== 'string' || !(VIEW_LAYOUTS as readonly string[]).includes(layout)) {
-    errors['layout'] = 'must be list or matrix';
+    errors['layout'] = `must be one of ${VIEW_LAYOUTS.join(', ')}`;
   }
 
   const scope = body['scopeListId'] ?? '';
