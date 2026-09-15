@@ -85,7 +85,7 @@ import {
   type AutomationRule, type RuleRow,
 } from './automations/rules.ts';
 import { initialTrigger } from './automations/planner.ts';
-import { syncTaskRules, cancelTaskRules } from './automations/taskTriggers.ts';
+import { syncTaskRules, cancelTaskRules, backfillTaskRules } from './automations/taskTriggers.ts';
 import { listRuns, listRunsForRule, recordRun } from './automations/runs.ts';
 import { channelsFor, renderRule } from './automations/planner.ts';
 import { enqueue, cancelPendingFor } from './notifications/queue.ts';
@@ -1807,19 +1807,30 @@ app.post('/api/reminders/backfill', async (req, res) => {
       timeZone: resolveTimeZone(req.headers['x-timezone']),
     };
 
-    const out = await backfillReminders(
-      initCatalyst(req) as unknown as NotificationApp,
-      ctx,
-      tasks.map((t) => ({
-        id: t.id,
-        title: t.title,
-        status: t.status,
-        dueDate: t.dueDate,
-        dueTime: t.dueTime,
-        reminderEnabled: t.reminderEnabled,
-        reminderMinutesBefore: t.reminderMinutesBefore,
-      })),
+    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const schedulable = tasks.map((t) => ({
+      id: t.id,
+      title: t.title,
+      status: t.status,
+      dueDate: t.dueDate,
+      dueTime: t.dueTime,
+      reminderEnabled: t.reminderEnabled,
+      reminderMinutesBefore: t.reminderMinutesBefore,
+    }));
+
+    const out = await backfillReminders(catalyst, ctx, schedulable);
+
+    // The owner's task-driven rules, against the tasks that already exist. A
+    // rule is otherwise only evaluated when a task is written, so one created
+    // today would reach nothing until each task happened to be edited.
+    const rules = await backfillTaskRules(
+      catalyst, { ownerId, timeZone: ctx.timeZone, email: ctx.email }, schedulable,
     );
+    if (rules.error) console.warn(`[kaizen] rule backfill for ${ownerId}: ${rules.error}`);
+    else if (rules.enqueued > 0) {
+      console.log(`[kaizen] rule backfill for ${ownerId}: queued ${rules.enqueued}`);
+      for (const line of rules.details) console.log(`[kaizen]   ${line}`);
+    }
 
     if (out.enqueued > 0 || out.failed > 0) {
       console.log(
@@ -1829,7 +1840,12 @@ app.post('/api/reminders/backfill', async (req, res) => {
       for (const line of out.details) console.warn(`[kaizen]   ${line}`);
     }
 
-    res.json({ scanned: out.scanned, enqueued: out.enqueued, failed: out.failed });
+    res.json({
+      scanned: out.scanned,
+      enqueued: out.enqueued,
+      failed: out.failed,
+      ruleFirings: rules.enqueued,
+    });
   } catch (e) {
     sendError(res, '[POST /api/reminders/backfill]', e);
   }

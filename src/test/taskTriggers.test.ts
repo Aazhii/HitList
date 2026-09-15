@@ -15,6 +15,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   syncTaskRules,
+  backfillTaskRules,
   cancelTaskRules,
   fireAtFor,
   offsetMs,
@@ -327,5 +328,92 @@ describe('taskRuleDedupeKey', () => {
     expect(taskRuleDedupeKey('r1', 't1', 100)).toBe(taskRuleDedupeKey('r1', 't1', 100));
     expect(taskRuleDedupeKey('r1', 't1', 100)).not.toBe(taskRuleDedupeKey('r1', 't2', 100));
     expect(taskRuleDedupeKey('r1', 't1', 100)).not.toBe(taskRuleDedupeKey('r1', 't1', 200));
+  });
+});
+
+describe('backfillTaskRules', () => {
+  /** A rule created today has to reach the tasks that already exist. */
+  it('applies one rule to every task the owner already has', async () => {
+    const fake = fakeCatalyst();
+    await seedRule(fake.app, rule());
+
+    const out = await backfillTaskRules(
+      fake.app, ctx,
+      [task({ id: 't1' }), task({ id: 't2' }), task({ id: 't3' })],
+      NOW,
+    );
+
+    expect(out.enqueued).toBe(3);
+    expect(fake.tables[QUEUE_TABLE].map((r) => r.SourceId).sort())
+      .toEqual(['r1:t1', 'r1:t2', 'r1:t3']);
+  });
+
+  it('enqueues nothing the second time', async () => {
+    const fake = fakeCatalyst();
+    await seedRule(fake.app, rule());
+
+    await backfillTaskRules(fake.app, ctx, [task()], NOW);
+    const again = await backfillTaskRules(fake.app, ctx, [task()], NOW);
+
+    expect(again.enqueued).toBe(0);
+    expect(fake.tables[QUEUE_TABLE]).toHaveLength(1);
+  });
+
+  // A lead-time warning delivered after the moment it warned about is not
+  // news, it is wrong: "due in 30 minutes" for something due yesterday.
+  it('skips a lead-time firing whose moment has passed', async () => {
+    const fake = fakeCatalyst();
+    await seedRule(fake.app, rule({ triggerType: 'due-date' }));
+
+    const afterDue = DUE_AT + 60 * 60_000;
+    const out = await backfillTaskRules(fake.app, ctx, [task()], afterDue);
+
+    expect(out.enqueued).toBe(0);
+    expect(fake.tables[QUEUE_TABLE]).toHaveLength(0);
+  });
+
+  // An overdue notice is still true however late it arrives — catching up is
+  // the entire point of it.
+  it('still queues an overdue firing for a task already past due', async () => {
+    const fake = fakeCatalyst();
+    await seedRule(fake.app, rule({ triggerType: 'overdue', offsetValue: 0 }));
+
+    const afterDue = DUE_AT + 60 * 60_000;
+    const out = await backfillTaskRules(fake.app, ctx, [task()], afterDue);
+
+    expect(out.enqueued).toBe(1);
+    expect(Number(fake.tables[QUEUE_TABLE][0].FireAt)).toBe(DUE_AT);
+  });
+
+  it('leaves a completed task alone', async () => {
+    const fake = fakeCatalyst();
+    await seedRule(fake.app, rule({ triggerType: 'overdue' }));
+
+    const out = await backfillTaskRules(fake.app, ctx, [task({ status: 'DONE' })], NOW);
+
+    expect(out.enqueued).toBe(0);
+    expect(fake.tables[QUEUE_TABLE]).toHaveLength(0);
+  });
+
+  it('does not fire status-change rules, which need a real transition', async () => {
+    const fake = fakeCatalyst();
+    await seedRule(fake.app, rule({ triggerType: 'status-change' }));
+
+    const out = await backfillTaskRules(fake.app, ctx, [task()], NOW);
+
+    expect(out.enqueued).toBe(0);
+  });
+
+  it('costs one rules query however many tasks there are', async () => {
+    const fake = fakeCatalyst();
+    await seedRule(fake.app, rule());
+
+    const before = fake.queries.length;
+    await backfillTaskRules(fake.app, ctx, [task({ id: 'a' }), task({ id: 'b' })], NOW);
+
+    const ruleQueries = fake.queries
+      .slice(before)
+      .filter((q) => q.includes('KaizenAutomationRules'));
+    expect(ruleQueries).toHaveLength(1);
   });
 });

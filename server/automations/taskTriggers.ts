@@ -149,72 +149,128 @@ export async function syncTaskRules(
     if (rules.length === 0) return result;
 
     for (const rule of rules) {
-      if (!appliesTo(rule, task.id)) continue;
-      result.evaluated++;
+      await applyRuleToTask(app, ctx, rule, task, now, result);
+    }
 
-      // status-change fires only on an actual transition. Without this, every
-      // save of an unchanged task would notify.
-      if (rule.triggerType === 'status-change') {
-        if (ctx.previousStatus === undefined || ctx.previousStatus === task.status) continue;
-      }
+    return result;
+  } catch (e) {
+    return { ...result, error: describe(e) };
+  }
+}
 
-      const fireAt = fireAtFor(rule, task, ctx.timeZone, now);
+/**
+ * Applies the rules a user already has to the tasks they already have.
+ *
+ * Rules are evaluated on the task write path, which means a rule created today
+ * reaches none of the tasks written before it — the rule looks active and does
+ * nothing. This closes that gap the same way backfillReminders() closes it for
+ * reminders: the owner's own client asks once, on sign-in, where the timezone
+ * and the delivery address are available.
+ *
+ * Idempotent: each firing re-derives the DedupeKey it would have had all
+ * along, so a second call enqueues nothing.
+ *
+ * `stale` is the one behaviour that differs from a task write. A lead-time
+ * warning whose moment has passed — "due in 1 day" for something due
+ * yesterday — is not news, it is misinformation, so it is skipped. An overdue
+ * notice is still true however late it arrives, which is the whole point of
+ * catching up, so it is kept.
+ */
+export async function backfillTaskRules(
+  app: CatalystApp,
+  ctx: TaskTriggerContext,
+  tasks: SchedulableTask[],
+  now = Date.now(),
+): Promise<TaskTriggerResult> {
+  const result: TaskTriggerResult = { evaluated: 0, enqueued: 0, cancelled: 0, details: [] };
 
-      if (fireAt === null) {
-        // The rule no longer has anything to fire for this task — the due date
-        // was cleared, or the task was completed. Withdraw what it had queued.
-        const cancelled = await cancelPendingFor(app, 'RULE', `${rule.id}:${task.id}`);
-        result.cancelled += cancelled;
-        continue;
-      }
+  try {
+    // Once for every task, rather than once per task: this walks the whole
+    // task list, so the per-write query count is not the right trade here.
+    const rules = await findTaskRules(app, ctx.ownerId);
+    if (rules.length === 0) return result;
 
-      const { title, body } = renderRule(rule);
-      const channels = channelsFor(rule);
-      const dedupeKey = taskRuleDedupeKey(rule.id, task.id, fireAt);
-
-      const enqueued = await enqueue(app, {
-        ownerId: ctx.ownerId,
-        fireAt,
-        dedupeKey,
-        kind: 'AUTOMATION',
-        sourceType: 'RULE',
-        // Scoped to the task, so cancelling one task's firing cannot withdraw
-        // the same rule's firing for a different task.
-        sourceId: `${rule.id}:${task.id}`,
-        channels,
-        title,
-        body: `${body} — ${task.title}`,
-        payload: {
-          email: ctx.email,
-          ruleId: rule.id,
-          taskId: task.id,
-          urgency: rule.urgency,
-        },
-      });
-
-      // status-change fires once per event, so there is nothing to supersede:
-      // each transition is its own instant and its own key.
-      if (rule.triggerType !== 'status-change') {
-        result.cancelled += await cancelSupersededFor(
-          app, 'RULE', `${rule.id}:${task.id}`, dedupeKey,
-        );
-      }
-
-      if (enqueued) {
-        result.enqueued++;
-        result.details.push(
-          `${rule.id} → ${task.id} at ${new Date(fireAt).toISOString()}`,
-        );
-        await recordRun(app, {
-          ownerId: ctx.ownerId, ruleId: rule.id, ruleName: rule.name, triggeredAt: now,
-          status: 'SUCCESS', detail: `queued for ${task.title}`, channels,
-        });
+    for (const task of tasks) {
+      for (const rule of rules) {
+        await applyRuleToTask(app, ctx, rule, task, now, result, { skipStaleLeadTime: true });
       }
     }
 
     return result;
   } catch (e) {
     return { ...result, error: describe(e) };
+  }
+}
+
+/** One rule against one task. Accumulates into `result`. */
+async function applyRuleToTask(
+  app: CatalystApp,
+  ctx: TaskTriggerContext,
+  rule: RuleRow,
+  task: SchedulableTask,
+  now: number,
+  result: TaskTriggerResult,
+  { skipStaleLeadTime = false }: { skipStaleLeadTime?: boolean } = {},
+): Promise<void> {
+  if (!appliesTo(rule, task.id)) return;
+  result.evaluated++;
+
+  // status-change fires only on an actual transition. Without this, every
+  // save of an unchanged task would notify.
+  if (rule.triggerType === 'status-change') {
+    if (ctx.previousStatus === undefined || ctx.previousStatus === task.status) return;
+  }
+
+  const fireAt = fireAtFor(rule, task, ctx.timeZone, now);
+
+  if (fireAt === null) {
+    // The rule no longer has anything to fire for this task — the due date
+    // was cleared, or the task was completed. Withdraw what it had queued.
+    result.cancelled += await cancelPendingFor(app, 'RULE', `${rule.id}:${task.id}`);
+    return;
+  }
+
+  if (skipStaleLeadTime && fireAt < now && rule.triggerType !== 'overdue') return;
+
+  const { title, body } = renderRule(rule);
+  const channels = channelsFor(rule);
+  const dedupeKey = taskRuleDedupeKey(rule.id, task.id, fireAt);
+
+  const enqueued = await enqueue(app, {
+    ownerId: ctx.ownerId,
+    fireAt,
+    dedupeKey,
+    kind: 'AUTOMATION',
+    sourceType: 'RULE',
+    // Scoped to the task, so cancelling one task's firing cannot withdraw
+    // the same rule's firing for a different task.
+    sourceId: `${rule.id}:${task.id}`,
+    channels,
+    title,
+    body: `${body} — ${task.title}`,
+    payload: {
+      email: ctx.email,
+      ruleId: rule.id,
+      taskId: task.id,
+      urgency: rule.urgency,
+    },
+  });
+
+  // status-change fires once per event, so there is nothing to supersede:
+  // each transition is its own instant and its own key.
+  if (rule.triggerType !== 'status-change') {
+    result.cancelled += await cancelSupersededFor(
+      app, 'RULE', `${rule.id}:${task.id}`, dedupeKey,
+    );
+  }
+
+  if (enqueued) {
+    result.enqueued++;
+    result.details.push(`${rule.id} → ${task.id} at ${new Date(fireAt).toISOString()}`);
+    await recordRun(app, {
+      ownerId: ctx.ownerId, ruleId: rule.id, ruleName: rule.name, triggeredAt: now,
+      status: 'SUCCESS', detail: `queued for ${task.title}`, channels,
+    });
   }
 }
 

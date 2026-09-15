@@ -44,6 +44,8 @@ export interface Fake {
   rows: Array<Record<string, string>>;
   sentEmails: Array<{ to: string; subject: string }>;
   sentPush: Array<{ message: string; recipients: string[] }>;
+  /** Every ZCQL query issued, in order. */
+  queries: string[];
 }
 
 export function fakeCatalyst(options: FakeOptions = {}): Fake {
@@ -51,6 +53,8 @@ export function fakeCatalyst(options: FakeOptions = {}): Fake {
     [QUEUE_TABLE]: [],
     [INBOX_TABLE]: [],
   };
+  /** Every ZCQL query issued, so a test can assert on the query count. */
+  const queries: string[] = [];
   const sentEmails: Array<{ to: string; subject: string }> = [];
   const sentPush: Array<{ message: string; recipients: string[] }> = [];
   // Catalyst row ids are BigInt and exceed Number.MAX_SAFE_INTEGER
@@ -102,6 +106,7 @@ export function fakeCatalyst(options: FakeOptions = {}): Fake {
 
     zcql: () => ({
       executeZCQLQuery: async (query: string) => {
+        queries.push(query);
         // Route by the table the query names. Answering everything from the
         // queue table was fine while only the queue issued queries; once the
         // sweep also plans rules, it silently hands rule code a queue row.
@@ -186,5 +191,5 @@ export function fakeCatalyst(options: FakeOptions = {}): Fake {
     }),
   };
 
-  return { app, tables, rows: tables[QUEUE_TABLE], sentEmails, sentPush };
+  return { app, tables, rows: tables[QUEUE_TABLE], sentEmails, sentPush, queries };
 }
