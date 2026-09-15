@@ -202,10 +202,11 @@ function NoteDetail({
     // title scrolls away with the content rather than pinning above it.
     <ScrollArea className="h-full">
       <div className="animate-fade-in px-4 pb-24 pt-[46px] md:px-8">
-        {/* One reading column: a 720px measure plus the 44px gutter that holds
-            block controls. The title, metadata and body share its left edge. */}
-        <div className="mx-auto w-full max-w-[calc(var(--a-measure)+var(--a-gutter))]">
-          <div className="md:pl-[var(--a-gutter)]">
+        {/* One reading column: a 720px measure plus the 44px margin that block
+            controls hang into. The padding is applied once, here, so the title,
+            metadata, every block, tables and panels share one left edge. */}
+        <div className="mx-auto w-full max-w-[calc(var(--a-measure)+var(--a-gutter))] md:pl-[var(--a-gutter)]">
+          <div>
             <EmojiPicker
               emoji={note.emoji ?? '📝'}
               onSelect={(e) => onUpdateEmoji(note.id, e)}

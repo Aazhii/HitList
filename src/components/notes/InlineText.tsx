@@ -103,7 +103,7 @@ export const InlineText = forwardRef<InlineTextHandle, InlineTextProps>(function
       ref={rootRef}
       // Presentational: the textarea underneath is the real, focusable control.
       aria-hidden
-      className={cn('whitespace-pre-wrap break-words cursor-text', className)}
+      className={cn('whitespace-pre-wrap [overflow-wrap:anywhere] cursor-text', className)}
       onMouseDown={(e) => {
         // Keep the browser from starting a text selection on the rendered copy.
         e.preventDefault();

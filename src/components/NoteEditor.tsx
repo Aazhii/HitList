@@ -27,6 +27,9 @@ import { TableBlock } from '@/components/notes/TableBlock';
 import { computeNumberedOrdinals } from '@/lib/noteBlocks';
 import { InlineText, supportedMarks } from '@/components/notes/InlineText';
 import { activeMarks, hasInlineMarks, toggleMark, type Mark } from '@/lib/inlineMarkdown';
+import {
+  MARKER_BOX_CLASS, controlsTop, getBlockTextClass, markerTop,
+} from '@/components/notes/blockMetrics';
 
 // ── Block type icon map ────────────────────────────────────────────────────────
 const ICON = 'size-3.5';
@@ -52,35 +55,20 @@ const BLOCK_TYPES: BlockType[] = [
   'bullet', 'numbered', 'todo', 'quote', 'callout', 'divider', 'code', 'table',
 ];
 
-// ── Type scale ─────────────────────────────────────────────────────────────────
-// The handoff's editor scale. Body text moves from 14px to 16.5px / 1.68.
-// H1 and H2 use the display face, which has a single weight — never bold it.
-// Quote is no longer italic or muted: it was the least readable text on the page.
-function getBlockTextClass(type: BlockType): string {
-  switch (type) {
-    case 'heading1': return 'font-display text-[34px] leading-[1.12] tracking-[-0.015em] text-a-ink';
-    case 'heading2': return 'font-display text-[27px] leading-[1.2] tracking-[-0.01em] text-a-ink';
-    case 'heading3': return 'text-[19px] leading-[1.35] font-bold text-a-ink';
-    case 'quote':    return 'text-[17px] leading-[1.6] text-a-ink';
-    case 'code':     return 'font-mono text-[13.5px] leading-[1.7] text-a-ink';
-    // Colour comes from the callout's tone; see BlockRow.
-    case 'callout':  return 'text-[15.5px] leading-[1.62]';
-    default:         return 'text-[16.5px] leading-[1.68] text-a-ink';
-  }
-}
-
-/** Space around each block type, per the scale. */
+// ── Spacing ────────────────────────────────────────────────────────────────────
+// Blocks sit in a flex column with a 6px gap; extra space is margin, never row
+// padding, so the space above a heading doesn't depend on the block before it.
+// The type scale and every offset derived from it live in notes/blockMetrics.
 const ROW_SPACING: Partial<Record<BlockType, string>> = {
-  heading1: 'mt-[30px] mb-[4px]',
-  heading2: 'mt-[26px] mb-[4px]',
-  heading3: 'mt-[20px] mb-[4px]',
-  bullet:   'py-[2px]',
-  numbered: 'py-[2px]',
-  todo:     'py-[2px]',
+  heading1: 'mt-[30px]',
+  heading2: 'mt-[26px]',
+  heading3: 'mt-[20px]',
   code:     'my-[6px]',
-  callout:  'py-[8px]',
-  divider:  'py-[26px]',
-  table:    'py-[6px]',
+  callout:  'my-[2px]',
+  // With the gap and the 24px box, 26px of space either side of the rule.
+  divider:  'my-[8px]',
+  // With the gap, 24px below the table: room for its add-row rail (4px + 20px).
+  table:    'mt-[6px] mb-[18px]',
 };
 
 /** The quote rule, the code panel and the callout tint wrap the text itself. */
@@ -104,30 +92,9 @@ function getBlockPlaceholder(type: BlockType): string {
     case 'numbered': return 'List item';
     case 'todo':     return 'To-do';
     case 'callout':  return 'Callout…';
-    default:         return "Type '/' for commands…";
+    default:         return "Type '/' for commands";
   }
 }
-
-// Offset of the 22px gutter controls, so their centre sits on the centre of the
-// block's first line: top = lineHeight / 2 − 11.
-//   heading1  34px × 1.12 = 38.1 → 19.0 − 11 = 8
-//   heading2  27px × 1.20 = 32.4 → 16.2 − 11 = 5
-//   heading3  19px × 1.35 = 25.7 → 12.8 − 11 = 2
-//   body    16.5px × 1.68 = 27.7 → 13.9 − 11 = 3   (paragraph, lists, to-do)
-//   quote     17px × 1.60 = 27.2 → 13.6 − 11 = 3
-//   code    16px panel padding + (13.5px × 1.70) / 2 − 11 = 16
-//   callout 8px row padding… measured from content: 16px panel + (15.5 × 1.62) / 2 − 11 = 18
-//   table   the header row is ~40px tall → 20 − 11 = 9
-//   divider the 1px rule is the whole content box → −11 + 1 = −10
-const CONTROLS_TOP: Partial<Record<BlockType, string>> = {
-  heading1: 'top-[8px]',
-  heading2: 'top-[5px]',
-  heading3: 'top-[2px]',
-  code:     'top-[16px]',
-  callout:  'top-[18px]',
-  table:    'top-[9px]',
-  divider:  'top-[-10px]',
-};
 
 // ── Caret position helper ──────────────────────────────────────────────────────
 function getCaretCoordinates(el: HTMLTextAreaElement, position: number): { top: number; left: number } {
@@ -147,7 +114,7 @@ function getCaretCoordinates(el: HTMLTextAreaElement, position: number): { top: 
   mirror.style.position = 'absolute';
   mirror.style.visibility = 'hidden';
   mirror.style.whiteSpace = 'pre-wrap';
-  mirror.style.wordWrap = 'break-word';
+  mirror.style.overflowWrap = 'anywhere';
 
   props.forEach((prop) => {
     (mirror.style as unknown as Record<string, string>)[prop] = style[prop as keyof CSSStyleDeclaration] as string;
@@ -342,15 +309,15 @@ interface BlockRowProps {
 }
 
 /**
- * One block: a 44px gutter holding its controls, then the content.
+ * One block. Its controls hang in the left margin, outside the row's box, so
+ * the row's left edge is the text's left edge for every block type.
  *
- * No chrome until the pointer is on the row. The old row drew, on every block,
- * a hover background, a left accent bar, an add button, a grip and a "/cmd"
- * badge. What remains is one faint hover tint and the two gutter controls.
- * The "/" affordance the badge advertised is still in the empty paragraph's
- * placeholder and in the hint row above the editor.
+ * No chrome until the pointer is on the row, and hovering paints nothing: it
+ * only reveals the two controls. A tinted hover slab used to span the gutter
+ * too, and the 46px of controls overflowed the 44px gutter, leaving the "+"
+ * half inside the tint and half outside.
  *
- * Below `md` the gutter is hidden rather than shrunk.
+ * Below `md` there is no margin, so the controls are hidden.
  */
 function BlockRow({
   block, index, ordinal, total, focusedId,
@@ -370,30 +337,32 @@ function BlockRow({
 
   useAutoResize(taRef, block.content, rendered);
 
+  // `pr-1.5` rather than a margin: the 6px between the grip and the text is part
+  // of the controls' box, so crossing it doesn't count as leaving the row.
   const gutter = (
-    <div className="relative hidden w-[var(--a-gutter)] flex-shrink-0 select-none md:block">
-      <div
-        className={cn(
-          'absolute right-2 flex gap-[2px] transition-opacity duration-150',
-          CONTROLS_TOP[block.type] ?? 'top-[3px]',
-          // Also kept visible while a control has keyboard focus or its menu is open.
-          showControls ? 'opacity-100' : 'opacity-0 focus-within:opacity-100 has-[[data-state=open]]:opacity-100',
-        )}
-      >
-        <BlockControls
-          block={block} index={index} total={total}
-          onAddAfter={onAddAfter} onDelete={onDelete}
-          onChangeType={onChangeType} onMoveUp={onMoveUp} onMoveDown={onMoveDown}
-        />
-      </div>
+    <div
+      className={cn(
+        'absolute right-full z-10 hidden gap-[2px] pr-1.5 select-none transition-opacity duration-150 md:flex',
+        // Also kept visible while a control has keyboard focus or its menu is open.
+        showControls ? 'opacity-100' : 'opacity-0 focus-within:opacity-100 has-[[data-state=open]]:opacity-100',
+      )}
+      style={{ top: controlsTop(block.type) }}
+    >
+      <BlockControls
+        block={block} index={index} total={total}
+        onAddAfter={onAddAfter} onDelete={onDelete}
+        onChangeType={onChangeType} onMoveUp={onMoveUp} onMoveDown={onMoveDown}
+      />
     </div>
   );
 
   const rowProps = {
     className: cn(
-      'relative flex rounded-[10px] transition-colors duration-150 first:mt-0',
-      ROW_SPACING[block.type] ?? 'py-[3px]',
-      hovered && 'bg-a-row-hover',
+      'relative flex first:mt-0',
+      // An invisible hover zone over the margin beside the row, so pointing at
+      // the empty margin reveals the controls as it does in Notion.
+      "md:before:absolute md:before:inset-y-0 md:before:right-full md:before:w-[var(--a-gutter)] md:before:content-['']",
+      ROW_SPACING[block.type],
     ),
     onMouseEnter: () => setHovered(true),
     onMouseLeave: () => setHovered(false),
@@ -411,7 +380,7 @@ function BlockRow({
     return (
       <div {...rowProps}>
         {gutter}
-        <div className="flex flex-1 items-center">
+        <div className="flex h-[24px] flex-1 items-center">
           <hr className="h-px w-full border-0 bg-a-line" />
         </div>
       </div>
@@ -442,11 +411,12 @@ function BlockRow({
 
       <div className={cn('flex min-w-0 flex-1 items-start', getContentWrapperClass(block))}>
         {block.type === 'callout' && (
+          <span className={MARKER_BOX_CLASS} style={{ paddingTop: markerTop('callout', 22) }}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="mr-3.5 flex-shrink-0 rounded-[8px] text-[19px] leading-[1.4] transition-transform duration-150 hover:scale-110"
+                className="flex size-[22px] items-center justify-center rounded-[6px] text-[18px] leading-none transition-transform duration-150 hover:scale-110"
                 aria-label="Change callout emoji and colour"
               >
                 {block.emoji ?? '💡'}
@@ -480,19 +450,19 @@ function BlockRow({
               </DropdownMenuRadioGroup>
             </DropdownMenuContent>
           </DropdownMenu>
+          </span>
         )}
 
         {block.type === 'bullet' && (
-          <span
-            aria-hidden
-            className="mr-3 mt-[10px] size-1.5 flex-shrink-0 rounded-full bg-[color-mix(in_srgb,var(--a-ink)_45%,transparent)]"
-          />
+          <span aria-hidden className={MARKER_BOX_CLASS} style={{ paddingTop: markerTop('bullet', 6) }}>
+            <span className="size-1.5 rounded-full bg-[color-mix(in_srgb,var(--a-ink)_45%,transparent)]" />
+          </span>
         )}
 
         {block.type === 'numbered' && (
           <span
             aria-hidden
-            className="mr-2.5 w-[22px] flex-shrink-0 text-right text-[16.5px] leading-[1.68] tabular-nums text-a-muted"
+            className={cn(MARKER_BOX_CLASS, 'text-[16.5px] leading-[1.68] tabular-nums text-a-muted')}
           >
             {ordinal ?? 1}.
           </span>
@@ -501,7 +471,7 @@ function BlockRow({
         {block.type === 'todo' && (
           // The wrapper takes the 19px box's layout size; StatusBox's own padding
           // gives it a 44px hit area without pushing the text sideways.
-          <span className="mr-3 mt-[4px] flex flex-shrink-0">
+          <span className={MARKER_BOX_CLASS} style={{ paddingTop: markerTop('todo', 19) }}>
             <StatusBox
               state={block.checked ? 'done' : 'todo'}
               label={block.content.trim() || 'To-do'}
@@ -558,10 +528,16 @@ function BlockRow({
           onMouseUp={() => onSelectionChange(block.id)}
           onKeyUp={() => onSelectionChange(block.id)}
           onBlur={() => onSelectionChange(block.id)}
-          placeholder={getBlockPlaceholder(block.type)}
+          // The paragraph hint only where typing is about to happen, not on every
+          // empty line of the page. Structural placeholders always show.
+          placeholder={
+            block.type !== 'paragraph' || isFocused || index === total - 1
+              ? getBlockPlaceholder(block.type)
+              : ''
+          }
           rows={1}
           className={cn(
-            'block w-full resize-none overflow-hidden border-none bg-transparent p-0 outline-none',
+            'block w-full resize-none overflow-hidden border-none bg-transparent p-0 outline-none [overflow-wrap:anywhere]',
             'placeholder:text-a-faint/55',
             textClass,
             rendered && 'pointer-events-none absolute inset-0 opacity-0',
@@ -860,7 +836,7 @@ export function NoteEditor({
       )}
 
       {/* Blocks */}
-      <div>
+      <div className="flex flex-col gap-[6px]">
         {blocks.map((block, index) => (
           <BlockRow
             key={block.id}
@@ -901,7 +877,7 @@ export function NoteEditor({
             }
           }
         }}
-        className="mt-2 w-full cursor-text py-6 text-left text-[13.5px] text-a-faint/60 transition-colors duration-200 hover:text-a-faint md:pl-[var(--a-gutter)]"
+        className="mt-2 w-full cursor-text py-6 text-left text-[13.5px] text-a-faint/60 transition-colors duration-200 hover:text-a-faint"
         aria-label="Add new block"
       >
         Click to add more…
