@@ -10,6 +10,9 @@
  *  - Listeners receive status updates so UI can react without polling.
  */
 
+import { API_BASE_URL } from '@/lib/api';
+import { simpleRequest } from '@/lib/simpleRequest';
+
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type SyncStatus = 'synced' | 'syncing' | 'offline' | 'error';
@@ -37,8 +40,10 @@ type StatusListener = (status: SyncStatus) => void;
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const API_BASE = '/api/notes'; // proxied by Vite → localhost:3001
-const HEALTH_URL = '/api/health';
+// On the API's origin, which for the Slate build is not this page's origin.
+// These were relative, so notes from Slate were sent to Slate itself.
+const API_BASE = `${API_BASE_URL}/api/notes`;
+const HEALTH_URL = `${API_BASE_URL}/api/health`;
 const FLUSH_DEBOUNCE_MS = 600;
 const HEALTH_CHECK_INTERVAL_MS = 15_000;
 
@@ -223,21 +228,14 @@ class NotesSyncService {
 
   private async apiUpsert(payload: NotePayload): Promise<void> {
     // Try PUT first (update), fall back to POST (create) on 404
-    const res = await fetch(`${API_BASE}/${payload.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(8000),
-    });
+    // Simple requests carrying the session cookie; see lib/simpleRequest.ts.
+    const put = simpleRequest(`${API_BASE}/${payload.id}`, 'PUT', JSON.stringify(payload));
+    const res = await fetch(put.url, { ...put.init, signal: AbortSignal.timeout(8000) });
 
     if (res.status === 404) {
       // Note doesn't exist on server yet — create it
-      const createRes = await fetch(API_BASE, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(8000),
-      });
+      const create = simpleRequest(API_BASE, 'POST', JSON.stringify(payload));
+      const createRes = await fetch(create.url, { ...create.init, signal: AbortSignal.timeout(8000) });
       if (!createRes.ok) throw await syncError('POST', createRes);
       return;
     }
@@ -246,10 +244,8 @@ class NotesSyncService {
   }
 
   private async apiDelete(noteId: string): Promise<void> {
-    const res = await fetch(`${API_BASE}/${noteId}`, {
-      method: 'DELETE',
-      signal: AbortSignal.timeout(8000),
-    });
+    const remove = simpleRequest(`${API_BASE}/${noteId}`, 'DELETE');
+    const res = await fetch(remove.url, { ...remove.init, signal: AbortSignal.timeout(8000) });
     // 404 is fine — note was never on server or already deleted
     if (!res.ok && res.status !== 404) throw new Error(`DELETE ${res.status}`);
   }

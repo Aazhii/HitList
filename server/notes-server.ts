@@ -93,6 +93,7 @@ import { listRuns, listRunsForRule, recordRun } from './automations/runs.ts';
 import { channelsFor, renderRule } from './automations/planner.ts';
 import { enqueue, cancelPendingForRule } from './notifications/queue.ts';
 import { dayKeyInZone, streakDays } from './stats/days.ts';
+import { simpleRequestMiddleware } from './simpleRequests.ts';
 import {
   MAX_VIEWS, deleteView, getView, insertView, listViews, parseViewBody, updateView, viewToApi,
   type SavedView,
@@ -1334,7 +1335,12 @@ app.use(cors({
   },
   credentials: true,
 }));
-app.use(express.json({ limit: '4mb' }));
+// The Slate client sends every call as a CORS simple request (the AppSail
+// gateway answers preflights itself, with no CORS headers). Map its method
+// override and timezone parameter back, refuse changes from origins that are
+// not allowed, and read its text/plain bodies as JSON.
+app.use('/api', simpleRequestMiddleware((origin) => allowedOriginSet.has(normaliseOrigin(origin))));
+app.use(express.json({ limit: '4mb', type: ['application/json', 'text/plain'] }));
 
 // ── Readiness gate ────────────────────────────────────────────────────────────
 //

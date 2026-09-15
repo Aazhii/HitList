@@ -7,6 +7,8 @@
  * Base URL: same origin (override via VITE_API_BASE_URL)
  */
 
+import { simpleRequest } from './simpleRequest';
+
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type TaskStatus = 'TODO' | 'IN_PROGRESS' | 'DONE';
@@ -100,6 +102,9 @@ export interface ApiError {
  */
 const BASE_URL: string = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? '';
 
+/** The API origin, '' when same-origin. Shared with notes sync. */
+export const API_BASE_URL = BASE_URL;
+
 // ── Core fetch helper ────────────────────────────────────────────────────────
 
 /**
@@ -146,20 +151,19 @@ async function request<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const url = `${BASE_URL}/api${path}`;
-  const res = await fetch(url, {
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Timezone': browserTimeZone(),
-      ...options.headers,
-    },
-    // The server identifies the caller from their Catalyst session cookie, so
-    // it has to be sent. The default ('same-origin') covers the AppSail
-    // deployment but silently drops the cookie for the Slate build, which
-    // calls the API cross-origin — every request would then be a 401.
-    credentials: 'include',
-    ...options,
-  });
+  // Sent as a CORS simple request — no custom headers, no JSON content type,
+  // no PUT/PATCH/DELETE — because the AppSail gateway answers preflights
+  // itself without CORS headers. See lib/simpleRequest.ts. It also sends the
+  // session cookie (credentials: 'include'), without which the cross-origin
+  // Slate build would get a 401 on every call.
+  const { method, body, headers: _headers, ...rest } = options;
+  const simple = simpleRequest(
+    `${BASE_URL}/api${path}`,
+    method ?? 'GET',
+    typeof body === 'string' ? body : undefined,
+    browserTimeZone(),
+  );
+  const res = await fetch(simple.url, { ...rest, ...simple.init });
 
   if (!res.ok) {
     // 401/403 from Catalyst gateway often returns an HTML login page.
