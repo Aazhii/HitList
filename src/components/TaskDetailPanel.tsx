@@ -34,6 +34,8 @@ import { getDueInfo } from '@/components/MatrixTaskCard';
 
 import { REMINDER_OPTIONS, DEFAULT_REMINDER_MINUTES, isNotificationSupported } from '@/lib/notifications';
 import type { ReminderMinutes } from '@/lib/notifications';
+import { TaskFieldsSection } from '@/components/fields/TaskFieldsSection';
+import type { FieldDef, FieldValue } from '@/types/fields';
 
 interface TaskDetailPanelProps {
   todo: Todo | null;
@@ -52,6 +54,15 @@ interface TaskDetailPanelProps {
    * the rules — this panel would have to fetch them a second time to know.
    */
   onAddEscalation?: (taskId: string) => void;
+  /** Custom fields. The section is left out when this is not given. */
+  fields?: {
+    defs: FieldDef[];
+    values: Record<string, Record<string, FieldValue>>;
+    online: boolean;
+    loading: boolean;
+    onSetValue: (taskId: string, fieldId: string, value: FieldValue | null) => void;
+    onManage: () => void;
+  };
 }
 
 function getTodayStr() {
@@ -86,6 +97,7 @@ export function TaskDetailPanel({
   defaultReminderMinutes = DEFAULT_REMINDER_MINUTES,
   onOpenNote,
   onAddEscalation,
+  fields,
 }: TaskDetailPanelProps) {
   const [text, setText] = useState(todo?.text ?? '');
   const [note, setNote] = useState(todo?.note ?? '');
@@ -478,6 +490,17 @@ export function TaskDetailPanel({
                 </span>
               )}
             </div>
+
+            {fields && (
+              <TaskFieldsSection
+                fields={fields.defs}
+                values={fields.values[todo.id]}
+                online={fields.online}
+                loading={fields.loading}
+                onSetValue={(fieldId, value) => fields.onSetValue(todo.id, fieldId, value)}
+                onManage={fields.onManage}
+              />
+            )}
 
             {/* Notes */}
             <div className="space-y-1.5">

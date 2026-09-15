@@ -5,6 +5,7 @@ import { MatrixTaskCard } from '@/components/MatrixTaskCard';
 import { QUADRANTS } from '@/types/todo';
 import type { Todo, TodoStatus, Quadrant } from '@/types/todo';
 import { bucketByQuadrant, type TaskCompare } from '@/lib/quadrantBuckets';
+import type { FieldDef, TaskFieldValues } from '@/types/fields';
 
 interface EisenhowerMatrixProps {
   todos: Todo[];
@@ -20,6 +21,8 @@ interface EisenhowerMatrixProps {
   notificationPermission?: NotificationPermission;
   /** Opens the note a task was added from. */
   onOpenNote?: (noteId: string) => void;
+  fieldDefs?: FieldDef[];
+  fieldValues?: TaskFieldValues;
 }
 
 /**
@@ -41,6 +44,8 @@ export function EisenhowerMatrix({
   notificationPermission,
   onOpenNote,
   compare,
+  fieldDefs,
+  fieldValues,
 }: EisenhowerMatrixProps) {
   const todosByQuadrant = useMemo(
     () => bucketByQuadrant(todos, showDone, compare),
@@ -90,6 +95,8 @@ export function EisenhowerMatrix({
                   onToggleReminder={onToggleReminder}
                   notificationPermission={notificationPermission}
                   onOpenNote={onOpenNote}
+                  fieldDefs={fieldDefs}
+                  fieldValues={fieldValues?.[todo.id]}
                   index={i}
                 />
               ))

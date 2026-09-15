@@ -31,6 +31,7 @@ import { QUADRANTS } from '@/types/todo';
 import type { Quadrant, QuadrantConfig, Todo, TodoStatus } from '@/types/todo';
 import { bucketByQuadrant } from '@/lib/quadrantBuckets';
 import type { TaskCompare } from '@/lib/quadrantBuckets';
+import type { FieldDef, TaskFieldValues } from '@/types/fields';
 import { computeReorder, quadrantDropId, type ReorderChange } from '@/lib/reorder';
 import { TaskRow } from '@/components/tasks/TaskRow';
 
@@ -51,6 +52,8 @@ interface TaskListViewProps {
   notificationPermission?: NotificationPermission;
   /** Opens the note a task was added from. */
   onOpenNote?: (noteId: string) => void;
+  fieldDefs?: FieldDef[];
+  fieldValues?: TaskFieldValues;
 }
 
 export function TaskListView({
@@ -67,6 +70,8 @@ export function TaskListView({
   onToggleReminder,
   notificationPermission,
   onOpenNote,
+  fieldDefs,
+  fieldValues,
 }: TaskListViewProps) {
   const buckets = useMemo(() => bucketByQuadrant(todos, showDone, compare), [todos, showDone, compare]);
 
@@ -105,6 +110,8 @@ export function TaskListView({
             onToggleReminder={onToggleReminder}
             notificationPermission={notificationPermission}
             onOpenNote={onOpenNote}
+            fieldDefs={fieldDefs}
+            fieldValues={fieldValues}
           />
         ))}
       </div>
@@ -129,6 +136,8 @@ function QuadrantGroup({
   onToggleReminder,
   notificationPermission,
   onOpenNote,
+  fieldDefs,
+  fieldValues,
 }: QuadrantGroupProps) {
   const { setNodeRef, isOver } = useDroppable({ id: quadrantDropId(q.id), disabled: dragDisabled });
   const openCount = tasks.filter((t) => t.status !== 'done').length;
@@ -165,6 +174,8 @@ function QuadrantGroup({
               onToggleReminder={onToggleReminder}
               notificationPermission={notificationPermission}
               onOpenNote={onOpenNote}
+              fieldDefs={fieldDefs}
+              fieldValues={fieldValues?.[todo.id]}
             />
           ))}
         </SortableContext>

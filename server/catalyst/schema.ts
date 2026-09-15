@@ -58,6 +58,8 @@ export const RULES_TABLE = 'KaizenAutomationRules';
 export const INBOX_TABLE = 'KaizenNotifications';
 export const RUNS_TABLE = 'KaizenAutomationRuns';
 export const VIEWS_TABLE = 'KaizenViews';
+export const PROP_DEFS_TABLE = 'KaizenPropDefs';
+export const TASK_PROPS_TABLE = 'KaizenTaskProps';
 
 export const SCHEMA: TableSpec[] = [
   {
@@ -261,6 +263,40 @@ export const SCHEMA: TableSpec[] = [
       { name: 'ShowDone', type: 'boolean' },
       { name: 'ViewOrder', type: 'int' },
       { name: 'CreatedAt', type: 'bigint' },
+      { name: 'UpdatedAt', type: 'bigint' },
+    ],
+  },
+
+  // Custom task fields — a user's own field definitions. Separate tables rather
+  // than columns on KaizenTasks, because fields are per user and change at
+  // runtime. See server/fields.ts.
+  {
+    name: PROP_DEFS_TABLE,
+    columns: [
+      { name: 'DefId', type: 'varchar', maxLength: 64, mandatory: true, unique: true },
+      OWNER_COLUMN,
+      { name: 'Name', type: 'varchar', maxLength: 100, mandatory: true },
+      { name: 'FieldKind', type: 'varchar', maxLength: 16,
+        note: 'select | multi | number | date | checkbox | text. Fixed once created.' },
+      { name: 'OptionsJson', type: 'text', note: '[{id, label, color}] for select and multi' },
+      { name: 'DefOrder', type: 'int' },
+      { name: 'ShowOnCard', type: 'boolean' },
+      { name: 'CreatedAt', type: 'bigint' },
+      { name: 'UpdatedAt', type: 'bigint' },
+    ],
+  },
+
+  // One task's value for one field. Stored as text and parsed by the field's
+  // kind: whether date and double columns round-trip has not been verified.
+  {
+    name: TASK_PROPS_TABLE,
+    columns: [
+      { name: 'PropId', type: 'varchar', maxLength: 64, mandatory: true, unique: true,
+        note: 'Hash of task + field, so one value per slot is enforced by the constraint' },
+      OWNER_COLUMN,
+      { name: 'TaskId', type: 'varchar', maxLength: 64, mandatory: true },
+      { name: 'DefId', type: 'varchar', maxLength: 64, mandatory: true },
+      { name: 'ValueText', type: 'text' },
       { name: 'UpdatedAt', type: 'bigint' },
     ],
   },

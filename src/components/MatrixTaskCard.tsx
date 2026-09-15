@@ -7,6 +7,8 @@ import type { Todo, TodoStatus } from '@/types/todo';
 import { isNotificationSupported, getReminderStatus } from '@/lib/notifications';
 import { DUE_TONE_CLASS, dueTone, getDueInfo } from '@/lib/dueInfo';
 import { NEXT_STATUS } from '@/lib/taskStatus';
+import { FieldChips } from '@/components/fields/FieldChips';
+import type { FieldDef, FieldValue } from '@/types/fields';
 
 // Moved to lib/dueInfo.ts so the list view shares them. Re-exported so existing
 // imports from this module keep working.
@@ -24,6 +26,9 @@ interface MatrixTaskCardProps {
   notificationPermission?: NotificationPermission;
   /** Opens the note a task was added from. */
   onOpenNote?: (noteId: string) => void;
+  /** Custom fields, and this task's values; fields marked "Show on card" become chips. */
+  fieldDefs?: FieldDef[];
+  fieldValues?: Record<string, FieldValue>;
 }
 
 const CHIP = 'inline-flex items-center gap-1 rounded-full px-2.5 py-[3px] text-[12px] leading-none whitespace-nowrap';
@@ -50,6 +55,8 @@ export function MatrixTaskCard({
   index,
   notificationPermission,
   onOpenNote,
+  fieldDefs,
+  fieldValues,
 }: MatrixTaskCardProps) {
   const [deleting, setDeleting] = useState(false);
   const isDone = todo.status === 'done';
@@ -60,7 +67,9 @@ export function MatrixTaskCard({
   const supported = isNotificationSupported();
   const showReminderChip = !isDone && !!reminderStatus && reminderStatus !== 'no-reminder';
   const fromNote = !!todo.sourceNoteId && !!onOpenNote;
-  const hasMeta = !!categoryConfig || !!dueInfo || showReminderChip || !!todo.note || fromNote;
+  const hasFieldChips = !!fieldDefs && !!fieldValues
+    && fieldDefs.some((f) => f.showOnCard && fieldValues[f.id] !== undefined);
+  const hasMeta = !!categoryConfig || !!dueInfo || showReminderChip || !!todo.note || fromNote || hasFieldChips;
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -155,6 +164,8 @@ export function MatrixTaskCard({
               {categoryConfig.label}
             </span>
           )}
+
+          {fieldDefs && <FieldChips fields={fieldDefs} values={fieldValues} chipClass={CHIP} />}
 
           {fromNote && (
             <button

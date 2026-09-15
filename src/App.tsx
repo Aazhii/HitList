@@ -42,6 +42,9 @@ import { useSavedViews } from '@/hooks/useSavedViews';
 import type { ApiSavedView } from '@/lib/api';
 import { SavedViewsSection } from '@/components/tasks/SavedViewsSection';
 import { SaveViewForm } from '@/components/tasks/SaveViewForm';
+import { useTaskFields } from '@/hooks/useTaskFields';
+import { FieldsManagerDialog } from '@/components/fields/FieldsManagerDialog';
+import type { FieldValue } from '@/types/fields';
 import type { ReorderChange } from '@/lib/reorder';
 import { useCatalystSync, apiTaskToTodo, apiListToKaizenList } from '@/hooks/useCatalystSync';
 import { SyncStatusBar } from '@/components/SyncStatusBar';
@@ -435,6 +438,20 @@ function App() {
   const notifyViewError = useCallback((message: string) => toast.error(message, { duration: 3000 }), []);
   const savedViews = useSavedViews(notifyViewError);
 
+  // ── Custom task fields ────────────────────────────────────────────────────
+  const taskFields = useTaskFields(notifyViewError);
+  const [fieldsManagerOpen, setFieldsManagerOpen] = useState(false);
+  const taskPanelFields = {
+    defs: taskFields.fields,
+    values: taskFields.values,
+    online: taskFields.online,
+    loading: taskFields.loading,
+    onSetValue: (taskId: string, fieldId: string, value: FieldValue | null) => {
+      void taskFields.setValue(taskId, fieldId, value);
+    },
+    onManage: () => setFieldsManagerOpen(true),
+  };
+
   // A view shows as current whenever the screen matches it, rather than from
   // a remembered "last clicked" id that goes stale the moment a filter changes.
   const activeViewId = useMemo(() => savedViews.views.find((v) =>
@@ -706,9 +723,12 @@ function App() {
       if (server.error && prevTodo) {
         setTimeout(() => setTodos((prev) => [...prev, prevTodo]), 400);
         toast.error('Failed to delete task', { duration: 3000 });
+      } else {
+        // The server removes the task's field values with it.
+        taskFields.forgetTask(id);
       }
     },
-    [todos, setTodos, server]
+    [todos, setTodos, server, taskFields]
   );
 
   const handleUpdate = useCallback(
@@ -1202,6 +1222,8 @@ function App() {
                 <TaskListView
                   todos={visibleTodos}
                   compare={taskCompare}
+                  fieldDefs={taskFields.fields}
+                  fieldValues={taskFields.values}
                   showDone={showDoneEffective}
                   nextId={nextId}
                   dragDisabled={activeFilterCount > 0}
@@ -1218,6 +1240,8 @@ function App() {
                 <EisenhowerMatrix
                   todos={visibleTodos}
                   compare={taskCompare}
+                  fieldDefs={taskFields.fields}
+                  fieldValues={taskFields.values}
                   onStatusChange={handleStatusChange}
                   onDelete={handleDelete}
                   onOpen={handleOpenDetail}
@@ -1293,11 +1317,25 @@ function App() {
         onClose={() => setDetailOpen(false)}
         onOpenNote={handleOpenSourceNote}
         onAddEscalation={handleAddEscalation}
+        fields={taskPanelFields}
         onUpdate={handleUpdate}
         onDelete={handleDelete}
         onStatusChange={handleStatusChange}
         notificationPermission={notificationPermission}
         defaultReminderMinutes={defaultReminderMinutes}
+      />
+
+      <FieldsManagerDialog
+        open={fieldsManagerOpen}
+        onOpenChange={setFieldsManagerOpen}
+        fields={taskFields.fields}
+        onCreate={async (input) => {
+          const created = await taskFields.createField(input);
+          if (created) toast.success(`Created field "${created.name}"`, { duration: 2000 });
+          return created;
+        }}
+        onUpdate={taskFields.updateField}
+        onDelete={taskFields.deleteField}
       />
     </>
   );

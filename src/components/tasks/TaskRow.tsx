@@ -23,6 +23,8 @@ import { getCategoryConfig } from '@/types/todo';
 import type { Todo, TodoStatus } from '@/types/todo';
 import { DUE_TONE_CLASS, dueTone, getDueInfo } from '@/lib/dueInfo';
 import { NEXT_STATUS } from '@/lib/taskStatus';
+import { FieldChips } from '@/components/fields/FieldChips';
+import type { FieldDef, FieldValue } from '@/types/fields';
 import { isNotificationSupported } from '@/lib/notifications';
 
 export interface TaskRowProps {
@@ -38,6 +40,9 @@ export interface TaskRowProps {
   notificationPermission?: NotificationPermission;
   /** Opens the note a task was added from. */
   onOpenNote?: (noteId: string) => void;
+  /** Custom fields, and this task's values; fields marked "Show on card" become chips. */
+  fieldDefs?: FieldDef[];
+  fieldValues?: Record<string, FieldValue>;
 }
 
 const CHIP = 'inline-flex items-center rounded-full px-[11px] py-1 text-[12.5px] leading-none whitespace-nowrap';
@@ -59,6 +64,8 @@ export function TaskRow({
   onToggleReminder,
   notificationPermission,
   onOpenNote,
+  fieldDefs,
+  fieldValues,
 }: TaskRowProps) {
   const [deleting, setDeleting] = useState(false);
   const isDone = todo.status === 'done';
@@ -167,6 +174,8 @@ export function TaskRow({
             {category.label}
           </span>
         )}
+
+        {fieldDefs && <FieldChips fields={fieldDefs} values={fieldValues} chipClass={CHIP} />}
 
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

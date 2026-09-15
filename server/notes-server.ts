@@ -98,6 +98,10 @@ import {
   type SavedView,
 } from './views.ts';
 import {
+  MAX_FIELDS, decodeValue, defToApi, deleteDefRow, deletePropsForDef, deletePropsForTask, encodeValue,
+  getDef, insertDef, listDefs, listProps, parseFieldBody, setProp, updateDef, type FieldDef,
+} from './fields.ts';
+import {
   syncTaskReminder,
   cancelTaskReminders,
   backfillReminders,
@@ -1688,6 +1692,176 @@ app.delete('/api/views/:id', async (req, res) => {
   }
 });
 
+// ── Custom task fields ───────────────────────────────────────────────────────
+//
+// A user's own fields (select, multi-select, number, date, checkbox, text) and
+// each task's values. See server/fields.ts. Without Catalyst these answer 503;
+// fields have no offline copy.
+
+function sendFieldErrors(res: express.Response, errors: Record<string, string>): void {
+  res.status(400).json({ error: 'validation_failed', message: 'One or more fields are invalid', fields: errors });
+}
+
+/**
+ * Removes a deleted task's field values. The task is already gone, so a failure
+ * here is logged rather than turned into an error for a delete that worked;
+ * values for a task that no longer exists are never shown.
+ */
+async function removeTaskFieldValues(req: express.Request, ownerId: string, taskId: string): Promise<void> {
+  try {
+    await deletePropsForTask(initCatalyst(req) as unknown as NotificationApp, ownerId, taskId);
+  } catch (e) {
+    console.warn(`[kaizen] field values for deleted task ${taskId} not removed: ${describeError(e)}`);
+  }
+}
+
+app.get('/api/fields', async (req, res) => {
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  try {
+    const defs = await listDefs(initCatalyst(req) as unknown as NotificationApp, ownerId);
+    res.json(defs.map(defToApi));
+  } catch (e) {
+    sendError(res, '[GET /api/fields]', e);
+  }
+});
+
+app.post('/api/fields', async (req, res) => {
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+
+  const parsed = parseFieldBody((req.body ?? {}) as Record<string, unknown>);
+  if (!parsed.ok) { sendFieldErrors(res, parsed.errors); return; }
+
+  try {
+    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const existing = await listDefs(catalyst, ownerId);
+    if (existing.length >= MAX_FIELDS) {
+      sendFieldErrors(res, { name: `you already have ${MAX_FIELDS} fields; delete one first` });
+      return;
+    }
+    const now = Date.now();
+    const def: FieldDef = {
+      ...parsed.value,
+      id: randomUUID(),
+      ownerId,
+      fieldOrder: parsed.value.fieldOrder ?? existing.reduce((m, d) => Math.max(m, d.fieldOrder), -1) + 1,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await insertDef(catalyst, def);
+    res.status(201).json(defToApi(def));
+  } catch (e) {
+    sendError(res, '[POST /api/fields]', e);
+  }
+});
+
+app.put('/api/fields/:id', async (req, res) => {
+  if (!assertSafeId(req.params.id, res)) return;
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+
+  try {
+    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const existing = await getDef(catalyst, ownerId, req.params.id);
+    if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
+
+    const parsed = parseFieldBody((req.body ?? {}) as Record<string, unknown>, existing);
+    if (!parsed.ok) { sendFieldErrors(res, parsed.errors); return; }
+
+    const updated: FieldDef = {
+      ...existing,
+      ...parsed.value,
+      id: existing.id,
+      ownerId,
+      fieldOrder: parsed.value.fieldOrder ?? existing.fieldOrder,
+      updatedAt: Date.now(),
+    };
+    await updateDef(catalyst, existing.rowId, updated);
+    res.json(defToApi(updated));
+  } catch (e) {
+    sendError(res, '[PUT /api/fields/:id]', e);
+  }
+});
+
+app.delete('/api/fields/:id', async (req, res) => {
+  if (!assertSafeId(req.params.id, res)) return;
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+
+  try {
+    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const existing = await getDef(catalyst, ownerId, req.params.id);
+    if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
+    // Values first: if this stops half-way the field still exists and still
+    // shows its remaining values, rather than leaving values with no field.
+    await deletePropsForDef(catalyst, ownerId, existing.id);
+    await deleteDefRow(catalyst, existing.rowId);
+    res.sendStatus(204);
+  } catch (e) {
+    sendError(res, '[DELETE /api/fields/:id]', e);
+  }
+});
+
+app.get('/api/field-values', async (req, res) => {
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+
+  try {
+    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const [defs, props] = await Promise.all([listDefs(catalyst, ownerId), listProps(catalyst, ownerId)]);
+    const byId = new Map(defs.map((d) => [d.id, d]));
+    const out: Array<{ taskId: string; fieldId: string; value: unknown }> = [];
+    for (const prop of props) {
+      const def = byId.get(prop.defId);
+      if (!def) continue;
+      const value = decodeValue(def, prop.valueText);
+      if (value !== null) out.push({ taskId: prop.taskId, fieldId: def.id, value });
+    }
+    res.json(out);
+  } catch (e) {
+    sendError(res, '[GET /api/field-values]', e);
+  }
+});
+
+app.put('/api/tasks/:id/fields/:fieldId', async (req, res) => {
+  if (!assertSafeId(req.params.id, res)) return;
+  if (!assertSafeId(req.params.fieldId, res, 'fieldId')) return;
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+
+  try {
+    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const def = await getDef(catalyst, ownerId, req.params.fieldId);
+    if (!def) { res.status(404).json({ error: 'Not found', message: 'No such field' }); return; }
+
+    // The task must be the caller's; reads the owner's tasks, as the other task routes do.
+    const tasks = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
+    if (!tasks.some((t) => t.id === req.params.id)) {
+      res.status(404).json({ error: 'Not found', message: 'No such task' });
+      return;
+    }
+
+    const encoded = encodeValue(def, (req.body ?? {})['value']);
+    if (!encoded.ok) { sendFieldErrors(res, { value: encoded.error }); return; }
+
+    await setProp(catalyst, ownerId, req.params.id, def.id, encoded.text);
+    res.json({
+      taskId: req.params.id,
+      fieldId: def.id,
+      value: encoded.text === null ? null : decodeValue(def, encoded.text),
+    });
+  } catch (e) {
+    sendError(res, '[PUT /api/tasks/:id/fields/:fieldId]', e);
+  }
+});
+
 // ── Automation runs ──────────────────────────────────────────────────────────
 //
 // The audit trail. `useAutomationRuns` has been polling
@@ -2540,6 +2714,7 @@ app.delete('/api/tasks/:id', async (req, res) => {
       if (!rowId) { res.status(404).json({ error: 'Not found' }); return; }
       await catalystDeleteRow(req, getTasksTable(), rowId);
       await cancelRemindersFor(req, ownerId, req.params.id);
+      await removeTaskFieldValues(req, ownerId, req.params.id);
       res.sendStatus(204);
     } else {
       const db = readTasksDb();
@@ -2694,6 +2869,7 @@ app.delete('/api/lists/:id', async (req, res) => {
         await Promise.all(toDelete.map(async (t) => {
           const rid = await catalystGetRowId(req, getTasksTable(), 'TaskId', t.id);
           if (rid) await catalystDeleteRow(req, getTasksTable(), rid);
+          await removeTaskFieldValues(req, ownerId, t.id);
         }));
       }
       res.sendStatus(204);

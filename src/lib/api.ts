@@ -528,6 +528,50 @@ export const viewApi = {
   },
 };
 
+// ── Custom task fields ────────────────────────────────────────────────────────
+
+type FieldDef = import('../types/fields').FieldDef;
+type FieldValue = import('../types/fields').FieldValue;
+
+export interface ApiFieldValue {
+  taskId: string;
+  fieldId: string;
+  /** null once cleared. */
+  value: FieldValue | null;
+}
+
+export interface FieldInput {
+  name: string;
+  kind: import('../types/fields').FieldKind;
+  /** For select and multi. Keep an option's id to keep the tasks that use it. */
+  options?: Array<{ id?: string; label: string; color?: import('../types/fields').OptionColor }>;
+  showOnCard?: boolean;
+  fieldOrder?: number;
+}
+
+export const fieldApi = {
+  listFields(): Promise<FieldDef[]> {
+    return get<FieldDef[]>('/fields');
+  },
+  createField(input: FieldInput): Promise<FieldDef> {
+    return post<FieldDef>('/fields', input);
+  },
+  updateField(id: string, input: FieldInput): Promise<FieldDef> {
+    return put<FieldDef>(`/fields/${id}`, input);
+  },
+  /** Also removes every task's value for the field. */
+  deleteField(id: string): Promise<void> {
+    return del<void>(`/fields/${id}`);
+  },
+  listValues(): Promise<ApiFieldValue[]> {
+    return get<ApiFieldValue[]>('/field-values');
+  },
+  /** Sets one task's value for one field; null clears it. */
+  setValue(taskId: string, fieldId: string, value: FieldValue | null): Promise<ApiFieldValue> {
+    return put<ApiFieldValue>(`/tasks/${taskId}/fields/${fieldId}`, { value });
+  },
+};
+
 // ── Health check ─────────────────────────────────────────────────────────────
 
 /**

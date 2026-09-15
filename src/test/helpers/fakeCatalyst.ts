@@ -43,6 +43,11 @@ const VARCHAR_MAX: Record<string, Record<string, number>> = Object.fromEntries(
   ]),
 );
 
+/** Unique columns from the real schema; an insert that repeats one throws, as Catalyst does. */
+const UNIQUE_COLUMNS: Record<string, string[]> = Object.fromEntries(
+  SCHEMA.map((t) => [t.name, t.columns.filter((c) => c.unique).map((c) => c.name)]),
+);
+
 function clampColumn(table: string, column: string, value: string): string {
   const max = VARCHAR_MAX[table]?.[column];
   return max !== undefined ? value.slice(0, max) : value;
@@ -98,11 +103,12 @@ export function fakeCatalyst(options: FakeOptions = {}): Fake {
         const rows = tables[name];
         return {
           insertRow: async (row) => {
-            if (name === QUEUE_TABLE) {
-              const key = String(row.DedupeKey ?? '');
-              // What Catalyst answers for a unique-constraint violation.
-              if (rows.some((r) => r.DedupeKey === key)) {
-                throw { code: 'DUPLICATE_VALUE', message: 'duplicate value for DedupeKey' };
+            // What Catalyst answers for a unique-constraint violation.
+            for (const col of UNIQUE_COLUMNS[name] ?? []) {
+              if (row[col] === undefined) continue;
+              const value = clampColumn(name, col, String(row[col] ?? ''));
+              if (rows.some((r) => r[col] === value)) {
+                throw { code: 'DUPLICATE_VALUE', message: `duplicate value for ${col}` };
               }
             }
             const stored: Record<string, string> = { ROWID: String(nextRowId++) };
