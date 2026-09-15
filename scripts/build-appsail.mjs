@@ -131,7 +131,7 @@ fs.writeFileSync(
       // explicit CORS allowance. The AppSail-hosted copy is same-origin and
       // does not.
       ALLOWED_ORIGINS: process.env['APPSAIL_ALLOWED_ORIGINS']
-        ?? 'https://hitlist-api-50045941899.development.catalystappsail.in',
+        ?? 'https://hitlist-oeiefiri.onslate.in,https://hitlist-api-50045941899.development.catalystappsail.in',
 
       // ── Notification delivery ──
       //

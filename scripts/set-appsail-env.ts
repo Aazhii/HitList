@@ -45,6 +45,7 @@ const SERVICE_NAME = process.env['APPSAIL_NAME'] ?? 'hitlist-api';
 // or pass APPSAIL_ALLOWED_ORIGINS; an origin that is not listed gets no CORS
 // headers and its API calls fail in the browser.
 const DEFAULT_ORIGINS = [
+  'https://hitlist-oeiefiri.onslate.in',
   'https://hitlist-api-50045941899.development.catalystappsail.in',
 ].join(',');
 
