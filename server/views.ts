@@ -12,7 +12,7 @@ import type { CatalystApp } from './notifications/types.ts';
 import { VIEWS_TABLE } from './catalyst/schema.ts';
 import { zcqlString, unwrapRows, str, num } from './notifications/zcql.ts';
 
-export const VIEW_LAYOUTS = ['list', 'matrix', 'table', 'board'] as const;
+export const VIEW_LAYOUTS = ['list', 'matrix', 'table', 'board', 'calendar'] as const;
 export type ViewLayout = typeof VIEW_LAYOUTS[number];
 
 /** Enough for any real use; a cap so a runaway client cannot fill the table. */

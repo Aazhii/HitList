@@ -255,7 +255,7 @@ export function AdvancedFilterBar({ filters, onChange, className, fieldDefs = []
             />
           ))}
 
-          {layout !== 'matrix' && groupFields.length > 0 && (
+          {layout !== 'matrix' && layout !== 'calendar' && groupFields.length > 0 && (
             <div className="flex items-center gap-1">
               <Rows3 className="size-3.5 text-muted-foreground/70 flex-shrink-0" aria-hidden />
               <Select value={filters.groupBy || '__none__'} onValueChange={(v) => set('groupBy', v === '__none__' ? '' : v)}>

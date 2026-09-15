@@ -32,6 +32,7 @@ import { EisenhowerMatrix } from '@/components/EisenhowerMatrix';
 import { TaskListView } from '@/components/tasks/TaskListView';
 import { TaskTableView } from '@/components/tasks/TaskTableView';
 import { TaskBoardView } from '@/components/tasks/TaskBoardView';
+import { TaskCalendarView } from '@/components/tasks/TaskCalendarView';
 import { TaskDetailPanel } from '@/components/TaskDetailPanel';
 import { AppShell } from '@/components/shell/AppShell';
 import { IconRail, type AppView } from '@/components/shell/IconRail';
@@ -95,13 +96,15 @@ import { cn } from '@/lib/utils';
 interface AddTaskDialogProps {
   open: boolean;
   defaultQuadrant: Quadrant;
+  /** A due date to start with — set when adding from a calendar day. */
+  defaultDueDate?: string;
   onOpenChange: (v: boolean) => void;
   onAdd: (text: string, quadrant: Quadrant, category?: string, dueDate?: string, dueTime?: string) => void;
 }
 
 const FIELD_LABEL = 'text-[11px] font-bold uppercase tracking-[0.1em] text-a-faint';
 
-function AddTaskDialog({ open, defaultQuadrant, onOpenChange, onAdd }: AddTaskDialogProps) {
+function AddTaskDialog({ open, defaultQuadrant, defaultDueDate, onOpenChange, onAdd }: AddTaskDialogProps) {
   const [text, setText] = useState('');
   const [quadrant, setQuadrant] = useState<Quadrant>(defaultQuadrant);
   const [category, setCategory] = useState('');
@@ -113,9 +116,10 @@ function AddTaskDialog({ open, defaultQuadrant, onOpenChange, onAdd }: AddTaskDi
   useEffect(() => {
     if (!open) return;
     setQuadrant(defaultQuadrant);
+    setDueDate(defaultDueDate ?? '');
     const t = setTimeout(() => inputRef.current?.focus(), 50);
     return () => clearTimeout(t);
-  }, [open, defaultQuadrant]);
+  }, [open, defaultQuadrant, defaultDueDate]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -391,6 +395,7 @@ function App() {
   // UI state
   const [dialogOpen, setDialogOpen] = useState(false);
   const [defaultQuadrant, setDefaultQuadrant] = useState<Quadrant>('do');
+  const [defaultDueDate, setDefaultDueDate] = useState('');
   const [showStreak, setShowStreak] = useState(false);
   const [showDone, setShowDone] = useState(false);
   const [detailTodo, setDetailTodo] = useState<Todo | null>(null);
@@ -1059,7 +1064,7 @@ function App() {
               only the table has a use for it. */}
           <TopBarToggle
             label="Task view"
-            value={tasksMode === 'board' ? 'table' : tasksMode}
+            value={tasksMode === 'board' || tasksMode === 'calendar' ? 'table' : tasksMode}
             onChange={setTasksMode}
             options={[{ value: 'list', label: 'List' }, { value: 'matrix', label: 'Matrix' }, { value: 'table', label: 'Table' }]}
           />
@@ -1231,13 +1236,13 @@ function App() {
             />
 
             <div className="px-4 py-[22px] md:px-[26px]">
-              {!server.loading && listTodos.length > 0 && (tasksMode === 'table' || tasksMode === 'board') && (
+              {!server.loading && listTodos.length > 0 && (tasksMode === 'table' || tasksMode === 'board' || tasksMode === 'calendar') && (
                 <div className="mb-4 flex">
                   <TopBarToggle
-                    label="Table or board"
+                    label="Table, board or calendar"
                     value={tasksMode}
                     onChange={setTasksMode}
-                    options={[{ value: 'table', label: 'Table' }, { value: 'board', label: 'Board' }]}
+                    options={[{ value: 'table', label: 'Table' }, { value: 'board', label: 'Board' }, { value: 'calendar', label: 'Calendar' }]}
                   />
                 </div>
               )}
@@ -1266,6 +1271,15 @@ function App() {
                   onToggleReminder={handleToggleReminder}
                   onOpenNote={handleOpenSourceNote}
                   notificationPermission={notificationPermission}
+                />
+              ) : tasksMode === 'calendar' ? (
+                <TaskCalendarView
+                  todos={visibleTodos}
+                  showDone={showDoneEffective}
+                  compare={crossQuadrantCompare}
+                  onMove={(id, changes) => { void handleUpdate(id, changes, { quiet: true }); }}
+                  onOpen={handleOpenDetail}
+                  onAddOnDate={(date) => { setDefaultQuadrant('do'); setDefaultDueDate(date); setDialogOpen(true); }}
                 />
               ) : tasksMode === 'board' ? (
                 <TaskBoardView
@@ -1337,7 +1351,8 @@ function App() {
       <AddTaskDialog
         open={dialogOpen}
         defaultQuadrant={defaultQuadrant}
-        onOpenChange={setDialogOpen}
+        defaultDueDate={defaultDueDate}
+        onOpenChange={(open) => { setDialogOpen(open); if (!open) setDefaultDueDate(''); }}
         onAdd={handleAddTask}
       />
 

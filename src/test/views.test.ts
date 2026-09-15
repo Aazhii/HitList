@@ -112,8 +112,8 @@ describe('normaliseFilters — custom fields', () => {
 });
 
 describe('table layout and field sorts', () => {
-  it('accepts the table and board layouts and reads them back from a row', () => {
-    for (const layout of ['table', 'board'] as const) {
+  it('accepts the table, board and calendar layouts and reads them back from a row', () => {
+    for (const layout of ['table', 'board', 'calendar'] as const) {
       const parsed = parseViewBody({ name: 'Everything', layout });
       expect(parsed.ok).toBe(true);
       if (parsed.ok) expect(parsed.value.layout).toBe(layout);
