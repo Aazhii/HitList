@@ -60,6 +60,39 @@ export function countActiveFilters(f: FilterState): number {
   return n;
 }
 
+const DUE_PRESETS: readonly DuePreset[] = ['', 'overdue', 'today', 'next7', 'none'];
+const SORT_KEYS: readonly TaskSortKey[] = ['order', 'created', 'due-date', 'status', 'title'];
+const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * A filter read from storage or the server, made safe to apply: unknown fields
+ * dropped, illegal values reset to the default. Mirrors server/views.ts.
+ */
+export function normaliseFilters(raw: unknown): FilterState {
+  const o = (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}) as Record<string, unknown>;
+  const text = (v: unknown) => (typeof v === 'string' ? v : '');
+  const oneOf = <T extends string>(v: unknown, allowed: readonly T[], fallback: T): T =>
+    (typeof v === 'string' && (allowed as readonly string[]).includes(v) ? (v as T) : fallback);
+
+  return {
+    search: text(o.search).slice(0, 200),
+    status: oneOf(o.status, ['', 'TODO', 'IN_PROGRESS', 'DONE'], ''),
+    quadrant: oneOf(o.quadrant, ['', 'DO', 'SCHEDULE', 'DELEGATE', 'ELIMINATE'], ''),
+    due: oneOf(o.due, DUE_PRESETS, ''),
+    dueAfter: DATE_KEY.test(text(o.dueAfter)) ? text(o.dueAfter) : '',
+    dueBefore: DATE_KEY.test(text(o.dueBefore)) ? text(o.dueBefore) : '',
+    sortBy: oneOf(o.sortBy, SORT_KEYS, 'order'),
+    sortDir: o.sortDir === 'desc' ? 'desc' : 'asc',
+  };
+}
+
+/** Whether two filters would show the same thing. */
+export function sameFilters(a: unknown, b: unknown): boolean {
+  const x = normaliseFilters(a);
+  const y = normaliseFilters(b);
+  return (Object.keys(x) as Array<keyof FilterState>).every((k) => x[k] === y[k]);
+}
+
 const STATUS: Record<string, Todo['status']> = { TODO: 'todo', IN_PROGRESS: 'in-progress', DONE: 'done' };
 const QUADRANT: Record<string, Todo['quadrant']> = {
   DO: 'do', SCHEDULE: 'schedule', DELEGATE: 'delegate', ELIMINATE: 'eliminate',

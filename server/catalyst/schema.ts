@@ -57,6 +57,7 @@ export const QUEUE_TABLE = 'KaizenNotificationQueue';
 export const RULES_TABLE = 'KaizenAutomationRules';
 export const INBOX_TABLE = 'KaizenNotifications';
 export const RUNS_TABLE = 'KaizenAutomationRuns';
+export const VIEWS_TABLE = 'KaizenViews';
 
 export const SCHEMA: TableSpec[] = [
   {
@@ -241,6 +242,26 @@ export const SCHEMA: TableSpec[] = [
       { name: 'TriggerSource', type: 'varchar', maxLength: 16, note: 'scheduler | manual' },
       { name: 'Detail', type: 'text' },
       { name: 'Channels', type: 'varchar', maxLength: 64 },
+    ],
+  },
+
+  // Saved views over tasks: a named filter, sort, layout and list scope.
+  // Filtering happens in the browser; this only stores the definitions. The
+  // filter is one JSON value because its fields follow the filter bar and
+  // nothing queries inside it — see server/views.ts.
+  {
+    name: VIEWS_TABLE,
+    columns: [
+      { name: 'ViewId', type: 'varchar', maxLength: 64, mandatory: true, unique: true },
+      OWNER_COLUMN,
+      { name: 'Name', type: 'varchar', maxLength: 100, mandatory: true },
+      { name: 'ViewLayout', type: 'varchar', maxLength: 16, note: 'list | matrix' },
+      { name: 'ScopeListId', type: 'varchar', maxLength: 64, note: 'A list the view opens; empty = whichever is open' },
+      { name: 'FilterJson', type: 'text', note: 'src/lib/taskFilters FilterState, normalised on write' },
+      { name: 'ShowDone', type: 'boolean' },
+      { name: 'ViewOrder', type: 'int' },
+      { name: 'CreatedAt', type: 'bigint' },
+      { name: 'UpdatedAt', type: 'bigint' },
     ],
   },
 ];

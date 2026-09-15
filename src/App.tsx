@@ -37,7 +37,11 @@ import { ViewLayout } from '@/components/shell/ViewLayout';
 import { TopBar, TopBarToggle, topBarPill, topBarPrimary } from '@/components/shell/TopBar';
 import { UserMenu } from '@/components/shell/UserMenu';
 import { loadAppState, saveAppState, setActiveUserId } from '@/lib/storage';
-import { applyTaskFilters, compareForFilters } from '@/lib/taskFilters';
+import { applyTaskFilters, compareForFilters, normaliseFilters, sameFilters } from '@/lib/taskFilters';
+import { useSavedViews } from '@/hooks/useSavedViews';
+import type { ApiSavedView } from '@/lib/api';
+import { SavedViewsSection } from '@/components/tasks/SavedViewsSection';
+import { SaveViewForm } from '@/components/tasks/SaveViewForm';
 import type { ReorderChange } from '@/lib/reorder';
 import { useCatalystSync, apiTaskToTodo, apiListToKaizenList } from '@/hooks/useCatalystSync';
 import { SyncStatusBar } from '@/components/SyncStatusBar';
@@ -426,6 +430,50 @@ function App() {
     [listTodos, filterState]
   );
   const taskCompare = useMemo(() => compareForFilters(filterState), [filterState]);
+
+  // ── Saved views ───────────────────────────────────────────────────────────
+  const notifyViewError = useCallback((message: string) => toast.error(message, { duration: 3000 }), []);
+  const savedViews = useSavedViews(notifyViewError);
+
+  // A view shows as current whenever the screen matches it, rather than from
+  // a remembered "last clicked" id that goes stale the moment a filter changes.
+  const activeViewId = useMemo(() => savedViews.views.find((v) =>
+    sameFilters(v.filters, filterState) &&
+    v.showDone === showDone &&
+    v.layout === tasksMode &&
+    (!v.scopeListId || v.scopeListId === activeListId),
+  )?.id ?? null, [savedViews.views, filterState, showDone, tasksMode, activeListId]);
+
+  const handleApplyView = useCallback((view: ApiSavedView) => {
+    if (view.scopeListId) {
+      if (lists.some((l) => l.id === view.scopeListId)) {
+        setAppState((prev) => ({ ...prev, activeListId: view.scopeListId! }));
+      } else {
+        toast.error("This view's list no longer exists", { description: 'Showing it in the open list instead.', duration: 3000 });
+      }
+    }
+    setFilterState(normaliseFilters(view.filters));
+    setShowDone(view.showDone);
+    setTasksMode(view.layout);
+    setDetailOpen(false);
+  }, [lists, setTasksMode]);
+
+  const currentViewInput = useCallback((view: Pick<ApiSavedView, 'name' | 'scopeListId' | 'viewOrder'>) => ({
+    name: view.name,
+    layout: tasksMode,
+    scopeListId: view.scopeListId,
+    filters: filterState,
+    showDone,
+    viewOrder: view.viewOrder,
+  }), [tasksMode, filterState, showDone]);
+
+  const handleSaveView = useCallback(async (name: string, scopeToList: boolean) => {
+    const created = await savedViews.createView({
+      name, layout: tasksMode, scopeListId: scopeToList ? activeListId : null, filters: filterState, showDone,
+    });
+    if (created) toast.success(`Saved view "${created.name}"`, { duration: 2000 });
+    return !!created;
+  }, [savedViews, tasksMode, activeListId, filterState, showDone]);
   // A "Done" filter would otherwise show nothing while completed tasks are hidden.
   const showDoneEffective = showDone || filterState.status === 'DONE';
 
@@ -1011,6 +1059,7 @@ function App() {
               {activeFilterCount > 0 && tasksMode === 'list' && (
                 <p className="mt-2 text-[12px] text-a-faint">Drag to reorder is off while filters are active.</p>
               )}
+              <SaveViewForm listName={activeList?.name ?? 'this list'} onSave={handleSaveView} />
             </PopoverContent>
           </Popover>
 
@@ -1079,6 +1128,26 @@ function App() {
           <ViewLayout
             contextLabel="Lists"
             context={
+              <>
+              <SavedViewsSection
+                views={savedViews.views}
+                lists={lists}
+                activeViewId={activeViewId}
+                online={savedViews.online}
+                onApply={handleApplyView}
+                onRename={(view, name) => { void savedViews.updateView(view.id, { ...view, name }); }}
+                onUpdateToCurrent={(view) => {
+                  // A scoped view stays scoped, to whichever list is open now.
+                  void savedViews.updateView(view.id, currentViewInput({
+                    ...view, scopeListId: view.scopeListId ? activeListId : null,
+                  })).then((saved) => { if (saved) toast.success(`Updated "${saved.name}"`, { duration: 2000 }); });
+                }}
+                onDelete={(view) => {
+                  void savedViews.deleteView(view.id).then((ok) => {
+                    if (ok) toast(`Deleted view "${view.name}"`, { duration: 2000 });
+                  });
+                }}
+              />
               <ListSidebar
                 lists={lists}
                 activeListId={activeListId}
@@ -1089,6 +1158,7 @@ function App() {
                 onDeleteList={handleDeleteList}
                 loading={server.loading}
               />
+              </>
             }
             contextFoot={
               <>

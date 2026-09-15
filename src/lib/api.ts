@@ -494,6 +494,40 @@ export const automationApi = {
   },
 };
 
+// ── Saved views ───────────────────────────────────────────────────────────────
+
+export interface ApiSavedView {
+  id: string;
+  name: string;
+  layout: 'list' | 'matrix';
+  /** A list the view opens; null = whichever list is open. */
+  scopeListId: string | null;
+  filters: import('./taskFilters').FilterState;
+  showDone: boolean;
+  viewOrder: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type SavedViewInput = Pick<ApiSavedView, 'name' | 'layout' | 'scopeListId' | 'filters' | 'showDone'> & {
+  viewOrder?: number;
+};
+
+export const viewApi = {
+  list(): Promise<ApiSavedView[]> {
+    return get<ApiSavedView[]>('/views');
+  },
+  create(view: SavedViewInput): Promise<ApiSavedView> {
+    return post<ApiSavedView>('/views', { ...view, scopeListId: view.scopeListId ?? '' });
+  },
+  update(id: string, view: SavedViewInput): Promise<ApiSavedView> {
+    return put<ApiSavedView>(`/views/${id}`, { ...view, scopeListId: view.scopeListId ?? '' });
+  },
+  delete(id: string): Promise<void> {
+    return del<void>(`/views/${id}`);
+  },
+};
+
 // ── Health check ─────────────────────────────────────────────────────────────
 
 /**

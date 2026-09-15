@@ -94,6 +94,10 @@ import { channelsFor, renderRule } from './automations/planner.ts';
 import { enqueue, cancelPendingForRule } from './notifications/queue.ts';
 import { dayKeyInZone, streakDays } from './stats/days.ts';
 import {
+  MAX_VIEWS, deleteView, getView, insertView, listViews, parseViewBody, updateView, viewToApi,
+  type SavedView,
+} from './views.ts';
+import {
   syncTaskReminder,
   cancelTaskReminders,
   backfillReminders,
@@ -1579,6 +1583,108 @@ app.delete('/api/automation-rules/:id', async (req, res) => {
     res.sendStatus(204);
   } catch (e) {
     sendError(res, '[DELETE /api/automation-rules/:id]', e);
+  }
+});
+
+// ── Saved views ──────────────────────────────────────────────────────────────
+//
+// Named filter, sort and layout combinations over the owner's tasks. Filtering
+// happens in the browser over loaded tasks (src/lib/taskFilters.ts); these
+// routes only store the definitions. Without Catalyst they answer 503, so the
+// client keeps views on the device rather than believing they were saved.
+
+function sendViewErrors(res: express.Response, errors: Record<string, string>): void {
+  res.status(400).json({ error: 'validation_failed', message: 'One or more fields are invalid', fields: errors });
+}
+
+app.get('/api/views', async (req, res) => {
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+
+  try {
+    const views = await listViews(initCatalyst(req) as unknown as NotificationApp, ownerId);
+    res.json(views.map(viewToApi));
+  } catch (e) {
+    sendError(res, '[GET /api/views]', e);
+  }
+});
+
+app.post('/api/views', async (req, res) => {
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+
+  const parsed = parseViewBody((req.body ?? {}) as Record<string, unknown>);
+  if (!parsed.ok) { sendViewErrors(res, parsed.errors); return; }
+
+  try {
+    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const existing = await listViews(catalyst, ownerId);
+    if (existing.length >= MAX_VIEWS) {
+      sendViewErrors(res, { name: `you already have ${MAX_VIEWS} saved views; delete one first` });
+      return;
+    }
+
+    const now = Date.now();
+    const view: SavedView = {
+      ...parsed.value,
+      id: randomUUID(),
+      ownerId,
+      viewOrder: parsed.value.viewOrder ?? existing.reduce((m, v) => Math.max(m, v.viewOrder), -1) + 1,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await insertView(catalyst, view);
+    res.status(201).json(viewToApi(view));
+  } catch (e) {
+    sendError(res, '[POST /api/views]', e);
+  }
+});
+
+app.put('/api/views/:id', async (req, res) => {
+  if (!assertSafeId(req.params.id, res)) return;
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+
+  const parsed = parseViewBody((req.body ?? {}) as Record<string, unknown>);
+  if (!parsed.ok) { sendViewErrors(res, parsed.errors); return; }
+
+  try {
+    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const existing = await getView(catalyst, ownerId, req.params.id);
+    if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
+
+    const updated: SavedView = {
+      ...existing,
+      ...parsed.value,
+      id: existing.id,
+      ownerId,
+      viewOrder: parsed.value.viewOrder ?? existing.viewOrder,
+      updatedAt: Date.now(),
+    };
+    await updateView(catalyst, existing.rowId, updated);
+    res.json(viewToApi(updated));
+  } catch (e) {
+    sendError(res, '[PUT /api/views/:id]', e);
+  }
+});
+
+app.delete('/api/views/:id', async (req, res) => {
+  if (!assertSafeId(req.params.id, res)) return;
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+
+  try {
+    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const existing = await getView(catalyst, ownerId, req.params.id);
+    if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
+    await deleteView(catalyst, existing.rowId);
+    res.sendStatus(204);
+  } catch (e) {
+    sendError(res, '[DELETE /api/views/:id]', e);
   }
 });
 

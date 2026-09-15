@@ -4,6 +4,8 @@ import {
   applyTaskFilters,
   compareForFilters,
   countActiveFilters,
+  normaliseFilters,
+  sameFilters,
   type FilterState,
 } from '@/lib/taskFilters';
 import { compareTasks } from '@/lib/quadrantBuckets';
@@ -104,5 +106,23 @@ describe('compareForFilters', () => {
     ];
     expect(ids([...list].sort(compareForFilters({ sortBy: 'due-date', sortDir: 'asc' })))).toEqual(['early', 'late', 'none']);
     expect(ids([...list].sort(compareForFilters({ sortBy: 'due-date', sortDir: 'desc' })))).toEqual(['late', 'early', 'none']);
+  });
+});
+
+describe('normaliseFilters / sameFilters', () => {
+  it('drops fields the app no longer has, such as priority', () => {
+    const out = normaliseFilters({ priority: 'HIGH', quadrant: 'DO', sortBy: 'priority' });
+    expect(out).toEqual({ ...DEFAULT_FILTERS, quadrant: 'DO' });
+    expect(out).not.toHaveProperty('priority');
+  });
+
+  it('resets illegal values and ignores non-objects', () => {
+    expect(normaliseFilters({ due: 'someday', dueAfter: '15/06/2030', sortDir: 'up' })).toEqual(DEFAULT_FILTERS);
+    expect(normaliseFilters('nope')).toEqual(DEFAULT_FILTERS);
+  });
+
+  it('compares filters by what they show', () => {
+    expect(sameFilters({ quadrant: 'DO' }, { ...DEFAULT_FILTERS, quadrant: 'DO', priority: 'HIGH' })).toBe(true);
+    expect(sameFilters({ quadrant: 'DO' }, { quadrant: 'SCHEDULE' })).toBe(false);
   });
 });
