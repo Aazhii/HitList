@@ -41,10 +41,11 @@ const DRY_RUN = process.argv.includes('--dry-run');
 
 const SERVICE_NAME = process.env['APPSAIL_NAME'] ?? 'hitlist-api';
 
+// HitList2 (org 60088007808). Add the Slate app's origin here once it exists,
+// or pass APPSAIL_ALLOWED_ORIGINS; an origin that is not listed gets no CORS
+// headers and its API calls fail in the browser.
 const DEFAULT_ORIGINS = [
-  'https://hitlist-kgewwunu.onslate.in',
-  'https://hitlist-eqrgelva.onslate.in',
-  'https://hitlist-api-50045863073.development.catalystappsail.in',
+  'https://hitlist-api-50045941899.development.catalystappsail.in',
 ].join(',');
 
 /**
