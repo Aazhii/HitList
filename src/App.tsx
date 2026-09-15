@@ -56,7 +56,7 @@ import type {
   AppState,
   Quadrant,
 } from '@/types/todo';
-import { QUADRANTS, getListColorDot } from '@/types/todo';
+import { QUADRANTS, getListColorDot, getQuadrantConfig } from '@/types/todo';
 
 // ── Add Task Dialog (inline, lightweight) ──────────────────────────────────
 
@@ -229,7 +229,11 @@ function AddTaskDialog({ open, defaultQuadrant, onOpenChange, onAdd }: AddTaskDi
 // ── Helpers ────────────────────────────────────────────────────────────────
 
 function getTodayKey() {
-  const d = new Date();
+  return getTodayKeyFor(Date.now());
+}
+
+function getTodayKeyFor(ts: number) {
+  const d = new Date(ts);
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 }
 
@@ -522,10 +526,15 @@ function App() {
     [activeListId, listTodos, setTodos, server]
   );
 
+  // The completion toast's Undo fires after later renders; a ref keeps it
+  // calling the current handler rather than the one from when it was shown.
+  const statusChangeRef = useRef<(id: string, status: TodoStatus) => Promise<void>>(async () => {});
+
   const handleStatusChange = useCallback(
     async (id: string, status: TodoStatus) => {
       // Optimistic update
       const prevTodo = todos.find((t) => t.id === id);
+      const undoingCompletion = prevTodo?.status === 'done' && status !== 'done';
       setTodos((prev) =>
         prev.map((t) =>
           t.id === id
@@ -545,7 +554,22 @@ function App() {
             todayCompleted: prev.todayCompleted + 1,
           };
         });
-        toast.success('Task complete! 🌱', { description: 'Keep the momentum going.', duration: 2500 });
+        toast.success('Task complete! 🌱', {
+          description: 'Keep the momentum going.',
+          duration: 5000,
+          action: { label: 'Undo', onClick: () => { void statusChangeRef.current(id, 'todo'); } },
+        });
+      } else if (undoingCompletion) {
+        // Give back what completing added. The server's momentum, refreshed
+        // below, replaces these when online.
+        const completedToday = prevTodo?.completedAt
+          ? getTodayKeyFor(prevTodo.completedAt) === getTodayKey()
+          : false;
+        setStats((prev) => ({
+          ...prev,
+          totalCompleted: Math.max(0, prev.totalCompleted - 1),
+          todayCompleted: completedToday ? Math.max(0, prev.todayCompleted - 1) : prev.todayCompleted,
+        }));
       }
 
       // Always route through server hook — uses mockApi when offline
@@ -578,6 +602,17 @@ function App() {
     },
     [todos, setTodos, setStats, appState.lastStreakDay, setLastStreakDay, server]
   );
+
+  useEffect(() => { statusChangeRef.current = handleStatusChange; }, [handleStatusChange]);
+
+  /** Puts a mistakenly completed task back where it was. */
+  const handleUndoComplete = useCallback(async (id: string) => {
+    const todo = todos.find((t) => t.id === id);
+    await handleStatusChange(id, 'todo');
+    if (todo) {
+      toast.success(`Moved back to ${getQuadrantConfig(todo.quadrant).label}`, { description: todo.text, duration: 2500 });
+    }
+  }, [todos, handleStatusChange]);
 
   const handleDelete = useCallback(
     async (id: string) => {
@@ -994,6 +1029,7 @@ function App() {
         todos={todos}
         serverHistory={server.serverOnline ? server.todayHistory : undefined}
         onClose={() => setShowTodayHistory(false)}
+        onUndo={handleUndoComplete}
       />
 
       {/* Reminder settings — reached from the account menu in the rail. */}

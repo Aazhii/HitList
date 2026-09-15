@@ -1,5 +1,5 @@
-import { useMemo } from 'react';
-import { CheckCircle2, Clock, Sparkles, TrendingUp } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { CheckCircle2, Clock, RotateCcw, Sparkles, TrendingUp } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
@@ -15,6 +15,8 @@ interface TodayHistoryPanelProps {
   /** When provided (server online), use server-backed today-history instead of local computation. */
   serverHistory?: ApiTask[];
   onClose: () => void;
+  /** Reverts a completion made by mistake; the task returns to its quadrant. */
+  onUndo?: (id: string) => Promise<void> | void;
 }
 
 function isTodayTimestamp(ts: number): boolean {
@@ -48,7 +50,7 @@ const QUADRANT_ICON: Record<string, string> = {
   eliminate: '🗑️',
 };
 
-export function TodayHistoryPanel({ open, todos, serverHistory, onClose }: TodayHistoryPanelProps) {
+export function TodayHistoryPanel({ open, todos, serverHistory, onClose, onUndo }: TodayHistoryPanelProps) {
   // When server history is available, convert ApiTask[] → Todo[] shape for display
   const serverTodayDone = useMemo<Todo[] | null>(() => {
     if (!serverHistory) return null;
@@ -139,7 +141,7 @@ export function TodayHistoryPanel({ open, todos, serverHistory, onClose }: Today
             ) : (
               <>
                 {todayDone.map((todo, i) => (
-                  <TaskRow key={todo.id} todo={todo} index={i} />
+                  <TaskRow key={todo.id} todo={todo} index={i} onUndo={onUndo} />
                 ))}
 
                 {/* Footer summary */}
@@ -160,8 +162,13 @@ export function TodayHistoryPanel({ open, todos, serverHistory, onClose }: Today
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function TaskRow({ todo, index }: { todo: Todo; index: number }) {
+function TaskRow({ todo, index, onUndo }: {
+  todo: Todo;
+  index: number;
+  onUndo?: (id: string) => Promise<void> | void;
+}) {
   const qConfig = getQuadrantConfig(todo.quadrant);
+  const [undoing, setUndoing] = useState(false);
   const catConfig = getCategoryConfig(todo.category);
   const completedTs = todo.completedAt ?? todo.createdAt;
 
@@ -222,6 +229,24 @@ function TaskRow({ todo, index }: { todo: Todo; index: number }) {
             </span>
           </div>
         </div>
+
+        {onUndo && (
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={undoing}
+            onClick={async () => {
+              setUndoing(true);
+              try { await onUndo(todo.id); } finally { setUndoing(false); }
+            }}
+            aria-label={`Undo completing ${todo.text}`}
+            title="Not done yet? Put it back in its quadrant"
+            className="h-7 flex-shrink-0 gap-1.5 rounded-lg px-2 text-xs text-muted-foreground hover:text-foreground"
+          >
+            <RotateCcw className={cn('size-3.5', undoing && 'animate-spin [animation-direction:reverse]')} />
+            {undoing ? 'Undoing…' : 'Undo'}
+          </Button>
+        )}
       </div>
     </div>
   );

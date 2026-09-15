@@ -2144,6 +2144,17 @@ app.put('/api/tasks/:id', async (req, res) => {
   }
 });
 
+/**
+ * CompletedAt after a status change. Leaving DONE — an undo — clears it, so an
+ * undone task drops out of today's history and the streak; entering DONE
+ * stamps it once. It used to be left untouched, so an undone task kept a
+ * completion time.
+ */
+function completedAtFor(existing: DbTask, status: string, now: number): number {
+  if (status !== 'DONE') return 0;
+  return existing.completedAt || now;
+}
+
 // PATCH /api/tasks/:id/status
 app.patch('/api/tasks/:id/status', async (req, res) => {
   if (!assertSafeId(req.params.id, res)) return;
@@ -2163,7 +2174,7 @@ app.patch('/api/tasks/:id/status', async (req, res) => {
       const all = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
       const existing = all.find((t) => t.id === req.params.id);
       if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
-      const updated: DbTask = { ...existing, status, updatedAt: now };
+      const updated: DbTask = { ...existing, status, completedAt: completedAtFor(existing, status, now), updatedAt: now };
       await catalystUpdateRow(req, getTasksTable(), rowId, taskToRow(updated));
       await syncReminderFor(req, ownerId, updated, existing.status);
       res.json(dbTaskToApi(updated));
@@ -2171,7 +2182,8 @@ app.patch('/api/tasks/:id/status', async (req, res) => {
       const db = readTasksDb();
       const idx = db.tasks.findIndex((t) => t.id === req.params.id && t.ownerId === ownerId);
       if (idx < 0) { res.status(404).json({ error: 'Not found' }); return; }
-      db.tasks[idx] = { ...db.tasks[idx], status, updatedAt: now };
+      const existing = db.tasks[idx];
+      db.tasks[idx] = { ...existing, status, completedAt: completedAtFor(existing, status, now), updatedAt: now };
       writeJson(TASKS_DB_PATH, db);
       res.json(dbTaskToApi(db.tasks[idx]));
     }

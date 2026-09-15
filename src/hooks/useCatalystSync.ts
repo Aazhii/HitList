@@ -218,7 +218,9 @@ export function useCatalystSync(activeListId?: string, _filters?: import('../lib
       try {
         const task = await viaBackend((api) => api.task.updateStatus(id, status));
         setTasks((prev) => prev.map((t) => t.id === id ? task : t));
-        if (status === 'DONE') await Promise.all([refreshMomentum(), refreshTodayHistory()]);
+        // Any change can move a task into or out of DONE — an undo included —
+        // so both are refreshed, not only on completion.
+        await Promise.all([refreshMomentum(), refreshTodayHistory()]);
         return task;
       } catch (e) { return handleError(e); }
     });

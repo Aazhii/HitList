@@ -204,7 +204,18 @@ export const mockTaskApi = {
       status: statusMap[status] as Todo['status'],
       completedAt: status === 'DONE' ? Date.now() : undefined,
     };
-    setState((s) => ({ ...s, todos: s.todos.map((t) => (t.id === id ? updated : t)) }));
+    const undone = existing.status === 'done' && updated.status !== 'done';
+    setState((s) => ({
+      ...s,
+      todos: s.todos.map((t) => (t.id === id ? updated : t)),
+      stats: undone
+        ? {
+            ...s.stats,
+            totalCompleted: Math.max(0, s.stats.totalCompleted - 1),
+            todayCompleted: Math.max(0, s.stats.todayCompleted - 1),
+          }
+        : s.stats,
+    }));
     return todoToApiTask(updated);
   },
 
