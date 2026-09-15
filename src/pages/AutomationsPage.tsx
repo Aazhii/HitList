@@ -38,6 +38,14 @@ import type { ApiAutomationRun } from '@/api/automationRunsApi';
 
 interface AutomationsPageProps {
   todos: Todo[];
+  /** A task sent here from its detail panel; opens the rule form for it. */
+  escalationTaskId?: string | null;
+  onEscalationHandled?: () => void;
+}
+
+/** Rules that hang off a task's due date, which is what "escalation" means here. */
+function isTaskDriven(rule: AutomationRule): boolean {
+  return rule.triggerType === 'due-date' || rule.triggerType === 'overdue';
 }
 
 // ── Run status helpers ────────────────────────────────────────────────────────
@@ -166,7 +174,7 @@ function RecentRunsPanel({ runs, isLoading, error, lastChecked, onRefresh }: Rec
 
 // ── AutomationsPage ───────────────────────────────────────────────────────────
 
-export function AutomationsPage({ todos }: AutomationsPageProps) {
+export function AutomationsPage({ todos, escalationTaskId, onEscalationHandled }: AutomationsPageProps) {
   const todoStubs = useMemo(
     () => todos.map((t) => ({ id: t.id, text: t.text })),
     [todos]
@@ -195,6 +203,19 @@ export function AutomationsPage({ todos }: AutomationsPageProps) {
   // Form state
   const [formOpen, setFormOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<AutomationRule | null>(null);
+  /** A task whose rule form should open, handed over from the task panel. */
+  const [prefillTaskId, setPrefillTaskId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!escalationTaskId) return;
+    // Its existing rule if it has one, so "Add escalation" edits rather than
+    // silently creating a second rule beside the first.
+    const existing = rules.find((r) => r.taskId === escalationTaskId && isTaskDriven(r));
+    setEditingRule(existing ?? null);
+    setPrefillTaskId(existing ? null : escalationTaskId);
+    setFormOpen(true);
+    onEscalationHandled?.();
+  }, [escalationTaskId, rules, onEscalationHandled]);
 
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<AutomationRule | null>(null);
@@ -358,8 +379,9 @@ export function AutomationsPage({ todos }: AutomationsPageProps) {
       <AutomationRuleForm
         open={formOpen}
         editingRule={editingRule}
+        prefillTaskId={prefillTaskId}
         todos={todoStubs}
-        onOpenChange={setFormOpen}
+        onOpenChange={(open) => { setFormOpen(open); if (!open) setPrefillTaskId(null); }}
         onSubmit={handleFormSubmit}
       />
 

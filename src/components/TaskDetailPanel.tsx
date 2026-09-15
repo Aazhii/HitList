@@ -15,7 +15,7 @@ import {
   BellOff,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { FileText as FileTextIcon } from 'lucide-react';
+import { FileText as FileTextIcon, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -46,6 +46,12 @@ interface TaskDetailPanelProps {
   defaultReminderMinutes?: ReminderMinutes;
   /** Opens the note a task was added from. */
   onOpenNote?: (noteId: string) => void;
+  /**
+   * Opens the rule editor for this task. Automations decides whether that is a
+   * new rule or the one this task already has, because it is the side holding
+   * the rules — this panel would have to fetch them a second time to know.
+   */
+  onAddEscalation?: (taskId: string) => void;
 }
 
 function getTodayStr() {
@@ -79,6 +85,7 @@ export function TaskDetailPanel({
   notificationPermission,
   defaultReminderMinutes = DEFAULT_REMINDER_MINUTES,
   onOpenNote,
+  onAddEscalation,
 }: TaskDetailPanelProps) {
   const [text, setText] = useState(todo?.text ?? '');
   const [note, setNote] = useState(todo?.note ?? '');
@@ -400,6 +407,30 @@ export function TaskDetailPanel({
                     </Select>
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* Escalation rules for this task.
+                The reminder above fires once, before the due time. Anything
+                after it — or more than one notification — is a rule, and this
+                is where the task itself points at that. */}
+            {onAddEscalation && !isDone && (
+              <div className="space-y-2">
+                <Label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+                  <Zap className="size-3" />
+                  Escalation
+                </Label>
+                <button
+                  type="button"
+                  onClick={() => onAddEscalation(todo.id)}
+                  className="w-full rounded-xl bg-muted/30 px-3.5 py-3 text-left transition-colors duration-150 hover:bg-muted/50"
+                >
+                  <p className="text-xs font-medium text-foreground">Set up escalation</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
+                    Notify me at several points — an hour before, five minutes before,
+                    and again once it is overdue.
+                  </p>
+                </button>
               </div>
             )}
 

@@ -154,6 +154,8 @@ function ToggleChip({
 interface AutomationRuleFormProps {
   open: boolean;
   editingRule?: AutomationRule | null;
+  /** A new rule for this task: set when the form is opened from a task. */
+  prefillTaskId?: string | null;
   todos: { id: string; text: string }[];
   onOpenChange: (open: boolean) => void;
   onSubmit: (values: AutomationRuleFormValues) => void;
@@ -203,6 +205,7 @@ const DAYS_OF_WEEK = [
 export function AutomationRuleForm({
   open,
   editingRule,
+  prefillTaskId,
   todos,
   onOpenChange,
   onSubmit,
@@ -215,12 +218,21 @@ export function AutomationRuleForm({
 
   // Reset form when dialog opens/closes or editing rule changes
   useEffect(() => {
-    if (open) {
-      setValues(defaultValues(editingRule ?? undefined));
-      setErrors({});
-      setTouched(false);
-    }
-  }, [open, editingRule]);
+    if (!open) return;
+    const base = defaultValues(editingRule ?? undefined);
+    setValues(prefillTaskId && !editingRule
+      ? {
+          ...base,
+          taskId: prefillTaskId,
+          triggerType: 'due-date',
+          // Named for the task, so the notification's title says which one.
+          name: todos.find((t) => t.id === prefillTaskId)?.text.slice(0, 80) ?? base.name,
+          offsetMinutes: [-60, -5],
+        }
+      : base);
+    setErrors({});
+    setTouched(false);
+  }, [open, editingRule, prefillTaskId, todos]);
 
   const set = <K extends keyof AutomationRuleFormValues>(
     key: K,

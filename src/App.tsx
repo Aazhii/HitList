@@ -373,6 +373,8 @@ function App() {
   const [activeView, setActiveView] = useState<AppView>('tasks');
   /** A note to open once Notes mounts — set from a task's "Note" chip. */
   const [pendingNoteId, setPendingNoteId] = useState<string | null>(null);
+  /** A task to write an escalation rule for — set from the task detail panel. */
+  const [pendingEscalationTaskId, setPendingEscalationTaskId] = useState<string | null>(null);
   // List vs Matrix is a mode within Tasks, remembered across reloads.
   const [tasksMode, setTasksMode] = useLocalStorage<'list' | 'matrix'>('hitlist-tasks-mode', 'matrix');
 
@@ -900,6 +902,15 @@ function App() {
 
   const handleOpenNoteHandled = useCallback(() => setPendingNoteId(null), []);
 
+  /** "Add escalation" on a task: hand it to Automations with the form open. */
+  const handleAddEscalation = useCallback((taskId: string) => {
+    setDetailOpen(false);
+    setPendingEscalationTaskId(taskId);
+    setActiveView('automations');
+  }, []);
+
+  const handleEscalationHandled = useCallback(() => setPendingEscalationTaskId(null), []);
+
   // ── Clear done (server-aware) ─────────────────────────────────────────────
 
   const handleClearDone = useCallback(async () => {
@@ -1030,7 +1041,11 @@ function App() {
           </div>
         ) : activeView === 'automations' ? (
           <div className="flex min-h-0 min-w-0 flex-1">
-            <AutomationsPage todos={todos} />
+            <AutomationsPage
+              todos={todos}
+              escalationTaskId={pendingEscalationTaskId}
+              onEscalationHandled={handleEscalationHandled}
+            />
           </div>
         ) : (
           <ViewLayout
@@ -1175,6 +1190,7 @@ function App() {
         open={detailOpen}
         onClose={() => setDetailOpen(false)}
         onOpenNote={handleOpenSourceNote}
+        onAddEscalation={handleAddEscalation}
         onUpdate={handleUpdate}
         onDelete={handleDelete}
         onStatusChange={handleStatusChange}
