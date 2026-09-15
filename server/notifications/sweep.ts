@@ -29,7 +29,9 @@ import {
   markSent,
   markFailed,
   markUndeliverable,
+  markStale,
   reclaimStale,
+  STALE_AFTER_MS,
   purgeOldEntries,
   SWEEP_LIMIT,
   type QueueRow,
@@ -44,6 +46,8 @@ export interface SweepReport {
   due: number;
   delivered: number;
   failed: number;
+  /** Rows withdrawn unsent because they were more than STALE_AFTER_MS late. */
+  discarded: number;
   /** Automation rules whose NextTriggerAt had arrived. */
   rulesDue: number;
   /** Rules that enqueued a firing. */
@@ -66,6 +70,12 @@ export interface SweepOptions {
   skipPlan?: boolean;
   /** Skip reclaiming abandoned rows this tick. */
   skipReclaim?: boolean;
+  /**
+   * Withdraw due rule firings instead of sending them — automations are
+   * switched off (server/trialFeatures.ts). Withdrawn rather than left pending,
+   * so they cannot pile up at the head of the queue and pour out later.
+   */
+  withdrawRules?: boolean;
 }
 
 /**
@@ -84,7 +94,7 @@ export async function runSweep(
   const limit = options.limit ?? SWEEP_LIMIT;
 
   const report: SweepReport = {
-    due: 0, delivered: 0, failed: 0, rulesDue: 0, rulesPlanned: 0,
+    due: 0, delivered: 0, failed: 0, discarded: 0, rulesDue: 0, rulesPlanned: 0,
     reclaimed: 0, purged: 0, durationMs: 0, details: [],
   };
 
@@ -108,6 +118,16 @@ export async function runSweep(
   report.due = dueRows.length;
 
   for (const row of dueRows) {
+    // Too late to be useful — a reminder for yesterday's meeting. Withdrawn,
+    // not sent; see STALE_AFTER_MS.
+    if (row.fireAt < now - STALE_AFTER_MS) {
+      await withdraw(app, row, report, `not sent: ${Math.floor((now - row.fireAt) / 3_600_000)}h late (more than a day)`);
+      continue;
+    }
+    if (options.withdrawRules && row.sourceType === 'RULE') {
+      await withdraw(app, row, report, 'not sent: automations are switched off');
+      continue;
+    }
     await deliverOne(app, row, report);
   }
 
@@ -139,6 +159,18 @@ export async function runSweep(
 
   report.durationMs = Date.now() - startedAt;
   return report;
+}
+
+async function withdraw(
+  app: CatalystApp, row: QueueRow, report: SweepReport, reason: string,
+): Promise<void> {
+  try {
+    await markStale(app, row, reason);
+    report.discarded++;
+    report.details.push(`${row.queueId} withdrawn — ${reason}`);
+  } catch (e) {
+    report.details.push(`${row.queueId} could not be withdrawn: ${String(e)}`);
+  }
 }
 
 async function deliverOne(app: CatalystApp, row: QueueRow, report: SweepReport): Promise<void> {
@@ -215,6 +247,7 @@ async function planDueRules(app: CatalystApp, now: number, report: SweepReport):
 /** One-line summary for the server log. */
 export function describeSweep(report: SweepReport): string {
   return `due=${report.due} delivered=${report.delivered} failed=${report.failed} ` +
+    `discarded=${report.discarded} ` +
     `rulesDue=${report.rulesDue} rulesPlanned=${report.rulesPlanned} ` +
     `reclaimed=${report.reclaimed} purged=${report.purged} in ${report.durationMs}ms`;
 }

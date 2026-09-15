@@ -30,7 +30,7 @@
  * POST /api/internal/tick remains, and is what the backstop calls.
  */
 import type { CatalystApp } from './types.ts';
-import { runSweep, describeSweep, type SweepReport } from './sweep.ts';
+import { runSweep, describeSweep, type SweepReport, type SweepOptions } from './sweep.ts';
 
 /**
  * How often the sweep runs.
@@ -50,6 +50,12 @@ export interface SchedulerOptions {
   /** Called after each tick. Defaults to logging anything interesting. */
   onTick?: (report: SweepReport) => void;
   onError?: (error: unknown) => void;
+  /**
+   * Runs before each tick with the resolved app. Returns the options for this
+   * sweep, or null to skip the tick. How the trial-feature switches reach the
+   * timer — see server/trialFeatures.ts.
+   */
+  prepareTick?: (app: CatalystApp) => Promise<SweepOptions | null>;
 }
 
 export interface Scheduler {
@@ -74,7 +80,7 @@ export function schedulerEnabled(): boolean {
 function defaultOnTick(report: SweepReport): void {
   // A quiet tick says nothing. At 288 ticks a day per instance, logging every
   // one would bury the ticks that did something.
-  if (report.due === 0 && report.rulesDue === 0 && report.reclaimed === 0) return;
+  if (report.due === 0 && report.rulesDue === 0 && report.reclaimed === 0 && report.discarded === 0) return;
 
   console.log(`[kaizen] sweep ${describeSweep(report)}`);
   for (const line of report.details) console.log(`[kaizen]   ${line}`);
@@ -107,7 +113,9 @@ export function startScheduler(
     if (running) return;
     running = true;
     try {
-      onTick(await runSweep(resolveApp()));
+      const app = resolveApp();
+      const sweepOptions = options.prepareTick ? await options.prepareTick(app) : {};
+      if (sweepOptions) onTick(await runSweep(app, sweepOptions));
     } catch (e) {
       // A failed tick must never take the server down with it. The next one
       // picks up whatever this one left, because the queue is state in the

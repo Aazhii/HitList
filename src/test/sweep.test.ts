@@ -83,9 +83,19 @@ describe('runSweep', () => {
 
   it('delivers a reminder a missed sweep left behind', async () => {
     const fake = fakeCatalyst();
-    await enqueue(fake.app, entry({ fireAt: Date.now() - 7 * 24 * 3_600_000 }));
+    await enqueue(fake.app, entry({ fireAt: Date.now() - 20 * 3_600_000 }));
 
     expect((await runSweep(fake.app)).delivered).toBe(1);
+  });
+
+  it('withdraws a reminder left behind for more than a day instead of sending it', async () => {
+    const fake = fakeCatalyst();
+    await enqueue(fake.app, entry({ fireAt: Date.now() - 7 * 24 * 3_600_000 }));
+
+    const report = await runSweep(fake.app);
+    expect(report.delivered).toBe(0);
+    expect(report.discarded).toBe(1);
+    expect(fake.tables[INBOX]).toHaveLength(0);
   });
 });
 

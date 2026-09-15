@@ -77,7 +77,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { baasProxy } from './catalyst/baasProxy.ts';
 import { runSweep, describeSweep } from './notifications/sweep.ts';
-import { startScheduler, schedulerEnabled, intervalFromEnv } from './notifications/scheduler.ts';
+import { startScheduler, schedulerEnabled, intervalFromEnv, type Scheduler } from './notifications/scheduler.ts';
+import { createTrialFeatureCache, sweepOptionsFor, ALL_ENABLED, type TrialFeatures } from './trialFeatures.ts';
 import { listInbox, markRead, markAllRead, removeEntry } from './notifications/inbox.ts';
 import {
   listRules, getRule, insertRule, updateRule, deleteRule,
@@ -1369,6 +1370,18 @@ app.use('/api', (req, res, next) => {
   });
 });
 
+// Keeps the sweep timer in step with the notifications switch in
+// KaizenTrialFeatures, so turning it back on needs no redeploy: the next request
+// starts the timer. Cached for a minute — one query a minute at most.
+app.use('/api', (req, _res, next) => {
+  if (catalystAvailable) {
+    try {
+      void syncTrialFeatures(initCatalyst(req) as unknown as NotificationApp);
+    } catch { /* no credentials on this request; the next one tries again */ }
+  }
+  next();
+});
+
 // ── Health ────────────────────────────────────────────────────────────────────
 
 app.head('/api/health', (_req, res) => { res.sendStatus(200); });
@@ -1606,6 +1619,17 @@ app.delete('/api/automation-rules/:id', async (req, res) => {
 function sendViewErrors(res: express.Response, errors: Record<string, string>): void {
   res.status(400).json({ error: 'validation_failed', message: 'One or more fields are invalid', fields: errors });
 }
+
+// ── Trial features ────────────────────────────────────────────────────────────
+
+/** The app-wide switches, so the client can say when something is paused. */
+app.get('/api/trial-features', async (req, res) => {
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  // The JSON-file fallback has no table of switches, and nothing to switch.
+  if (!catalystAvailable) { res.json(ALL_ENABLED); return; }
+  res.json(await trialFeatures.get(initCatalyst(req) as unknown as NotificationApp));
+});
 
 app.get('/api/views', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
@@ -1913,6 +1937,10 @@ app.post('/api/automation-runs/trigger/:id', async (req, res) => {
 
   try {
     const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    if (!(await trialFeatures.get(catalyst)).automations) {
+      res.status(409).json({ error: 'feature_paused', message: 'Automations are paused' });
+      return;
+    }
     const rule = await getRule(catalyst, ownerId, req.params.id);
     if (!rule) { res.status(404).json({ error: 'Not found' }); return; }
 
@@ -2271,7 +2299,12 @@ app.post('/api/internal/tick', async (req, res) => {
 
   try {
     const catalyst = initCatalyst(req) as unknown as NotificationApp;
-    const report = await runSweep(catalyst);
+    const sweepOptions = sweepOptionsFor(await syncTrialFeatures(catalyst));
+    if (!sweepOptions) {
+      res.json({ ok: true, paused: true, reason: 'notifications are switched off in KaizenTrialFeatures' });
+      return;
+    }
+    const report = await runSweep(catalyst, sweepOptions);
 
     if (report.due > 0 || report.failed > 0) {
       console.log(`[kaizen] sweep ${describeSweep(report)}`);
@@ -2283,6 +2316,7 @@ app.post('/api/internal/tick', async (req, res) => {
       due: report.due,
       delivered: report.delivered,
       failed: report.failed,
+      discarded: report.discarded,
       reclaimed: report.reclaimed,
       purged: report.purged,
       durationMs: report.durationMs,
@@ -3375,7 +3409,7 @@ const server = app.listen(LISTEN_PORT, '0.0.0.0', () => {
 backendReady = settleBackend()
   .then(() => {
     console.log(`[kaizen] Backend: ${catalystAvailable ? 'Catalyst DataStore' : 'JSON file fallback'}`);
-    startSweepScheduler();
+    bootSweepScheduler();
   })
   .catch((e) => {
     // Never leave the gate rejected: fall back to the JSON store rather than
@@ -3396,14 +3430,47 @@ backendReady = settleBackend()
  * minutes; the hourly webhook cron remains as the backstop for a container
  * that has been idle long enough to be stopped.
  */
+const trialFeatures = createTrialFeatureCache();
+let sweepScheduler: Scheduler | null = null;
+let sweepDisabledLogged = false;
+
+/** Reads the switches (cached) and starts or stops the timer to match. */
+async function syncTrialFeatures(app: NotificationApp): Promise<TrialFeatures> {
+  const flags = await trialFeatures.get(app);
+  if (flags.notifications) startSweepScheduler();
+  else stopSweepScheduler();
+  return flags;
+}
+
+/**
+ * At startup the switches can only be read where background credentials exist
+ * already. Under the gateway they arrive with the first request, and the
+ * middleware above starts the timer then.
+ */
+function bootSweepScheduler(): void {
+  if (!catalystAvailable) return;
+  const app = backgroundCatalystApp(standaloneConfig);
+  if (!app) {
+    console.log('[kaizen] Sweep scheduler starts on the first request, once KaizenTrialFeatures can be read');
+    return;
+  }
+  void syncTrialFeatures(app as unknown as NotificationApp).then((flags) => {
+    if (!flags.notifications) {
+      console.log('[kaizen] Notifications are switched off in KaizenTrialFeatures — sweep scheduler not started');
+    }
+  });
+}
+
 function startSweepScheduler(): void {
+  if (sweepScheduler) return;            // already running
   if (!catalystAvailable) return;       // the JSON-file fallback has no queue
   if (!schedulerEnabled()) {
-    console.log('[kaizen] Sweep scheduler disabled by SWEEP_DISABLED');
+    if (!sweepDisabledLogged) console.log('[kaizen] Sweep scheduler disabled by SWEEP_DISABLED');
+    sweepDisabledLogged = true;
     return;
   }
 
-  startScheduler(() => {
+  sweepScheduler = startScheduler(() => {
     const app = backgroundCatalystApp(standaloneConfig);
     if (!app) {
       // Under the gateway this just means no request has arrived yet. The
@@ -3412,6 +3479,9 @@ function startSweepScheduler(): void {
     }
     return app as unknown as NotificationApp;
   }, {
+    // Re-checks the switches every tick, so switching notifications off stops
+    // the timer within one interval even if no request arrives.
+    prepareTick: async (app) => sweepOptionsFor(await syncTrialFeatures(app as unknown as NotificationApp)),
     onError: (e) => {
       // Expected before the first request under the gateway; not worth a
       // warning every five minutes until then.
@@ -3421,6 +3491,13 @@ function startSweepScheduler(): void {
   });
 
   console.log(`[kaizen] Sweep scheduler running every ${intervalFromEnv() / 1000}s`);
+}
+
+function stopSweepScheduler(): void {
+  if (!sweepScheduler) return;
+  sweepScheduler.stop();
+  sweepScheduler = null;
+  console.log('[kaizen] Sweep scheduler stopped: notifications are switched off in KaizenTrialFeatures');
 }
 
 // A rejected promise with no handler terminates the process on modern Node.

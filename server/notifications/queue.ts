@@ -395,6 +395,25 @@ export async function markUndeliverable(
 }
 
 /**
+ * How late a reminder may be and still be sent.
+ *
+ * Past this it is withdrawn instead. The sweep never falls this far behind on
+ * its own — the hourly backstop sees to that — so in practice this only applies
+ * after notifications were switched off for a while (server/trialFeatures.ts):
+ * turning them back on then sends what is still useful, rather than every
+ * reminder from the whole pause at once.
+ */
+export const STALE_AFTER_MS = 24 * 60 * 60 * 1000;
+
+/** Withdraws a row that is too late to be worth sending. Kept, with the reason. */
+export async function markStale(app: CatalystApp, row: QueueRow, reason: string): Promise<void> {
+  await setStatus(app, row.rowId, {
+    Status: QueueStatus.CANCELLED,
+    LastError: reason.slice(0, 500),
+  });
+}
+
+/**
  * Cancels everything still pending for a source.
  *
  * Called when a task is completed, deleted, or has its reminder turned off.

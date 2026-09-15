@@ -55,6 +55,8 @@ console.log(`${project.projectName}: "${FROM}" -> "${TO}"${APPLY ? '' : '  (dry 
 
 let total = 0;
 for (const table of SCHEMA) {
+  // App-wide tables (KaizenTrialFeatures) have no owner to move.
+  if (!table.columns.some((c) => c.name === 'OwnerId')) continue;
   const q = await api('POST', '/query', {
     query: `SELECT ROWID FROM ${table.name} WHERE OwnerId = '${FROM.replace(/'/g, "''")}'`,
   });

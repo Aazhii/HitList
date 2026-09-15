@@ -60,6 +60,7 @@ export const RUNS_TABLE = 'KaizenAutomationRuns';
 export const VIEWS_TABLE = 'KaizenViews';
 export const PROP_DEFS_TABLE = 'KaizenPropDefs';
 export const TASK_PROPS_TABLE = 'KaizenTaskProps';
+export const TRIAL_FEATURES_TABLE = 'KaizenTrialFeatures';
 
 export const SCHEMA: TableSpec[] = [
   {
@@ -297,6 +298,20 @@ export const SCHEMA: TableSpec[] = [
       { name: 'TaskId', type: 'varchar', maxLength: 64, mandatory: true },
       { name: 'DefId', type: 'varchar', maxLength: 64, mandatory: true },
       { name: 'ValueText', type: 'text' },
+      { name: 'UpdatedAt', type: 'bigint' },
+    ],
+  },
+
+  // App-wide switches for features that cost money to keep running. The one
+  // table with no OwnerId: a row turns a feature on or off for everyone. Edited
+  // by hand in the Data Store console; the server re-reads it within a minute.
+  // See server/trialFeatures.ts.
+  {
+    name: TRIAL_FEATURES_TABLE,
+    columns: [
+      { name: 'FeatureKey', type: 'varchar', maxLength: 64, mandatory: true, unique: true,
+        note: 'notifications | automations' },
+      { name: 'Enabled', type: 'boolean', note: 'true | false. A missing row counts as true.' },
       { name: 'UpdatedAt', type: 'bigint' },
     ],
   },

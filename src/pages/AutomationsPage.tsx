@@ -13,6 +13,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useAutomations } from '@/hooks/useAutomations';
 import { useAutomationRuns } from '@/hooks/useAutomationRuns';
+import { trialFeatureApi, type TrialFeatures } from '@/lib/api';
 import {
   AutomationFilters,
   AutomationList,
@@ -186,8 +187,22 @@ export function AutomationsPage({ todos, escalationTaskId, onEscalationHandled }
   const { runs, lastChecked, isLoading: runsLoading, error: runsError, triggerRule, refresh: refreshRuns } =
     useAutomationRuns();
 
+  // App-wide switches (KaizenTrialFeatures). null until read, or when the
+  // server cannot be reached — the offline notice covers that case.
+  const [features, setFeatures] = useState<TrialFeatures | null>(null);
+  useEffect(() => {
+    let live = true;
+    trialFeatureApi.get().then((f) => { if (live) setFeatures(f); }).catch(() => {});
+    return () => { live = false; };
+  }, []);
+  const automationsPaused = features?.automations === false;
+
   // Run Now handler
   const handleRunNow = useCallback(async (ruleId: string) => {
+    if (automationsPaused) {
+      toast.error('Automations are paused — rules cannot run right now', { duration: 3000 });
+      return;
+    }
     const rule = rules.find((r) => r.id === ruleId);
     const run = await triggerRule(ruleId);
     if (run) {
@@ -198,7 +213,7 @@ export function AutomationsPage({ todos, escalationTaskId, onEscalationHandled }
     } else {
       toast.error('Trigger failed — backend may be unavailable', { duration: 3000 });
     }
-  }, [rules, triggerRule]);
+  }, [rules, triggerRule, automationsPaused]);
 
   // Form state
   const [formOpen, setFormOpen] = useState(false);
@@ -346,6 +361,24 @@ export function AutomationsPage({ todos, escalationTaskId, onEscalationHandled }
             <div className="rounded-[14px] bg-q-delegate-bg px-4 py-3 text-[13.5px] text-q-delegate" role="status">
               Working offline — rules are saved on this device and will not fire until
               the server is reachable again.
+            </div>
+          )}
+
+          {features && (!features.notifications || !features.automations) && (
+            <div className="rounded-[14px] bg-q-delegate-bg px-4 py-3 text-[13.5px] text-q-delegate" role="status">
+              {!features.notifications ? (
+                <>
+                  <strong>Notifications are paused.</strong> Reminders and automation alerts are not
+                  being sent right now. When they are turned back on, reminders more than a day
+                  late are skipped and the rest are sent.
+                  {!features.automations && ' Automations are paused too, so rules will not run.'}
+                </>
+              ) : (
+                <>
+                  <strong>Automations are paused.</strong> Your rules are kept, but they will not run
+                  until automations are turned back on.
+                </>
+              )}
             </div>
           )}
 

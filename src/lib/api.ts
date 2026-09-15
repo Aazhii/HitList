@@ -576,6 +576,21 @@ export const fieldApi = {
   },
 };
 
+// ── Trial features ───────────────────────────────────────────────────────────
+
+/** App-wide switches set in the KaizenTrialFeatures table. See server/trialFeatures.ts. */
+export interface TrialFeatures {
+  notifications: boolean;
+  automations: boolean;
+}
+
+export const trialFeatureApi = {
+  /** GET /api/trial-features */
+  get(): Promise<TrialFeatures> {
+    return get<TrialFeatures>('/trial-features');
+  },
+};
+
 // ── Health check ─────────────────────────────────────────────────────────────
 
 /**
