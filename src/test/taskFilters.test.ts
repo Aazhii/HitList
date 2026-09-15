@@ -266,3 +266,37 @@ describe('groupByField — includeEmpty', () => {
     expect(groupByField([t], false, compareTasks, def, vals, { includeEmpty: true }).map((g) => g.key)).toEqual(['o', FIELD_EMPTY]);
   });
 });
+
+describe('grouping by multi-select and checkbox fields', () => {
+  const tags: FieldDef = {
+    id: 'tags', name: 'Tags', kind: 'multi',
+    options: [{ id: 'home', label: 'Home', color: 'sage' }, { id: 'work', label: 'Work', color: 'do' }],
+    fieldOrder: 0, showOnCard: false, createdAt: 1, updatedAt: 1,
+  };
+  const flag: FieldDef = { id: 'flag', name: 'Flag', kind: 'checkbox', options: [], fieldOrder: 1, showOnCard: false, createdAt: 1, updatedAt: 1 };
+  const x = todo({ text: 'x' }); const y = todo({ text: 'y' }); const z = todo({ text: 'z' });
+  const vals: TaskFieldValues = {
+    [x.id]: { tags: ['home', 'work'], flag: true },
+    [y.id]: { tags: ['work', 'deleted'] },
+    [z.id]: { tags: ['deleted'] },
+  };
+
+  it('puts a multi-select task in every option it has, and one with only deleted options in no value', () => {
+    const groups = groupByField([x, y, z], false, compareTasks, tags, vals);
+    expect(groups.map((g) => [g.label, ids(g.tasks)])).toEqual([
+      ['Home', ['x']], ['Work', ['x', 'y']], ['No Tags', ['z']],
+    ]);
+  });
+
+  it('always shows Checked and Not checked for a checkbox', () => {
+    expect(groupByField([x, y], false, compareTasks, flag, vals).map((g) => [g.label, ids(g.tasks)])).toEqual([
+      ['Checked', ['x']], ['Not checked', ['y']],
+    ]);
+    expect(groupByField([], false, compareTasks, flag, vals).map((g) => g.key)).toEqual([FIELD_SET, FIELD_EMPTY]);
+  });
+
+  it('can group by multi-select and checkbox fields', () => {
+    expect(groupFieldFor({ groupBy: 'tags' }, [tags, flag])).toBe(tags);
+    expect(groupFieldFor({ groupBy: 'flag' }, [tags, flag])).toBe(flag);
+  });
+});

@@ -1,15 +1,19 @@
 /**
- * The board layout: a column per option of a select field, then one for tasks
- * with no value. Dragging a card to another column sets the field to that
- * option; dropping it in the last column clears it.
+ * The board: the table's tasks in columns, one per value of a field — each
+ * option of a select or multi-select, or Checked / Not checked for a checkbox —
+ * then one for tasks with no value. Dragging a card to another column changes
+ * the field.
  *
  * The columns come from the filter's group-by field, so a board is saved in a
- * view like any other grouping. Without one, the board asks which select field
- * to use — or to create one.
+ * view like any other grouping. Without one, the board asks which field to use,
+ * or to create one.
  *
- * Cards are the matrix's own, so a task looks the same on the board. A drag is
- * the only way the board writes anything; within a column, cards keep the
- * filter's sort, since a board column has no manual order of its own.
+ * A multi-select task has a card in the column of each of its options, so a
+ * card's drag id carries its column: moving it takes that one option off and
+ * puts the new one on, leaving the task's other options alone.
+ *
+ * Cards are the matrix's own, so a task looks the same on the board. Within a
+ * column, cards keep the filter's sort; a board column has no manual order.
  */
 import { useMemo, useState } from 'react';
 import {
@@ -28,31 +32,75 @@ import { cn } from '@/lib/utils';
 import { MatrixTaskCard } from '@/components/MatrixTaskCard';
 import type { Todo, TodoStatus } from '@/types/todo';
 import type { TaskCompare } from '@/lib/quadrantBuckets';
-import { FIELD_EMPTY, groupByField, type TaskGroup } from '@/lib/taskFilters';
+import { FIELD_EMPTY, FIELD_SET, groupByField, isGroupableField, type TaskGroup } from '@/lib/taskFilters';
+import { FIELD_KIND_LABELS } from '@/types/fields';
 import { OPTION_DOT_CLASS } from '@/lib/fieldValues';
 import type { FieldDef, FieldValue, TaskFieldValues } from '@/types/fields';
 
 export const BOARD_COLUMN_PREFIX = 'board-column:';
+const CARD_SEPARATOR = '::';
+
+/** A card's drag id: the column it is in, and its task. */
+export const boardCardId = (columnKey: string, taskId: string) => `${columnKey}${CARD_SEPARATOR}${taskId}`;
+
+export function parseBoardCardId(id: string): { columnKey: string; taskId: string } | null {
+  const i = id.indexOf(CARD_SEPARATOR);
+  if (i <= 0) return null;
+  return { columnKey: id.slice(0, i), taskId: id.slice(i + CARD_SEPARATOR.length) };
+}
 
 /**
- * What dropping a task on a column changes, or null when nothing should: not a
- * column, the column it is already in, or an option that no longer exists.
+ * What dropping a card on a column changes, or null when nothing should: not a
+ * column, its own column, an option that no longer exists, or a move that leaves
+ * the value as it was.
  */
 export function boardDrop(
-  taskId: string,
+  cardId: string,
   overId: string | null,
   field: FieldDef,
   values: TaskFieldValues,
-): { taskId: string; value: string | null } | null {
-  if (!overId || !overId.startsWith(BOARD_COLUMN_PREFIX)) return null;
+): { taskId: string; value: FieldValue | null } | null {
+  const card = parseBoardCardId(cardId);
+  if (!card || !overId || !overId.startsWith(BOARD_COLUMN_PREFIX)) return null;
   const target = overId.slice(BOARD_COLUMN_PREFIX.length);
-  const isOption = (id: unknown) => typeof id === 'string' && field.options.some((o) => o.id === id);
+  const { taskId, columnKey: from } = card;
+  if (target === from) return null;
 
   const current = values[taskId]?.[field.id];
-  const currentColumn = isOption(current) ? (current as string) : FIELD_EMPTY;
-  if (target === currentColumn) return null;
-  if (target !== FIELD_EMPTY && !isOption(target)) return null;
-  return { taskId, value: target === FIELD_EMPTY ? null : target };
+  const isOption = (id: unknown) => typeof id === 'string' && field.options.some((o) => o.id === id);
+
+  switch (field.kind) {
+    case 'checkbox':
+      if (target === FIELD_SET) return current === true ? null : { taskId, value: true };
+      if (target === FIELD_EMPTY) return current === true ? { taskId, value: null } : null;
+      return null;
+
+    case 'select': {
+      if (target !== FIELD_EMPTY && !isOption(target)) return null;
+      const currentColumn = isOption(current) ? (current as string) : FIELD_EMPTY;
+      if (target === currentColumn) return null;
+      return { taskId, value: target === FIELD_EMPTY ? null : target };
+    }
+
+    case 'multi': {
+      if (target !== FIELD_EMPTY && !isOption(target)) return null;
+      const had = (Array.isArray(current) ? current : []).filter(isOption);
+      const chosen = new Set(had);
+      if (from !== FIELD_EMPTY) chosen.delete(from);
+      if (target !== FIELD_EMPTY) chosen.add(target);
+      // In the field's option order, so the stored list is stable.
+      const ordered = (ids: Iterable<string>) => {
+        const set = new Set(ids);
+        return field.options.map((o) => o.id).filter((id) => set.has(id));
+      };
+      const next = ordered(chosen);
+      if (next.join() === ordered(had).join()) return null;
+      return { taskId, value: next.length ? next : null };
+    }
+
+    default:
+      return null;
+  }
 }
 
 interface CardHandlers {
@@ -84,7 +132,7 @@ export function TaskBoardView({
   todos, showDone, compare, groupField, fieldDefs, fieldValues, fieldsOnline, fieldsLoading,
   onGroupFieldChange, onManageFields, onSetFieldValue, ...cardHandlers
 }: TaskBoardViewProps) {
-  const [activeId, setActiveId] = useState<string | null>(null);
+  const [activeCardId, setActiveCardId] = useState<string | null>(null);
 
   const columns = useMemo(
     () => (groupField ? groupByField(todos, showDone, compare, groupField, fieldValues, { includeEmpty: true }) : []),
@@ -100,7 +148,8 @@ export function TaskBoardView({
   if (!groupField) {
     return (
       <BoardSetup
-        selectFields={fieldDefs.filter((d) => d.kind === 'select')}
+        groupableFields={fieldDefs.filter(isGroupableField)}
+        otherFields={fieldDefs.filter((d) => !isGroupableField(d))}
         fieldsOnline={fieldsOnline}
         fieldsLoading={fieldsLoading}
         onGroupFieldChange={onGroupFieldChange}
@@ -109,10 +158,11 @@ export function TaskBoardView({
     );
   }
 
-  const active = activeId ? todos.find((t) => t.id === activeId) : undefined;
+  const activeTaskId = activeCardId ? parseBoardCardId(activeCardId)?.taskId : undefined;
+  const active = activeTaskId ? todos.find((t) => t.id === activeTaskId) : undefined;
 
   const handleDragEnd = ({ active: dragged, over }: DragEndEvent) => {
-    setActiveId(null);
+    setActiveCardId(null);
     const change = boardDrop(String(dragged.id), over ? String(over.id) : null, groupField, fieldValues);
     if (change) onSetFieldValue(change.taskId, groupField.id, change.value);
   };
@@ -120,8 +170,8 @@ export function TaskBoardView({
   return (
     <DndContext
       sensors={sensors}
-      onDragStart={({ active: dragged }) => setActiveId(String(dragged.id))}
-      onDragCancel={() => setActiveId(null)}
+      onDragStart={({ active: dragged }) => setActiveCardId(String(dragged.id))}
+      onDragCancel={() => setActiveCardId(null)}
       onDragEnd={handleDragEnd}
     >
       <div className="w-full overflow-x-auto pb-3 animate-fade-in">
@@ -196,7 +246,15 @@ function BoardColumn({ fieldId, column, fieldDefs, fieldValues, ...handlers }: B
         )}
       >
         {column.tasks.map((todo, i) => (
-          <DraggableCard key={todo.id} todo={todo} index={i} fieldDefs={fieldDefs} fieldValues={fieldValues} {...handlers} />
+          <DraggableCard
+            key={todo.id}
+            columnKey={column.key}
+            todo={todo}
+            index={i}
+            fieldDefs={fieldDefs}
+            fieldValues={fieldValues}
+            {...handlers}
+          />
         ))}
         {column.tasks.length === 0 && (
           <p className="flex flex-1 items-center justify-center px-3 py-6 text-center text-[13px] text-a-faint">
@@ -209,14 +267,15 @@ function BoardColumn({ fieldId, column, fieldDefs, fieldValues, ...handlers }: B
 }
 
 interface DraggableCardProps extends CardHandlers {
+  columnKey: string;
   todo: Todo;
   index: number;
   fieldDefs: FieldDef[];
   fieldValues: TaskFieldValues;
 }
 
-function DraggableCard({ todo, index, fieldDefs, fieldValues, ...handlers }: DraggableCardProps) {
-  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: todo.id });
+function DraggableCard({ columnKey, todo, index, fieldDefs, fieldValues, ...handlers }: DraggableCardProps) {
+  const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: boardCardId(columnKey, todo.id) });
 
   return (
     <div
@@ -244,31 +303,38 @@ function DraggableCard({ todo, index, fieldDefs, fieldValues, ...handlers }: Dra
 }
 
 interface BoardSetupProps {
-  selectFields: FieldDef[];
+  /** Fields that can make columns. */
+  groupableFields: FieldDef[];
+  /** Fields that cannot — named, so it is clear why they are not offered. */
+  otherFields: FieldDef[];
   fieldsOnline: boolean;
   fieldsLoading: boolean;
   onGroupFieldChange: (fieldId: string) => void;
   onManageFields: () => void;
 }
 
-/** Shown until the board has a select field to make columns from. */
-function BoardSetup({ selectFields, fieldsOnline, fieldsLoading, onGroupFieldChange, onManageFields }: BoardSetupProps) {
+/** Shown until the board has a field to make columns from. */
+function BoardSetup({ groupableFields, otherFields, fieldsOnline, fieldsLoading, onGroupFieldChange, onManageFields }: BoardSetupProps) {
   if (fieldsLoading) return null;
 
   return (
-    <div className="mx-auto flex max-w-[460px] flex-col items-center py-16 text-center animate-fade-in">
+    <div className="mx-auto flex max-w-[480px] flex-col items-center py-16 text-center animate-fade-in">
       <Columns3 className="mb-3 size-6 text-a-faint" strokeWidth={2.25} aria-hidden />
       <p className="font-display text-[20px] text-a-ink">Choose the columns</p>
 
       {!fieldsOnline ? (
         <p className="mt-2 text-[14px] leading-relaxed text-a-muted">
-          The board makes a column for each option of a select field, and fields need the server.
+          The board makes its columns from a custom field, and fields need the server.
           It's unreachable right now.
         </p>
-      ) : selectFields.length === 0 ? (
+      ) : groupableFields.length === 0 ? (
         <>
           <p className="mt-2 text-[14px] leading-relaxed text-a-muted">
-            The board makes a column for each option of a select field — like Stage or Effort. You don't have one yet.
+            Columns come from a Select or Multi-select field (one column per option) or a Checkbox
+            field (Checked and Not checked).
+            {otherFields.length > 0 && (
+              <> {otherFields.map((d) => `${d.name} (${FIELD_KIND_LABELS[d.kind]})`).join(', ')} can't make columns.</>
+            )}
           </p>
           <button
             type="button"
@@ -276,16 +342,16 @@ function BoardSetup({ selectFields, fieldsOnline, fieldsLoading, onGroupFieldCha
             className="mt-4 flex items-center gap-1.5 rounded-full bg-a-accent px-4 py-2 text-[13.5px] font-semibold text-a-bg transition-colors duration-150 hover:bg-a-accent-600"
           >
             <Plus className="size-3.5" strokeWidth={2.75} aria-hidden />
-            Create a select field
+            Create a field
           </button>
         </>
       ) : (
         <>
           <p className="mt-2 text-[14px] leading-relaxed text-a-muted">
-            Pick a select field. Each of its options becomes a column, and dragging a task between columns changes it.
+            Pick a field. Each of its values becomes a column, and dragging a task between columns changes it.
           </p>
           <div className="mt-4 flex flex-wrap justify-center gap-2">
-            {selectFields.map((field) => (
+            {groupableFields.map((field) => (
               <button
                 key={field.id}
                 type="button"
@@ -293,6 +359,7 @@ function BoardSetup({ selectFields, fieldsOnline, fieldsLoading, onGroupFieldCha
                 className="rounded-full px-3.5 py-1.5 text-[13.5px] font-semibold text-a-ink shadow-[inset_0_0_0_1px_var(--a-line)] transition-colors duration-150 hover:bg-a-row-hover"
               >
                 {field.name}
+                <span className="ml-1.5 font-normal text-a-faint">{FIELD_KIND_LABELS[field.kind]}</span>
               </button>
             ))}
           </div>

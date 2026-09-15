@@ -21,7 +21,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import {
-  DEFAULT_FILTERS, FIELD_EMPTY, FIELD_SET, countActiveFilters, fieldSortKey, type FilterState,
+  DEFAULT_FILTERS, FIELD_EMPTY, FIELD_SET, countActiveFilters, fieldSortKey, isGroupableField, type FilterState,
 } from '@/lib/taskFilters';
 import { OPTION_DOT_CLASS } from '@/lib/fieldValues';
 import type { TaskLayout } from '@/lib/api';
@@ -70,7 +70,7 @@ export function AdvancedFilterBar({ filters, onChange, className, fieldDefs = []
     onChange({ ...filters, fields: next });
   };
 
-  const selectFields = fieldDefs.filter((d) => d.kind === 'select');
+  const groupFields = fieldDefs.filter(isGroupableField);
 
   const clearAll = () => {
     setLocalSearch('');
@@ -255,7 +255,7 @@ export function AdvancedFilterBar({ filters, onChange, className, fieldDefs = []
             />
           ))}
 
-          {layout !== 'matrix' && selectFields.length > 0 && (
+          {layout !== 'matrix' && groupFields.length > 0 && (
             <div className="flex items-center gap-1">
               <Rows3 className="size-3.5 text-muted-foreground/70 flex-shrink-0" aria-hidden />
               <Select value={filters.groupBy || '__none__'} onValueChange={(v) => set('groupBy', v === '__none__' ? '' : v)}>
@@ -266,7 +266,7 @@ export function AdvancedFilterBar({ filters, onChange, className, fieldDefs = []
                   <SelectItem value="__none__">
                     <span className="text-muted-foreground">{layout === 'table' ? 'No grouping' : layout === 'board' ? 'Choose a field for columns' : 'Group by quadrant'}</span>
                   </SelectItem>
-                  {selectFields.map((d) => (
+                  {groupFields.map((d) => (
                     <SelectItem key={d.id} value={d.id}>Group by {d.name}</SelectItem>
                   ))}
                 </SelectContent>

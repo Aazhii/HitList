@@ -16,7 +16,7 @@
  */
 import { QUADRANTS, getCategoryConfig, type Todo } from '@/types/todo';
 import { compareTasks, type TaskCompare } from '@/lib/quadrantBuckets';
-import type { FieldDef, FieldValue, OptionColor, TaskFieldValues } from '@/types/fields';
+import type { FieldDef, FieldKind, FieldValue, OptionColor, TaskFieldValues } from '@/types/fields';
 
 /** Relative, so a saved "Overdue" view is still right tomorrow. */
 export type DuePreset = '' | 'overdue' | 'today' | 'next7' | 'none';
@@ -49,7 +49,7 @@ export interface FilterState {
    * A task matches a field when it matches any of its choices.
    */
   fields: Record<string, string[]>;
-  /** A select field's id to group by. '' = quadrants in the list, no groups in the table. */
+  /** A select, multi-select or checkbox field's id to group by. '' = quadrants in the list, no groups in the table. */
   groupBy: string;
 }
 
@@ -320,10 +320,26 @@ export function compareAcrossQuadrants(
   };
 }
 
-/** The select field the filter groups by, if it still exists and is still a select. */
+/** Field kinds whose values name groups: an option, several options, or ticked / not. */
+export const GROUPABLE_KINDS: readonly FieldKind[] = ['select', 'multi', 'checkbox'];
+
+export const isGroupableField = (def: FieldDef): boolean => GROUPABLE_KINDS.includes(def.kind);
+
+/** The field the filter groups by, if it still exists and can still be grouped by. */
 export function groupFieldFor(f: Pick<FilterState, 'groupBy'>, defs: readonly FieldDef[]): FieldDef | null {
   if (!f.groupBy) return null;
-  return defs.find((d) => d.id === f.groupBy && d.kind === 'select') ?? null;
+  return defs.find((d) => d.id === f.groupBy && isGroupableField(d)) ?? null;
+}
+
+/**
+ * The groups one value puts a task in: its option, each of its options for a
+ * multi-select, or FIELD_SET for a ticked checkbox. Empty = no value.
+ */
+export function groupKeysFor(def: FieldDef, value: FieldValue | undefined): string[] {
+  if (value === undefined) return [];
+  if (def.kind === 'checkbox') return value === true ? [FIELD_SET] : [];
+  if (def.kind === 'multi') return Array.isArray(value) ? value : [];
+  return typeof value === 'string' ? [value] : [];
 }
 
 export interface TaskGroup {
@@ -335,10 +351,13 @@ export interface TaskGroup {
 }
 
 /**
- * Tasks grouped by a select field: one group per option, in the field's order,
- * then one for tasks with no value — only when there are some, unless
- * `includeEmpty` (a board needs that column as somewhere to drop). A value
- * naming a deleted option counts as no value.
+ * Tasks grouped by a field: one group per option, in the field's order, then
+ * one for tasks with no value — only when there are some, unless `includeEmpty`
+ * (a board needs that column as somewhere to drop). A value naming a deleted
+ * option counts as no value.
+ *
+ * A multi-select task appears in the group of every option it has. A checkbox
+ * has two groups, Checked and Not checked, both always shown.
  */
 export function groupByField(
   todos: readonly Todo[],
@@ -348,16 +367,20 @@ export function groupByField(
   values: TaskFieldValues,
   options: { includeEmpty?: boolean } = {},
 ): TaskGroup[] {
-  const groups: TaskGroup[] = def.options.map((o) => ({ key: o.id, label: o.label, color: o.color, tasks: [] }));
-  const empty: TaskGroup = { key: FIELD_EMPTY, label: `No ${def.name}`, color: null, tasks: [] };
+  const isCheckbox = def.kind === 'checkbox';
+  const groups: TaskGroup[] = isCheckbox
+    ? [{ key: FIELD_SET, label: 'Checked', color: null, tasks: [] }]
+    : def.options.map((o) => ({ key: o.id, label: o.label, color: o.color, tasks: [] }));
+  const empty: TaskGroup = { key: FIELD_EMPTY, label: isCheckbox ? 'Not checked' : `No ${def.name}`, color: null, tasks: [] };
   const byKey = new Map(groups.map((g) => [g.key, g]));
 
   for (const t of todos) {
     if (!showDone && t.status === 'done') continue;
-    const value = values[t.id]?.[def.id];
-    (typeof value === 'string' ? byKey.get(value) ?? empty : empty).tasks.push(t);
+    const keys = groupKeysFor(def, values[t.id]?.[def.id]).filter((k) => byKey.has(k));
+    if (keys.length === 0) empty.tasks.push(t);
+    for (const k of new Set(keys)) byKey.get(k)!.tasks.push(t);
   }
   for (const g of groups) g.tasks.sort(compare);
   empty.tasks.sort(compare);
-  return empty.tasks.length || options.includeEmpty ? [...groups, empty] : groups;
+  return empty.tasks.length || options.includeEmpty || isCheckbox ? [...groups, empty] : groups;
 }

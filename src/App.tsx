@@ -1055,11 +1055,13 @@ function App() {
       }
       actions={
         <>
+          {/* Board lives inside Table: it is a table grouped into columns, and
+              only the table has a use for it. */}
           <TopBarToggle
             label="Task view"
-            value={tasksMode}
+            value={tasksMode === 'board' ? 'table' : tasksMode}
             onChange={setTasksMode}
-            options={[{ value: 'list', label: 'List' }, { value: 'matrix', label: 'Matrix' }, { value: 'table', label: 'Table' }, { value: 'board', label: 'Board' }]}
+            options={[{ value: 'list', label: 'List' }, { value: 'matrix', label: 'Matrix' }, { value: 'table', label: 'Table' }]}
           />
 
           {/* One quiet pill for everything that narrows or tidies the view. It
@@ -1229,6 +1231,16 @@ function App() {
             />
 
             <div className="px-4 py-[22px] md:px-[26px]">
+              {!server.loading && listTodos.length > 0 && (tasksMode === 'table' || tasksMode === 'board') && (
+                <div className="mb-4 flex">
+                  <TopBarToggle
+                    label="Table or board"
+                    value={tasksMode}
+                    onChange={setTasksMode}
+                    options={[{ value: 'table', label: 'Table' }, { value: 'board', label: 'Board' }]}
+                  />
+                </div>
+              )}
               {server.loading ? (
                 <LoadingSkeleton />
               ) : listTodos.length === 0 ? (
