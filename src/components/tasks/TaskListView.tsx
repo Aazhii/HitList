@@ -30,12 +30,15 @@ import { cn } from '@/lib/utils';
 import { QUADRANTS } from '@/types/todo';
 import type { Quadrant, QuadrantConfig, Todo, TodoStatus } from '@/types/todo';
 import { bucketByQuadrant } from '@/lib/quadrantBuckets';
+import type { TaskCompare } from '@/lib/quadrantBuckets';
 import { computeReorder, quadrantDropId, type ReorderChange } from '@/lib/reorder';
 import { TaskRow } from '@/components/tasks/TaskRow';
 
 interface TaskListViewProps {
   todos: Todo[];
   showDone: boolean;
+  /** Order within each quadrant; the manual order when absent. */
+  compare?: TaskCompare;
   nextId: string | null;
   /** True while filters narrow the list. Reordering a filtered subset would scramble what is hidden. */
   dragDisabled?: boolean;
@@ -53,6 +56,7 @@ interface TaskListViewProps {
 export function TaskListView({
   todos,
   showDone,
+  compare,
   nextId,
   dragDisabled = false,
   onStatusChange,
@@ -64,7 +68,7 @@ export function TaskListView({
   notificationPermission,
   onOpenNote,
 }: TaskListViewProps) {
-  const buckets = useMemo(() => bucketByQuadrant(todos, showDone), [todos, showDone]);
+  const buckets = useMemo(() => bucketByQuadrant(todos, showDone, compare), [todos, showDone, compare]);
 
   const sensors = useSensors(
     // A small distance, so a click on the grip is not mistaken for a drag.
@@ -108,7 +112,7 @@ export function TaskListView({
   );
 }
 
-interface QuadrantGroupProps extends Omit<TaskListViewProps, 'todos' | 'showDone' | 'onReorder'> {
+interface QuadrantGroupProps extends Omit<TaskListViewProps, 'todos' | 'showDone' | 'onReorder' | 'compare'> {
   quadrant: QuadrantConfig;
   tasks: Todo[];
 }

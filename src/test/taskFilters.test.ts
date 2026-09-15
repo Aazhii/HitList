@@ -1,0 +1,108 @@
+import { describe, expect, it } from 'vitest';
+import {
+  DEFAULT_FILTERS,
+  applyTaskFilters,
+  compareForFilters,
+  countActiveFilters,
+  type FilterState,
+} from '@/lib/taskFilters';
+import { compareTasks } from '@/lib/quadrantBuckets';
+import type { Todo } from '@/types/todo';
+
+// Local noon on 15 June 2030; every date below is relative to it.
+const NOW = new Date(2030, 5, 15, 12, 0, 0);
+const f = (over: Partial<FilterState>): FilterState => ({ ...DEFAULT_FILTERS, ...over });
+
+let seq = 0;
+const todo = (over: Partial<Todo>): Todo => ({
+  id: `t${++seq}`, text: 'Task', status: 'todo', createdAt: seq, listId: 'l', order: seq, quadrant: 'do', ...over,
+});
+const ids = (list: Todo[]) => list.map((t) => t.text);
+
+describe('applyTaskFilters', () => {
+  it('returns everything with the default filters', () => {
+    const all = [todo({}), todo({ status: 'done' })];
+    expect(applyTaskFilters(all, DEFAULT_FILTERS, NOW)).toHaveLength(2);
+    expect(countActiveFilters(DEFAULT_FILTERS)).toBe(0);
+  });
+
+  it('filters by status and quadrant', () => {
+    const all = [
+      todo({ text: 'a', status: 'todo', quadrant: 'do' }),
+      todo({ text: 'b', status: 'in-progress', quadrant: 'schedule' }),
+      todo({ text: 'c', status: 'done', quadrant: 'do' }),
+    ];
+    expect(ids(applyTaskFilters(all, f({ status: 'IN_PROGRESS' }), NOW))).toEqual(['b']);
+    expect(ids(applyTaskFilters(all, f({ quadrant: 'DO' }), NOW))).toEqual(['a', 'c']);
+    expect(ids(applyTaskFilters(all, f({ quadrant: 'DO', status: 'DONE' }), NOW))).toEqual(['c']);
+  });
+
+  it('searches the title, the note and the category, ignoring case', () => {
+    const all = [
+      todo({ text: 'Call the BANK' }),
+      todo({ text: 'Review', note: 'bank statement attached' }),
+      todo({ text: 'Standup', category: 'work' }),
+      todo({ text: 'Unrelated' }),
+    ];
+    expect(ids(applyTaskFilters(all, f({ search: 'bank' }), NOW))).toEqual(['Call the BANK', 'Review']);
+    expect(ids(applyTaskFilters(all, f({ search: 'WORK' }), NOW))).toEqual(['Standup']);
+  });
+
+  it('finds overdue tasks by their time, or the end of their day', () => {
+    const all = [
+      todo({ text: 'this morning', dueDate: '2030-06-15', dueTime: '09:00' }),
+      todo({ text: 'today, no time', dueDate: '2030-06-15' }),
+      todo({ text: 'yesterday', dueDate: '2030-06-14' }),
+      todo({ text: 'done late', dueDate: '2030-06-14', status: 'done' }),
+      todo({ text: 'no date' }),
+    ];
+    expect(ids(applyTaskFilters(all, f({ due: 'overdue' }), NOW))).toEqual(['this morning', 'yesterday']);
+  });
+
+  it('filters due today, within the next 7 days, and with no due date', () => {
+    const all = [
+      todo({ text: 'yesterday', dueDate: '2030-06-14' }),
+      todo({ text: 'today', dueDate: '2030-06-15' }),
+      todo({ text: 'day 7', dueDate: '2030-06-22' }),
+      todo({ text: 'day 8', dueDate: '2030-06-23' }),
+      todo({ text: 'none' }),
+    ];
+    expect(ids(applyTaskFilters(all, f({ due: 'today' }), NOW))).toEqual(['today']);
+    expect(ids(applyTaskFilters(all, f({ due: 'next7' }), NOW))).toEqual(['today', 'day 7']);
+    expect(ids(applyTaskFilters(all, f({ due: 'none' }), NOW))).toEqual(['none']);
+  });
+
+  it('treats the date range as inclusive and leaves undated tasks out', () => {
+    const all = [
+      todo({ text: 'before', dueDate: '2030-06-09' }),
+      todo({ text: 'start', dueDate: '2030-06-10' }),
+      todo({ text: 'end', dueDate: '2030-06-20' }),
+      todo({ text: 'after', dueDate: '2030-06-21' }),
+      todo({ text: 'undated' }),
+    ];
+    expect(ids(applyTaskFilters(all, f({ dueAfter: '2030-06-10', dueBefore: '2030-06-20' }), NOW)))
+      .toEqual(['start', 'end']);
+  });
+});
+
+describe('compareForFilters', () => {
+  it('is the manual order by default, so drag order is unchanged', () => {
+    expect(compareForFilters(DEFAULT_FILTERS)).toBe(compareTasks);
+  });
+
+  it('sorts by title either way and keeps done tasks last', () => {
+    const list = [todo({ text: 'b' }), todo({ text: 'z', status: 'done' }), todo({ text: 'a' }), todo({ text: 'c' })];
+    expect(ids([...list].sort(compareForFilters({ sortBy: 'title', sortDir: 'asc' })))).toEqual(['a', 'b', 'c', 'z']);
+    expect(ids([...list].sort(compareForFilters({ sortBy: 'title', sortDir: 'desc' })))).toEqual(['c', 'b', 'a', 'z']);
+  });
+
+  it('puts tasks without a due date last in both directions', () => {
+    const list = [
+      todo({ text: 'none' }),
+      todo({ text: 'late', dueDate: '2030-06-20' }),
+      todo({ text: 'early', dueDate: '2030-06-10' }),
+    ];
+    expect(ids([...list].sort(compareForFilters({ sortBy: 'due-date', sortDir: 'asc' })))).toEqual(['early', 'late', 'none']);
+    expect(ids([...list].sort(compareForFilters({ sortBy: 'due-date', sortDir: 'desc' })))).toEqual(['late', 'early', 'none']);
+  });
+});

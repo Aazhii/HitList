@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { MatrixTaskCard } from '@/components/MatrixTaskCard';
 import { QUADRANTS } from '@/types/todo';
 import type { Todo, TodoStatus, Quadrant } from '@/types/todo';
-import { bucketByQuadrant } from '@/lib/quadrantBuckets';
+import { bucketByQuadrant, type TaskCompare } from '@/lib/quadrantBuckets';
 
 interface EisenhowerMatrixProps {
   todos: Todo[];
@@ -14,6 +14,8 @@ interface EisenhowerMatrixProps {
   onAddToQuadrant: (quadrant: Quadrant) => void;
   nextId: string | null;
   showDone: boolean;
+  /** Order within each quadrant; the manual order when absent. */
+  compare?: TaskCompare;
   onToggleReminder?: (id: string, enabled: boolean) => void;
   notificationPermission?: NotificationPermission;
   /** Opens the note a task was added from. */
@@ -38,8 +40,12 @@ export function EisenhowerMatrix({
   onToggleReminder,
   notificationPermission,
   onOpenNote,
+  compare,
 }: EisenhowerMatrixProps) {
-  const todosByQuadrant = useMemo(() => bucketByQuadrant(todos, showDone), [todos, showDone]);
+  const todosByQuadrant = useMemo(
+    () => bucketByQuadrant(todos, showDone, compare),
+    [todos, showDone, compare],
+  );
 
   return (
     <div className="mx-auto grid max-w-6xl grid-cols-1 gap-4 md:grid-cols-2 animate-fade-in">

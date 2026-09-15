@@ -37,6 +37,7 @@ import { ViewLayout } from '@/components/shell/ViewLayout';
 import { TopBar, TopBarToggle, topBarPill, topBarPrimary } from '@/components/shell/TopBar';
 import { UserMenu } from '@/components/shell/UserMenu';
 import { loadAppState, saveAppState, setActiveUserId } from '@/lib/storage';
+import { applyTaskFilters, compareForFilters } from '@/lib/taskFilters';
 import type { ReorderChange } from '@/lib/reorder';
 import { useCatalystSync, apiTaskToTodo, apiListToKaizenList } from '@/hooks/useCatalystSync';
 import { SyncStatusBar } from '@/components/SyncStatusBar';
@@ -44,7 +45,6 @@ import {
   AdvancedFilterBar,
   DEFAULT_FILTERS,
   countActiveFilters,
-  filtersToParams,
 } from '@/components/AdvancedFilterBar';
 import type { FilterState } from '@/components/AdvancedFilterBar';
 import { EmptyState } from '@/components/EmptyState';
@@ -238,6 +238,22 @@ function getTodayKeyFor(ts: number) {
   return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 }
 
+// ── No tasks match the filters ─────────────────────────────────────────────
+
+function NoMatchingTasks({ onClear }: { onClear: () => void }) {
+  return (
+    <div className="flex flex-col items-center py-16 text-center animate-fade-in">
+      <p className="font-display text-[20px] text-a-ink">No tasks match these filters</p>
+      <p className="mt-1.5 max-w-xs text-[14px] leading-relaxed text-a-muted">
+        Nothing in this list fits. Loosen a filter, or clear them all.
+      </p>
+      <button type="button" onClick={onClear} className={`${topBarPill} mt-5`}>
+        Clear filters
+      </button>
+    </div>
+  );
+}
+
 // ── Loading skeleton ───────────────────────────────────────────────────────
 
 function LoadingSkeleton() {
@@ -310,7 +326,7 @@ function App() {
   const [filterState, setFilterState] = useState<FilterState>(DEFAULT_FILTERS);
 
   // ── Server sync ───────────────────────────────────────────────────────────
-  const server = useCatalystSync(appState.activeListId, filtersToParams(filterState));
+  const server = useCatalystSync(appState.activeListId);
 
   // Persist to localStorage whenever appState changes (offline fallback)
   useEffect(() => {
@@ -400,6 +416,18 @@ function App() {
     () => todos.filter((t) => t.listId === activeListId),
     [todos, activeListId]
   );
+
+  // What the list and matrix show: the active list, narrowed by the filter bar.
+  // Filtered here and not on the server on purpose — `todos` also feeds list
+  // counts, reminders, note chips and the offline copy, and a filtered fetch
+  // would replace all of them with the subset. See lib/taskFilters.
+  const visibleTodos = useMemo(
+    () => applyTaskFilters(listTodos, filterState),
+    [listTodos, filterState]
+  );
+  const taskCompare = useMemo(() => compareForFilters(filterState), [filterState]);
+  // A "Done" filter would otherwise show nothing while completed tasks are hidden.
+  const showDoneEffective = showDone || filterState.status === 'DONE';
 
   const activeTodos = useMemo(() => listTodos.filter((t) => t.status !== 'done'), [listTodos]);
   const doneTodos = useMemo(() => listTodos.filter((t) => t.status === 'done'), [listTodos]);
@@ -1098,10 +1126,13 @@ function App() {
                 <LoadingSkeleton />
               ) : listTodos.length === 0 ? (
                 <EmptyState onAdd={() => { setDefaultQuadrant('do'); setDialogOpen(true); }} />
+              ) : visibleTodos.length === 0 ? (
+                <NoMatchingTasks onClear={() => setFilterState(DEFAULT_FILTERS)} />
               ) : tasksMode === 'list' ? (
                 <TaskListView
-                  todos={listTodos}
-                  showDone={showDone}
+                  todos={visibleTodos}
+                  compare={taskCompare}
+                  showDone={showDoneEffective}
                   nextId={nextId}
                   dragDisabled={activeFilterCount > 0}
                   onStatusChange={handleStatusChange}
@@ -1115,13 +1146,14 @@ function App() {
                 />
               ) : (
                 <EisenhowerMatrix
-                  todos={listTodos}
+                  todos={visibleTodos}
+                  compare={taskCompare}
                   onStatusChange={handleStatusChange}
                   onDelete={handleDelete}
                   onOpen={handleOpenDetail}
                   onAddToQuadrant={handleAddToQuadrant}
                   nextId={nextId}
-                  showDone={showDone}
+                  showDone={showDoneEffective}
                   onToggleReminder={handleToggleReminder}
                   onOpenNote={handleOpenSourceNote}
                   notificationPermission={notificationPermission}

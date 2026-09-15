@@ -18,6 +18,9 @@ import type { Quadrant, Todo, TodoStatus } from '@/types/todo';
  * in-progress task would snap straight back below it. The order someone chose
  * by hand now wins, in both the list and the matrix, so the two agree.
  */
+/** How two tasks in the same quadrant are ordered. */
+export type TaskCompare = (a: Todo, b: Todo) => number;
+
 export function compareTasks(a: Todo, b: Todo): number {
   const aDone = a.status === 'done' ? 1 : 0;
   const bDone = b.status === 'done' ? 1 : 0;
@@ -32,6 +35,7 @@ export function compareTasks(a: Todo, b: Todo): number {
 export function bucketByQuadrant(
   todos: readonly Todo[],
   showDone: boolean,
+  compare: TaskCompare = compareTasks,
 ): Map<Quadrant, Todo[]> {
   const map = new Map<Quadrant, Todo[]>();
   for (const q of QUADRANTS) map.set(q.id, []);
@@ -44,6 +48,6 @@ export function bucketByQuadrant(
     bucket.push(todo);
   }
 
-  for (const bucket of map.values()) bucket.sort(compareTasks);
+  for (const bucket of map.values()) bucket.sort(compare);
   return map;
 }

@@ -11,55 +11,12 @@ import {
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import type { TaskListParams } from '@/lib/api';
+import { DEFAULT_FILTERS, countActiveFilters, type FilterState } from '@/lib/taskFilters';
 
-export interface FilterState {
-  search:    string;
-  status:    string;   // '' | 'TODO' | 'IN_PROGRESS' | 'DONE'
-  priority:  string;   // '' | 'HIGH' | 'MEDIUM' | 'LOW'
-  quadrant:  string;   // '' | 'DO' | 'SCHEDULE' | 'DELEGATE' | 'ELIMINATE'
-  dueBefore: string;   // YYYY-MM-DD or ''
-  dueAfter:  string;   // YYYY-MM-DD or ''
-  sortBy:    TaskListParams['sortBy'];
-  sortDir:   'asc' | 'desc';
-}
-
-export const DEFAULT_FILTERS: FilterState = {
-  search:    '',
-  status:    '',
-  priority:  '',
-  quadrant:  '',
-  dueBefore: '',
-  dueAfter:  '',
-  sortBy:    'order',
-  sortDir:   'asc',
-};
-
-export function filtersToParams(f: FilterState): TaskListParams {
-  const p: TaskListParams = {};
-  if (f.search)    p.search    = f.search;
-  if (f.status)    p.status    = f.status;
-  if (f.priority)  p.priority  = f.priority;
-  if (f.quadrant)  p.quadrant  = f.quadrant;
-  if (f.dueBefore) p.dueBefore = f.dueBefore;
-  if (f.dueAfter)  p.dueAfter  = f.dueAfter;
-  if (f.sortBy && f.sortBy !== 'order') p.sortBy = f.sortBy;
-  if (f.sortDir === 'desc') p.sortDir = 'desc';
-  return p;
-}
-
-export function countActiveFilters(f: FilterState): number {
-  let n = 0;
-  if (f.search)    n++;
-  if (f.status)    n++;
-  if (f.priority)  n++;
-  if (f.quadrant)  n++;
-  if (f.dueBefore) n++;
-  if (f.dueAfter)  n++;
-  if (f.sortBy && f.sortBy !== 'order') n++;
-  if (f.sortDir === 'desc') n++;
-  return n;
-}
+// The filter model lives in lib/taskFilters, where it is applied and tested.
+// Re-exported so existing imports from this module keep working.
+export { DEFAULT_FILTERS, countActiveFilters } from '@/lib/taskFilters';
+export type { FilterState } from '@/lib/taskFilters';
 
 interface AdvancedFilterBarProps {
   filters:   FilterState;
@@ -133,7 +90,6 @@ export function AdvancedFilterBar({ filters, onChange, className }: AdvancedFilt
               <SelectItem value="order">Manual order</SelectItem>
               <SelectItem value="created">Date added</SelectItem>
               <SelectItem value="due-date">Due date</SelectItem>
-              <SelectItem value="priority">Priority</SelectItem>
               <SelectItem value="status">Status</SelectItem>
               <SelectItem value="title">Title</SelectItem>
             </SelectContent>
@@ -205,16 +161,19 @@ export function AdvancedFilterBar({ filters, onChange, className }: AdvancedFilt
             </SelectContent>
           </Select>
 
-          {/* Priority */}
-          <Select value={filters.priority || '__all__'} onValueChange={(v) => set('priority', v === '__all__' ? '' : v)}>
-            <SelectTrigger size="sm" className="h-7 rounded-xl border-border/60 bg-muted/40 text-xs px-2.5 gap-1 min-w-[100px]">
-              <SelectValue placeholder="Priority" />
+          {/* Due — relative, so a saved "Overdue" view stays right tomorrow.
+              Replaces a Priority filter: nothing sets a task's priority, so it
+              could only ever hide every task. */}
+          <Select value={filters.due || '__all__'} onValueChange={(v) => set('due', v === '__all__' ? '' : v)}>
+            <SelectTrigger size="sm" className="h-7 rounded-xl border-border/60 bg-muted/40 text-xs px-2.5 gap-1 min-w-[110px]">
+              <SelectValue placeholder="Due" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="__all__"><span className="text-muted-foreground">All priorities</span></SelectItem>
-              <SelectItem value="HIGH">🔴 High</SelectItem>
-              <SelectItem value="MEDIUM">🟡 Medium</SelectItem>
-              <SelectItem value="LOW">🟢 Low</SelectItem>
+              <SelectItem value="__all__"><span className="text-muted-foreground">Any due date</span></SelectItem>
+              <SelectItem value="overdue">Overdue</SelectItem>
+              <SelectItem value="today">Due today</SelectItem>
+              <SelectItem value="next7">Next 7 days</SelectItem>
+              <SelectItem value="none">No due date</SelectItem>
             </SelectContent>
           </Select>
 

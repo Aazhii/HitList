@@ -44,7 +44,10 @@ const REAL = { task: taskApi,     list: listApi,     stats: statsApi };
 const MOCK = { task: mockTaskApi, list: mockListApi, stats: mockStatsApi };
 type Backend = typeof REAL;
 
-export function useCatalystSync(activeListId?: string, _filters?: import('../lib/api').TaskListParams): ServerSyncState {
+// There used to be a second parameter, the filter bar's state, which this hook
+// accepted and never used — so filters changed nothing on screen. Filtering now
+// happens in App over the loaded tasks; see lib/taskFilters for why not here.
+export function useCatalystSync(activeListId?: string): ServerSyncState {
   const [loading, setLoading]           = useState(true);
   const [saving, setSaving]             = useState(false);
   const [error, setError]               = useState<string | null>(null);
