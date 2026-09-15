@@ -16,6 +16,8 @@ interface EisenhowerMatrixProps {
   showDone: boolean;
   onToggleReminder?: (id: string, enabled: boolean) => void;
   notificationPermission?: NotificationPermission;
+  /** Opens the note a task was added from. */
+  onOpenNote?: (noteId: string) => void;
 }
 
 /**
@@ -35,6 +37,7 @@ export function EisenhowerMatrix({
   showDone,
   onToggleReminder,
   notificationPermission,
+  onOpenNote,
 }: EisenhowerMatrixProps) {
   const todosByQuadrant = useMemo(() => bucketByQuadrant(todos, showDone), [todos, showDone]);
 
@@ -80,6 +83,7 @@ export function EisenhowerMatrix({
                   onOpen={onOpen}
                   onToggleReminder={onToggleReminder}
                   notificationPermission={notificationPermission}
+                  onOpenNote={onOpenNote}
                   index={i}
                 />
               ))

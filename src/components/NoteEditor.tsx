@@ -30,6 +30,29 @@ import { activeMarks, hasInlineMarks, toggleMark, type Mark } from '@/lib/inline
 import {
   MARKER_BOX_CLASS, controlsTop, getBlockTextClass, markerTop,
 } from '@/components/notes/blockMetrics';
+import type { KaizenList, Quadrant, Todo } from '@/types/todo';
+import { MentionMenu, type MentionMenuHandle } from '@/components/notes/MentionMenu';
+import { LinkedTaskChip } from '@/components/notes/LinkedTaskChip';
+import {
+  canMention, detectMentionTrigger, removeMentionTrigger, taskTitleFromBlock, type MentionTrigger,
+} from '@/lib/noteMentions';
+
+/**
+ * What the editor needs to add blocks to quadrants. Tasks live in App, so it
+ * passes these down; without them the "@" menu is simply off.
+ */
+export interface NoteTaskLinking {
+  lists: KaizenList[];
+  todos: Todo[];
+  /** False until tasks have loaded, so a linked chip doesn't flash "Task removed". */
+  tasksLoaded: boolean;
+  preferredListId?: string;
+  /** Resolves with the created task (real id), or null when it could not be saved. */
+  createTask: (args: { listId: string; quadrant: Quadrant; title: string; noteId: string; blockId: string }) => Promise<Todo | null>;
+  updateTaskTitle: (taskId: string, title: string) => void;
+  unlinkTask: (taskId: string) => void;
+  openTask: (taskId: string) => void;
+}
 
 // ── Block type icon map ────────────────────────────────────────────────────────
 const ICON = 'size-3.5';
@@ -306,6 +329,10 @@ interface BlockRowProps {
   onSelectionChange: (id: string) => void;
   /** Non-content fields, such as a callout's emoji and tone. */
   onUpdateMeta: (id: string, changes: Partial<Pick<NoteBlock, 'emoji' | 'tone'>>) => void;
+  /** The caret or text moved: open, update or close the "@" menu. */
+  onMentionCheck: (id: string, el: HTMLTextAreaElement) => void;
+  /** The linked-task chip, when this block is in a quadrant. */
+  chip?: React.ReactNode;
 }
 
 /**
@@ -324,6 +351,7 @@ function BlockRow({
   onFocus, onChange, onToggleCheck, onKeyDown,
   onAddAfter, onDelete, onChangeType, onMoveUp, onMoveDown,
   onUpdateTable, textareaRef, onSlashOpen, onSelectionChange, onUpdateMeta,
+  onMentionCheck, chip,
 }: BlockRowProps) {
   const [hovered, setHovered] = useState(false);
   const isFocused = focusedId === block.id;
@@ -519,6 +547,7 @@ function BlockRow({
                 onSlashOpen(block.id, { top: rect.bottom + 4, left: rect.left });
               }
             }
+            if (taRef.current) onMentionCheck(block.id, taRef.current);
           }}
           onKeyDown={(e) => onKeyDown(e, block.id)}
           onFocus={() => onFocus(block.id)}
@@ -526,7 +555,13 @@ function BlockRow({
           // so the toolbar listens to the textarea itself.
           onSelect={() => onSelectionChange(block.id)}
           onMouseUp={() => onSelectionChange(block.id)}
-          onKeyUp={() => onSelectionChange(block.id)}
+          onKeyUp={(e) => {
+            onSelectionChange(block.id);
+            // Moving the caret out of an "@query" closes the menu.
+            if (['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key) && taRef.current) {
+              onMentionCheck(block.id, taRef.current);
+            }
+          }}
           onBlur={() => onSelectionChange(block.id)}
           // The paragraph hint only where typing is about to happen, not on every
           // empty line of the page. Structural placeholders always show.
@@ -547,6 +582,13 @@ function BlockRow({
           spellCheck
         />
         </div>
+
+        {chip && (
+          // 18px chip, centred on the first line like the markers.
+          <span className="ml-2 flex flex-shrink-0" style={{ paddingTop: markerTop(block.type, 18) }}>
+            {chip}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -560,6 +602,9 @@ interface NoteEditorProps {
   onDeleteBlock: (blockId: string) => void;
   onChangeBlockType: (blockId: string, type: BlockType) => void;
   onMoveBlock: (blockId: string, direction: 'up' | 'down') => void;
+  /** The note these blocks belong to; needed to link a block to a task. */
+  noteId?: string;
+  linking?: NoteTaskLinking;
 }
 
 export function NoteEditor({
@@ -569,6 +614,8 @@ export function NoteEditor({
   onDeleteBlock,
   onChangeBlockType,
   onMoveBlock,
+  noteId,
+  linking,
 }: NoteEditorProps) {
   const [focusedId, setFocusedId] = useState<string | null>(null);
   const [toolbar, setToolbar] = useState<{
@@ -589,6 +636,23 @@ export function NoteEditor({
   const pendingFocusId = useRef<string | null>(null);
   // A selection to restore once a formatting edit has re-rendered its block.
   const pendingSelection = useRef<{ id: string; start: number; end: number } | null>(null);
+
+  // ── "@" → Add to quadrant ──
+  const [mention, setMention] = useState<{
+    blockId: string;
+    trigger: MentionTrigger;
+    position: { top: number; left: number };
+    message: string | null;
+  } | null>(null);
+  const mentionRef = useRef<MentionMenuHandle>(null);
+  // Blocks whose task is being created; they show a pending chip.
+  const [pendingLinks, setPendingLinks] = useState<ReadonlySet<string>>(new Set());
+  const blocksRef = useRef(blocks);
+  useEffect(() => { blocksRef.current = blocks; }, [blocks]);
+  const todosById = useMemo(
+    () => new Map((linking?.todos ?? []).map((t) => [t.id, t])),
+    [linking?.todos],
+  );
 
   // Numbered lists count within their own run. Computed once here rather than
   // per row, because a row alone cannot see where its list started.
@@ -669,6 +733,84 @@ export function NoteEditor({
     return () => document.removeEventListener('mousedown', handler);
   }, [slashState]);
 
+  // Close the "@" menu on a click outside it.
+  useEffect(() => {
+    if (!mention) return;
+    const handler = (e: MouseEvent) => {
+      if (!(e.target as HTMLElement).closest('[data-mention-menu]')) setMention(null);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [mention]);
+
+  const handleMentionCheck = useCallback((blockId: string, el: HTMLTextAreaElement) => {
+    const block = blocks.find((b) => b.id === blockId);
+    const trigger = linking && noteId && block && canMention(block.type) && !block.taskId && !pendingLinks.has(blockId)
+      ? detectMentionTrigger(el.value, el.selectionStart)
+      : null;
+
+    if (!trigger) {
+      setMention((m) => (m && m.blockId === blockId ? null : m));
+      return;
+    }
+
+    // Nothing to make a task from yet: say so instead of offering the menu.
+    const message = taskTitleFromBlock(removeMentionTrigger(el.value, trigger).content)
+      ? null
+      : 'Write the task in this block first, then type @';
+
+    setMention((m) => {
+      // Same "@", still typing: keep the menu where it is.
+      if (m && m.blockId === blockId && m.trigger.at === trigger.at) return { ...m, trigger, message };
+      let position: { top: number; left: number };
+      try {
+        const coords = getCaretCoordinates(el, trigger.at);
+        position = { top: coords.top + 22, left: coords.left };
+      } catch {
+        const rect = el.getBoundingClientRect();
+        position = { top: rect.bottom + 4, left: rect.left };
+      }
+      return { blockId, trigger, position, message };
+    });
+  }, [blocks, linking, noteId, pendingLinks]);
+
+  const handleMentionSelect = useCallback(async (listId: string, quadrant: Quadrant) => {
+    if (!mention || !linking || !noteId) return;
+    const { blockId, trigger } = mention;
+    const block = blocks.find((b) => b.id === blockId);
+    if (!block) { setMention(null); return; }
+
+    const original = textareaRefs.current.get(blockId)?.value ?? block.content;
+    const { content, caret } = removeMentionTrigger(original, trigger);
+    const title = taskTitleFromBlock(content);
+    if (!title) {
+      setMention((m) => (m ? { ...m, message: 'Write the task in this block first, then type @' } : m));
+      return;
+    }
+
+    setMention(null);
+    setPendingLinks((prev) => new Set(prev).add(blockId));
+    onUpdateBlock(blockId, { content });
+    pendingSelection.current = { id: blockId, start: caret, end: caret };
+
+    const task = await linking.createTask({ listId, quadrant, title, noteId, blockId });
+
+    setPendingLinks((prev) => {
+      const next = new Set(prev);
+      next.delete(blockId);
+      return next;
+    });
+
+    if (task) {
+      onUpdateBlock(blockId, { taskId: task.id });
+    } else {
+      // Put the "@query" back — but only if the block hasn't been edited
+      // meanwhile, so a failure never overwrites newer typing.
+      const current = blocksRef.current.find((b) => b.id === blockId);
+      if (current && current.content === content) onUpdateBlock(blockId, { content: original });
+    }
+  }, [mention, linking, noteId, blocks, onUpdateBlock]);
+
   const handleSlashOpen = useCallback((blockId: string, pos: { top: number; left: number }) => {
     setSlashState({ blockId, query: '', position: pos, selectedIndex: 0 });
   }, []);
@@ -692,7 +834,15 @@ export function NoteEditor({
       }
     }
     onUpdateBlock(blockId, { content });
-  }, [slashState, onUpdateBlock]);
+
+    // A linked block's text is its task's title. App debounces the write.
+    const taskId = blocks.find((b) => b.id === blockId)?.taskId;
+    if (taskId && linking) {
+      const title = taskTitleFromBlock(content);
+      // A cleared block keeps the task's last title rather than blanking it.
+      if (title) linking.updateTaskTitle(taskId, title);
+    }
+  }, [slashState, onUpdateBlock, blocks, linking]);
 
   const handleToggleCheck = useCallback((blockId: string) => {
     const block = blocks.find((b) => b.id === blockId);
@@ -742,6 +892,17 @@ export function NoteEditor({
         e.preventDefault();
         handleToggleMark(blockId, mark);
         return;
+      }
+    }
+
+    // "@" menu navigation. Keys it doesn't use fall through, so ← at the
+    // first column still moves the caret (and so closes the menu).
+    if (mention && mention.blockId === blockId && mentionRef.current) {
+      if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Tab', 'Escape'].includes(e.key)) {
+        if (mentionRef.current.handleKey(e.key)) {
+          e.preventDefault();
+          return;
+        }
       }
     }
 
@@ -800,7 +961,7 @@ export function NoteEditor({
         onUpdateBlock(blockId, { content: block.content + '  ' });
       }
     }
-  }, [blocks, slashState, onAddBlock, onDeleteBlock, onUpdateBlock, handleSlashSelect, handleToggleMark]);
+  }, [blocks, slashState, mention, onAddBlock, onDeleteBlock, onUpdateBlock, handleSlashSelect, handleToggleMark]);
 
   const handleAddAfter = useCallback((blockId: string) => {
     const newId = onAddBlock(blockId, 'paragraph');
@@ -835,6 +996,21 @@ export function NoteEditor({
         />
       )}
 
+      {/* "@" → Add to quadrant */}
+      {mention && linking && (
+        <MentionMenu
+          ref={mentionRef}
+          position={mention.position}
+          lists={linking.lists}
+          preferredListId={linking.preferredListId}
+          query={mention.trigger.query}
+          pending={false}
+          message={mention.message}
+          onSelect={(listId, quadrant) => { void handleMentionSelect(listId, quadrant); }}
+          onClose={() => setMention(null)}
+        />
+      )}
+
       {/* Blocks */}
       <div className="flex flex-col gap-[6px]">
         {blocks.map((block, index) => (
@@ -859,6 +1035,22 @@ export function NoteEditor({
             onSlashOpen={handleSlashOpen}
             onSelectionChange={handleSelectionChange}
             onUpdateMeta={onUpdateBlock}
+            onMentionCheck={handleMentionCheck}
+            chip={
+              linking && linking.tasksLoaded && (block.taskId || pendingLinks.has(block.id)) ? (
+                <LinkedTaskChip
+                  task={block.taskId ? todosById.get(block.taskId) : undefined}
+                  lists={linking.lists}
+                  pending={pendingLinks.has(block.id)}
+                  onOpen={linking.openTask}
+                  onUnlink={() => {
+                    const taskId = block.taskId;
+                    onUpdateBlock(block.id, { taskId: undefined });
+                    if (taskId) linking.unlinkTask(taskId);
+                  }}
+                />
+              ) : undefined
+            }
           />
         ))}
       </div>

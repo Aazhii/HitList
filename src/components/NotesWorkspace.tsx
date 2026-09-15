@@ -11,7 +11,8 @@ import { useNotes } from '@/hooks/useNotes';
 import type { SaveStatus } from '@/hooks/useNotes';
 import { useSyncStatus } from '@/hooks/useSyncStatus';
 import type { SyncStatus } from '@/hooks/useSyncStatus';
-import { NoteEditor } from '@/components/NoteEditor';
+import { NoteEditor, type NoteTaskLinking } from '@/components/NoteEditor';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -171,8 +172,10 @@ function NoteDetail({
   onDeleteBlock,
   onChangeBlockType,
   onMoveBlock,
+  linking,
 }: {
   note: Note;
+  linking?: NoteTaskLinking;
   onUpdateTitle: (id: string, title: string) => void;
   onUpdateEmoji: (id: string, emoji: string) => void;
   onUpdateBlock: (noteId: string, blockId: string, changes: Partial<import('@/types/notes').NoteBlock>) => void;
@@ -265,6 +268,8 @@ function NoteDetail({
             onDeleteBlock={(blockId) => onDeleteBlock(note.id, blockId)}
             onChangeBlockType={(blockId, type) => onChangeBlockType(note.id, blockId, type)}
             onMoveBlock={(blockId, direction) => onMoveBlock(note.id, blockId, direction)}
+            noteId={note.id}
+            linking={linking}
           />
         </div>
       </div>
@@ -363,7 +368,15 @@ function NotesLoadingSkeleton() {
 }
 
 // ── Main NotesWorkspace ────────────────────────────────────────────────────────
-export function NotesWorkspace() {
+interface NotesWorkspaceProps {
+  /** Tasks access for the "@ → Add to quadrant" menu. */
+  linking?: NoteTaskLinking;
+  /** A note to open, e.g. from a task's "Note" chip. Cleared through onOpenNoteHandled. */
+  openNoteId?: string | null;
+  onOpenNoteHandled?: () => void;
+}
+
+export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled }: NotesWorkspaceProps = {}) {
   const {
     notes,
     activeNote,
@@ -385,6 +398,22 @@ export function NotesWorkspace() {
 
   const [search, setSearch] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Note | null>(null);
+
+  // Opened from a task. Notes are stored per device and never pulled from the
+  // server, so a note written elsewhere may simply not be here.
+  useEffect(() => {
+    if (!openNoteId || isLoading) return;
+    if (notes.some((n) => n.id === openNoteId)) {
+      setActiveNoteId(openNoteId);
+      setSearch('');
+    } else {
+      toast.error("That note isn't on this device", {
+        description: 'Notes are kept on the device they were written on.',
+        duration: 3500,
+      });
+    }
+    onOpenNoteHandled?.();
+  }, [openNoteId, isLoading, notes, setActiveNoteId, onOpenNoteHandled]);
 
   const filtered = search.trim()
     ? notes.filter(
@@ -546,6 +575,7 @@ export function NotesWorkspace() {
             onDeleteBlock={deleteBlock}
             onChangeBlockType={changeBlockType}
             onMoveBlock={moveBlock}
+            linking={linking}
           />
         ) : notes.length === 0 ? (
           <NotesEmptyState onCreate={handleCreate} />

@@ -9,7 +9,7 @@
 import { useState } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Bell, BellOff, GripVertical, MoreHorizontal, PanelRightOpen, Trash2 } from 'lucide-react';
+import { Bell, BellOff, FileText, GripVertical, MoreHorizontal, PanelRightOpen, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { StatusBox } from '@/components/ui/status-box';
 import {
@@ -36,6 +36,8 @@ export interface TaskRowProps {
   onOpen: (todo: Todo) => void;
   onToggleReminder?: (id: string, enabled: boolean) => void;
   notificationPermission?: NotificationPermission;
+  /** Opens the note a task was added from. */
+  onOpenNote?: (noteId: string) => void;
 }
 
 const CHIP = 'inline-flex items-center rounded-full px-[11px] py-1 text-[12.5px] leading-none whitespace-nowrap';
@@ -56,6 +58,7 @@ export function TaskRow({
   onOpen,
   onToggleReminder,
   notificationPermission,
+  onOpenNote,
 }: TaskRowProps) {
   const [deleting, setDeleting] = useState(false);
   const isDone = todo.status === 'done';
@@ -146,6 +149,18 @@ export function TaskRow({
         )}
 
         {due && <span className={cn(CHIP, DUE_TONE_CLASS[dueTone(due)])}>{due.label}</span>}
+
+        {todo.sourceNoteId && onOpenNote && (
+          <button
+            type="button"
+            onClick={() => onOpenNote(todo.sourceNoteId!)}
+            title="Open the note this came from"
+            aria-label={`Open the note “${todo.text}” came from`}
+            className={cn(CHIP, 'gap-1 text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)] transition-colors duration-150 hover:text-a-ink')}
+          >
+            <FileText className="size-3" strokeWidth={2.75} aria-hidden /> Note
+          </button>
+        )}
 
         {category && (
           <span className={cn(CHIP, 'text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)]')}>

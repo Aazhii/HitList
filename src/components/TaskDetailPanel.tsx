@@ -15,6 +15,7 @@ import {
   BellOff,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { FileText as FileTextIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -43,6 +44,8 @@ interface TaskDetailPanelProps {
   onStatusChange: (id: string, status: TodoStatus) => void;
   notificationPermission?: NotificationPermission;
   defaultReminderMinutes?: ReminderMinutes;
+  /** Opens the note a task was added from. */
+  onOpenNote?: (noteId: string) => void;
 }
 
 function getTodayStr() {
@@ -75,6 +78,7 @@ export function TaskDetailPanel({
   onStatusChange,
   notificationPermission,
   defaultReminderMinutes = DEFAULT_REMINDER_MINUTES,
+  onOpenNote,
 }: TaskDetailPanelProps) {
   const [text, setText] = useState(todo?.text ?? '');
   const [note, setNote] = useState(todo?.note ?? '');
@@ -472,6 +476,15 @@ export function TaskDetailPanel({
                     <span className="text-muted-foreground/60">Completed</span>{' '}
                     {formatCreated(todo.completedAt)}
                   </p>
+                )}
+                {todo.sourceNoteId && onOpenNote && (
+                  <button
+                    type="button"
+                    onClick={() => onOpenNote(todo.sourceNoteId!)}
+                    className="flex items-center gap-1.5 text-xs text-a-accent-700 hover:underline"
+                  >
+                    <FileTextIcon className="size-3" aria-hidden /> Open the note this came from
+                  </button>
                 )}
               </div>
             </div>

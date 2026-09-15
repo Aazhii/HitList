@@ -46,6 +46,8 @@ interface TaskListViewProps {
   onReorder: (changes: ReorderChange[]) => void;
   onToggleReminder?: (id: string, enabled: boolean) => void;
   notificationPermission?: NotificationPermission;
+  /** Opens the note a task was added from. */
+  onOpenNote?: (noteId: string) => void;
 }
 
 export function TaskListView({
@@ -60,6 +62,7 @@ export function TaskListView({
   onReorder,
   onToggleReminder,
   notificationPermission,
+  onOpenNote,
 }: TaskListViewProps) {
   const buckets = useMemo(() => bucketByQuadrant(todos, showDone), [todos, showDone]);
 
@@ -97,6 +100,7 @@ export function TaskListView({
             onAddToQuadrant={onAddToQuadrant}
             onToggleReminder={onToggleReminder}
             notificationPermission={notificationPermission}
+            onOpenNote={onOpenNote}
           />
         ))}
       </div>
@@ -120,6 +124,7 @@ function QuadrantGroup({
   onAddToQuadrant,
   onToggleReminder,
   notificationPermission,
+  onOpenNote,
 }: QuadrantGroupProps) {
   const { setNodeRef, isOver } = useDroppable({ id: quadrantDropId(q.id), disabled: dragDisabled });
   const openCount = tasks.filter((t) => t.status !== 'done').length;
@@ -155,6 +160,7 @@ function QuadrantGroup({
               onOpen={onOpen}
               onToggleReminder={onToggleReminder}
               notificationPermission={notificationPermission}
+              onOpenNote={onOpenNote}
             />
           ))}
         </SortableContext>

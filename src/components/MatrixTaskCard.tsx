@@ -22,6 +22,8 @@ interface MatrixTaskCardProps {
   onToggleReminder?: (id: string, enabled: boolean) => void;
   index: number;
   notificationPermission?: NotificationPermission;
+  /** Opens the note a task was added from. */
+  onOpenNote?: (noteId: string) => void;
 }
 
 const CHIP = 'inline-flex items-center gap-1 rounded-full px-2.5 py-[3px] text-[12px] leading-none whitespace-nowrap';
@@ -47,6 +49,7 @@ export function MatrixTaskCard({
   onToggleReminder,
   index,
   notificationPermission,
+  onOpenNote,
 }: MatrixTaskCardProps) {
   const [deleting, setDeleting] = useState(false);
   const isDone = todo.status === 'done';
@@ -56,7 +59,8 @@ export function MatrixTaskCard({
   const reminderStatus = !isDone && todo.dueDate ? getReminderStatus(todo) : null;
   const supported = isNotificationSupported();
   const showReminderChip = !isDone && !!reminderStatus && reminderStatus !== 'no-reminder';
-  const hasMeta = !!categoryConfig || !!dueInfo || showReminderChip || !!todo.note;
+  const fromNote = !!todo.sourceNoteId && !!onOpenNote;
+  const hasMeta = !!categoryConfig || !!dueInfo || showReminderChip || !!todo.note || fromNote;
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -150,6 +154,18 @@ export function MatrixTaskCard({
             <span className={cn(CHIP, 'text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)]')}>
               {categoryConfig.label}
             </span>
+          )}
+
+          {fromNote && (
+            <button
+              type="button"
+              onClick={() => onOpenNote!(todo.sourceNoteId!)}
+              title="Open the note this came from"
+              aria-label={`Open the note “${todo.text}” came from`}
+              className={cn(CHIP, 'text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)] transition-colors duration-150 hover:text-a-ink')}
+            >
+              <FileText className="size-3" strokeWidth={2.75} aria-hidden /> Note
+            </button>
           )}
 
           {dueInfo && (

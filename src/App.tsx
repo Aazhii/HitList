@@ -9,6 +9,7 @@ import {
   SlidersHorizontal,
 } from 'lucide-react';
 import { NotesWorkspace } from '@/components/NotesWorkspace';
+import type { NoteTaskLinking } from '@/components/NoteEditor';
 import { AutomationsPage } from '@/pages/AutomationsPage';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useInAppNotifications } from '@/hooks/useInAppNotifications';
@@ -370,6 +371,8 @@ function App() {
   const [showTodayHistory, setShowTodayHistory] = useState(false);
   const [defaultReminderMinutes, setDefaultReminderMinutes] = useState<ReminderMinutes>(DEFAULT_REMINDER_MINUTES);
   const [activeView, setActiveView] = useState<AppView>('tasks');
+  /** A note to open once Notes mounts — set from a task's "Note" chip. */
+  const [pendingNoteId, setPendingNoteId] = useState<string | null>(null);
   // List vs Matrix is a mode within Tasks, remembered across reloads.
   const [tasksMode, setTasksMode] = useLocalStorage<'list' | 'matrix'>('hitlist-tasks-mode', 'matrix');
 
@@ -797,6 +800,106 @@ function App() {
     setFilterState(DEFAULT_FILTERS);
   }, []);
 
+  // ── Notes → quadrants ─────────────────────────────────────────────────────
+  // A note block added to a quadrant via "@" becomes a task that remembers the
+  // block (SourceNoteId/SourceBlockId). The block keeps the task id and shows
+  // the task live. Nothing here ever deletes a task or edits a note.
+
+  const todosRef = useRef(todos);
+  useEffect(() => { todosRef.current = todos; }, [todos]);
+  const titleSyncTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  useEffect(() => {
+    const timers = titleSyncTimers.current;
+    return () => { timers.forEach(clearTimeout); };
+  }, []);
+
+  const handleCreateLinkedTask = useCallback<NoteTaskLinking['createTask']>(
+    async ({ listId, quadrant, title, noteId, blockId }) => {
+      const maxOrder = todosRef.current
+        .filter((t) => t.listId === listId)
+        .reduce((m, t) => Math.max(m, t.order), -1);
+      const quadrantMap: Record<Quadrant, import('@/lib/api').Quadrant> = {
+        do: 'DO', schedule: 'SCHEDULE', delegate: 'DELEGATE', eliminate: 'ELIMINATE',
+      };
+      // The server only stores ids of this shape; anything else is linked from
+      // the note side only rather than failing the whole create.
+      const safeId = (v: string) => (/^[A-Za-z0-9_-]{1,64}$/.test(v) ? v : undefined);
+
+      const created = await server.createTask({
+        title,
+        status: 'TODO',
+        quadrant: quadrantMap[quadrant],
+        listId,
+        taskOrder: maxOrder + 1,
+        sourceNoteId: safeId(noteId),
+        sourceBlockId: safeId(blockId),
+      });
+      if (!created) {
+        toast.error("Couldn't add it to the quadrant", { description: 'The note is unchanged.', duration: 3000 });
+        return null;
+      }
+      const todo = apiTaskToTodo(created);
+      setTodos((prev) => (prev.some((t) => t.id === todo.id) ? prev : [todo, ...prev]));
+      const listName = lists.find((l) => l.id === listId)?.name;
+      toast.success(`Added to ${getQuadrantConfig(quadrant).label}${listName ? ` · ${listName}` : ''}`, {
+        description: title,
+        duration: 2500,
+      });
+      return todo;
+    },
+    [lists, server, setTodos],
+  );
+
+  /** A linked block was edited: its text becomes the task title, debounced per task. */
+  const handleUpdateLinkedTaskTitle = useCallback((taskId: string, title: string) => {
+    const timers = titleSyncTimers.current;
+    clearTimeout(timers.get(taskId));
+    timers.set(taskId, setTimeout(() => {
+      timers.delete(taskId);
+      const current = todosRef.current.find((t) => t.id === taskId);
+      if (!current || current.text === title) return;
+      setTodos((prev) => prev.map((t) => (t.id === taskId ? { ...t, text: title } : t)));
+      void server.updateTask(taskId, { title });
+    }, 800));
+  }, [server, setTodos]);
+
+  /** Unlink from the note: clears the task's source, keeps the task. */
+  const handleUnlinkTask = useCallback((taskId: string) => {
+    const current = todosRef.current.find((t) => t.id === taskId);
+    if (!current?.sourceNoteId && !current?.sourceBlockId) return;
+    setTodos((prev) => prev.map((t) => (
+      t.id === taskId ? { ...t, sourceNoteId: undefined, sourceBlockId: undefined } : t
+    )));
+    void server.updateTask(taskId, { sourceNoteId: '', sourceBlockId: '' });
+  }, [server, setTodos]);
+
+  const handleOpenLinkedTask = useCallback((taskId: string) => {
+    const t = todosRef.current.find((x) => x.id === taskId);
+    if (!t) { toast.error('That task no longer exists', { duration: 2500 }); return; }
+    setActiveView('tasks');
+    if (t.listId && t.listId !== activeListId) handleSelectList(t.listId);
+    handleOpenDetail(t);
+  }, [activeListId, handleSelectList, handleOpenDetail]);
+
+  const handleOpenSourceNote = useCallback((noteId: string) => {
+    setDetailOpen(false);
+    setPendingNoteId(noteId);
+    setActiveView('notes');
+  }, []);
+
+  const noteLinking = useMemo<NoteTaskLinking>(() => ({
+    lists,
+    todos,
+    tasksLoaded: !server.loading,
+    preferredListId: activeListId,
+    createTask: handleCreateLinkedTask,
+    updateTaskTitle: handleUpdateLinkedTaskTitle,
+    unlinkTask: handleUnlinkTask,
+    openTask: handleOpenLinkedTask,
+  }), [lists, todos, server.loading, activeListId, handleCreateLinkedTask, handleUpdateLinkedTaskTitle, handleUnlinkTask, handleOpenLinkedTask]);
+
+  const handleOpenNoteHandled = useCallback(() => setPendingNoteId(null), []);
+
   // ── Clear done (server-aware) ─────────────────────────────────────────────
 
   const handleClearDone = useCallback(async () => {
@@ -919,7 +1022,11 @@ function App() {
       >
         {activeView === 'notes' ? (
           <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-            <NotesWorkspace />
+            <NotesWorkspace
+              linking={noteLinking}
+              openNoteId={pendingNoteId}
+              onOpenNoteHandled={handleOpenNoteHandled}
+            />
           </div>
         ) : activeView === 'automations' ? (
           <div className="flex min-h-0 min-w-0 flex-1">
@@ -988,6 +1095,7 @@ function App() {
                   onAddToQuadrant={handleAddToQuadrant}
                   onReorder={handleReorder}
                   onToggleReminder={handleToggleReminder}
+                  onOpenNote={handleOpenSourceNote}
                   notificationPermission={notificationPermission}
                 />
               ) : (
@@ -1000,6 +1108,7 @@ function App() {
                   nextId={nextId}
                   showDone={showDone}
                   onToggleReminder={handleToggleReminder}
+                  onOpenNote={handleOpenSourceNote}
                   notificationPermission={notificationPermission}
                 />
               )}
@@ -1065,6 +1174,7 @@ function App() {
         todo={detailTodo}
         open={detailOpen}
         onClose={() => setDetailOpen(false)}
+        onOpenNote={handleOpenSourceNote}
         onUpdate={handleUpdate}
         onDelete={handleDelete}
         onStatusChange={handleStatusChange}
