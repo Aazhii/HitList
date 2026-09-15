@@ -57,6 +57,8 @@ function todoToApiTask(t: Todo): ApiTask {
     completedAt: t.completedAt ? new Date(t.completedAt).toISOString() : null,
     createdAt: new Date(t.createdAt).toISOString(),
     updatedAt: new Date(t.createdAt).toISOString(),
+    sourceNoteId: t.sourceNoteId || null,
+    sourceBlockId: t.sourceBlockId || null,
   };
 }
 
@@ -164,6 +166,8 @@ export const mockTaskApi = {
       order: req.taskOrder ?? state.todos.length,
       reminderEnabled: req.reminderEnabled ?? false,
       reminderMinutesBefore: req.reminderMinutesBefore,
+      sourceNoteId: req.sourceNoteId || undefined,
+      sourceBlockId: req.sourceBlockId || undefined,
       createdAt: now,
     };
     setState((s) => ({ ...s, todos: [...s.todos, newTodo] }));
@@ -188,6 +192,8 @@ export const mockTaskApi = {
       category: req.category !== undefined ? req.category : existing.category,
       reminderEnabled: req.reminderEnabled !== undefined ? req.reminderEnabled : existing.reminderEnabled,
       reminderMinutesBefore: req.reminderMinutesBefore !== undefined ? req.reminderMinutesBefore : existing.reminderMinutesBefore,
+      sourceNoteId: req.sourceNoteId !== undefined ? (req.sourceNoteId || undefined) : existing.sourceNoteId,
+      sourceBlockId: req.sourceBlockId !== undefined ? (req.sourceBlockId || undefined) : existing.sourceBlockId,
     };
     setState((s) => ({ ...s, todos: s.todos.map((t) => (t.id === id ? updated : t)) }));
     return todoToApiTask(updated);

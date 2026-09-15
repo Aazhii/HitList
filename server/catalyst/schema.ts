@@ -83,6 +83,14 @@ export const SCHEMA: TableSpec[] = [
       { name: 'CompletedAt', type: 'bigint', note: 'epoch ms, 0 = not completed' },
       { name: 'CreatedAt',   type: 'bigint', note: 'epoch ms' },
       { name: 'UpdatedAt',   type: 'bigint', note: 'epoch ms' },
+      // Added after launch, so every row written before them has these empty.
+      // The server reads and writes them only once it has confirmed they
+      // exist — see ensureTaskLinkColumns — so deploying before
+      // `pnpm catalyst:setup` has run cannot break task reads.
+      { name: 'SourceNoteId',  type: 'varchar', maxLength: 64,
+        note: 'Note a task was added from via the @ menu; empty = not from a note' },
+      { name: 'SourceBlockId', type: 'varchar', maxLength: 64,
+        note: 'Block inside that note' },
     ],
   },
   {

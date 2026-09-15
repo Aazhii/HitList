@@ -52,6 +52,13 @@ export interface NoteBlock {
    */
   emoji?: string;
   tone?: CalloutTone;
+  /**
+   * The task this block was added to a quadrant as, via the @ menu. Optional
+   * for the same reason as the callout fields: blocks without it are simply
+   * unlinked. Only the id is stored — the task's quadrant and list are read
+   * live from the task, which stays the source of truth.
+   */
+  taskId?: string;
 }
 
 export interface Note {

@@ -614,6 +614,9 @@ interface DbTask {
   completedAt: number;   // 0 = not completed
   createdAt: number;
   updatedAt: number;
+  /** Note the task was added from via the @ menu; '' when not from a note. */
+  sourceNoteId: string;
+  sourceBlockId: string;
 }
 
 // Resolved at startup: 'testTable' if available, else 'KaizenTasks'
@@ -621,6 +624,43 @@ function getTasksTable(): string { return TASKS_TABLE; }
 
 // Full column list including OwnerId for owner-scoped queries
 const TASKS_COLS = 'TaskId,OwnerId,Title,Status,Quadrant,TaskPriority,Note,DueDate,DueTime,Category,ListId,TaskOrder,ReminderEnabled,ReminderMinutesBefore,CompletedAt,CreatedAt,UpdatedAt';
+
+/**
+ * Whether KaizenTasks has the SourceNoteId/SourceBlockId columns.
+ *
+ * They were added after launch by `pnpm catalyst:setup`. Selecting a column
+ * that does not exist fails the whole query, so if this server were deployed
+ * before the columns were created, naming them would break every task read for
+ * every user. Instead the server checks once, and until the columns exist it
+ * reads and writes exactly the columns it always did: links are simply not
+ * stored. null = not checked yet.
+ */
+let taskLinkColumns: boolean | null = null;
+
+async function ensureTaskLinkColumns(req: express.Request): Promise<boolean> {
+  if (taskLinkColumns !== null || !catalystAvailable) return taskLinkColumns ?? false;
+  try {
+    await initCatalyst(req).zcql().executeZCQLQuery(`SELECT SourceNoteId FROM ${TASKS_TABLE} LIMIT 1`);
+    taskLinkColumns = true;
+  } catch (e) {
+    const msg = describeError(e);
+    if (/column|invalid|not found|no such|does not exist/i.test(msg)) {
+      taskLinkColumns = false;
+      console.warn(
+        `[kaizen] ${TASKS_TABLE}.SourceNoteId is missing — note links will not be stored until ` +
+        '`pnpm catalyst:setup` adds it. Existing task reads and writes are unaffected.'
+      );
+    }
+    // Anything else (a network or credential blip) is not cached, so the next
+    // request checks again. Until then this request behaves as before.
+  }
+  return taskLinkColumns ?? false;
+}
+
+/** The task columns to SELECT, given what the table has. */
+function tasksCols(): string {
+  return taskLinkColumns ? `${TASKS_COLS},SourceNoteId,SourceBlockId` : TASKS_COLS;
+}
 
 function rowToTask(row: ICatalystRow): DbTask {
   return {
@@ -641,6 +681,9 @@ function rowToTask(row: ICatalystRow): DbTask {
     completedAt:           Number(row['CompletedAt']) || 0,
     createdAt:             Number(row['CreatedAt']) || Date.now(),
     updatedAt:             Number(row['UpdatedAt']) || Date.now(),
+    // Absent on rows from before the columns existed, or when they were not selected.
+    sourceNoteId:          row['SourceNoteId'] != null ? String(row['SourceNoteId']) : '',
+    sourceBlockId:         row['SourceBlockId'] != null ? String(row['SourceBlockId']) : '',
   };
 }
 
@@ -667,6 +710,11 @@ function taskToRow(t: DbTask): Record<string, string | number | null> {
     CompletedAt:           String(t.completedAt),
     CreatedAt:             String(t.createdAt),
     UpdatedAt:             String(t.updatedAt),
+    // Only when the columns exist. Leaving them out of an update leaves any
+    // stored value untouched, so this can never clear a link.
+    ...(taskLinkColumns
+      ? { SourceNoteId: t.sourceNoteId ?? '', SourceBlockId: t.sourceBlockId ?? '' }
+      : {}),
   };
 }
 
@@ -688,6 +736,9 @@ function dbTaskToApi(t: DbTask) {
     completedAt:           t.completedAt ? new Date(t.completedAt).toISOString() : null,
     createdAt:             new Date(t.createdAt).toISOString(),
     updatedAt:             new Date(t.updatedAt).toISOString(),
+    // `|| null` also covers JSON-file tasks written before these fields existed.
+    sourceNoteId:          t.sourceNoteId || null,
+    sourceBlockId:         t.sourceBlockId || null,
   };
 }
 
@@ -796,7 +847,8 @@ async function catalystGetOwnerRows<T>(
   converter: (row: ICatalystRow) => T
 ): Promise<T[]> {
   const app = initCatalyst(req);
-  const cols = table === getTasksTable() ? TASKS_COLS : LISTS_COLS;
+  if (table === getTasksTable()) await ensureTaskLinkColumns(req);
+  const cols = table === getTasksTable() ? tasksCols() : LISTS_COLS;
   try {
     const results = await app.zcql().executeZCQLQuery(
       `SELECT ${cols} FROM ${table} WHERE ${ownerCol} = ${zcqlString(ownerId)}`
@@ -922,6 +974,13 @@ function optString(
   return value;
 }
 
+/** Optional id: '' clears; anything else must be a safe id. */
+function optSafeId(errs: FieldErrors, field: string, value: unknown): string {
+  const v = optString(errs, field, value, 64);
+  if (v !== '' && !SAFE_ID.test(v)) errs.add(field, `must match ${String(SAFE_ID)}`);
+  return v;
+}
+
 /** Optional member of a fixed set. Case-insensitive, stored upper-case. */
 function optEnum<T extends string>(
   errs: FieldErrors, field: string, value: unknown, allowed: readonly T[], fallback: T | ''
@@ -1036,6 +1095,8 @@ function parseTaskPatch(body: Record<string, unknown>, errs: FieldErrors): Parti
   if (has('taskOrder'))             patch.taskOrder             = optNumber(errs, 'taskOrder', body['taskOrder'], 0);
   if (has('reminderEnabled'))       patch.reminderEnabled       = optBoolean(errs, 'reminderEnabled', body['reminderEnabled'], false);
   if (has('reminderMinutesBefore')) patch.reminderMinutesBefore = optNumber(errs, 'reminderMinutesBefore', body['reminderMinutesBefore'], 0, 0);
+  if (has('sourceNoteId'))          patch.sourceNoteId          = optSafeId(errs, 'sourceNoteId', body['sourceNoteId']);
+  if (has('sourceBlockId'))         patch.sourceBlockId         = optSafeId(errs, 'sourceBlockId', body['sourceBlockId']);
 
   // id, ownerId, createdAt, updatedAt and completedAt are server-owned and are
   // deliberately absent from this list.
@@ -2073,6 +2134,8 @@ app.post('/api/tasks', async (req, res) => {
     taskOrder:             optNumber(errs, 'taskOrder', body['taskOrder'], 0),
     reminderEnabled:       optBoolean(errs, 'reminderEnabled', body['reminderEnabled'], false),
     reminderMinutesBefore: optNumber(errs, 'reminderMinutesBefore', body['reminderMinutesBefore'], 0, 0),
+    sourceNoteId:          optSafeId(errs, 'sourceNoteId', body['sourceNoteId']),
+    sourceBlockId:         optSafeId(errs, 'sourceBlockId', body['sourceBlockId']),
   };
 
   if (!errs.ok || title === undefined) { errs.send(res); return; }
@@ -2092,6 +2155,9 @@ app.post('/api/tasks', async (req, res) => {
 
   try {
     if (catalystAvailable) {
+      // An insert reads no rows first, so check the columns here or the link
+      // would be dropped from a task created before any read.
+      await ensureTaskLinkColumns(req);
       await catalystInsertRow(req, getTasksTable(), taskToRow(task));
       await syncReminderFor(req, ownerId, task);
       res.status(201).json(dbTaskToApi(task));

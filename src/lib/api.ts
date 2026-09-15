@@ -30,6 +30,9 @@ export interface ApiTask {
   completedAt: string | null;  // ISO-8601 instant
   createdAt: string;
   updatedAt: string;
+  /** Set when the task was added from a note block via the @ menu. Absent from older servers. */
+  sourceNoteId?: string | null;
+  sourceBlockId?: string | null;
 }
 
 export interface ApiList {
@@ -62,6 +65,9 @@ export interface TaskCreateRequest {
   taskOrder?: number;
   reminderEnabled?: boolean;
   reminderMinutesBefore?: number;
+  /** The note block this task was added from; '' clears on update. */
+  sourceNoteId?: string;
+  sourceBlockId?: string;
 }
 
 export type TaskUpdateRequest = Partial<TaskCreateRequest>;

@@ -34,6 +34,9 @@ server/*-db.json.tmp
 server/*.tmp
 server/*.corrupt.*
 
+# Data Store backups (scripts/backup-tables.mjs) — real user data, never commit
+backups/
+
 # Tool caches
 .eslintcache
 

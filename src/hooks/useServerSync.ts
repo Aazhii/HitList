@@ -448,6 +448,8 @@ export function apiTaskToTodo(t: ApiTask) {
     order:                 t.taskOrder,
     reminderEnabled:       t.reminderEnabled,
     reminderMinutesBefore: t.reminderMinutesBefore ?? undefined,
+    sourceNoteId:          t.sourceNoteId || undefined,
+    sourceBlockId:         t.sourceBlockId || undefined,
   };
 }
 

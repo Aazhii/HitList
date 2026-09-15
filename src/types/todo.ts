@@ -120,6 +120,9 @@ export interface Todo {
   quadrant: Quadrant;    // Eisenhower Matrix quadrant
   reminderEnabled?: boolean;       // whether reminder is active
   reminderMinutesBefore?: number;  // minutes before due to fire (5/15/30/60)
+  /** Set when added from a note block via the @ menu. Optional: stored state predates it. */
+  sourceNoteId?: string;
+  sourceBlockId?: string;
 }
 
 export interface KaizenList {
