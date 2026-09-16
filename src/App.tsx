@@ -12,6 +12,7 @@ import { NotesWorkspace } from '@/components/NotesWorkspace';
 import type { NoteTaskLinking } from '@/components/NoteEditor';
 import { AutomationsPage } from '@/pages/AutomationsPage';
 import { DatabasesPage } from '@/pages/DatabasesPage';
+import { CalendarPage } from '@/pages/CalendarPage';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useInAppNotifications } from '@/hooks/useInAppNotifications';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
@@ -37,7 +38,6 @@ import { TaskBoardView } from '@/components/tasks/TaskBoardView';
 import { ViewTabs, type NewViewInput } from '@/components/tasks/ViewTabs';
 import { ColumnsMenu } from '@/components/tasks/ColumnsMenu';
 import { sortByColumnOrder } from '@/components/tasks/TaskTableView';
-import { TaskCalendarView } from '@/components/tasks/TaskCalendarView';
 import { TaskDetailPanel } from '@/components/TaskDetailPanel';
 import { AppShell } from '@/components/shell/AppShell';
 import { IconRail, type AppView } from '@/components/shell/IconRail';
@@ -492,6 +492,8 @@ function App() {
   const [displayByList, setDisplayByList] = useLocalStorage<Record<string, ViewDisplay>>('hitlist-table-display-v1', {});
   /** The saved view whose tab is open, or null on a built-in tab. */
   const [appliedViewId, setAppliedViewId] = useState<string | null>(null);
+  /** A database the calendar asked to open, handed to the Databases page once. */
+  const [pendingDatabaseId, setPendingDatabaseId] = useState<string | null>(null);
 
   // ── Notifications ─────────────────────────────────────────────────────────
   const { permission: notificationPermission, requestPermission } = useNotifications(todos);
@@ -576,7 +578,9 @@ function App() {
     }
     setFilterState(normaliseFilters(view.filters));
     setShowDone(view.showDone);
-    setTasksMode(view.layout);
+    // A view saved as a calendar predates the Calendar view in the rail; show it
+    // as a table rather than a layout the tasks page no longer has.
+    setTasksMode(view.layout === 'calendar' ? 'table' : view.layout);
     setAppliedViewId(view.id);
     // The view's columns become the ones on screen for whichever list it opens.
     setDisplayByList((prev) => ({ ...prev, [view.scopeListId ?? activeListId]: view.display }));
@@ -1278,7 +1282,7 @@ function App() {
               only the table has a use for it. */}
           <TopBarToggle
             label="Task view"
-            value={tasksMode === 'board' || tasksMode === 'calendar' ? 'table' : tasksMode}
+            value={tasksMode === 'board' ? 'table' : tasksMode}
             onChange={changeLayout}
             options={[{ value: 'list', label: 'List' }, { value: 'matrix', label: 'Matrix' }, { value: 'table', label: 'Table' }]}
           />
@@ -1383,7 +1387,16 @@ function App() {
             />
           </div>
         ) : activeView === 'databases' ? (
-          <DatabasesPage />
+          <DatabasesPage openDatabaseId={pendingDatabaseId} onOpenHandled={() => setPendingDatabaseId(null)} />
+        ) : activeView === 'calendar' ? (
+          <CalendarPage
+            lists={lists}
+            onOpenTask={(taskId) => {
+              const t = todos.find((x) => x.id === taskId);
+              if (t) { setActiveView('tasks'); handleOpenDetail(t); }
+            }}
+            onOpenDatabase={(databaseId) => { setPendingDatabaseId(databaseId); setActiveView('databases'); }}
+          />
         ) : (
           <ViewLayout
             contextLabel="Lists"
@@ -1452,7 +1465,7 @@ function App() {
             />
 
             <div className="px-4 py-[22px] md:px-[26px]">
-              {!server.loading && listTodos.length > 0 && (tasksMode === 'table' || tasksMode === 'board' || tasksMode === 'calendar') && (
+              {!server.loading && listTodos.length > 0 && (tasksMode === 'table' || tasksMode === 'board') && (
                 <ViewTabs
                   layout={tasksMode}
                   views={savedViews.views}
@@ -1514,20 +1527,6 @@ function App() {
                   onToggleReminder={handleToggleReminder}
                   onOpenNote={handleOpenSourceNote}
                   notificationPermission={notificationPermission}
-                />
-              ) : tasksMode === 'calendar' ? (
-                <TaskCalendarView
-                  todos={visibleTodos}
-                  showDone={showDoneEffective}
-                  compare={crossQuadrantCompare}
-                  onMove={(id, changes) => {
-                    const before = todos.find((t) => t.id === id);
-                    const previous = { dueDate: before?.dueDate ?? '', dueTime: before?.dueTime ?? '' };
-                    undoable('Due date moved', () => { void handleUpdate(id, changes, { quiet: true }); },
-                      () => { void handleUpdate(id, previous, { quiet: true }); });
-                  }}
-                  onOpen={handleOpenDetail}
-                  onAddOnDate={(date) => { setDefaultQuadrant('do'); setDefaultDueDate(date); setDialogOpen(true); }}
                 />
               ) : tasksMode === 'board' ? (
                 <TaskBoardView

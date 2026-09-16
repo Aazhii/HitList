@@ -1,14 +1,16 @@
 import type { ReactNode } from 'react';
-import { Leaf, ListChecks, StickyNote, Table2, Zap } from 'lucide-react';
+import { CalendarDays, Leaf, ListChecks, StickyNote, Table2, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-export type AppView = 'tasks' | 'notes' | 'automations' | 'databases';
+export type AppView = 'tasks' | 'notes' | 'automations' | 'databases' | 'calendar';
 
 const VIEWS: ReadonlyArray<{ id: AppView; label: string; icon: typeof ListChecks }> = [
   { id: 'tasks', label: 'Tasks', icon: ListChecks },
   { id: 'notes', label: 'Notes', icon: StickyNote },
   { id: 'automations', label: 'Automations', icon: Zap },
   { id: 'databases', label: 'Databases', icon: Table2 },
+  // One calendar for everything that has a date: tasks and database records.
+  { id: 'calendar', label: 'Calendar', icon: CalendarDays },
 ];
 
 interface IconRailProps {

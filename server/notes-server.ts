@@ -1950,6 +1950,76 @@ app.put('/api/databases/rows/:recordId/fields/:fieldId', async (req, res) => {
   }
 });
 
+// ── The calendar ──────────────────────────────────────────────────────────────
+
+/**
+ * Everything that sits on a date: tasks by their due date, and the records of
+ * every database that has chosen a date column.
+ *
+ * One route rather than one call per database. The client would otherwise fetch
+ * each database's rows and values separately and join them itself, which is N+1
+ * requests and a join done in the browser over data it does not otherwise need.
+ */
+app.get('/api/calendar', async (req, res) => {
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  await ensureDatabaseDateFieldColumn(req);
+  await ensureFieldsDatabaseColumn(req);
+
+  try {
+    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+
+    const [tasks, databases] = await Promise.all([
+      catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask),
+      listDatabases(catalyst, ownerId),
+    ]);
+
+    // Only databases that have said which column the calendar reads.
+    const dated = databases.filter((d) => d.dateFieldId);
+    const records: Array<{
+      id: string; databaseId: string; databaseName: string; title: string; date: string;
+    }> = [];
+
+    if (dated.length > 0) {
+      const props = await listProps(catalyst, ownerId);
+      // fieldId -> the database it dates, so a value can be matched in one pass.
+      const dateFieldToDb = new Map(dated.map((d) => [d.dateFieldId, d]));
+      const dateByRecord = new Map<string, string>();
+      for (const prop of props) {
+        if (!dateFieldToDb.has(prop.defId)) continue;
+        if (DATE_ONLY.test(prop.valueText)) dateByRecord.set(prop.taskId, prop.valueText);
+      }
+
+      for (const database of dated) {
+        for (const row of await listRows(catalyst, ownerId, database.id)) {
+          const date = dateByRecord.get(row.id);
+          if (!date) continue;
+          records.push({
+            id: row.id,
+            databaseId: database.id,
+            databaseName: database.name,
+            title: row.title,
+            date,
+          });
+        }
+      }
+    }
+
+    res.json({
+      tasks: tasks
+        .filter((t) => t.dueDate)
+        .map((t) => ({
+          id: t.id, title: t.title, listId: t.listId, status: t.status,
+          dueDate: t.dueDate, dueTime: t.dueTime, quadrant: t.quadrant,
+        })),
+      records,
+    });
+  } catch (e) {
+    sendError(res, '[GET /api/calendar]', e);
+  }
+});
+
 // ── Trial features ────────────────────────────────────────────────────────────
 
 /** The app-wide switches, so the client can say when something is paused. */
@@ -2676,6 +2746,9 @@ app.post('/api/internal/tick', async (req, res) => {
     sendError(res, '[POST /api/internal/tick]', e);
   }
 });
+
+/** A date column holds YYYY-MM-DD; anything else has no place on a calendar. */
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Constant-time string comparison. */
 function timingSafeEqual(a: string, b: string): boolean {

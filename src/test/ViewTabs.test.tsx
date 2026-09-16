@@ -48,11 +48,12 @@ function setup(over: Partial<ViewTabsProps> = {}) {
 }
 
 describe('ViewTabs', () => {
-  it('shows the three built-in tabs and the saved views that open in this list', () => {
+  it('shows the built-in tabs and the saved views that open in this list', () => {
     setup();
     expect(screen.getByRole('tab', { name: 'Table' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tab', { name: 'Board' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'Calendar' })).toBeInTheDocument();
+    // The calendar is its own view in the rail now, across tasks and databases.
+    expect(screen.queryByRole('tab', { name: 'Calendar' })).not.toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Stages' })).toBeInTheDocument();
     // Scoped to another list.
     expect(screen.queryByRole('tab', { name: 'Other list' })).not.toBeInTheDocument();
@@ -60,8 +61,8 @@ describe('ViewTabs', () => {
 
   it('switches layout and opens a saved view', () => {
     const props = setup();
-    fireEvent.click(screen.getByRole('tab', { name: 'Calendar' }));
-    expect(props.onSelectLayout).toHaveBeenCalledWith('calendar');
+    fireEvent.click(screen.getByRole('tab', { name: 'Board' }));
+    expect(props.onSelectLayout).toHaveBeenCalledWith('board');
     fireEvent.click(screen.getByRole('tab', { name: 'Stages' }));
     expect(props.onApplyView).toHaveBeenCalledWith(expect.objectContaining({ id: 'v1' }));
   });

@@ -669,6 +669,35 @@ export interface ApiRecordValue {
   value: FieldValue | null;
 }
 
+// ── The calendar ─────────────────────────────────────────────────────────────
+
+/** A task on the calendar. Only tasks with a due date are returned. */
+export interface CalendarTask {
+  id: string;
+  title: string;
+  listId: string;
+  status: TaskStatus;
+  dueDate: string;
+  dueTime: string;
+  quadrant: Quadrant;
+}
+
+/** A database record on the calendar, by its database's chosen date column. */
+export interface CalendarRecord {
+  id: string;
+  databaseId: string;
+  databaseName: string;
+  title: string;
+  date: string;
+}
+
+export const calendarApi = {
+  /** Everything that sits on a date, in one request. */
+  load(): Promise<{ tasks: CalendarTask[]; records: CalendarRecord[] }> {
+    return get<{ tasks: CalendarTask[]; records: CalendarRecord[] }>('/calendar');
+  },
+};
+
 // ── Trial features ───────────────────────────────────────────────────────────
 
 /** App-wide switches set in the KaizenTrialFeatures table. See server/trialFeatures.ts. */

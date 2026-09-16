@@ -31,7 +31,6 @@ import type { FieldDef } from '@/types/fields';
 export const TAB_LAYOUTS: ReadonlyArray<{ value: TaskLayout; label: string }> = [
   { value: 'table', label: 'Table' },
   { value: 'board', label: 'Board' },
-  { value: 'calendar', label: 'Calendar' },
 ];
 
 export interface NewViewInput {
