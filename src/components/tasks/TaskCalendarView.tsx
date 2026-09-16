@@ -23,6 +23,7 @@ import {
 } from '@dnd-kit/core';
 import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { QUADRANTS, type Todo } from '@/types/todo';
 import type { TaskCompare } from '@/lib/quadrantBuckets';
 import { localDateKey } from '@/lib/taskFilters';
@@ -44,6 +45,12 @@ export interface TaskCalendarViewProps {
 }
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+/**
+ * Chips shown on a day before the rest go behind "+N more". Enough for a normal
+ * day; past this a cell would grow until the month stopped being a month.
+ */
+const MAX_CHIPS = 3;
 
 function dateFromKey(key: string): Date {
   const [y, m, d] = key.split('-').map(Number);
@@ -200,7 +207,37 @@ function CalendarDay({ dateKey, tasks, inMonth, isToday, now, onOpen, onAddOnDat
           <Plus className="size-3.5" strokeWidth={2.75} />
         </button>
       </div>
-      {tasks.map((todo) => <TaskChip key={todo.id} todo={todo} now={now} onOpen={onOpen} />)}
+      {tasks.slice(0, MAX_CHIPS).map((todo) => <TaskChip key={todo.id} todo={todo} now={now} onOpen={onOpen} />)}
+
+      {tasks.length > MAX_CHIPS && (
+        <Popover>
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              className="rounded-[8px] px-1.5 py-0.5 text-left text-[12px] font-semibold text-a-muted transition-colors duration-150 hover:bg-a-row-hover hover:text-a-ink"
+              aria-label={`Show all ${tasks.length} tasks on ${label}`}
+            >
+              +{tasks.length - MAX_CHIPS} more
+            </button>
+          </PopoverTrigger>
+          <PopoverContent align="start" className="w-[260px] p-2">
+            <p className="px-1.5 pb-1.5 text-[12px] font-semibold text-a-muted">{label}</p>
+            {/* Click to open. Dragging stays on the grid: a drag inside a popover
+                fights the popover's own dismissal. */}
+            {tasks.map((todo) => (
+              <button
+                key={todo.id}
+                type="button"
+                onClick={() => onOpen(todo)}
+                className="block w-full text-left"
+                aria-label={`${todo.text}${todo.dueTime ? `, ${todo.dueTime}` : ''}`}
+              >
+                <TaskChipBody todo={todo} now={now} />
+              </button>
+            ))}
+          </PopoverContent>
+        </Popover>
+      )}
     </div>
   );
 }
@@ -263,6 +300,7 @@ function TaskChipBody({ todo, now, className }: { todo: Todo; now: Date; classNa
 
   return (
     <span
+      title={todo.text}
       className={cn(
         'flex min-w-0 items-center gap-1.5 rounded-[8px] px-1.5 py-1 text-[12.5px] leading-tight transition-colors duration-150 hover:bg-a-row-hover',
         className,
