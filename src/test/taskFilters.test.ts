@@ -6,6 +6,7 @@ import {
   compareForFilters,
   groupByField,
   groupFieldFor,
+  groupItemsByField,
   countActiveFilters,
   countNarrowingFilters,
   normaliseFilters,
@@ -313,5 +314,65 @@ describe('countNarrowingFilters', () => {
   it('still counts sort and grouping in the full count, which turns off manual reorder', () => {
     expect(countActiveFilters(f({ groupBy: 'stage' }))).toBe(1);
     expect(countActiveFilters(f({ sortBy: 'title' }))).toBe(1);
+  });
+});
+
+describe('groupItemsByField — the generic core', () => {
+  const stage: FieldDef = {
+    id: 'stage', name: 'Stage', kind: 'select',
+    options: [{ id: 'idea', label: 'Idea', color: 'sage' }, { id: 'doing', label: 'Doing', color: 'accent' }],
+    fieldOrder: 0, showOnCard: false, createdAt: 1, updatedAt: 1,
+  };
+  const tags: FieldDef = {
+    id: 'tags', name: 'Tags', kind: 'multi',
+    options: [{ id: 'a', label: 'A', color: 'sage' }, { id: 'b', label: 'B', color: 'do' }],
+    fieldOrder: 1, showOnCard: false, createdAt: 1, updatedAt: 1,
+  };
+
+  /** A record that is not a task: an id and a title, nothing else. */
+  const rec = (id: string, title: string) => ({ id, title });
+  const byTitle = (a: { title: string }, b: { title: string }) => a.title.localeCompare(b.title);
+  const vals: TaskFieldValues = {
+    r1: { stage: 'idea', tags: ['a', 'b'] },
+    r2: { stage: 'doing' },
+    r3: {},
+  };
+  const items = [rec('r2', 'beta'), rec('r1', 'alpha'), rec('r3', 'gamma')];
+
+  it('groups records that have no notion of done', () => {
+    const groups = groupItemsByField(items, byTitle, stage, vals);
+    expect(groups.map((g) => [g.label, g.items.map((i) => i.id)])).toEqual([
+      ['Idea', ['r1']], ['Doing', ['r2']], ['No Stage', ['r3']],
+    ]);
+  });
+
+  it('puts a multi-select record under each of its options', () => {
+    const groups = groupItemsByField(items, byTitle, tags, vals);
+    expect(groups.map((g) => [g.label, g.items.map((i) => i.id)])).toEqual([
+      ['A', ['r1']], ['B', ['r1']], ['No Tags', ['r2', 'r3']],
+    ]);
+  });
+
+  it('keeps the empty group when asked, for a board that needs somewhere to drop', () => {
+    const full: TaskFieldValues = { r1: { stage: 'idea' }, r2: { stage: 'doing' } };
+    const two = [rec('r1', 'a'), rec('r2', 'b')];
+    expect(groupItemsByField(two, byTitle, stage, full).map((g) => g.key)).toEqual(['idea', 'doing']);
+    expect(groupItemsByField(two, byTitle, stage, full, { includeEmpty: true }).map((g) => g.key))
+      .toEqual(['idea', 'doing', FIELD_EMPTY]);
+  });
+
+  it('only drops items when something says they are done', () => {
+    const done = new Set(['r2']);
+    const kept = groupItemsByField(items, byTitle, stage, vals, { showDone: false, isDone: (i) => done.has(i.id) });
+    expect(kept.find((g) => g.key === 'doing')?.items).toEqual([]);
+    // Without isDone, nothing is dropped however showDone is set.
+    const all = groupItemsByField(items, byTitle, stage, vals, { showDone: false });
+    expect(all.find((g) => g.key === 'doing')?.items.map((i) => i.id)).toEqual(['r2']);
+  });
+
+  it('sorts inside each group with the comparator it was given', () => {
+    const many: TaskFieldValues = { r1: { stage: 'idea' }, r2: { stage: 'idea' }, r3: { stage: 'idea' } };
+    const groups = groupItemsByField(items, byTitle, stage, many);
+    expect(groups[0].items.map((i) => i.title)).toEqual(['alpha', 'beta', 'gamma']);
   });
 });

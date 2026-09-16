@@ -361,6 +361,15 @@ export function groupKeysFor(def: FieldDef, value: FieldValue | undefined): stri
   return typeof value === 'string' ? [value] : [];
 }
 
+/** One group of records, whatever kind of record they are. */
+export interface FieldGroup<T> {
+  /** An option id, FIELD_SET for a ticked checkbox, or FIELD_EMPTY for no value. */
+  key: string;
+  label: string;
+  color: OptionColor | null;
+  items: T[];
+}
+
 export interface TaskGroup {
   /** An option id, or FIELD_EMPTY for tasks with no value. */
   key: string;
@@ -378,6 +387,44 @@ export interface TaskGroup {
  * A multi-select task appears in the group of every option it has. A checkbox
  * has two groups, Checked and Not checked, both always shown.
  */
+export function groupItemsByField<T extends { id: string }>(
+  items: readonly T[],
+  compare: (a: T, b: T) => number,
+  def: FieldDef,
+  values: TaskFieldValues,
+  options: {
+    includeEmpty?: boolean;
+    /** Items this says are finished are left out unless `showDone`. */
+    isDone?: (item: T) => boolean;
+    showDone?: boolean;
+  } = {},
+): Array<FieldGroup<T>> {
+  const { includeEmpty = false, isDone, showDone = true } = options;
+  const isCheckbox = def.kind === 'checkbox';
+
+  const groups: Array<FieldGroup<T>> = isCheckbox
+    ? [{ key: FIELD_SET, label: 'Checked', color: null, items: [] }]
+    : def.options.map((o) => ({ key: o.id, label: o.label, color: o.color, items: [] }));
+  const empty: FieldGroup<T> = {
+    key: FIELD_EMPTY,
+    label: isCheckbox ? 'Not checked' : `No ${def.name}`,
+    color: null,
+    items: [],
+  };
+  const byKey = new Map(groups.map((g) => [g.key, g]));
+
+  for (const item of items) {
+    if (!showDone && isDone?.(item)) continue;
+    const keys = groupKeysFor(def, values[item.id]?.[def.id]).filter((k) => byKey.has(k));
+    if (keys.length === 0) empty.items.push(item);
+    for (const k of new Set(keys)) byKey.get(k)!.items.push(item);
+  }
+  for (const g of groups) g.items.sort(compare);
+  empty.items.sort(compare);
+  return empty.items.length || includeEmpty || isCheckbox ? [...groups, empty] : groups;
+}
+
+/** The task-shaped view of the same grouping: done tasks drop out unless asked for. */
 export function groupByField(
   todos: readonly Todo[],
   showDone: boolean,
@@ -386,20 +433,9 @@ export function groupByField(
   values: TaskFieldValues,
   options: { includeEmpty?: boolean } = {},
 ): TaskGroup[] {
-  const isCheckbox = def.kind === 'checkbox';
-  const groups: TaskGroup[] = isCheckbox
-    ? [{ key: FIELD_SET, label: 'Checked', color: null, tasks: [] }]
-    : def.options.map((o) => ({ key: o.id, label: o.label, color: o.color, tasks: [] }));
-  const empty: TaskGroup = { key: FIELD_EMPTY, label: isCheckbox ? 'Not checked' : `No ${def.name}`, color: null, tasks: [] };
-  const byKey = new Map(groups.map((g) => [g.key, g]));
-
-  for (const t of todos) {
-    if (!showDone && t.status === 'done') continue;
-    const keys = groupKeysFor(def, values[t.id]?.[def.id]).filter((k) => byKey.has(k));
-    if (keys.length === 0) empty.tasks.push(t);
-    for (const k of new Set(keys)) byKey.get(k)!.tasks.push(t);
-  }
-  for (const g of groups) g.tasks.sort(compare);
-  empty.tasks.sort(compare);
-  return empty.tasks.length || options.includeEmpty || isCheckbox ? [...groups, empty] : groups;
+  return groupItemsByField(todos, compare, def, values, {
+    includeEmpty: options.includeEmpty,
+    showDone,
+    isDone: (t) => t.status === 'done',
+  }).map(({ key, label, color, items }) => ({ key, label, color, tasks: items }));
 }
