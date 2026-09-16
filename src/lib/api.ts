@@ -646,7 +646,26 @@ export const databaseApi = {
   deleteRow(recordId: string): Promise<void> {
     return del<void>(`/databases/rows/${recordId}`);
   },
+
+  /**
+   * Every value in one database. Not fieldApi.listValues, which joins against
+   * the task fields and so would drop a record's values.
+   */
+  listFieldValues(databaseId: string): Promise<ApiRecordValue[]> {
+    return get<ApiRecordValue[]>(`/databases/${databaseId}/field-values`);
+  },
+  /** Sets one record's value for one of its database's fields; null clears it. */
+  setFieldValue(recordId: string, fieldId: string, value: FieldValue | null): Promise<ApiRecordValue> {
+    return put<ApiRecordValue>(`/databases/rows/${recordId}/fields/${fieldId}`, { value });
+  },
 };
+
+export interface ApiRecordValue {
+  recordId: string;
+  fieldId: string;
+  /** null once cleared. */
+  value: FieldValue | null;
+}
 
 // ── Trial features ───────────────────────────────────────────────────────────
 

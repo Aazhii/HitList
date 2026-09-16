@@ -11,6 +11,7 @@ import {
 import { NotesWorkspace } from '@/components/NotesWorkspace';
 import type { NoteTaskLinking } from '@/components/NoteEditor';
 import { AutomationsPage } from '@/pages/AutomationsPage';
+import { DatabasesPage } from '@/pages/DatabasesPage';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useInAppNotifications } from '@/hooks/useInAppNotifications';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
@@ -1381,6 +1382,8 @@ function App() {
               onEscalationHandled={handleEscalationHandled}
             />
           </div>
+        ) : activeView === 'databases' ? (
+          <DatabasesPage />
         ) : (
           <ViewLayout
             contextLabel="Lists"
