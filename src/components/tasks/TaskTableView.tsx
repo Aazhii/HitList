@@ -43,6 +43,22 @@ type SortBy = FilterState['sortBy'];
 /** Column ids: the task's own columns, then a field's id. Title is always shown. */
 export const TASK_COLUMNS = ['title', 'status', 'quadrant', 'due'] as const;
 
+/**
+ * Columns in a saved order: those the order names first, in that order, then
+ * anything it does not mention in its natural place. Shared with the Columns
+ * menu, so the list someone reorders is the list the table renders.
+ */
+export function sortByColumnOrder<T extends { id: string }>(items: T[], order: string[]): T[] {
+  const rank = (id: string) => {
+    const i = order.indexOf(id);
+    return i === -1 ? Number.MAX_SAFE_INTEGER : i;
+  };
+  return items
+    .map((item, natural) => ({ item, natural }))
+    .sort((a, b) => rank(a.item.id) - rank(b.item.id) || a.natural - b.natural)
+    .map(({ item }) => item);
+}
+
 export interface TaskTableViewProps {
   todos: Todo[];
   showDone: boolean;
@@ -56,6 +72,8 @@ export interface TaskTableViewProps {
   fieldValues: TaskFieldValues;
   /** Column ids not shown. Title cannot be hidden. */
   hiddenColumns?: string[];
+  /** Column ids in the order to show them; anything missing keeps its natural place. */
+  columnOrder?: string[];
   onHideColumn?: (columnId: string) => void;
   onStatusChange: (id: string, status: TodoStatus) => void;
   onUpdate: (id: string, changes: Partial<Todo>) => void;
@@ -93,12 +111,28 @@ function formatDue(key: string): string {
 
 export function TaskTableView({
   todos, showDone, compare, sortBy, sortDir, onSortChange, groupField,
-  fieldDefs, fieldValues, hiddenColumns = [], onHideColumn,
+  fieldDefs, fieldValues, hiddenColumns = [], columnOrder = [], onHideColumn,
   onStatusChange, onUpdate, onSetFieldValue, onOpen, onDelete, onAddTask,
   onEditField, onDeleteField, onCreateField,
 }: TaskTableViewProps) {
   const hidden = new Set(hiddenColumns.filter((id) => id !== 'title'));
   const shownFields = fieldDefs.filter((d) => !hidden.has(d.id));
+
+  /**
+   * The columns to render, in order. Title is pinned first — it is the sticky
+   * column every row is read from — and anything the saved order does not
+   * mention keeps its natural place after what it does.
+   */
+  const columns = useMemo(() => {
+    const all: TableColumn[] = [
+      { id: 'status', label: 'Status', sortKey: 'status' },
+      { id: 'quadrant', label: 'Quadrant', sortKey: 'quadrant' },
+      { id: 'due', label: 'Due', sortKey: 'due-date' },
+      ...shownFields.map((field) => ({ id: field.id, label: field.name, sortKey: fieldSortKey(field.id), field })),
+    ];
+
+    return sortByColumnOrder(all.filter((c) => !hidden.has(c.id)), columnOrder);
+  }, [shownFields, hidden, columnOrder]);
 
   const groups: TaskGroup[] = useMemo(() => {
     if (groupField) return groupByField(todos, showDone, compare, groupField, fieldValues);
@@ -106,7 +140,7 @@ export function TaskTableView({
     return [{ key: '', label: '', color: null, tasks: rows }];
   }, [todos, showDone, compare, groupField, fieldValues]);
 
-  const columnCount = 1 + TASK_COLUMNS.filter((c) => c !== 'title' && !hidden.has(c)).length + shownFields.length + 1;
+  const columnCount = columns.length + 2;
   const rowCount = groups.reduce((n, g) => n + g.tasks.length, 0);
 
   const sortOf = (key: SortBy): 'asc' | 'desc' | null => (sortBy === key ? sortDir : null);
@@ -127,24 +161,15 @@ export function TaskTableView({
               onSort={() => onSortChange(...cycle('title'))}
               className="sticky left-0 z-10 min-w-[280px] bg-a-bg"
             />
-            {!hidden.has('status') && (
-              <ColumnHeader label="Status" sort={sortOf('status')} onSort={() => onSortChange(...cycle('status'))} onHide={onHideColumn && (() => onHideColumn('status'))} />
-            )}
-            {!hidden.has('quadrant') && (
-              <ColumnHeader label="Quadrant" sort={sortOf('quadrant')} onSort={() => onSortChange(...cycle('quadrant'))} onHide={onHideColumn && (() => onHideColumn('quadrant'))} />
-            )}
-            {!hidden.has('due') && (
-              <ColumnHeader label="Due" sort={sortOf('due-date')} onSort={() => onSortChange(...cycle('due-date'))} onHide={onHideColumn && (() => onHideColumn('due'))} />
-            )}
-            {shownFields.map((def) => (
+            {columns.map((column) => (
               <ColumnHeader
-                key={def.id}
-                label={def.name}
-                sort={sortOf(fieldSortKey(def.id))}
-                onSort={() => onSortChange(...cycle(fieldSortKey(def.id)))}
-                onHide={onHideColumn && (() => onHideColumn(def.id))}
-                onEditField={onEditField && (() => onEditField(def.id))}
-                onDeleteField={onDeleteField && (() => onDeleteField(def.id))}
+                key={column.id}
+                label={column.label}
+                sort={sortOf(column.sortKey)}
+                onSort={() => onSortChange(...cycle(column.sortKey))}
+                onHide={onHideColumn && (() => onHideColumn(column.id))}
+                onEditField={column.field && onEditField ? () => onEditField(column.id) : undefined}
+                onDeleteField={column.field && onDeleteField ? () => onDeleteField(column.id) : undefined}
               />
             ))}
             <th scope="col" className="px-2 py-2 text-left align-bottom font-normal">
@@ -183,8 +208,7 @@ export function TaskTableView({
               <TaskTableRow
                 key={todo.id}
                 todo={todo}
-                fields={shownFields}
-                hidden={hidden}
+                columns={columns}
                 values={fieldValues[todo.id]}
                 onStatusChange={onStatusChange}
                 onUpdate={onUpdate}
@@ -303,10 +327,17 @@ function ColumnHeader({ label, sort, onSort, className, onHide, onEditField, onD
   );
 }
 
+export interface TableColumn {
+  id: string;
+  label: string;
+  sortKey: SortBy;
+  /** Set for a custom field column. */
+  field?: FieldDef;
+}
+
 interface TaskTableRowProps {
   todo: Todo;
-  fields: FieldDef[];
-  hidden: Set<string>;
+  columns: TableColumn[];
   values: Record<string, FieldValue> | undefined;
   onStatusChange: TaskTableViewProps['onStatusChange'];
   onUpdate: TaskTableViewProps['onUpdate'];
@@ -315,7 +346,7 @@ interface TaskTableRowProps {
   onDelete: TaskTableViewProps['onDelete'];
 }
 
-function TaskTableRow({ todo, fields, hidden, values, onStatusChange, onUpdate, onSetFieldValue, onOpen, onDelete }: TaskTableRowProps) {
+function TaskTableRow({ todo, columns, values, onStatusChange, onUpdate, onSetFieldValue, onOpen, onDelete }: TaskTableRowProps) {
   const isDone = todo.status === 'done';
   const quadrant = QUADRANTS.find((q) => q.id === todo.quadrant) ?? QUADRANTS[0];
 
@@ -339,55 +370,63 @@ function TaskTableRow({ todo, fields, hidden, values, onStatusChange, onUpdate, 
         </div>
       </td>
 
-      {!hidden.has('status') && (
-        <td className={cn(CELL, 'min-w-[130px]')}>
-          <Select value={todo.status} onValueChange={(v) => onStatusChange(todo.id, v as TodoStatus)}>
-            <SelectTrigger size="sm" className={cn(CONTROL_ROW, 'shadow-none')} aria-label={`Status of ${todo.text}`}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {STATUS_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </td>
-      )}
+      {columns.map((column) => {
+        if (column.field) {
+          return (
+            <td key={column.id} className={cn(CELL, 'min-w-[150px]')}>
+              <FieldCell
+                def={column.field}
+                value={values?.[column.id]}
+                taskName={todo.text}
+                onChange={(value) => onSetFieldValue(todo.id, column.id, value)}
+              />
+            </td>
+          );
+        }
 
-      {!hidden.has('quadrant') && (
-        <td className={cn(CELL, 'min-w-[140px]')}>
-          <Select value={quadrant.id} onValueChange={(v) => onUpdate(todo.id, { quadrant: v as Quadrant })}>
-            <SelectTrigger size="sm" className={cn(CONTROL_ROW, 'shadow-none')} aria-label={`Quadrant of ${todo.text}`}>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {QUADRANTS.map((q) => (
-                <SelectItem key={q.id} value={q.id}>
-                  <span className="flex items-center gap-2">
-                    <span className={cn('size-2 rounded-full', q.dotClass)} aria-hidden />
-                    {q.label}
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </td>
-      )}
+        if (column.id === 'status') {
+          return (
+            <td key={column.id} className={cn(CELL, 'min-w-[130px]')}>
+              <Select value={todo.status} onValueChange={(v) => onStatusChange(todo.id, v as TodoStatus)}>
+                <SelectTrigger size="sm" className={cn(CONTROL_ROW, 'shadow-none')} aria-label={`Status of ${todo.text}`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {STATUS_OPTIONS.map((o) => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </td>
+          );
+        }
 
-      {!hidden.has('due') && (
-        <td className={cn(CELL, 'min-w-[130px]')}>
-          <DueCell todo={todo} onChange={(dueDate) => onUpdate(todo.id, { dueDate })} />
-        </td>
-      )}
+        if (column.id === 'quadrant') {
+          return (
+            <td key={column.id} className={cn(CELL, 'min-w-[140px]')}>
+              <Select value={quadrant.id} onValueChange={(v) => onUpdate(todo.id, { quadrant: v as Quadrant })}>
+                <SelectTrigger size="sm" className={cn(CONTROL_ROW, 'shadow-none')} aria-label={`Quadrant of ${todo.text}`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {QUADRANTS.map((q) => (
+                    <SelectItem key={q.id} value={q.id}>
+                      <span className="flex items-center gap-2">
+                        <span className={cn('size-2 rounded-full', q.dotClass)} aria-hidden />
+                        {q.label}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </td>
+          );
+        }
 
-      {fields.map((def) => (
-        <td key={def.id} className={cn(CELL, 'min-w-[150px]')}>
-          <FieldCell
-            def={def}
-            value={values?.[def.id]}
-            taskName={todo.text}
-            onChange={(value) => onSetFieldValue(todo.id, def.id, value)}
-          />
-        </td>
-      ))}
+        return (
+          <td key={column.id} className={cn(CELL, 'min-w-[130px]')}>
+            <DueCell todo={todo} onChange={(dueDate) => onUpdate(todo.id, { dueDate })} />
+          </td>
+        );
+      })}
 
       <td className={CELL} aria-hidden />
     </tr>

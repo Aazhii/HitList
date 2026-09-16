@@ -63,6 +63,8 @@ export interface ViewTabsProps {
   onSaveChanges: (view: ApiSavedView) => void;
   onResetChanges: (view: ApiSavedView) => void;
   onManageFields: () => void;
+  /** Sits at the end of the row — the table's Columns button. */
+  trailing?: React.ReactNode;
 }
 
 const TAB = cn(
@@ -74,7 +76,7 @@ const TAB_IDLE = 'text-a-muted hover:text-a-ink';
 export function ViewTabs({
   layout, views, appliedViewId, dirty, listId, listName, online, groupFields,
   onSelectLayout, onApplyView, onCreate, onRename, onDuplicate, onDelete,
-  onSaveChanges, onResetChanges, onManageFields,
+  onSaveChanges, onResetChanges, onManageFields, trailing,
 }: ViewTabsProps) {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
@@ -186,6 +188,8 @@ export function ViewTabs({
           onManageFields={onManageFields}
         />
       </div>
+
+      {trailing}
 
       {applied && dirty && (
         <div className="flex flex-shrink-0 items-center gap-1">

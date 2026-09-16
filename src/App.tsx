@@ -33,6 +33,8 @@ import { TaskListView } from '@/components/tasks/TaskListView';
 import { TaskTableView } from '@/components/tasks/TaskTableView';
 import { TaskBoardView } from '@/components/tasks/TaskBoardView';
 import { ViewTabs, type NewViewInput } from '@/components/tasks/ViewTabs';
+import { ColumnsMenu } from '@/components/tasks/ColumnsMenu';
+import { sortByColumnOrder } from '@/components/tasks/TaskTableView';
 import { TaskCalendarView } from '@/components/tasks/TaskCalendarView';
 import { TaskDetailPanel } from '@/components/TaskDetailPanel';
 import { AppShell } from '@/components/shell/AppShell';
@@ -45,7 +47,7 @@ import {
   applyTaskFilters, compareAcrossQuadrants, compareForFilters, countNarrowingFilters, FIELD_EMPTY,
   groupFieldFor, isGroupableField, normaliseFilters, sameFilters,
 } from '@/lib/taskFilters';
-import type { TaskLayout } from '@/lib/api';
+import type { TaskLayout, ViewDisplay } from '@/lib/api';
 import { useSavedViews } from '@/hooks/useSavedViews';
 import type { ApiSavedView } from '@/lib/api';
 import { SavedViewsSection } from '@/components/tasks/SavedViewsSection';
@@ -246,6 +248,25 @@ function AddTaskDialog({ open, defaultQuadrant, defaultDueDate, onOpenChange, on
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
+
+/** A table with no column choices: everything shown, in field order. */
+const EMPTY_DISPLAY: ViewDisplay = { hidden: [], order: [], widths: {} };
+
+/** Whether two sets of column choices would show the same table. */
+function sameDisplay(a: ViewDisplay, b: ViewDisplay): boolean {
+  const key = (d: ViewDisplay) => JSON.stringify([[...d.hidden].sort(), d.order, d.widths]);
+  return key(a) === key(b);
+}
+
+/** One column moved left or right, as the full order. */
+function moveColumn(ids: string[], columnId: string, direction: -1 | 1): string[] {
+  const from = ids.indexOf(columnId);
+  const to = from + direction;
+  if (from === -1 || to < 0 || to >= ids.length) return ids;
+  const next = [...ids];
+  next.splice(to, 0, ...next.splice(from, 1));
+  return next;
+}
 
 function getTodayKey() {
   return getTodayKeyFor(Date.now());
@@ -462,8 +483,11 @@ function App() {
   // Grouping belongs to the layout it was chosen in: picking the board's columns
   // must not silently group the table by the same field. Each layout keeps its own.
   const [groupByByLayout, setGroupByByLayout] = useLocalStorage<Record<string, string>>('hitlist-groupby-v1', {});
-  /** Table columns hidden, per list. Saving this into a view comes with DisplayJson. */
-  const [hiddenColumnsByList, setHiddenColumnsByList] = useLocalStorage<Record<string, string[]>>('hitlist-table-hidden-v1', {});
+  /**
+   * A table's columns per list: which are hidden and their order. A view that is
+   * open seeds this when applied, and Save writes it back into the view.
+   */
+  const [displayByList, setDisplayByList] = useLocalStorage<Record<string, ViewDisplay>>('hitlist-table-display-v1', {});
   /** The saved view whose tab is open, or null on a built-in tab. */
   const [appliedViewId, setAppliedViewId] = useState<string | null>(null);
 
@@ -552,8 +576,12 @@ function App() {
     setShowDone(view.showDone);
     setTasksMode(view.layout);
     setAppliedViewId(view.id);
+    // The view's columns become the ones on screen for whichever list it opens.
+    setDisplayByList((prev) => ({ ...prev, [view.scopeListId ?? activeListId]: view.display }));
     setDetailOpen(false);
-  }, [lists, setTasksMode]);
+  }, [lists, setTasksMode, setDisplayByList, activeListId]);
+
+  const tableDisplay = displayByList[activeListId] ?? EMPTY_DISPLAY;
 
   const currentViewInput = useCallback((view: Pick<ApiSavedView, 'name' | 'scopeListId' | 'viewOrder'>) => ({
     name: view.name,
@@ -561,8 +589,9 @@ function App() {
     scopeListId: view.scopeListId,
     filters: filterState,
     showDone,
+    display: displayByList[activeListId] ?? EMPTY_DISPLAY,
     viewOrder: view.viewOrder,
-  }), [tasksMode, filterState, showDone]);
+  }), [tasksMode, filterState, showDone, displayByList, activeListId]);
 
   const handleSaveView = useCallback(async (name: string, scopeToList: boolean) => {
     const created = await savedViews.createView({
@@ -584,6 +613,19 @@ function App() {
   const activeFilterCount = countActiveFilters(filterState);
   const narrowingFilterCount = countNarrowingFilters(filterState);
 
+  /** Every column the table could show, in the order it shows them. */
+  const tableColumnChoices = useMemo(() => sortByColumnOrder([
+    { id: 'title', label: 'Title', fixed: true },
+    { id: 'status', label: 'Status' },
+    { id: 'quadrant', label: 'Quadrant' },
+    { id: 'due', label: 'Due' },
+    ...taskFields.fields.map((f) => ({ id: f.id, label: f.name })),
+  ], displayByList[activeListId]?.order ?? []), [taskFields.fields, displayByList, activeListId]);
+
+  const updateTableDisplay = useCallback((change: (current: ViewDisplay) => ViewDisplay) => {
+    setDisplayByList((prev) => ({ ...prev, [activeListId]: change(prev[activeListId] ?? EMPTY_DISPLAY) }));
+  }, [setDisplayByList, activeListId]);
+
   const changeLayout = useCallback((next: TaskLayout) => {
     setGroupByByLayout((prev) => ({ ...prev, [tasksMode]: filterState.groupBy }));
     setFilterState((prev) => ({ ...prev, groupBy: groupByByLayout[next] ?? '' }));
@@ -592,8 +634,13 @@ function App() {
     setAppliedViewId(null);
   }, [tasksMode, filterState.groupBy, groupByByLayout, setGroupByByLayout, setTasksMode]);
 
-  // The screen no longer matches the view whose tab is open.
-  const viewDirty = appliedViewId !== null && activeViewId !== appliedViewId;
+  // The screen no longer matches the view whose tab is open — filters, or the
+  // table's columns, which activeViewId does not look at.
+  const appliedView = appliedViewId ? savedViews.views.find((v) => v.id === appliedViewId) : undefined;
+  const viewDirty = appliedViewId !== null && (
+    activeViewId !== appliedViewId ||
+    (appliedView !== undefined && !sameDisplay(appliedView.display, displayByList[activeListId] ?? EMPTY_DISPLAY))
+  );
 
   const handleCreateTabView = useCallback(async (input: NewViewInput) => {
     const groupBy = input.layout === 'board' ? input.groupBy
@@ -605,6 +652,7 @@ function App() {
       scopeListId: input.scopeToList ? activeListId : null,
       filters: { ...filterState, groupBy },
       showDone,
+      display: displayByList[activeListId] ?? EMPTY_DISPLAY,
     });
     if (!created) return false;
     handleApplyView(created);
@@ -1387,6 +1435,22 @@ function App() {
                   onSaveChanges={(view) => { void handleSaveViewChanges(view); }}
                   onResetChanges={handleApplyView}
                   onManageFields={() => setFieldsManagerOpen(true)}
+                  trailing={tasksMode === 'table' ? (
+                    <ColumnsMenu
+                      columns={tableColumnChoices}
+                      hidden={tableDisplay.hidden}
+                      onToggle={(columnId) => updateTableDisplay((d) => ({
+                        ...d,
+                        hidden: d.hidden.includes(columnId)
+                          ? d.hidden.filter((id) => id !== columnId)
+                          : [...d.hidden, columnId],
+                      }))}
+                      onMove={(columnId, direction) => updateTableDisplay((d) => ({
+                        ...d, order: moveColumn(tableColumnChoices.map((c) => c.id), columnId, direction),
+                      }))}
+                      onReset={() => updateTableDisplay(() => EMPTY_DISPLAY)}
+                    />
+                  ) : undefined}
                 />
               )}
               {server.loading ? (
@@ -1463,10 +1527,10 @@ function App() {
                   onOpen={handleOpenDetail}
                   onDelete={handleDelete}
                   onAddTask={(title, groupKey) => { void handleAddTaskInColumn(title, groupKey); }}
-                  hiddenColumns={hiddenColumnsByList[activeListId] ?? []}
-                  onHideColumn={(columnId) => setHiddenColumnsByList((prev) => ({
-                    ...prev,
-                    [activeListId]: [...new Set([...(prev[activeListId] ?? []), columnId])],
+                  hiddenColumns={tableDisplay.hidden}
+                  columnOrder={tableDisplay.order}
+                  onHideColumn={(columnId) => updateTableDisplay((d) => ({
+                    ...d, hidden: [...new Set([...d.hidden, columnId])],
                   }))}
                   onEditField={(fieldId) => { setFieldsManagerTarget({ fieldId }); setFieldsManagerOpen(true); }}
                   onCreateField={() => { setFieldsManagerTarget({ startNew: true }); setFieldsManagerOpen(true); }}
