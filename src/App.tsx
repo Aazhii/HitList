@@ -42,8 +42,8 @@ import { TopBar, TopBarToggle, topBarPill, topBarPrimary } from '@/components/sh
 import { UserMenu } from '@/components/shell/UserMenu';
 import { loadAppState, saveAppState, setActiveUserId } from '@/lib/storage';
 import {
-  applyTaskFilters, compareAcrossQuadrants, compareForFilters, countNarrowingFilters, groupFieldFor,
-  isGroupableField, normaliseFilters, sameFilters,
+  applyTaskFilters, compareAcrossQuadrants, compareForFilters, countNarrowingFilters, FIELD_EMPTY,
+  groupFieldFor, isGroupableField, normaliseFilters, sameFilters,
 } from '@/lib/taskFilters';
 import type { TaskLayout } from '@/lib/api';
 import { useSavedViews } from '@/hooks/useSavedViews';
@@ -746,15 +746,31 @@ function App() {
       });
       if (created) {
         // Replace temp with persisted task (has real id from mock/server)
-        setTodos((prev) => prev.map((t) => t.id === tempId ? apiTaskToTodo(created) : t));
-      } else {
-        // Mutation failed — remove optimistic entry
-        setTodos((prev) => prev.filter((t) => t.id !== tempId));
-        toast.error('Failed to save task', { duration: 3000 });
+        const saved = apiTaskToTodo(created);
+        setTodos((prev) => prev.map((t) => t.id === tempId ? saved : t));
+        // Returned so a caller can act on the real id — the board's "+ Add"
+        // sets the column's field value on the task it just created.
+        return saved;
       }
+      // Mutation failed — remove optimistic entry
+      setTodos((prev) => prev.filter((t) => t.id !== tempId));
+      toast.error('Failed to save task', { duration: 3000 });
+      return null;
     },
     [activeListId, listTodos, setTodos, server]
   );
+
+  /** "+ Add" in a board column: create the task, then give it that column's value. */
+  const handleAddTaskInColumn = useCallback(async (title: string, columnKey: string) => {
+    const created = await handleAddTask(title, 'do');
+    if (!created || !groupField) return;
+    const value: FieldValue | null =
+      columnKey === FIELD_EMPTY ? null
+      : groupField.kind === 'checkbox' ? true
+      : groupField.kind === 'multi' ? [columnKey]
+      : columnKey;
+    await taskFields.setValue(created.id, groupField.id, value);
+  }, [handleAddTask, groupField, taskFields]);
 
   // The completion toast's Undo fires after later renders; a ref keeps it
   // calling the current handler rather than the one from when it was shown.
@@ -1417,6 +1433,7 @@ function App() {
                   onGroupFieldChange={(fieldId) => setFilterState({ ...filterState, groupBy: fieldId })}
                   onManageFields={() => setFieldsManagerOpen(true)}
                   onSetFieldValue={(taskId, fieldId, value) => { void taskFields.setValue(taskId, fieldId, value); }}
+                  onAddTask={(title, columnKey) => { void handleAddTaskInColumn(title, columnKey); }}
                   onStatusChange={handleStatusChange}
                   onDelete={handleDelete}
                   onOpen={handleOpenDetail}

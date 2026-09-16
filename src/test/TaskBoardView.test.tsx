@@ -3,6 +3,7 @@
  * choosing a field.
  */
 import { fireEvent, render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import {
   BOARD_COLUMN_PREFIX, TaskBoardView, boardCardId, boardDrop, parseBoardCardId, type TaskBoardViewProps,
@@ -100,6 +101,7 @@ function setup(over: Partial<TaskBoardViewProps> = {}) {
     onGroupFieldChange: vi.fn(),
     onManageFields: vi.fn(),
     onSetFieldValue: vi.fn(),
+    onAddTask: vi.fn(),
     onStatusChange: vi.fn(),
     onDelete: vi.fn(),
     onOpen: vi.fn(),
@@ -149,5 +151,49 @@ describe('TaskBoardView', () => {
   it('says fields are unavailable when the server cannot be reached', () => {
     setup({ groupField: null, fieldDefs: [], fieldsOnline: false });
     expect(screen.getByText(/unreachable right now/)).toBeInTheDocument();
+  });
+});
+
+describe('TaskBoardView — toolbar and adding', () => {
+  // The toolbar menu is a Radix dropdown: it opens on pointer events.
+  it('says which field the columns come from, and switches to another', async () => {
+    const props = setup();
+    await userEvent.click(screen.getByRole('button', { name: 'Columns from Stage' }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: /Tags/ }));
+    expect(props.onGroupFieldChange).toHaveBeenCalledWith('tags');
+  });
+
+  it('goes back to choosing, and offers to create a field', async () => {
+    const props = setup();
+    await userEvent.click(screen.getByRole('button', { name: 'Columns from Stage' }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: 'Choose later' }));
+    expect(props.onGroupFieldChange).toHaveBeenCalledWith('');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Columns from Stage' }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: /Create a field/ }));
+    expect(props.onManageFields).toHaveBeenCalled();
+  });
+
+  it('adds a task straight into a column', () => {
+    const props = setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Add task to Doing' }));
+    const input = screen.getByRole('textbox', { name: 'New task in Doing' });
+    fireEvent.change(input, { target: { value: 'Draft the deck' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(props.onAddTask).toHaveBeenCalledWith('Draft the deck', 'doing');
+  });
+
+  it('adds nothing for an empty title, and Escape cancels', () => {
+    const props = setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Add task to Doing' }));
+    const input = screen.getByRole('textbox', { name: 'New task in Doing' });
+    fireEvent.change(input, { target: { value: '   ' } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+    expect(props.onAddTask).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add task to Doing' }));
+    fireEvent.keyDown(screen.getByRole('textbox', { name: 'New task in Doing' }), { key: 'Escape' });
+    expect(screen.queryByRole('textbox', { name: 'New task in Doing' })).not.toBeInTheDocument();
+    expect(props.onAddTask).not.toHaveBeenCalled();
   });
 });

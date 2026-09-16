@@ -27,7 +27,14 @@ import {
   useSensors,
   type DragEndEvent,
 } from '@dnd-kit/core';
-import { Columns3, Plus } from 'lucide-react';
+import { Check, ChevronDown, Columns3, Plus } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { MatrixTaskCard } from '@/components/MatrixTaskCard';
 import type { Todo, TodoStatus } from '@/types/todo';
@@ -126,11 +133,13 @@ export interface TaskBoardViewProps extends CardHandlers {
   onGroupFieldChange: (fieldId: string) => void;
   onManageFields: () => void;
   onSetFieldValue: (taskId: string, fieldId: string, value: FieldValue | null) => void;
+  /** Creates a task already in that column. Without it, columns have no "+ Add". */
+  onAddTask?: (title: string, columnKey: string) => void;
 }
 
 export function TaskBoardView({
   todos, showDone, compare, groupField, fieldDefs, fieldValues, fieldsOnline, fieldsLoading,
-  onGroupFieldChange, onManageFields, onSetFieldValue, ...cardHandlers
+  onGroupFieldChange, onManageFields, onSetFieldValue, onAddTask, ...cardHandlers
 }: TaskBoardViewProps) {
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
 
@@ -174,18 +183,35 @@ export function TaskBoardView({
       onDragCancel={() => setActiveCardId(null)}
       onDragEnd={handleDragEnd}
     >
-      <div className="w-full overflow-x-auto pb-3 animate-fade-in">
-        <div className="flex min-w-max items-start gap-4">
-          {columns.map((column) => (
-            <BoardColumn
-              key={column.key}
-              fieldId={groupField.id}
-              column={column}
-              fieldDefs={fieldDefs}
-              fieldValues={fieldValues}
-              {...cardHandlers}
-            />
-          ))}
+      <div className="animate-fade-in">
+        <BoardToolbar
+          field={groupField}
+          groupableFields={fieldDefs.filter(isGroupableField)}
+          onGroupFieldChange={onGroupFieldChange}
+          onManageFields={onManageFields}
+        />
+
+        {/* The fade shows there is more board to the right; the columns scroll under it. */}
+        <div className="relative">
+          <div className="w-full overflow-x-auto pb-3">
+            <div className="flex min-w-max items-start gap-4">
+              {columns.map((column) => (
+                <BoardColumn
+                  key={column.key}
+                  fieldId={groupField.id}
+                  column={column}
+                  fieldDefs={fieldDefs}
+                  fieldValues={fieldValues}
+                  onAddTask={onAddTask}
+                  {...cardHandlers}
+                />
+              ))}
+            </div>
+          </div>
+          <div
+            className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-a-bg to-transparent"
+            aria-hidden
+          />
         </div>
       </div>
 
@@ -209,14 +235,58 @@ export function TaskBoardView({
   );
 }
 
+interface BoardToolbarProps {
+  field: FieldDef;
+  groupableFields: FieldDef[];
+  onGroupFieldChange: (fieldId: string) => void;
+  onManageFields: () => void;
+}
+
+/** Which field the columns come from, and the way back to choosing another. */
+function BoardToolbar({ field, groupableFields, onGroupFieldChange, onManageFields }: BoardToolbarProps) {
+  return (
+    <div className="mb-3 flex items-center gap-2">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className="flex h-8 items-center gap-1.5 rounded-full px-3 text-[13.5px] text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)] transition-colors duration-150 hover:text-a-ink"
+            aria-label={`Columns from ${field.name}`}
+          >
+            <Columns3 className="size-3.5" strokeWidth={2.5} aria-hidden />
+            Columns: <span className="font-semibold text-a-ink">{field.name}</span>
+            <ChevronDown className="size-3" strokeWidth={2.75} aria-hidden />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-56">
+          {groupableFields.map((f) => (
+            <DropdownMenuItem key={f.id} onClick={() => onGroupFieldChange(f.id)}>
+              <Check className={cn('size-3.5', f.id !== field.id && 'opacity-0')} aria-hidden />
+              {f.name}
+            </DropdownMenuItem>
+          ))}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onClick={onManageFields}>
+            <Plus className="size-3.5" aria-hidden /> Create a field…
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onGroupFieldChange('')}>
+            Choose later
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
 interface BoardColumnProps extends CardHandlers {
   fieldId: string;
   column: TaskGroup;
   fieldDefs: FieldDef[];
   fieldValues: TaskFieldValues;
+  onAddTask?: (title: string, columnKey: string) => void;
 }
 
-function BoardColumn({ fieldId, column, fieldDefs, fieldValues, ...handlers }: BoardColumnProps) {
+function BoardColumn({ fieldId, column, fieldDefs, fieldValues, onAddTask, ...handlers }: BoardColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: `${BOARD_COLUMN_PREFIX}${column.key}` });
   const headingId = `board-${fieldId}-${column.key}`;
   const openCount = column.tasks.filter((t) => t.status !== 'done').length;
@@ -262,7 +332,53 @@ function BoardColumn({ fieldId, column, fieldDefs, fieldValues, ...handlers }: B
           </p>
         )}
       </div>
+
+      {onAddTask && <ColumnComposer columnLabel={column.label} onAdd={(title) => onAddTask(title, column.key)} />}
     </section>
+  );
+}
+
+/** "+ Add" at the foot of a column: type a title, Enter creates it in that column. */
+function ColumnComposer({ columnLabel, onAdd }: { columnLabel: string; onAdd: (title: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState('');
+
+  const commit = () => {
+    const trimmed = title.trim();
+    if (trimmed) onAdd(trimmed);
+    setTitle('');
+    setOpen(false);
+  };
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="mt-1.5 flex items-center gap-1.5 rounded-[10px] px-2 py-1.5 text-left text-[13px] text-a-faint transition-colors duration-150 hover:bg-a-row-hover hover:text-a-ink"
+        aria-label={`Add task to ${columnLabel}`}
+      >
+        <Plus className="size-3.5" strokeWidth={2.75} aria-hidden />
+        Add
+      </button>
+    );
+  }
+
+  return (
+    <input
+      autoFocus
+      value={title}
+      maxLength={200}
+      onChange={(e) => setTitle(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') { e.preventDefault(); commit(); }
+        if (e.key === 'Escape') { setTitle(''); setOpen(false); }
+      }}
+      placeholder="What needs to be done?"
+      aria-label={`New task in ${columnLabel}`}
+      className="mt-1.5 h-9 w-full rounded-[12px] bg-a-bg px-2.5 text-[13.5px] text-a-ink shadow-[inset_0_0_0_1px_var(--a-line)] outline-none focus-visible:shadow-[inset_0_0_0_1.5px_var(--a-accent)]"
+    />
   );
 }
 
