@@ -7,6 +7,7 @@ import {
   groupByField,
   groupFieldFor,
   countActiveFilters,
+  countNarrowingFilters,
   normaliseFilters,
   sameFilters,
   FIELD_EMPTY,
@@ -298,5 +299,19 @@ describe('grouping by multi-select and checkbox fields', () => {
   it('can group by multi-select and checkbox fields', () => {
     expect(groupFieldFor({ groupBy: 'tags' }, [tags, flag])).toBe(tags);
     expect(groupFieldFor({ groupBy: 'flag' }, [tags, flag])).toBe(flag);
+  });
+});
+
+describe('countNarrowingFilters', () => {
+  it('counts only what hides tasks, not sorting or grouping', () => {
+    expect(countNarrowingFilters(DEFAULT_FILTERS)).toBe(0);
+    expect(countNarrowingFilters(f({ sortBy: 'title', sortDir: 'desc', groupBy: 'stage' }))).toBe(0);
+    expect(countNarrowingFilters(f({ search: 'deck', status: 'TODO' }))).toBe(2);
+    expect(countNarrowingFilters(f({ fields: { a: ['x'], b: [] } }))).toBe(1);
+  });
+
+  it('still counts sort and grouping in the full count, which turns off manual reorder', () => {
+    expect(countActiveFilters(f({ groupBy: 'stage' }))).toBe(1);
+    expect(countActiveFilters(f({ sortBy: 'title' }))).toBe(1);
   });
 });

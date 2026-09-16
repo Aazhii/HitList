@@ -71,6 +71,25 @@ export const DEFAULT_FILTERS: FilterState = {
   groupBy: '',
 };
 
+/**
+ * Filters that actually hide tasks — what the Filter pill's badge counts.
+ *
+ * Sorting and grouping change the arrangement, not what is on screen, so
+ * counting them made the badge say "1 filter" for a board that hid nothing.
+ */
+export function countNarrowingFilters(f: FilterState): number {
+  let n = 0;
+  if (f.search) n++;
+  if (f.status) n++;
+  if (f.quadrant) n++;
+  if (f.due) n++;
+  if (f.dueAfter) n++;
+  if (f.dueBefore) n++;
+  n += Object.values(f.fields ?? {}).filter((choices) => choices.length > 0).length;
+  return n;
+}
+
+/** Everything the filter state changes, including sort and grouping. Manual reorder is off while any of it is set. */
 export function countActiveFilters(f: FilterState): number {
   let n = 0;
   if (f.search) n++;

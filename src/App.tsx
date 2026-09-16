@@ -41,7 +41,8 @@ import { TopBar, TopBarToggle, topBarPill, topBarPrimary } from '@/components/sh
 import { UserMenu } from '@/components/shell/UserMenu';
 import { loadAppState, saveAppState, setActiveUserId } from '@/lib/storage';
 import {
-  applyTaskFilters, compareAcrossQuadrants, compareForFilters, groupFieldFor, normaliseFilters, sameFilters,
+  applyTaskFilters, compareAcrossQuadrants, compareForFilters, countNarrowingFilters, groupFieldFor,
+  normaliseFilters, sameFilters,
 } from '@/lib/taskFilters';
 import type { TaskLayout } from '@/lib/api';
 import { useSavedViews } from '@/hooks/useSavedViews';
@@ -272,7 +273,54 @@ function NoMatchingTasks({ onClear }: { onClear: () => void }) {
 
 // ── Loading skeleton ───────────────────────────────────────────────────────
 
-function LoadingSkeleton() {
+/** The shape of whatever is loading, so the wait looks like the screen that follows. */
+function LoadingSkeleton({ layout }: { layout: TaskLayout }) {
+  if (layout === 'board') {
+    return (
+      <div className="flex gap-4 animate-fade-in" aria-hidden>
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="w-[292px] flex-shrink-0 space-y-2 rounded-[18px] bg-a-surface p-2.5">
+            <Skeleton className="h-4 w-24 bg-a-bg" />
+            {[0, 1].map((j) => <Skeleton key={j} className="h-16 w-full rounded-[14px] bg-a-bg" />)}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (layout === 'calendar') {
+    return (
+      <div className="space-y-3 animate-fade-in" aria-hidden>
+        <Skeleton className="h-6 w-40 bg-a-surface" />
+        <div className="grid grid-cols-7 gap-px">
+          {Array.from({ length: 35 }, (_, i) => <Skeleton key={i} className="h-[92px] w-full rounded-none bg-a-surface" />)}
+        </div>
+      </div>
+    );
+  }
+
+  if (layout === 'table') {
+    return (
+      <div className="space-y-2 animate-fade-in" aria-hidden>
+        <Skeleton className="h-6 w-full bg-a-surface" />
+        {[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-10 w-full rounded-[10px] bg-a-surface" />)}
+      </div>
+    );
+  }
+
+  if (layout === 'list') {
+    return (
+      <div className="mx-auto w-full max-w-[880px] space-y-6 animate-fade-in" aria-hidden>
+        {[0, 1].map((i) => (
+          <div key={i} className="space-y-2">
+            <Skeleton className="h-5 w-32 bg-a-surface" />
+            {[0, 1, 2].map((j) => <Skeleton key={j} className="h-11 w-full rounded-[14px] bg-a-surface" />)}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto grid max-w-6xl grid-cols-1 gap-4 md:grid-cols-2 animate-fade-in" aria-hidden>
       {[0, 1, 2, 3].map((i) => (
@@ -410,6 +458,9 @@ function App() {
   const [pendingEscalationTaskId, setPendingEscalationTaskId] = useState<string | null>(null);
   // List vs Matrix is a mode within Tasks, remembered across reloads.
   const [tasksMode, setTasksMode] = useLocalStorage<TaskLayout>('hitlist-tasks-mode', 'matrix');
+  // Grouping belongs to the layout it was chosen in: picking the board's columns
+  // must not silently group the table by the same field. Each layout keeps its own.
+  const [groupByByLayout, setGroupByByLayout] = useLocalStorage<Record<string, string>>('hitlist-groupby-v1', {});
 
   // ── Notifications ─────────────────────────────────────────────────────────
   const { permission: notificationPermission, requestPermission } = useNotifications(todos);
@@ -520,7 +571,16 @@ function App() {
 
   const totalCount = listTodos.length;
   const doneCount = doneTodos.length;
+  // The badge counts what hides tasks. Sort and grouping still turn off manual
+  // reorder, which is what activeFilterCount is for.
   const activeFilterCount = countActiveFilters(filterState);
+  const narrowingFilterCount = countNarrowingFilters(filterState);
+
+  const changeLayout = useCallback((next: TaskLayout) => {
+    setGroupByByLayout((prev) => ({ ...prev, [tasksMode]: filterState.groupBy }));
+    setFilterState((prev) => ({ ...prev, groupBy: groupByByLayout[next] ?? '' }));
+    setTasksMode(next);
+  }, [tasksMode, filterState.groupBy, groupByByLayout, setGroupByByLayout, setTasksMode]);
 
   // Next step: first in-progress, then first todo
   const nextId = useMemo(() => {
@@ -1065,7 +1125,7 @@ function App() {
           <TopBarToggle
             label="Task view"
             value={tasksMode === 'board' || tasksMode === 'calendar' ? 'table' : tasksMode}
-            onChange={setTasksMode}
+            onChange={changeLayout}
             options={[{ value: 'list', label: 'List' }, { value: 'matrix', label: 'Matrix' }, { value: 'table', label: 'Table' }]}
           />
 
@@ -1073,12 +1133,12 @@ function App() {
               was a filter bar in the scroll column, which scrolled away. */}
           <Popover>
             <PopoverTrigger asChild>
-              <button type="button" className={topBarPill} aria-label={`Filter${activeFilterCount ? ` (${activeFilterCount} active)` : ''}`}>
+              <button type="button" className={topBarPill} aria-label={`Filter${narrowingFilterCount ? ` (${narrowingFilterCount} active)` : ''}`}>
                 <SlidersHorizontal className="size-3.5" strokeWidth={2.75} aria-hidden />
                 <span className="hidden sm:inline">Filter</span>
-                {activeFilterCount > 0 && (
+                {narrowingFilterCount > 0 && (
                   <span className="flex min-w-[18px] items-center justify-center rounded-full bg-a-accent px-1 text-[11px] font-bold leading-[18px] text-a-bg">
-                    {activeFilterCount}
+                    {narrowingFilterCount}
                   </span>
                 )}
               </button>
@@ -1241,13 +1301,13 @@ function App() {
                   <TopBarToggle
                     label="Table, board or calendar"
                     value={tasksMode}
-                    onChange={setTasksMode}
+                    onChange={changeLayout}
                     options={[{ value: 'table', label: 'Table' }, { value: 'board', label: 'Board' }, { value: 'calendar', label: 'Calendar' }]}
                   />
                 </div>
               )}
               {server.loading ? (
-                <LoadingSkeleton />
+                <LoadingSkeleton layout={tasksMode} />
               ) : listTodos.length === 0 ? (
                 <EmptyState onAdd={() => { setDefaultQuadrant('do'); setDialogOpen(true); }} />
               ) : visibleTodos.length === 0 ? (
