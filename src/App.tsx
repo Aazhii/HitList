@@ -14,6 +14,7 @@ import { AutomationsPage } from '@/pages/AutomationsPage';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useInAppNotifications } from '@/hooks/useInAppNotifications';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
+import { useHistoryState } from '@/hooks/useHistoryState';
 import { NotificationBell } from '@/components/NotificationBell';
 import { NotificationToast } from '@/components/NotificationToast';
 import { RemindersSettingsPanel } from '@/components/RemindersSettingsPanel';
@@ -626,6 +627,21 @@ function App() {
     setDisplayByList((prev) => ({ ...prev, [activeListId]: change(prev[activeListId] ?? EMPTY_DISPLAY) }));
   }, [setDisplayByList, activeListId]);
 
+  // Back returns to the previous screen instead of leaving the app.
+  useHistoryState(
+    useMemo(
+      () => ({ view: activeView, listId: activeListId, layout: tasksMode, viewId: appliedViewId }),
+      [activeView, activeListId, tasksMode, appliedViewId],
+    ),
+    useCallback((screen) => {
+      setActiveView(screen.view as typeof activeView);
+      setAppState((prev) => ({ ...prev, activeListId: screen.listId }));
+      setTasksMode(screen.layout as TaskLayout);
+      setAppliedViewId(screen.viewId);
+      setDetailOpen(false);
+    }, [setTasksMode]),
+  );
+
   const changeLayout = useCallback((next: TaskLayout) => {
     setGroupByByLayout((prev) => ({ ...prev, [tasksMode]: filterState.groupBy }));
     setFilterState((prev) => ({ ...prev, groupBy: groupByByLayout[next] ?? '' }));
@@ -828,6 +844,23 @@ function App() {
   // The completion toast's Undo fires after later renders; a ref keeps it
   // calling the current handler rather than the one from when it was shown.
   const statusChangeRef = useRef<(id: string, status: TodoStatus) => Promise<void>>(async () => {});
+
+  /**
+   * A change the user can take back: does it, then offers Undo for a few
+   * seconds. Dragging a card between board columns, moving a task on the
+   * calendar and editing a table cell all go through this — a drag is easy to
+   * do by accident and, before this, nothing said what the old value had been.
+   *
+   * The revert runs whatever the handler is at the time it is pressed, like the
+   * completion toast above, rather than the closure from when it was shown.
+   */
+  const undoable = useCallback((what: string, apply: () => void, revert: () => void) => {
+    apply();
+    toast.success(what, {
+      duration: 5000,
+      action: { label: 'Undo', onClick: () => revert() },
+    });
+  }, []);
 
   const handleStatusChange = useCallback(
     async (id: string, status: TodoStatus) => {
@@ -1484,7 +1517,12 @@ function App() {
                   todos={visibleTodos}
                   showDone={showDoneEffective}
                   compare={crossQuadrantCompare}
-                  onMove={(id, changes) => { void handleUpdate(id, changes, { quiet: true }); }}
+                  onMove={(id, changes) => {
+                    const before = todos.find((t) => t.id === id);
+                    const previous = { dueDate: before?.dueDate ?? '', dueTime: before?.dueTime ?? '' };
+                    undoable('Due date moved', () => { void handleUpdate(id, changes, { quiet: true }); },
+                      () => { void handleUpdate(id, previous, { quiet: true }); });
+                  }}
                   onOpen={handleOpenDetail}
                   onAddOnDate={(date) => { setDefaultQuadrant('do'); setDefaultDueDate(date); setDialogOpen(true); }}
                 />
@@ -1501,7 +1539,11 @@ function App() {
                   nextId={nextId}
                   onGroupFieldChange={(fieldId) => setFilterState({ ...filterState, groupBy: fieldId })}
                   onManageFields={() => { setFieldsManagerTarget({ startNew: true }); setFieldsManagerOpen(true); }}
-                  onSetFieldValue={(taskId, fieldId, value) => { void taskFields.setValue(taskId, fieldId, value); }}
+                  onSetFieldValue={(taskId, fieldId, value) => {
+                    const before = taskFields.values[taskId]?.[fieldId] ?? null;
+                    undoable('Moved', () => { void taskFields.setValue(taskId, fieldId, value); },
+                      () => { void taskFields.setValue(taskId, fieldId, before); });
+                  }}
                   onAddTask={(title, columnKey) => { void handleAddTaskInColumn(title, columnKey); }}
                   onStatusChange={handleStatusChange}
                   onDelete={handleDelete}
@@ -1522,8 +1564,19 @@ function App() {
                   fieldDefs={taskFields.fields}
                   fieldValues={taskFields.values}
                   onStatusChange={handleStatusChange}
-                  onUpdate={(id, changes) => { void handleUpdate(id, changes, { quiet: true }); }}
-                  onSetFieldValue={(taskId, fieldId, value) => { void taskFields.setValue(taskId, fieldId, value); }}
+                  onUpdate={(id, changes) => {
+                    const before = todos.find((t) => t.id === id);
+                    const previous = Object.fromEntries(
+                      Object.keys(changes).map((key) => [key, before?.[key as keyof Todo] ?? '']),
+                    ) as Partial<Todo>;
+                    undoable('Task updated', () => { void handleUpdate(id, changes, { quiet: true }); },
+                      () => { void handleUpdate(id, previous, { quiet: true }); });
+                  }}
+                  onSetFieldValue={(taskId, fieldId, value) => {
+                    const before = taskFields.values[taskId]?.[fieldId] ?? null;
+                    undoable('Saved', () => { void taskFields.setValue(taskId, fieldId, value); },
+                      () => { void taskFields.setValue(taskId, fieldId, before); });
+                  }}
                   onOpen={handleOpenDetail}
                   onDelete={handleDelete}
                   onAddTask={(title, groupKey) => { void handleAddTaskInColumn(title, groupKey); }}
