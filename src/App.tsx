@@ -32,6 +32,7 @@ import { EisenhowerMatrix } from '@/components/EisenhowerMatrix';
 import { TaskListView } from '@/components/tasks/TaskListView';
 import { TaskTableView } from '@/components/tasks/TaskTableView';
 import { TaskBoardView } from '@/components/tasks/TaskBoardView';
+import { ViewTabs, type NewViewInput } from '@/components/tasks/ViewTabs';
 import { TaskCalendarView } from '@/components/tasks/TaskCalendarView';
 import { TaskDetailPanel } from '@/components/TaskDetailPanel';
 import { AppShell } from '@/components/shell/AppShell';
@@ -42,7 +43,7 @@ import { UserMenu } from '@/components/shell/UserMenu';
 import { loadAppState, saveAppState, setActiveUserId } from '@/lib/storage';
 import {
   applyTaskFilters, compareAcrossQuadrants, compareForFilters, countNarrowingFilters, groupFieldFor,
-  normaliseFilters, sameFilters,
+  isGroupableField, normaliseFilters, sameFilters,
 } from '@/lib/taskFilters';
 import type { TaskLayout } from '@/lib/api';
 import { useSavedViews } from '@/hooks/useSavedViews';
@@ -461,6 +462,8 @@ function App() {
   // Grouping belongs to the layout it was chosen in: picking the board's columns
   // must not silently group the table by the same field. Each layout keeps its own.
   const [groupByByLayout, setGroupByByLayout] = useLocalStorage<Record<string, string>>('hitlist-groupby-v1', {});
+  /** The saved view whose tab is open, or null on a built-in tab. */
+  const [appliedViewId, setAppliedViewId] = useState<string | null>(null);
 
   // ── Notifications ─────────────────────────────────────────────────────────
   const { permission: notificationPermission, requestPermission } = useNotifications(todos);
@@ -544,6 +547,7 @@ function App() {
     setFilterState(normaliseFilters(view.filters));
     setShowDone(view.showDone);
     setTasksMode(view.layout);
+    setAppliedViewId(view.id);
     setDetailOpen(false);
   }, [lists, setTasksMode]);
 
@@ -580,7 +584,54 @@ function App() {
     setGroupByByLayout((prev) => ({ ...prev, [tasksMode]: filterState.groupBy }));
     setFilterState((prev) => ({ ...prev, groupBy: groupByByLayout[next] ?? '' }));
     setTasksMode(next);
+    // A built-in tab is not a saved view any more.
+    setAppliedViewId(null);
   }, [tasksMode, filterState.groupBy, groupByByLayout, setGroupByByLayout, setTasksMode]);
+
+  // The screen no longer matches the view whose tab is open.
+  const viewDirty = appliedViewId !== null && activeViewId !== appliedViewId;
+
+  const handleCreateTabView = useCallback(async (input: NewViewInput) => {
+    const groupBy = input.layout === 'board' ? input.groupBy
+      : input.layout === 'table' ? filterState.groupBy
+      : '';
+    const created = await savedViews.createView({
+      name: input.name,
+      layout: input.layout,
+      scopeListId: input.scopeToList ? activeListId : null,
+      filters: { ...filterState, groupBy },
+      showDone,
+    });
+    if (!created) return false;
+    handleApplyView(created);
+    toast.success(`Created "${created.name}"`, { duration: 2000 });
+    return true;
+  }, [savedViews, filterState, activeListId, showDone, handleApplyView]);
+
+  const handleDuplicateView = useCallback(async (view: ApiSavedView) => {
+    const copy = await savedViews.createView({
+      name: `${view.name} copy`.slice(0, 100),
+      layout: view.layout,
+      scopeListId: view.scopeListId,
+      filters: view.filters,
+      showDone: view.showDone,
+    });
+    if (copy) { handleApplyView(copy); toast.success(`Created "${copy.name}"`, { duration: 2000 }); }
+  }, [savedViews, handleApplyView]);
+
+  const handleDeleteView = useCallback(async (view: ApiSavedView) => {
+    const ok = await savedViews.deleteView(view.id);
+    if (!ok) return;
+    setAppliedViewId((current) => (current === view.id ? null : current));
+    toast(`Deleted view "${view.name}"`, { duration: 2000 });
+  }, [savedViews]);
+
+  const handleSaveViewChanges = useCallback(async (view: ApiSavedView) => {
+    const saved = await savedViews.updateView(view.id, currentViewInput({
+      ...view, scopeListId: view.scopeListId ? activeListId : null,
+    }));
+    if (saved) { setAppliedViewId(saved.id); toast.success(`Updated "${saved.name}"`, { duration: 2000 }); }
+  }, [savedViews, currentViewInput, activeListId]);
 
   // Next step: first in-progress, then first todo
   const nextId = useMemo(() => {
@@ -1297,14 +1348,25 @@ function App() {
 
             <div className="px-4 py-[22px] md:px-[26px]">
               {!server.loading && listTodos.length > 0 && (tasksMode === 'table' || tasksMode === 'board' || tasksMode === 'calendar') && (
-                <div className="mb-4 flex">
-                  <TopBarToggle
-                    label="Table, board or calendar"
-                    value={tasksMode}
-                    onChange={changeLayout}
-                    options={[{ value: 'table', label: 'Table' }, { value: 'board', label: 'Board' }, { value: 'calendar', label: 'Calendar' }]}
-                  />
-                </div>
+                <ViewTabs
+                  layout={tasksMode}
+                  views={savedViews.views}
+                  appliedViewId={appliedViewId}
+                  dirty={viewDirty}
+                  listId={activeListId}
+                  listName={activeList?.name ?? 'this list'}
+                  online={savedViews.online}
+                  groupFields={taskFields.fields.filter(isGroupableField)}
+                  onSelectLayout={changeLayout}
+                  onApplyView={handleApplyView}
+                  onCreate={handleCreateTabView}
+                  onRename={(view, name) => { void savedViews.updateView(view.id, { ...view, name }); }}
+                  onDuplicate={(view) => { void handleDuplicateView(view); }}
+                  onDelete={(view) => { void handleDeleteView(view); }}
+                  onSaveChanges={(view) => { void handleSaveViewChanges(view); }}
+                  onResetChanges={handleApplyView}
+                  onManageFields={() => setFieldsManagerOpen(true)}
+                />
               )}
               {server.loading ? (
                 <LoadingSkeleton layout={tasksMode} />
