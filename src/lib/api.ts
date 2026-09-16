@@ -567,11 +567,13 @@ export interface FieldInput {
 }
 
 export const fieldApi = {
-  listFields(): Promise<FieldDef[]> {
-    return get<FieldDef[]>('/fields');
+  /** A database's fields, or the task fields when databaseId is omitted. */
+  listFields(databaseId?: string): Promise<FieldDef[]> {
+    return get<FieldDef[]>(databaseId ? `/fields?databaseId=${encodeURIComponent(databaseId)}` : '/fields');
   },
-  createField(input: FieldInput): Promise<FieldDef> {
-    return post<FieldDef>('/fields', input);
+  /** Creates a field on a database, or on tasks when databaseId is omitted. */
+  createField(input: FieldInput, databaseId?: string): Promise<FieldDef> {
+    return post<FieldDef>('/fields', databaseId ? { ...input, databaseId } : input);
   },
   updateField(id: string, input: FieldInput): Promise<FieldDef> {
     return put<FieldDef>(`/fields/${id}`, input);

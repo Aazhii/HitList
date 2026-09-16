@@ -1856,6 +1856,80 @@ app.delete('/api/databases/rows/:rowId', async (req, res) => {
   }
 });
 
+/**
+ * Every value in one database, for its own fields.
+ *
+ * Not /api/field-values: that joins against the task fields, so a record's
+ * values would be dropped on the way out.
+ */
+app.get('/api/databases/:id/field-values', async (req, res) => {
+  if (!assertSafeId(req.params.id, res)) return;
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  await ensureFieldsDatabaseColumn(req);
+
+  try {
+    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const database = await getDatabase(catalyst, ownerId, req.params.id);
+    if (!database) { res.status(404).json({ error: 'Not found' }); return; }
+
+    const [defs, props] = await Promise.all([
+      listDefs(catalyst, ownerId, database.id),
+      listProps(catalyst, ownerId),
+    ]);
+    const byId = new Map(defs.map((d) => [d.id, d]));
+
+    const out: Array<{ recordId: string; fieldId: string; value: unknown }> = [];
+    for (const prop of props) {
+      const def = byId.get(prop.defId);
+      if (!def) continue;  // a task's value, or another database's
+      const value = decodeValue(def, prop.valueText);
+      if (value !== null) out.push({ recordId: prop.taskId, fieldId: def.id, value });
+    }
+    res.json(out);
+  } catch (e) {
+    sendError(res, '[GET /api/databases/:id/field-values]', e);
+  }
+});
+
+/** Sets one record's value for one of its database's fields; null clears it. */
+app.put('/api/databases/rows/:recordId/fields/:fieldId', async (req, res) => {
+  if (!assertSafeId(req.params.recordId, res, 'recordId')) return;
+  if (!assertSafeId(req.params.fieldId, res, 'fieldId')) return;
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  await ensureFieldsDatabaseColumn(req);
+
+  try {
+    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const record = await getRow(catalyst, ownerId, req.params.recordId);
+    if (!record) { res.status(404).json({ error: 'Not found', message: 'No such record' }); return; }
+
+    const def = await getDef(catalyst, ownerId, req.params.fieldId);
+    if (!def) { res.status(404).json({ error: 'Not found', message: 'No such field' }); return; }
+    // A field belongs to one database; setting it on a record of another would
+    // store a value nothing can read back.
+    if (def.databaseId !== record.databaseId) {
+      res.status(404).json({ error: 'Not found', message: 'That field is not in this database' });
+      return;
+    }
+
+    const encoded = encodeValue(def, (req.body ?? {})['value']);
+    if (!encoded.ok) { sendFieldErrors(res, { value: encoded.error }); return; }
+
+    await setProp(catalyst, ownerId, record.id, def.id, encoded.text);
+    res.json({
+      recordId: record.id,
+      fieldId: def.id,
+      value: encoded.text === null ? null : decodeValue(def, encoded.text),
+    });
+  } catch (e) {
+    sendError(res, '[PUT /api/databases/rows/:recordId/fields/:fieldId]', e);
+  }
+});
+
 // ── Trial features ────────────────────────────────────────────────────────────
 
 /** The app-wide switches, so the client can say when something is paused. */

@@ -1,13 +1,14 @@
 import type { ReactNode } from 'react';
-import { Leaf, ListChecks, StickyNote, Zap } from 'lucide-react';
+import { Leaf, ListChecks, StickyNote, Table2, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-export type AppView = 'tasks' | 'notes' | 'automations';
+export type AppView = 'tasks' | 'notes' | 'automations' | 'databases';
 
 const VIEWS: ReadonlyArray<{ id: AppView; label: string; icon: typeof ListChecks }> = [
   { id: 'tasks', label: 'Tasks', icon: ListChecks },
   { id: 'notes', label: 'Notes', icon: StickyNote },
   { id: 'automations', label: 'Automations', icon: Zap },
+  { id: 'databases', label: 'Databases', icon: Table2 },
 ];
 
 interface IconRailProps {
@@ -20,7 +21,7 @@ interface IconRailProps {
 }
 
 /**
- * The app's three views, then the bell and the account.
+ * The app's views, then the bell and the account.
  *
  * The only dark surface in the product, so "where am I" is answered by contrast
  * rather than by a label. List vs Matrix is a mode within Tasks and lives in the
