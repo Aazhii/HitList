@@ -24,6 +24,10 @@ interface FieldsManagerDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   fields: FieldDef[];
+  /** Open straight into editing this field — the table's column menu does. */
+  initialFieldId?: string | null;
+  /** Open straight into a new field, for "+" in the table header. */
+  startNew?: boolean;
   onCreate: (input: FieldInput) => Promise<FieldDef | null>;
   onUpdate: (id: string, input: FieldInput) => Promise<FieldDef | null>;
   onDelete: (id: string) => Promise<boolean>;
@@ -36,7 +40,9 @@ const KINDS: FieldKind[] = ['select', 'multi', 'number', 'date', 'checkbox', 'te
 const emptyDraft = (): Draft => ({ name: '', kind: 'select', options: [{ label: '', color: 'accent' }], showOnCard: true });
 const hasOptions = (k: FieldKind) => k === 'select' || k === 'multi';
 
-export function FieldsManagerDialog({ open, onOpenChange, fields, onCreate, onUpdate, onDelete }: FieldsManagerDialogProps) {
+export function FieldsManagerDialog({
+  open, onOpenChange, fields, initialFieldId, startNew, onCreate, onUpdate, onDelete,
+}: FieldsManagerDialogProps) {
   /** null = the list; 'new' = creating; an id = editing that field. */
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
@@ -44,8 +50,18 @@ export function FieldsManagerDialog({ open, onOpenChange, fields, onCreate, onUp
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
 
   useEffect(() => {
-    if (open) { setEditing(fields.length === 0 ? 'new' : null); setDraft(emptyDraft()); setConfirmDelete(null); }
-  }, [open]);
+    if (!open) return;
+    setConfirmDelete(null);
+    // Opened from a column menu: go straight to that field, or to a new one.
+    const asked = initialFieldId ? fields.find((f) => f.id === initialFieldId) : undefined;
+    if (asked) {
+      setEditing(asked.id);
+      setDraft({ name: asked.name, kind: asked.kind, options: asked.options.map((o) => ({ ...o })), showOnCard: asked.showOnCard });
+      return;
+    }
+    setEditing(startNew || fields.length === 0 ? 'new' : null);
+    setDraft(emptyDraft());
+  }, [open, initialFieldId, startNew]);
 
   const current = editing && editing !== 'new' ? fields.find((f) => f.id === editing) : undefined;
   const removedOptions = current && hasOptions(current.kind)

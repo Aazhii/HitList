@@ -462,6 +462,8 @@ function App() {
   // Grouping belongs to the layout it was chosen in: picking the board's columns
   // must not silently group the table by the same field. Each layout keeps its own.
   const [groupByByLayout, setGroupByByLayout] = useLocalStorage<Record<string, string>>('hitlist-groupby-v1', {});
+  /** Table columns hidden, per list. Saving this into a view comes with DisplayJson. */
+  const [hiddenColumnsByList, setHiddenColumnsByList] = useLocalStorage<Record<string, string[]>>('hitlist-table-hidden-v1', {});
   /** The saved view whose tab is open, or null on a built-in tab. */
   const [appliedViewId, setAppliedViewId] = useState<string | null>(null);
 
@@ -495,6 +497,8 @@ function App() {
   // ── Custom task fields ────────────────────────────────────────────────────
   const taskFields = useTaskFields(notifyViewError);
   const [fieldsManagerOpen, setFieldsManagerOpen] = useState(false);
+  /** Which field the fields dialog opens on, when a table column menu asked for it. */
+  const [fieldsManagerTarget, setFieldsManagerTarget] = useState<{ fieldId?: string; startNew?: boolean }>({});
 
   // What the list and matrix show: the active list, narrowed by the filter bar.
   // Filtered here and not on the server on purpose — `todos` also feeds list
@@ -763,7 +767,8 @@ function App() {
   /** "+ Add" in a board column: create the task, then give it that column's value. */
   const handleAddTaskInColumn = useCallback(async (title: string, columnKey: string) => {
     const created = await handleAddTask(title, 'do');
-    if (!created || !groupField) return;
+    // An ungrouped table passes no column, so there is no value to set.
+    if (!created || !groupField || !columnKey) return;
     const value: FieldValue | null =
       columnKey === FIELD_EMPTY ? null
       : groupField.kind === 'checkbox' ? true
@@ -1431,7 +1436,7 @@ function App() {
                   fieldsLoading={taskFields.loading}
                   nextId={nextId}
                   onGroupFieldChange={(fieldId) => setFilterState({ ...filterState, groupBy: fieldId })}
-                  onManageFields={() => setFieldsManagerOpen(true)}
+                  onManageFields={() => { setFieldsManagerTarget({ startNew: true }); setFieldsManagerOpen(true); }}
                   onSetFieldValue={(taskId, fieldId, value) => { void taskFields.setValue(taskId, fieldId, value); }}
                   onAddTask={(title, columnKey) => { void handleAddTaskInColumn(title, columnKey); }}
                   onStatusChange={handleStatusChange}
@@ -1456,6 +1461,16 @@ function App() {
                   onUpdate={(id, changes) => { void handleUpdate(id, changes, { quiet: true }); }}
                   onSetFieldValue={(taskId, fieldId, value) => { void taskFields.setValue(taskId, fieldId, value); }}
                   onOpen={handleOpenDetail}
+                  onDelete={handleDelete}
+                  onAddTask={(title, groupKey) => { void handleAddTaskInColumn(title, groupKey); }}
+                  hiddenColumns={hiddenColumnsByList[activeListId] ?? []}
+                  onHideColumn={(columnId) => setHiddenColumnsByList((prev) => ({
+                    ...prev,
+                    [activeListId]: [...new Set([...(prev[activeListId] ?? []), columnId])],
+                  }))}
+                  onEditField={(fieldId) => { setFieldsManagerTarget({ fieldId }); setFieldsManagerOpen(true); }}
+                  onCreateField={() => { setFieldsManagerTarget({ startNew: true }); setFieldsManagerOpen(true); }}
+                  onDeleteField={(fieldId) => { void taskFields.deleteField(fieldId); }}
                 />
               ) : (
                 <EisenhowerMatrix
@@ -1549,6 +1564,8 @@ function App() {
 
       <FieldsManagerDialog
         open={fieldsManagerOpen}
+        initialFieldId={fieldsManagerTarget.fieldId ?? null}
+        startNew={fieldsManagerTarget.startNew ?? false}
         onOpenChange={setFieldsManagerOpen}
         fields={taskFields.fields}
         onCreate={async (input) => {
