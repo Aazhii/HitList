@@ -55,7 +55,7 @@ import type { ApiSavedView } from '@/lib/api';
 import { SavedViewsSection } from '@/components/tasks/SavedViewsSection';
 import { SaveViewForm } from '@/components/tasks/SaveViewForm';
 import { useTaskFields } from '@/hooks/useTaskFields';
-import { FieldsManagerDialog } from '@/components/fields/FieldsManagerDialog';
+import { FieldsManagerDialog, anchorRectOf, type AnchorRect } from '@/components/fields/FieldsManager';
 import type { FieldValue } from '@/types/fields';
 import type { ReorderChange } from '@/lib/reorder';
 import { useCatalystSync, apiTaskToTodo, apiListToKaizenList } from '@/hooks/useCatalystSync';
@@ -250,6 +250,15 @@ function AddTaskDialog({ open, defaultQuadrant, defaultDueDate, onOpenChange, on
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
+
+/**
+ * The control that was just clicked, for a popover opened from a menu item —
+ * when the handler runs, focus is still on it.
+ */
+function activeAnchor(): AnchorRect | null {
+  const el = document.activeElement;
+  return el instanceof HTMLElement ? anchorRectOf(el) : null;
+}
 
 /** A table with no column choices: everything shown, in field order. */
 const EMPTY_DISPLAY: ViewDisplay = { hidden: [], order: [], widths: {} };
@@ -527,6 +536,8 @@ function App() {
   const [fieldsManagerOpen, setFieldsManagerOpen] = useState(false);
   /** Which field the fields dialog opens on, when a table column menu asked for it. */
   const [fieldsManagerTarget, setFieldsManagerTarget] = useState<{ fieldId?: string; startNew?: boolean }>({});
+  /** Where the fields popover hangs from — the control that opened it. */
+  const [fieldsAnchor, setFieldsAnchor] = useState<AnchorRect | null>(null);
 
   // What the list and matrix show: the active list, narrowed by the filter bar.
   // Filtered here and not on the server on purpose — `todos` also feeds list
@@ -556,7 +567,7 @@ function App() {
     onSetValue: (taskId: string, fieldId: string, value: FieldValue | null) => {
       void taskFields.setValue(taskId, fieldId, value);
     },
-    onManage: () => setFieldsManagerOpen(true),
+    onManage: () => { setFieldsAnchor(activeAnchor()); setFieldsManagerOpen(true); },
   };
 
   // A view shows as current whenever the screen matches it, rather than from
@@ -1483,7 +1494,7 @@ function App() {
                   onDelete={(view) => { void handleDeleteView(view); }}
                   onSaveChanges={(view) => { void handleSaveViewChanges(view); }}
                   onResetChanges={handleApplyView}
-                  onManageFields={() => setFieldsManagerOpen(true)}
+                  onManageFields={() => { setFieldsAnchor(activeAnchor()); setFieldsManagerOpen(true); }}
                   trailing={tasksMode === 'table' ? (
                     <ColumnsMenu
                       columns={tableColumnChoices}
@@ -1540,7 +1551,7 @@ function App() {
                   fieldsLoading={taskFields.loading}
                   nextId={nextId}
                   onGroupFieldChange={(fieldId) => setFilterState({ ...filterState, groupBy: fieldId })}
-                  onManageFields={() => { setFieldsManagerTarget({ startNew: true }); setFieldsManagerOpen(true); }}
+                  onManageFields={() => { setFieldsAnchor(activeAnchor()); setFieldsManagerTarget({ startNew: true }); setFieldsManagerOpen(true); }}
                   onSetFieldValue={(taskId, fieldId, value) => {
                     const before = taskFields.values[taskId]?.[fieldId] ?? null;
                     undoable('Moved', () => { void taskFields.setValue(taskId, fieldId, value); },
@@ -1587,8 +1598,8 @@ function App() {
                   onHideColumn={(columnId) => updateTableDisplay((d) => ({
                     ...d, hidden: [...new Set([...d.hidden, columnId])],
                   }))}
-                  onEditField={(fieldId) => { setFieldsManagerTarget({ fieldId }); setFieldsManagerOpen(true); }}
-                  onCreateField={() => { setFieldsManagerTarget({ startNew: true }); setFieldsManagerOpen(true); }}
+                  onEditField={(fieldId) => { setFieldsAnchor(activeAnchor()); setFieldsManagerTarget({ fieldId }); setFieldsManagerOpen(true); }}
+                  onCreateField={() => { setFieldsAnchor(activeAnchor()); setFieldsManagerTarget({ startNew: true }); setFieldsManagerOpen(true); }}
                   onDeleteField={(fieldId) => { void taskFields.deleteField(fieldId); }}
                 />
               ) : (
@@ -1683,6 +1694,7 @@ function App() {
 
       <FieldsManagerDialog
         open={fieldsManagerOpen}
+        anchor={fieldsAnchor}
         initialFieldId={fieldsManagerTarget.fieldId ?? null}
         startNew={fieldsManagerTarget.startNew ?? false}
         onOpenChange={setFieldsManagerOpen}

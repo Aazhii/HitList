@@ -29,7 +29,7 @@ import {
   contextRowClass,
 } from '@/components/shell/ViewLayout';
 import { TopBar, TopBarToggle, topBarPrimary } from '@/components/shell/TopBar';
-import { FieldsManagerDialog } from '@/components/fields/FieldsManagerDialog';
+import { FieldsManagerDialog, anchorRectOf, type AnchorRect } from '@/components/fields/FieldsManager';
 import { RecordTable } from '@/components/databases/RecordTable';
 import { RecordBoard } from '@/components/databases/RecordBoard';
 import { useDatabases } from '@/hooks/useDatabases';
@@ -37,6 +37,15 @@ import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { fieldApi, databaseApi, type ApiDatabase, type FieldInput } from '@/lib/api';
 import { FIELD_EMPTY, isGroupableField } from '@/lib/taskFilters';
 import type { FieldDef, FieldValue } from '@/types/fields';
+
+/**
+ * The control that was just clicked, for a popover opened from a menu item —
+ * by the time the handler runs, focus is still on it.
+ */
+function activeAnchor(): AnchorRect | null {
+  const el = document.activeElement;
+  return el instanceof HTMLElement ? anchorRectOf(el) : null;
+}
 
 /** recordId → fieldId → value, the same shape tasks use. */
 export type RecordValues = Record<string, Record<string, FieldValue>>;
@@ -66,6 +75,8 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled }: DatabasesPagePr
   const [values, setValues] = useState<RecordValues>({});
   const [fieldsOpen, setFieldsOpen] = useState(false);
   const [fieldsTarget, setFieldsTarget] = useState<{ fieldId?: string; startNew?: boolean }>({});
+  /** Where the fields popover hangs from — the control that opened it. */
+  const [fieldsAnchor, setFieldsAnchor] = useState<AnchorRect | null>(null);
 
   const open = databases.find((d) => d.id === openId) ?? null;
   const view = (openId && viewByDatabase[openId]) || 'table';
@@ -213,7 +224,7 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled }: DatabasesPagePr
             actions={open ? (
               <button
                 type="button"
-                onClick={() => { setFieldsTarget({ startNew: true }); setFieldsOpen(true); }}
+                onClick={(e) => { setFieldsAnchor(anchorRectOf(e.currentTarget)); setFieldsTarget({ startNew: true }); setFieldsOpen(true); }}
                 className={topBarPrimary}
                 aria-label="New column"
               >
@@ -256,7 +267,7 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled }: DatabasesPagePr
                   values={values}
                   groupField={boardField}
                   onGroupFieldChange={(fieldId) => setBoardFieldByDatabase((prev) => ({ ...prev, [open.id]: fieldId }))}
-                  onManageFields={() => { setFieldsTarget({ startNew: true }); setFieldsOpen(true); }}
+                  onManageFields={() => { setFieldsAnchor(activeAnchor()); setFieldsTarget({ startNew: true }); setFieldsOpen(true); }}
                   onSetValue={(recordId, fieldId, value) => { void setValue(recordId, fieldId, value); }}
                   onAdd={(title, columnKey) => { void addRecordInColumn(title, columnKey); }}
                 />
@@ -270,9 +281,9 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled }: DatabasesPagePr
                 onRename={(recordId, title) => { void updateRow(recordId, { title }); }}
                 onDelete={(recordId) => { void deleteRow(recordId); }}
                 onSetValue={(recordId, fieldId, value) => { void setValue(recordId, fieldId, value); }}
-                onEditField={(fieldId) => { setFieldsTarget({ fieldId }); setFieldsOpen(true); }}
+                onEditField={(fieldId) => { setFieldsAnchor(activeAnchor()); setFieldsTarget({ fieldId }); setFieldsOpen(true); }}
                 onDeleteField={(fieldId) => { void handleDeleteField(fieldId); }}
-                onCreateField={() => { setFieldsTarget({ startNew: true }); setFieldsOpen(true); }}
+                onCreateField={() => { setFieldsAnchor(activeAnchor()); setFieldsTarget({ startNew: true }); setFieldsOpen(true); }}
               />
               )}
 
@@ -287,6 +298,7 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled }: DatabasesPagePr
 
       <FieldsManagerDialog
         open={fieldsOpen}
+        anchor={fieldsAnchor}
         onOpenChange={setFieldsOpen}
         fields={fields}
         initialFieldId={fieldsTarget.fieldId ?? null}

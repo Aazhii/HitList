@@ -1,5 +1,12 @@
 /**
- * Create, edit and delete custom task fields.
+ * Create, edit and delete custom fields — for tasks, and for a database's columns.
+ *
+ * An anchored popover, never a modal. It opened as a Dialog, whose overlay is a
+ * fixed `bg-black/80` over the whole viewport: choosing what column to add hid
+ * the very grid you were deciding about, and locked its scroll. A popover hangs
+ * off whatever was clicked, leaves the page readable and scrollable behind it,
+ * and flips or shifts rather than running off-screen — which is what makes it
+ * usable on the last column of a wide table.
  *
  * A field's type is fixed once it is created — changing it would leave every
  * stored value unreadable — so the type picker is only shown for a new field.
@@ -12,7 +19,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { OPTION_DOT_CLASS } from '@/lib/fieldValues';
 import type { FieldInput } from '@/lib/api';
@@ -20,9 +27,20 @@ import {
   FIELD_KIND_LABELS, OPTION_COLORS, type FieldDef, type FieldKind, type OptionColor,
 } from '@/types/fields';
 
+/** Where the popover hangs from: the rect of the control that opened it. */
+export interface AnchorRect { x: number; y: number; width: number; height: number }
+
+/** The rect of the element that was clicked, for `anchor`. */
+export function anchorRectOf(el: HTMLElement): AnchorRect {
+  const { x, y, width, height } = el.getBoundingClientRect();
+  return { x, y, width, height };
+}
+
 interface FieldsManagerDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /** Null anchors to the middle of the screen — only for a keyboard-opened case. */
+  anchor?: AnchorRect | null;
   fields: FieldDef[];
   /** Open straight into editing this field — the table's column menu does. */
   initialFieldId?: string | null;
@@ -41,7 +59,7 @@ const emptyDraft = (): Draft => ({ name: '', kind: 'select', options: [{ label: 
 const hasOptions = (k: FieldKind) => k === 'select' || k === 'multi';
 
 export function FieldsManagerDialog({
-  open, onOpenChange, fields, initialFieldId, startNew, onCreate, onUpdate, onDelete,
+  open, onOpenChange, anchor, fields, initialFieldId, startNew, onCreate, onUpdate, onDelete,
 }: FieldsManagerDialogProps) {
   /** null = the list; 'new' = creating; an id = editing that field. */
   const [editing, setEditing] = useState<string | null>(null);
@@ -91,14 +109,32 @@ export function FieldsManagerDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-base font-semibold">
-            <SlidersHorizontal className="size-4 text-primary" />
-            Task fields
-          </DialogTitle>
-        </DialogHeader>
+    <Popover open={open} onOpenChange={onOpenChange}>
+      {/* A zero-size anchor at the trigger's rect. The popover is rendered from
+          the page root, far from the button that opened it, so there is no
+          element here to hang off otherwise. */}
+      <PopoverAnchor asChild>
+        <span
+          aria-hidden
+          style={anchor
+            ? { position: 'fixed', left: anchor.x, top: anchor.y, width: anchor.width, height: anchor.height }
+            : { position: 'fixed', left: '50%', top: '20%' }}
+        />
+      </PopoverAnchor>
+
+      <PopoverContent
+        align="start"
+        side="bottom"
+        sideOffset={6}
+        collisionPadding={12}
+        className="max-h-[min(560px,72vh)] w-[392px] overflow-y-auto p-3"
+      >
+        <div className="mb-2">
+          <p className="flex items-center gap-2 text-[13px] font-semibold text-a-ink">
+            <SlidersHorizontal className="size-4 text-a-accent-700" />
+            Fields
+          </p>
+        </div>
 
         {editing === null ? (
           <div className="space-y-2 pt-1">
@@ -235,7 +271,7 @@ export function FieldsManagerDialog({
             </div>
           </div>
         )}
-      </DialogContent>
-    </Dialog>
+      </PopoverContent>
+    </Popover>
   );
 }
