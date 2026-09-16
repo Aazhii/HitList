@@ -33,6 +33,11 @@ export interface FieldOption { id: string; label: string; color: OptionColor }
 export interface FieldDef {
   id: string;
   ownerId: string;
+  /**
+   * The database this field belongs to; '' is the task fields, which is every
+   * field written before databases existed. See server/databases.ts.
+   */
+  databaseId: string;
   name: string;
   kind: FieldKind;
   options: FieldOption[];
@@ -213,7 +218,26 @@ export function propId(taskId: string, defId: string): string {
 
 // ── Rows ──────────────────────────────────────────────────────────────────────
 
-const DEF_COLUMNS = 'ROWID,DefId,OwnerId,Name,FieldKind,OptionsJson,DefOrder,ShowOnCard,CreatedAt,UpdatedAt';
+const BASE_DEF_COLUMNS = 'ROWID,DefId,OwnerId,Name,FieldKind,OptionsJson,DefOrder,ShowOnCard,CreatedAt,UpdatedAt';
+
+/**
+ * Whether KaizenPropDefs has DatabaseId. It was added with databases, so until
+ * `pnpm catalyst:setup` adds it every field is read and written exactly as
+ * before — as a task field.
+ */
+let databaseColumnAvailable = false;
+export function setFieldsDatabaseAvailable(available: boolean): void { databaseColumnAvailable = available; }
+export function fieldsDatabaseAvailable(): boolean { return databaseColumnAvailable; }
+
+/** The definition columns to SELECT, given what the table has. */
+function defColumns(): string {
+  return databaseColumnAvailable ? `${BASE_DEF_COLUMNS},DatabaseId` : BASE_DEF_COLUMNS;
+}
+
+/** Narrows a query to one database's fields, or to the task fields. */
+function databaseWhere(databaseId: string): string {
+  return databaseColumnAvailable ? ` AND DatabaseId = ${zcqlString(databaseId)}` : '';
+}
 const PROP_COLUMNS = 'ROWID,PropId,OwnerId,TaskId,DefId,ValueText,UpdatedAt';
 const PAGE = 300;
 
@@ -223,14 +247,19 @@ function bool(v: unknown): boolean {
   return s === 'true' || s === '1';
 }
 
+/** A stored JSON column, or the fallback when it is empty or unreadable. */
+function storedJson(raw: unknown, fallback: unknown): unknown {
+  try { return JSON.parse(str(raw) || JSON.stringify(fallback)); } catch { return fallback; }
+}
+
 export function toDef(row: Record<string, unknown>): FieldDefRow {
-  let options: unknown = [];
-  try { options = JSON.parse(str(row['OptionsJson']) || '[]'); } catch { options = []; }
+  const options = storedJson(row['OptionsJson'], []);
   const kind = str(row['FieldKind']);
   return {
     rowId: str(row['ROWID']),
     id: str(row['DefId']),
     ownerId: str(row['OwnerId']),
+    databaseId: str(row['DatabaseId']),
     name: str(row['Name']),
     kind: (FIELD_KINDS as readonly string[]).includes(kind) ? (kind as FieldKind) : 'text',
     options: normaliseOptions(options),
@@ -245,6 +274,9 @@ export function defToRow(def: FieldDef): Record<string, string> {
   return {
     DefId: def.id,
     OwnerId: def.ownerId,
+    // Written only once the column is known to exist; before that every field
+    // is a task field, which is what it would have been anyway.
+    ...(databaseColumnAvailable ? { DatabaseId: def.databaseId } : {}),
     Name: def.name.slice(0, MAX_FIELD_NAME),
     FieldKind: def.kind,
     OptionsJson: JSON.stringify(def.options),
@@ -257,7 +289,7 @@ export function defToRow(def: FieldDef): Record<string, string> {
 
 export function defToApi(def: FieldDef) {
   return {
-    id: def.id, name: def.name, kind: def.kind, options: def.options,
+    id: def.id, databaseId: def.databaseId, name: def.name, kind: def.kind, options: def.options,
     fieldOrder: def.fieldOrder, showOnCard: def.showOnCard,
     createdAt: def.createdAt, updatedAt: def.updatedAt,
   };
@@ -276,14 +308,18 @@ async function pagedRows(app: CatalystApp, table: string, columns: string, where
   return out;
 }
 
-export async function listDefs(app: CatalystApp, ownerId: string): Promise<FieldDefRow[]> {
-  const rows = await pagedRows(app, PROP_DEFS_TABLE, DEF_COLUMNS, `OwnerId = ${zcqlString(ownerId)}`, 'DefOrder');
+/** One database's fields, or the task fields when databaseId is ''. */
+export async function listDefs(app: CatalystApp, ownerId: string, databaseId = ''): Promise<FieldDefRow[]> {
+  const rows = await pagedRows(
+    app, PROP_DEFS_TABLE, defColumns(),
+    `OwnerId = ${zcqlString(ownerId)}${databaseWhere(databaseId)}`, 'DefOrder',
+  );
   return rows.map(toDef).sort((a, b) => a.fieldOrder - b.fieldOrder || a.createdAt - b.createdAt);
 }
 
 export async function getDef(app: CatalystApp, ownerId: string, defId: string): Promise<FieldDefRow | null> {
   const results = await app.zcql().executeZCQLQuery(
-    `SELECT ${DEF_COLUMNS} FROM ${PROP_DEFS_TABLE} ` +
+    `SELECT ${defColumns()} FROM ${PROP_DEFS_TABLE} ` +
     `WHERE DefId = ${zcqlString(defId)} AND OwnerId = ${zcqlString(ownerId)} LIMIT 1`,
   );
   const rows = unwrapRows(results, PROP_DEFS_TABLE);

@@ -61,6 +61,8 @@ export const VIEWS_TABLE = 'KaizenViews';
 export const PROP_DEFS_TABLE = 'KaizenPropDefs';
 export const TASK_PROPS_TABLE = 'KaizenTaskProps';
 export const TRIAL_FEATURES_TABLE = 'KaizenTrialFeatures';
+export const DATABASES_TABLE = 'KaizenDatabases';
+export const DB_ROWS_TABLE = 'KaizenDbRows';
 
 export const SCHEMA: TableSpec[] = [
   {
@@ -278,6 +280,10 @@ export const SCHEMA: TableSpec[] = [
     columns: [
       { name: 'DefId', type: 'varchar', maxLength: 64, mandatory: true, unique: true },
       OWNER_COLUMN,
+      // Added after launch, so the server reads and writes it only once it has
+      // seen it. Empty means a task field, which is every field written so far.
+      { name: 'DatabaseId', type: 'varchar', maxLength: 64,
+        note: "The database this field belongs to; '' = the task fields" },
       { name: 'Name', type: 'varchar', maxLength: 100, mandatory: true },
       { name: 'FieldKind', type: 'varchar', maxLength: 16,
         note: 'select | multi | number | date | checkbox | text. Fixed once created.' },
@@ -300,6 +306,43 @@ export const SCHEMA: TableSpec[] = [
       { name: 'TaskId', type: 'varchar', maxLength: 64, mandatory: true },
       { name: 'DefId', type: 'varchar', maxLength: 64, mandatory: true },
       { name: 'ValueText', type: 'text' },
+      { name: 'UpdatedAt', type: 'bigint' },
+    ],
+  },
+
+  // Databases: records that are not tasks, with their own fields. Tasks stay as
+  // they are — they are simply the database the app ships with. Field
+  // definitions and values are the existing KaizenPropDefs / KaizenTaskProps,
+  // so every field kind, filter and cell editor works on these the day they
+  // exist. See server/databases.ts.
+  {
+    name: DATABASES_TABLE,
+    columns: [
+      { name: 'DatabaseId', type: 'varchar', maxLength: 64, mandatory: true, unique: true },
+      OWNER_COLUMN,
+      { name: 'Name', type: 'varchar', maxLength: 100, mandatory: true },
+      { name: 'Icon', type: 'varchar', maxLength: 16 },
+      { name: 'DbOrder', type: 'int' },
+      { name: 'CreatedAt', type: 'bigint' },
+      { name: 'UpdatedAt', type: 'bigint' },
+    ],
+  },
+
+  // One record in a database. Title is its only built-in column, as a task's
+  // title is; everything else is a custom field.
+  {
+    name: DB_ROWS_TABLE,
+    columns: [
+      // NOT RowId: column names are case-insensitive, so RowId resolves to
+      // Catalyst's own ROWID — setup reports "already exists" and creates
+      // nothing, and SELECT RowId quietly returns the internal id. Same trap as
+      // Priority, which is why tasks use TaskPriority.
+      { name: 'RecordId', type: 'varchar', maxLength: 64, mandatory: true, unique: true },
+      OWNER_COLUMN,
+      { name: 'DatabaseId', type: 'varchar', maxLength: 64, mandatory: true },
+      { name: 'Title', type: 'varchar', maxLength: 255 },
+      { name: 'RowOrder', type: 'int' },
+      { name: 'CreatedAt', type: 'bigint' },
       { name: 'UpdatedAt', type: 'bigint' },
     ],
   },

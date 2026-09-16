@@ -101,8 +101,14 @@ import {
   setViewDisplayAvailable,
 } from './views.ts';
 import {
+  MAX_DATABASES, databaseToApi, deleteDatabase, deleteRow, deleteRowsOfDatabase, getDatabase, getRow,
+  insertDatabase, insertRow, listDatabases, listRows, parseDatabaseBody, parseRowBody, rowToApi,
+  updateDatabase, updateRow, type DatabaseRow, type KaizenDatabase,
+} from './databases.ts';
+import {
   MAX_FIELDS, decodeValue, defToApi, deleteDefRow, deletePropsForDef, deletePropsForTask, encodeValue,
   getDef, insertDef, listDefs, listProps, parseFieldBody, setProp, updateDef, type FieldDef,
+  setFieldsDatabaseAvailable,
 } from './fields.ts';
 import {
   syncTaskReminder,
@@ -370,7 +376,9 @@ function initCatalystAsUser(req: express.Request) {
 //     typing every column as `text`. Schema changes belong in
 //     `pnpm catalyst:setup`, which knows the real column types.
 
-import { SCHEMA, TABLE_NAMES, TASKS_TABLE, LISTS_TABLE, NOTES_TABLE, RULES_TABLE, VIEWS_TABLE } from './catalyst/schema.ts';
+import {
+  SCHEMA, TABLE_NAMES, TASKS_TABLE, LISTS_TABLE, NOTES_TABLE, RULES_TABLE, VIEWS_TABLE, PROP_DEFS_TABLE,
+} from './catalyst/schema.ts';
 
 /**
  * Checks that every table in the schema is queryable.
@@ -694,6 +702,18 @@ async function ensureRuleStepsColumn(req: express.Request): Promise<boolean> {
     req, RULES_TABLE, 'OffsetSteps', 'a rule will fire at one offset rather than several',
   );
   setStepsColumnAvailable(available);
+  return available;
+}
+
+/**
+ * Whether KaizenPropDefs has DatabaseId. Without it every field is a task
+ * field, which is what every field written before databases was.
+ */
+async function ensureFieldsDatabaseColumn(req: express.Request): Promise<boolean> {
+  const available = await hasOptionalColumn(
+    req, PROP_DEFS_TABLE, 'DatabaseId', 'every field will be read as a task field',
+  );
+  setFieldsDatabaseAvailable(available);
   return available;
 }
 
@@ -1633,6 +1653,209 @@ function sendViewErrors(res: express.Response, errors: Record<string, string>): 
   res.status(400).json({ error: 'validation_failed', message: 'One or more fields are invalid', fields: errors });
 }
 
+// ── Databases ─────────────────────────────────────────────────────────────────
+//
+// Records that are not tasks. Fields and values are the existing
+// KaizenPropDefs / KaizenTaskProps, scoped by DatabaseId — see server/databases.ts.
+
+function sendDbErrors(res: express.Response, errors: Record<string, string>): void {
+  res.status(400).json({ error: 'invalid', fields: errors });
+}
+
+app.get('/api/databases', async (req, res) => {
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+
+  try {
+    const dbs = await listDatabases(initCatalyst(req) as unknown as NotificationApp, ownerId);
+    res.json(dbs.map(databaseToApi));
+  } catch (e) {
+    sendError(res, '[GET /api/databases]', e);
+  }
+});
+
+app.post('/api/databases', async (req, res) => {
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+
+  const parsed = parseDatabaseBody((req.body ?? {}) as Record<string, unknown>);
+  if (!parsed.ok) { sendDbErrors(res, parsed.errors); return; }
+
+  try {
+    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const existing = await listDatabases(catalyst, ownerId);
+    if (existing.length >= MAX_DATABASES) {
+      sendDbErrors(res, { name: `you already have ${MAX_DATABASES} databases; delete one first` });
+      return;
+    }
+
+    const now = Date.now();
+    const db: KaizenDatabase = {
+      ...parsed.value,
+      id: randomUUID(),
+      ownerId,
+      dbOrder: parsed.value.dbOrder ?? existing.reduce((m, d) => Math.max(m, d.dbOrder), -1) + 1,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await insertDatabase(catalyst, db);
+    res.status(201).json(databaseToApi(db));
+  } catch (e) {
+    sendError(res, '[POST /api/databases]', e);
+  }
+});
+
+app.put('/api/databases/:id', async (req, res) => {
+  if (!assertSafeId(req.params.id, res)) return;
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+
+  const parsed = parseDatabaseBody((req.body ?? {}) as Record<string, unknown>);
+  if (!parsed.ok) { sendDbErrors(res, parsed.errors); return; }
+
+  try {
+    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const existing = await getDatabase(catalyst, ownerId, req.params.id);
+    if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
+
+    const updated: KaizenDatabase = {
+      ...existing,
+      ...parsed.value,
+      id: existing.id,
+      ownerId,
+      dbOrder: parsed.value.dbOrder ?? existing.dbOrder,
+      updatedAt: Date.now(),
+    };
+    await updateDatabase(catalyst, existing.rowId, updated);
+    res.json(databaseToApi(updated));
+  } catch (e) {
+    sendError(res, '[PUT /api/databases/:id]', e);
+  }
+});
+
+app.post('/api/databases/:id/delete', async (req, res) => {
+  if (!assertSafeId(req.params.id, res)) return;
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+
+  try {
+    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const existing = await getDatabase(catalyst, ownerId, req.params.id);
+    if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
+
+    // Records first: stopping half-way leaves a database that still lists what
+    // is left, rather than records belonging to nothing.
+    const removed = await deleteRowsOfDatabase(catalyst, ownerId, existing.id);
+    await deleteDatabase(catalyst, existing.rowId);
+    res.json({ ok: true, recordsRemoved: removed });
+  } catch (e) {
+    sendError(res, '[POST /api/databases/:id/delete]', e);
+  }
+});
+
+app.get('/api/databases/:id/rows', async (req, res) => {
+  if (!assertSafeId(req.params.id, res)) return;
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+
+  try {
+    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const rows = await listRows(catalyst, ownerId, req.params.id);
+    res.json(rows.map(rowToApi));
+  } catch (e) {
+    sendError(res, '[GET /api/databases/:id/rows]', e);
+  }
+});
+
+app.post('/api/databases/:id/rows', async (req, res) => {
+  if (!assertSafeId(req.params.id, res)) return;
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+
+  const parsed = parseRowBody((req.body ?? {}) as Record<string, unknown>);
+  if (!parsed.ok) { sendDbErrors(res, parsed.errors); return; }
+
+  try {
+    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const database = await getDatabase(catalyst, ownerId, req.params.id);
+    if (!database) { res.status(404).json({ error: 'Not found' }); return; }
+
+    const existing = await listRows(catalyst, ownerId, database.id);
+    const now = Date.now();
+    const record: DatabaseRow = {
+      ...parsed.value,
+      id: randomUUID(),
+      ownerId,
+      databaseId: database.id,
+      rowOrder: parsed.value.rowOrder ?? existing.reduce((m, r) => Math.max(m, r.rowOrder), -1) + 1,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await insertRow(catalyst, record);
+    res.status(201).json(rowToApi(record));
+  } catch (e) {
+    sendError(res, '[POST /api/databases/:id/rows]', e);
+  }
+});
+
+app.put('/api/databases/rows/:rowId', async (req, res) => {
+  if (!assertSafeId(req.params.rowId, res)) return;
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+
+  const parsed = parseRowBody((req.body ?? {}) as Record<string, unknown>);
+  if (!parsed.ok) { sendDbErrors(res, parsed.errors); return; }
+
+  try {
+    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const existing = await getRow(catalyst, ownerId, req.params.rowId);
+    if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
+
+    const updated: DatabaseRow = {
+      ...existing,
+      ...parsed.value,
+      id: existing.id,
+      ownerId,
+      // A record stays in the database it was made in; its field values live
+      // under that database's fields.
+      databaseId: existing.databaseId,
+      rowOrder: parsed.value.rowOrder ?? existing.rowOrder,
+      updatedAt: Date.now(),
+    };
+    await updateRow(catalyst, existing.rowId, updated);
+    res.json(rowToApi(updated));
+  } catch (e) {
+    sendError(res, '[PUT /api/databases/rows/:rowId]', e);
+  }
+});
+
+app.delete('/api/databases/rows/:rowId', async (req, res) => {
+  if (!assertSafeId(req.params.rowId, res)) return;
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+
+  try {
+    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const existing = await getRow(catalyst, ownerId, req.params.rowId);
+    if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
+
+    // The record's field values go with it, as a deleted task's do.
+    await deletePropsForTask(catalyst, ownerId, existing.id);
+    await deleteRow(catalyst, existing.rowId);
+    res.json({ ok: true });
+  } catch (e) {
+    sendError(res, '[DELETE /api/databases/rows/:rowId]', e);
+  }
+});
+
 // ── Trial features ────────────────────────────────────────────────────────────
 
 /** The app-wide switches, so the client can say when something is paused. */
@@ -1765,8 +1988,13 @@ app.get('/api/fields', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
   if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  await ensureFieldsDatabaseColumn(req);
+
+  const databaseId = String(req.query['databaseId'] ?? '');
+  if (databaseId && !assertSafeId(databaseId, res)) return;
+
   try {
-    const defs = await listDefs(initCatalyst(req) as unknown as NotificationApp, ownerId);
+    const defs = await listDefs(initCatalyst(req) as unknown as NotificationApp, ownerId, databaseId);
     res.json(defs.map(defToApi));
   } catch (e) {
     sendError(res, '[GET /api/fields]', e);
@@ -1780,10 +2008,15 @@ app.post('/api/fields', async (req, res) => {
 
   const parsed = parseFieldBody((req.body ?? {}) as Record<string, unknown>);
   if (!parsed.ok) { sendFieldErrors(res, parsed.errors); return; }
+  await ensureFieldsDatabaseColumn(req);
+
+  const databaseId = String((req.body as Record<string, unknown> | undefined)?.['databaseId'] ?? '');
+  if (databaseId && !assertSafeId(databaseId, res)) return;
 
   try {
     const catalyst = initCatalyst(req) as unknown as NotificationApp;
-    const existing = await listDefs(catalyst, ownerId);
+    // The cap is per database, so one database's fields cannot use up another's.
+    const existing = await listDefs(catalyst, ownerId, databaseId);
     if (existing.length >= MAX_FIELDS) {
       sendFieldErrors(res, { name: `you already have ${MAX_FIELDS} fields; delete one first` });
       return;
@@ -1793,6 +2026,7 @@ app.post('/api/fields', async (req, res) => {
       ...parsed.value,
       id: randomUUID(),
       ownerId,
+      databaseId,
       fieldOrder: parsed.value.fieldOrder ?? existing.reduce((m, d) => Math.max(m, d.fieldOrder), -1) + 1,
       createdAt: now,
       updatedAt: now,
@@ -1810,6 +2044,8 @@ app.put('/api/fields/:id', async (req, res) => {
   if (!ownerId) return;
   if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
+  await ensureFieldsDatabaseColumn(req);
+
   try {
     const catalyst = initCatalyst(req) as unknown as NotificationApp;
     const existing = await getDef(catalyst, ownerId, req.params.id);
@@ -1823,6 +2059,9 @@ app.put('/api/fields/:id', async (req, res) => {
       ...parsed.value,
       id: existing.id,
       ownerId,
+      // A field belongs to whatever it was created in; moving one would leave
+      // its values behind in a database that no longer has the field.
+      databaseId: existing.databaseId,
       fieldOrder: parsed.value.fieldOrder ?? existing.fieldOrder,
       updatedAt: Date.now(),
     };
@@ -1838,6 +2077,8 @@ app.delete('/api/fields/:id', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
   if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+
+  await ensureFieldsDatabaseColumn(req);
 
   try {
     const catalyst = initCatalyst(req) as unknown as NotificationApp;

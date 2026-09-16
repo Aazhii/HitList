@@ -8,7 +8,7 @@ import { fakeCatalyst } from './helpers/fakeCatalyst.ts';
 let n = 0;
 const ids = () => `opt${++n}`;
 const def = (over: Partial<FieldDef> = {}): FieldDef => ({
-  id: 'd1', ownerId: 'user-1', name: 'Effort', kind: 'select',
+  id: 'd1', ownerId: 'user-1', databaseId: '', name: 'Effort', kind: 'select',
   options: [{ id: 'lo', label: 'Low', color: 'sage' }, { id: 'hi', label: 'High', color: 'do' }],
   fieldOrder: 0, showOnCard: true, createdAt: 1, updatedAt: 1, ...over,
 });
