@@ -31,10 +31,23 @@ export interface KaizenDatabase {
   ownerId: string;
   name: string;
   icon: string;
+  /**
+   * Which of this database's date fields its calendar reads; '' = none chosen.
+   * A record has no due date of its own, so the calendar has to be told.
+   */
+  dateFieldId: string;
   dbOrder: number;
   createdAt: number;
   updatedAt: number;
 }
+
+/**
+ * Whether KaizenDatabases has DateFieldId. Added after the table existed, so
+ * until `pnpm catalyst:setup` adds it a database simply has no calendar.
+ */
+let dateFieldAvailable = false;
+export function setDatabaseDateFieldAvailable(available: boolean): void { dateFieldAvailable = available; }
+export function databaseDateFieldAvailable(): boolean { return dateFieldAvailable; }
 
 export interface DatabaseRow {
   id: string;
@@ -51,7 +64,7 @@ export interface RecordWithRowId extends DatabaseRow { rowId: string }
 
 // ── Validation ────────────────────────────────────────────────────────────────
 
-export interface DatabaseInput { name: string; icon: string; dbOrder?: number }
+export interface DatabaseInput { name: string; icon: string; dateFieldId: string; dbOrder?: number }
 export interface RowInput { title: string; rowOrder?: number }
 
 export type Parsed<T> = { ok: true; value: T } | { ok: false; errors: Record<string, string> };
@@ -67,13 +80,23 @@ export function parseDatabaseBody(body: Record<string, unknown>): Parsed<Databas
   // One emoji, or nothing. Longer values are a mistake, not a picture.
   if (typeof icon !== 'string' || icon.length > 16) errors['icon'] = 'must be a short emoji, or empty';
 
+  const dateFieldId = body['dateFieldId'] ?? '';
+  if (typeof dateFieldId !== 'string' || (dateFieldId !== '' && !SAFE_ID.test(dateFieldId))) {
+    errors['dateFieldId'] = 'must be a field id, or empty';
+  }
+
   const order = body['dbOrder'];
   if (order !== undefined && !(typeof order === 'number' && Number.isInteger(order) && order >= 0)) {
     errors['dbOrder'] = 'must be a whole number, 0 or more';
   }
 
   if (Object.keys(errors).length > 0) return { ok: false, errors };
-  return { ok: true, value: { name, icon: icon as string, dbOrder: order as number | undefined } };
+  return {
+    ok: true,
+    value: {
+      name, icon: icon as string, dateFieldId: dateFieldId as string, dbOrder: order as number | undefined,
+    },
+  };
 }
 
 export function parseRowBody(body: Record<string, unknown>): Parsed<RowInput> {
@@ -96,7 +119,12 @@ export const isSafeId = (id: string): boolean => SAFE_ID.test(id);
 
 // ── Row shapes ────────────────────────────────────────────────────────────────
 
-const DB_COLUMNS = 'ROWID,DatabaseId,OwnerId,Name,Icon,DbOrder,CreatedAt,UpdatedAt';
+const BASE_DB_COLUMNS = 'ROWID,DatabaseId,OwnerId,Name,Icon,DbOrder,CreatedAt,UpdatedAt';
+
+/** The database columns to SELECT, given what the table has. */
+function dbColumns(): string {
+  return dateFieldAvailable ? `${BASE_DB_COLUMNS},DateFieldId` : BASE_DB_COLUMNS;
+}
 const ROW_COLUMNS = 'ROWID,RecordId,OwnerId,DatabaseId,Title,RowOrder,CreatedAt,UpdatedAt';
 
 export function toDatabase(row: Record<string, unknown>): DatabaseWithRowId {
@@ -106,6 +134,7 @@ export function toDatabase(row: Record<string, unknown>): DatabaseWithRowId {
     ownerId: str(row['OwnerId']),
     name: str(row['Name']),
     icon: str(row['Icon']),
+    dateFieldId: str(row['DateFieldId']),
     dbOrder: num(row['DbOrder']),
     createdAt: num(row['CreatedAt']),
     updatedAt: num(row['UpdatedAt']),
@@ -131,6 +160,9 @@ export function databaseToRow(db: KaizenDatabase): Record<string, string> {
     OwnerId: db.ownerId,
     Name: db.name.slice(0, MAX_NAME),
     Icon: db.icon,
+    // Written only once the column is known to exist; before that a database
+    // saves exactly as it did and simply has no calendar.
+    ...(dateFieldAvailable ? { DateFieldId: db.dateFieldId } : {}),
     DbOrder: String(db.dbOrder),
     CreatedAt: String(db.createdAt),
     UpdatedAt: String(db.updatedAt),
@@ -151,7 +183,10 @@ export function rowToRow(record: DatabaseRow): Record<string, string> {
 
 /** The API shapes: no ROWID, which stays internal to Catalyst. */
 export function databaseToApi(db: KaizenDatabase) {
-  return { id: db.id, name: db.name, icon: db.icon, dbOrder: db.dbOrder, createdAt: db.createdAt, updatedAt: db.updatedAt };
+  return {
+    id: db.id, name: db.name, icon: db.icon, dateFieldId: db.dateFieldId,
+    dbOrder: db.dbOrder, createdAt: db.createdAt, updatedAt: db.updatedAt,
+  };
 }
 
 export function rowToApi(record: DatabaseRow) {
@@ -182,7 +217,7 @@ async function readPages<T>(
 export async function listDatabases(app: CatalystApp, ownerId: string): Promise<DatabaseWithRowId[]> {
   return readPages(
     app, DATABASES_TABLE,
-    (offset) => `SELECT ${DB_COLUMNS} FROM ${DATABASES_TABLE} WHERE OwnerId = ${zcqlString(ownerId)} ` +
+    (offset) => `SELECT ${dbColumns()} FROM ${DATABASES_TABLE} WHERE OwnerId = ${zcqlString(ownerId)} ` +
       `ORDER BY DbOrder ASC LIMIT ${offset},${PAGE}`,
     toDatabase,
   );
@@ -192,7 +227,7 @@ export async function getDatabase(
   app: CatalystApp, ownerId: string, databaseId: string,
 ): Promise<DatabaseWithRowId | null> {
   const results = await app.zcql().executeZCQLQuery(
-    `SELECT ${DB_COLUMNS} FROM ${DATABASES_TABLE} ` +
+    `SELECT ${dbColumns()} FROM ${DATABASES_TABLE} ` +
     `WHERE DatabaseId = ${zcqlString(databaseId)} AND OwnerId = ${zcqlString(ownerId)} LIMIT 1`,
   );
   const rows = unwrapRows(results, DATABASES_TABLE);

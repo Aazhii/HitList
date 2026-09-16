@@ -322,6 +322,8 @@ export const SCHEMA: TableSpec[] = [
       OWNER_COLUMN,
       { name: 'Name', type: 'varchar', maxLength: 100, mandatory: true },
       { name: 'Icon', type: 'varchar', maxLength: 16 },
+      { name: 'DateFieldId', type: 'varchar', maxLength: 64,
+        note: "Which date field this database's calendar reads; '' = no calendar yet" },
       { name: 'DbOrder', type: 'int' },
       { name: 'CreatedAt', type: 'bigint' },
       { name: 'UpdatedAt', type: 'bigint' },

@@ -6,13 +6,13 @@ import { describe, expect, it } from 'vitest';
 import {
   MAX_TITLE, databaseToRow, deleteDatabase, deleteRowsOfDatabase, getDatabase, getRow,
   insertDatabase, insertRow, listDatabases, listRows, parseDatabaseBody, parseRowBody,
-  rowToRow, toDatabase, toDatabaseRow, updateDatabase,
+  rowToRow, setDatabaseDateFieldAvailable, toDatabase, toDatabaseRow, updateDatabase,
   type DatabaseRow, type KaizenDatabase,
 } from '../../server/databases.ts';
 import { fakeCatalyst } from './helpers/fakeCatalyst.ts';
 
 const db = (over: Partial<KaizenDatabase> = {}): KaizenDatabase => ({
-  id: 'db1', ownerId: 'user-1', name: 'Reading list', icon: '📚', dbOrder: 0,
+  id: 'db1', ownerId: 'user-1', name: 'Reading list', icon: '📚', dateFieldId: '', dbOrder: 0,
   createdAt: 1, updatedAt: 1, ...over,
 });
 
@@ -25,7 +25,19 @@ describe('parseDatabaseBody', () => {
   it('accepts a name and an emoji, trimming the name', () => {
     const parsed = parseDatabaseBody({ name: '  Clients  ', icon: '🗂' });
     expect(parsed.ok).toBe(true);
-    if (parsed.ok) expect(parsed.value).toEqual({ name: 'Clients', icon: '🗂', dbOrder: undefined });
+    if (parsed.ok) {
+      expect(parsed.value).toEqual({ name: 'Clients', icon: '🗂', dateFieldId: '', dbOrder: undefined });
+    }
+  });
+
+  it('takes the calendar\'s date field, and refuses one that is not a field id', () => {
+    const ok = parseDatabaseBody({ name: 'Books', dateFieldId: 'due-field' });
+    expect(ok.ok).toBe(true);
+    if (ok.ok) expect(ok.value.dateFieldId).toBe('due-field');
+
+    const bad = parseDatabaseBody({ name: 'Books', dateFieldId: 'not a field id!' });
+    expect(bad.ok).toBe(false);
+    if ('errors' in bad) expect(bad.errors['dateFieldId']).toBeDefined();
   });
 
   it('names every invalid field', () => {
@@ -120,5 +132,24 @@ describe('storage', () => {
     expect(await deleteRowsOfDatabase(fake.app, 'user-1', 'db1')).toBe(2);
     expect(await listRows(fake.app, 'user-1', 'db1')).toHaveLength(0);
     expect((await listRows(fake.app, 'user-1', 'db2')).map((r) => r.id)).toEqual(['keep']);
+  });
+});
+
+describe("a database's calendar field (DateFieldId)", () => {
+  it('round-trips once the column exists, and is left out before that', () => {
+    const withDate = db({ dateFieldId: 'due-field' });
+
+    setDatabaseDateFieldAvailable(false);
+    expect(databaseToRow(withDate)['DateFieldId']).toBeUndefined();
+
+    setDatabaseDateFieldAvailable(true);
+    const row = databaseToRow(withDate);
+    expect(row['DateFieldId']).toBe('due-field');
+    expect(toDatabase({ ROWID: '1', ...row }).dateFieldId).toBe('due-field');
+    setDatabaseDateFieldAvailable(false);
+  });
+
+  it('reads a database written before the column as having no calendar', () => {
+    expect(toDatabase({ ROWID: '1', DatabaseId: 'db1', Name: 'Old' }).dateFieldId).toBe('');
   });
 });

@@ -8,7 +8,7 @@ import { useDatabases, type UseDatabases } from '@/hooks/useDatabases';
 import { databaseApi, type ApiDatabase, type ApiDatabaseRow } from '@/lib/api';
 
 const db = (over: Partial<ApiDatabase> = {}): ApiDatabase => ({
-  id: 'db1', name: 'Reading list', icon: '📚', dbOrder: 0, createdAt: 1, updatedAt: 1, ...over,
+  id: 'db1', name: 'Reading list', icon: '📚', dateFieldId: '', dbOrder: 0, createdAt: 1, updatedAt: 1, ...over,
 });
 const record = (over: Partial<ApiDatabaseRow> = {}): ApiDatabaseRow => ({
   id: 'r1', databaseId: 'db1', title: 'Dune', rowOrder: 0, createdAt: 1, updatedAt: 1, ...over,

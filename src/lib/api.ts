@@ -598,6 +598,8 @@ export interface ApiDatabase {
   id: string;
   name: string;
   icon: string;
+  /** The date field this database's calendar reads; '' = none chosen yet. */
+  dateFieldId: string;
   dbOrder: number;
   createdAt: number;
   updatedAt: number;
@@ -613,7 +615,7 @@ export interface ApiDatabaseRow {
   updatedAt: number;
 }
 
-export interface DatabaseInput { name: string; icon?: string; dbOrder?: number }
+export interface DatabaseInput { name: string; icon?: string; dateFieldId?: string; dbOrder?: number }
 export interface DatabaseRowInput { title: string; rowOrder?: number }
 
 export const databaseApi = {
@@ -621,10 +623,10 @@ export const databaseApi = {
     return get<ApiDatabase[]>('/databases');
   },
   create(input: DatabaseInput): Promise<ApiDatabase> {
-    return post<ApiDatabase>('/databases', { icon: '', ...input });
+    return post<ApiDatabase>('/databases', { icon: '', dateFieldId: '', ...input });
   },
   update(id: string, input: DatabaseInput): Promise<ApiDatabase> {
-    return put<ApiDatabase>(`/databases/${id}`, { icon: '', ...input });
+    return put<ApiDatabase>(`/databases/${id}`, { icon: '', dateFieldId: '', ...input });
   },
   /**
    * POST, not DELETE: deleting a database also deletes its records, and the

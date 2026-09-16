@@ -103,7 +103,8 @@ import {
 import {
   MAX_DATABASES, databaseToApi, deleteDatabase, deleteRow, deleteRowsOfDatabase, getDatabase, getRow,
   insertDatabase, insertRow, listDatabases, listRows, parseDatabaseBody, parseRowBody, rowToApi,
-  updateDatabase, updateRow, type DatabaseRow, type KaizenDatabase,
+  updateDatabase, updateRow, setDatabaseDateFieldAvailable,
+  type DatabaseRow, type KaizenDatabase,
 } from './databases.ts';
 import {
   MAX_FIELDS, decodeValue, defToApi, deleteDefRow, deletePropsForDef, deletePropsForTask, encodeValue,
@@ -378,6 +379,7 @@ function initCatalystAsUser(req: express.Request) {
 
 import {
   SCHEMA, TABLE_NAMES, TASKS_TABLE, LISTS_TABLE, NOTES_TABLE, RULES_TABLE, VIEWS_TABLE, PROP_DEFS_TABLE,
+  DATABASES_TABLE,
 } from './catalyst/schema.ts';
 
 /**
@@ -702,6 +704,18 @@ async function ensureRuleStepsColumn(req: express.Request): Promise<boolean> {
     req, RULES_TABLE, 'OffsetSteps', 'a rule will fire at one offset rather than several',
   );
   setStepsColumnAvailable(available);
+  return available;
+}
+
+/**
+ * Whether KaizenDatabases has DateFieldId. Without it a database has no
+ * calendar, which is what every database had before this.
+ */
+async function ensureDatabaseDateFieldColumn(req: express.Request): Promise<boolean> {
+  const available = await hasOptionalColumn(
+    req, DATABASES_TABLE, 'DateFieldId', 'a database will have no calendar',
+  );
+  setDatabaseDateFieldAvailable(available);
   return available;
 }
 
@@ -1667,6 +1681,8 @@ app.get('/api/databases', async (req, res) => {
   if (!ownerId) return;
   if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
+  await ensureDatabaseDateFieldColumn(req);
+
   try {
     const dbs = await listDatabases(initCatalyst(req) as unknown as NotificationApp, ownerId);
     res.json(dbs.map(databaseToApi));
@@ -1679,6 +1695,8 @@ app.post('/api/databases', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
   if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+
+  await ensureDatabaseDateFieldColumn(req);
 
   const parsed = parseDatabaseBody((req.body ?? {}) as Record<string, unknown>);
   if (!parsed.ok) { sendDbErrors(res, parsed.errors); return; }
@@ -1712,6 +1730,8 @@ app.put('/api/databases/:id', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
   if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+
+  await ensureDatabaseDateFieldColumn(req);
 
   const parsed = parseDatabaseBody((req.body ?? {}) as Record<string, unknown>);
   if (!parsed.ok) { sendDbErrors(res, parsed.errors); return; }

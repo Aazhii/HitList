@@ -32,6 +32,7 @@ import { TopBar, TopBarToggle, topBarPrimary } from '@/components/shell/TopBar';
 import { FieldsManagerDialog } from '@/components/fields/FieldsManagerDialog';
 import { RecordTable } from '@/components/databases/RecordTable';
 import { RecordBoard } from '@/components/databases/RecordBoard';
+import { RecordCalendar } from '@/components/databases/RecordCalendar';
 import { useDatabases } from '@/hooks/useDatabases';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { fieldApi, databaseApi, type ApiDatabase, type FieldInput } from '@/lib/api';
@@ -53,7 +54,7 @@ export function DatabasesPage() {
    * Which view each database opens in, and the field its board groups by. Per
    * database and per device: a database's views are not saved views yet.
    */
-  const [viewByDatabase, setViewByDatabase] = useLocalStorage<Record<string, 'table' | 'board'>>('hitlist-db-view-v1', {});
+  const [viewByDatabase, setViewByDatabase] = useLocalStorage<Record<string, 'table' | 'board' | 'calendar'>>('hitlist-db-view-v1', {});
   const [boardFieldByDatabase, setBoardFieldByDatabase] = useLocalStorage<Record<string, string>>('hitlist-db-board-field-v1', {});
 
   const [fields, setFields] = useState<FieldDef[]>([]);
@@ -65,6 +66,11 @@ export function DatabasesPage() {
   const view = (openId && viewByDatabase[openId]) || 'table';
   const boardField = openId
     ? fields.find((f) => f.id === boardFieldByDatabase[openId] && isGroupableField(f)) ?? null
+    : null;
+  // The calendar's date field belongs to the database, not the device: everyone
+  // looking at it should see the same dates.
+  const dateField = open
+    ? fields.find((f) => f.id === open.dateFieldId && f.kind === 'date') ?? null
     : null;
 
   // Open the first database once they arrive, so the page is never blank when
@@ -121,6 +127,13 @@ export function DatabasesPage() {
       : columnKey;
     await setValue(created.id, boardField.id, value);
   }, [createRow, boardField, setValue]);
+
+  /** "+" on a calendar day: create the record, then put it on that day. */
+  const addRecordOnDay = useCallback(async (title: string, day: string) => {
+    const created = await createRow({ title });
+    if (!created || !dateField) return;
+    await setValue(created.id, dateField.id, day);
+  }, [createRow, dateField, setValue]);
 
   const handleCreateField = useCallback(async (input: FieldInput) => {
     if (!openId) return null;
@@ -228,11 +241,28 @@ export function DatabasesPage() {
                   label="Table or board"
                   value={view}
                   onChange={(next) => setViewByDatabase((prev) => ({ ...prev, [open.id]: next }))}
-                  options={[{ value: 'table' as const, label: 'Table' }, { value: 'board' as const, label: 'Board' }]}
+                  options={[
+                    { value: 'table' as const, label: 'Table' },
+                    { value: 'board' as const, label: 'Board' },
+                    { value: 'calendar' as const, label: 'Calendar' },
+                  ]}
                 />
               </div>
 
-              {view === 'board' ? (
+              {view === 'calendar' ? (
+                <RecordCalendar
+                  rows={rows}
+                  fields={fields}
+                  values={values}
+                  dateField={dateField}
+                  onDateFieldChange={(fieldId) => {
+                    void updateDatabase(open.id, { name: open.name, icon: open.icon, dateFieldId: fieldId });
+                  }}
+                  onManageFields={() => { setFieldsTarget({ startNew: true }); setFieldsOpen(true); }}
+                  onSetDate={(recordId, fieldId, day) => { void setValue(recordId, fieldId, day); }}
+                  onAdd={(title, day) => { void addRecordOnDay(title, day); }}
+                />
+              ) : view === 'board' ? (
                 <RecordBoard
                   rows={rows}
                   fields={fields}
