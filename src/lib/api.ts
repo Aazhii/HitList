@@ -589,6 +589,63 @@ export const fieldApi = {
   },
 };
 
+// ── Databases ────────────────────────────────────────────────────────────────
+
+/** A collection of records that are not tasks. See server/databases.ts. */
+export interface ApiDatabase {
+  id: string;
+  name: string;
+  icon: string;
+  dbOrder: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** One record. Title is its only built-in column; the rest are custom fields. */
+export interface ApiDatabaseRow {
+  id: string;
+  databaseId: string;
+  title: string;
+  rowOrder: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface DatabaseInput { name: string; icon?: string; dbOrder?: number }
+export interface DatabaseRowInput { title: string; rowOrder?: number }
+
+export const databaseApi = {
+  list(): Promise<ApiDatabase[]> {
+    return get<ApiDatabase[]>('/databases');
+  },
+  create(input: DatabaseInput): Promise<ApiDatabase> {
+    return post<ApiDatabase>('/databases', { icon: '', ...input });
+  },
+  update(id: string, input: DatabaseInput): Promise<ApiDatabase> {
+    return put<ApiDatabase>(`/databases/${id}`, { icon: '', ...input });
+  },
+  /**
+   * POST, not DELETE: deleting a database also deletes its records, and the
+   * server answers with how many went with it.
+   */
+  remove(id: string): Promise<{ ok: true; recordsRemoved: number }> {
+    return post<{ ok: true; recordsRemoved: number }>(`/databases/${id}/delete`, {});
+  },
+
+  listRows(databaseId: string): Promise<ApiDatabaseRow[]> {
+    return get<ApiDatabaseRow[]>(`/databases/${databaseId}/rows`);
+  },
+  createRow(databaseId: string, input: DatabaseRowInput): Promise<ApiDatabaseRow> {
+    return post<ApiDatabaseRow>(`/databases/${databaseId}/rows`, input);
+  },
+  updateRow(recordId: string, input: DatabaseRowInput): Promise<ApiDatabaseRow> {
+    return put<ApiDatabaseRow>(`/databases/rows/${recordId}`, input);
+  },
+  deleteRow(recordId: string): Promise<void> {
+    return del<void>(`/databases/rows/${recordId}`);
+  },
+};
+
 // ── Trial features ───────────────────────────────────────────────────────────
 
 /** App-wide switches set in the KaizenTrialFeatures table. See server/trialFeatures.ts. */
