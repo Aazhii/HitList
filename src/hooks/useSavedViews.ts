@@ -17,7 +17,12 @@ function storageKey(): string {
   return userId ? `${BASE_KEY}-${userId}` : BASE_KEY;
 }
 
-const clean = (v: ApiSavedView): ApiSavedView => ({ ...v, filters: normaliseFilters(v.filters) });
+const clean = (v: ApiSavedView): ApiSavedView => ({
+  ...v,
+  filters: normaliseFilters(v.filters),
+  // A view stored before column choices existed has none; the table reads this.
+  display: v.display ?? { hidden: [], order: [], widths: {} },
+});
 const byOrder = (a: ApiSavedView, b: ApiSavedView) => a.viewOrder - b.viewOrder || a.createdAt - b.createdAt;
 
 function loadLocal(): ApiSavedView[] {
@@ -85,6 +90,8 @@ export function useSavedViews(onError: (message: string) => void): UseSavedViews
         ...input,
         id: `local-${crypto.randomUUID()}`,
         filters: normaliseFilters(input.filters),
+        // A view kept on the device has no column choices until one is saved.
+        display: input.display ?? { hidden: [], order: [], widths: {} },
         viewOrder: views.reduce((m, v) => Math.max(m, v.viewOrder), -1) + 1,
         createdAt: now,
         updatedAt: now,

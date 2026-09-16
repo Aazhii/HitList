@@ -58,6 +58,54 @@ function normaliseFieldFilters(raw: unknown): Record<string, string[]> {
   return out;
 }
 
+/**
+ * How a table shows its columns: which are hidden, the order they run in, and
+ * any widths dragged out. Stored in DisplayJson, a column added after launch —
+ * so it is written only once the server has seen it (setViewDisplayAvailable).
+ */
+export interface ViewDisplay {
+  hidden: string[];
+  order: string[];
+  widths: Record<string, number>;
+}
+
+export const DEFAULT_DISPLAY: ViewDisplay = { hidden: [], order: [], widths: {} };
+
+const COLUMN_ID = /^[A-Za-z0-9_-]{1,64}$/;
+/** Narrow enough to read, wide enough to be useful. */
+const MIN_WIDTH = 80;
+const MAX_WIDTH = 600;
+const MAX_COLUMNS = 60;
+
+/** Only known-shaped ids and sane widths; never throws. */
+export function normaliseDisplay(raw: unknown): ViewDisplay {
+  const o = (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}) as Record<string, unknown>;
+  const ids = (v: unknown) => (Array.isArray(v) ? v : [])
+    .filter((x): x is string => typeof x === 'string' && COLUMN_ID.test(x))
+    .slice(0, MAX_COLUMNS);
+
+  const widths: Record<string, number> = {};
+  const rawWidths = (o['widths'] && typeof o['widths'] === 'object' && !Array.isArray(o['widths']))
+    ? o['widths'] as Record<string, unknown>
+    : {};
+  for (const [id, value] of Object.entries(rawWidths).slice(0, MAX_COLUMNS)) {
+    if (!COLUMN_ID.test(id)) continue;
+    const n = Number(value);
+    if (!Number.isFinite(n)) continue;
+    widths[id] = Math.round(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, n)));
+  }
+
+  return { hidden: [...new Set(ids(o['hidden']))], order: [...new Set(ids(o['order']))], widths };
+}
+
+/**
+ * Whether KaizenViews has DisplayJson. Until the setup script adds it, views
+ * are read and written exactly as before and column choices stay on the device.
+ */
+let displayAvailable = false;
+export function setViewDisplayAvailable(available: boolean): void { displayAvailable = available; }
+export function viewDisplayAvailable(): boolean { return displayAvailable; }
+
 export interface SavedView {
   id: string;
   ownerId: string;
@@ -67,6 +115,7 @@ export interface SavedView {
   scopeListId: string;
   filters: ViewFilters;
   showDone: boolean;
+  display: ViewDisplay;
   viewOrder: number;
   createdAt: number;
   updatedAt: number;
@@ -103,6 +152,7 @@ export interface ViewInput {
   scopeListId: string;
   filters: ViewFilters;
   showDone: boolean;
+  display: ViewDisplay;
   viewOrder?: number;
 }
 
@@ -136,6 +186,11 @@ export function parseViewBody(body: Record<string, unknown>): ParsedView {
     errors['showDone'] = 'must be true or false';
   }
 
+  const display = body['display'];
+  if (display !== undefined && (typeof display !== 'object' || display === null || Array.isArray(display))) {
+    errors['display'] = 'must be an object';
+  }
+
   const order = body['viewOrder'];
   if (order !== undefined && !(typeof order === 'number' && Number.isInteger(order) && order >= 0)) {
     errors['viewOrder'] = 'must be a whole number, 0 or more';
@@ -150,12 +205,18 @@ export function parseViewBody(body: Record<string, unknown>): ParsedView {
       scopeListId: scope as string,
       filters: normaliseFilters(filters),
       showDone: body['showDone'] === true,
+      display: normaliseDisplay(display),
       viewOrder: order as number | undefined,
     },
   };
 }
 
-const COLUMNS = 'ROWID,ViewId,OwnerId,Name,ViewLayout,ScopeListId,FilterJson,ShowDone,ViewOrder,CreatedAt,UpdatedAt';
+const BASE_COLUMNS = 'ROWID,ViewId,OwnerId,Name,ViewLayout,ScopeListId,FilterJson,ShowDone,ViewOrder,CreatedAt,UpdatedAt';
+
+/** The columns to SELECT, given what the table has. */
+function viewColumns(): string {
+  return displayAvailable ? `${BASE_COLUMNS},DisplayJson` : BASE_COLUMNS;
+}
 
 function bool(v: unknown): boolean {
   if (typeof v === 'boolean') return v;
@@ -163,10 +224,15 @@ function bool(v: unknown): boolean {
   return s === 'true' || s === '1';
 }
 
+/** A stored JSON column, or {} when it is empty or unreadable. */
+function storedJson(raw: unknown): unknown {
+  try { return JSON.parse(str(raw) || '{}'); } catch { return {}; }
+}
+
 export function toView(row: Record<string, unknown>): ViewRow {
-  let filters: unknown = {};
-  try { filters = JSON.parse(str(row['FilterJson']) || '{}'); } catch { filters = {}; }
+  const filters = storedJson(row['FilterJson']);
   const layout = str(row['ViewLayout']);
+  const display = storedJson(row['DisplayJson']);
 
   return {
     rowId: str(row['ROWID']),
@@ -177,6 +243,7 @@ export function toView(row: Record<string, unknown>): ViewRow {
     scopeListId: str(row['ScopeListId']),
     filters: normaliseFilters(filters),
     showDone: bool(row['ShowDone']),
+    display: normaliseDisplay(display),
     viewOrder: num(row['ViewOrder']),
     createdAt: num(row['CreatedAt']),
     updatedAt: num(row['UpdatedAt']),
@@ -185,6 +252,9 @@ export function toView(row: Record<string, unknown>): ViewRow {
 
 export function toRow(view: SavedView): Record<string, string> {
   return {
+    // Written only once the column is known to exist; before that a view saves
+    // exactly as it always did and the choice stays in the browser.
+    ...(displayAvailable ? { DisplayJson: JSON.stringify(normaliseDisplay(view.display)) } : {}),
     ViewId: view.id,
     OwnerId: view.ownerId,
     Name: view.name.slice(0, MAX_VIEW_NAME),
@@ -207,6 +277,7 @@ export function viewToApi(view: SavedView) {
     scopeListId: view.scopeListId || null,
     filters: view.filters,
     showDone: view.showDone,
+    display: normaliseDisplay(view.display),
     viewOrder: view.viewOrder,
     createdAt: view.createdAt,
     updatedAt: view.updatedAt,
@@ -219,7 +290,7 @@ export async function listViews(app: CatalystApp, ownerId: string): Promise<View
   const out: ViewRow[] = [];
   for (let offset = 0; ; offset += PAGE) {
     const results = await app.zcql().executeZCQLQuery(
-      `SELECT ${COLUMNS} FROM ${VIEWS_TABLE} WHERE OwnerId = ${zcqlString(ownerId)} ` +
+      `SELECT ${viewColumns()} FROM ${VIEWS_TABLE} WHERE OwnerId = ${zcqlString(ownerId)} ` +
       `ORDER BY ViewOrder ASC LIMIT ${offset},${PAGE}`,
     );
     const page = unwrapRows(results, VIEWS_TABLE).map(toView);
@@ -232,7 +303,7 @@ export async function listViews(app: CatalystApp, ownerId: string): Promise<View
 /** Scoped by owner as well as id, so another user's view is a 404. */
 export async function getView(app: CatalystApp, ownerId: string, viewId: string): Promise<ViewRow | null> {
   const results = await app.zcql().executeZCQLQuery(
-    `SELECT ${COLUMNS} FROM ${VIEWS_TABLE} ` +
+    `SELECT ${viewColumns()} FROM ${VIEWS_TABLE} ` +
     `WHERE ViewId = ${zcqlString(viewId)} AND OwnerId = ${zcqlString(ownerId)} LIMIT 1`,
   );
   const rows = unwrapRows(results, VIEWS_TABLE);

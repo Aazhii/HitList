@@ -98,6 +98,7 @@ import { simpleRequestMiddleware } from './simpleRequests.ts';
 import {
   MAX_VIEWS, deleteView, getView, insertView, listViews, parseViewBody, updateView, viewToApi,
   type SavedView,
+  setViewDisplayAvailable,
 } from './views.ts';
 import {
   MAX_FIELDS, decodeValue, defToApi, deleteDefRow, deletePropsForDef, deletePropsForTask, encodeValue,
@@ -369,7 +370,7 @@ function initCatalystAsUser(req: express.Request) {
 //     typing every column as `text`. Schema changes belong in
 //     `pnpm catalyst:setup`, which knows the real column types.
 
-import { SCHEMA, TABLE_NAMES, TASKS_TABLE, LISTS_TABLE, NOTES_TABLE, RULES_TABLE } from './catalyst/schema.ts';
+import { SCHEMA, TABLE_NAMES, TASKS_TABLE, LISTS_TABLE, NOTES_TABLE, RULES_TABLE, VIEWS_TABLE } from './catalyst/schema.ts';
 
 /**
  * Checks that every table in the schema is queryable.
@@ -693,6 +694,18 @@ async function ensureRuleStepsColumn(req: express.Request): Promise<boolean> {
     req, RULES_TABLE, 'OffsetSteps', 'a rule will fire at one offset rather than several',
   );
   setStepsColumnAvailable(available);
+  return available;
+}
+
+/**
+ * Whether KaizenViews has DisplayJson. Without it a view saves as it always
+ * did and a table's column choices stay in the browser.
+ */
+async function ensureViewDisplayColumn(req: express.Request): Promise<boolean> {
+  const available = await hasOptionalColumn(
+    req, VIEWS_TABLE, 'DisplayJson', 'table column choices will not be saved with a view',
+  );
+  setViewDisplayAvailable(available);
   return available;
 }
 
@@ -1635,6 +1648,7 @@ app.get('/api/views', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
   if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  await ensureViewDisplayColumn(req);
 
   try {
     const views = await listViews(initCatalyst(req) as unknown as NotificationApp, ownerId);
@@ -1651,6 +1665,7 @@ app.post('/api/views', async (req, res) => {
 
   const parsed = parseViewBody((req.body ?? {}) as Record<string, unknown>);
   if (!parsed.ok) { sendViewErrors(res, parsed.errors); return; }
+  await ensureViewDisplayColumn(req);
 
   try {
     const catalyst = initCatalyst(req) as unknown as NotificationApp;
@@ -1684,6 +1699,7 @@ app.put('/api/views/:id', async (req, res) => {
 
   const parsed = parseViewBody((req.body ?? {}) as Record<string, unknown>);
   if (!parsed.ok) { sendViewErrors(res, parsed.errors); return; }
+  await ensureViewDisplayColumn(req);
 
   try {
     const catalyst = initCatalyst(req) as unknown as NotificationApp;

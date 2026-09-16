@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
-  deleteView, getView, insertView, listViews, normaliseFilters, parseViewBody,
-  toView, toRow, updateView, type SavedView,
+  DEFAULT_DISPLAY, deleteView, getView, insertView, listViews, normaliseDisplay, normaliseFilters,
+  parseViewBody, setViewDisplayAvailable, toView, toRow, updateView, type SavedView,
 } from '../../server/views.ts';
 import { fakeCatalyst } from './helpers/fakeCatalyst.ts';
 
 const view = (over: Partial<SavedView> = {}): SavedView => ({
   id: 'v1', ownerId: 'user-1', name: 'Overdue at work', layout: 'list', scopeListId: 'list-work',
-  filters: normaliseFilters({ due: 'overdue' }), showDone: false, viewOrder: 0, createdAt: 1, updatedAt: 1,
+  filters: normaliseFilters({ due: 'overdue' }), showDone: false, display: DEFAULT_DISPLAY,
+  viewOrder: 0, createdAt: 1, updatedAt: 1,
   ...over,
 });
 
@@ -125,5 +126,48 @@ describe('table layout and field sorts', () => {
     expect(normaliseFilters({ sortBy: 'field:effort' }).sortBy).toBe('field:effort');
     expect(normaliseFilters({ sortBy: 'quadrant' }).sortBy).toBe('quadrant');
     expect(normaliseFilters({ sortBy: 'field:not valid!' }).sortBy).toBe('order');
+  });
+});
+
+describe('table columns saved with a view (DisplayJson)', () => {
+  it('keeps sane ids and widths, and drops the rest', () => {
+    const display = normaliseDisplay({
+      hidden: ['due', 'bad id!', 'due', 42],
+      order: ['title', 'status'],
+      widths: { title: 5000, status: 10, 'bad id!': 200, due: 'wide' },
+    });
+    expect(display.hidden).toEqual(['due']);
+    expect(display.order).toEqual(['title', 'status']);
+    // Clamped to the readable range, and only for ids that look like columns.
+    expect(display.widths).toEqual({ title: 600, status: 80 });
+  });
+
+  it('reads anything unexpected as no choices at all', () => {
+    expect(normaliseDisplay(undefined)).toEqual(DEFAULT_DISPLAY);
+    expect(normaliseDisplay('nonsense')).toEqual(DEFAULT_DISPLAY);
+    expect(normaliseDisplay({ hidden: 'due' })).toEqual(DEFAULT_DISPLAY);
+  });
+
+  it('rejects a display that is not an object', () => {
+    const parsed = parseViewBody({ name: 'T', display: [] });
+    expect(parsed.ok).toBe(false);
+    if ('errors' in parsed) expect(parsed.errors['display']).toBeDefined();
+  });
+
+  it('round-trips through the row once the column exists, and is left out before that', () => {
+    const display = { hidden: ['due'], order: ['title', 'due'], widths: { title: 320 } };
+
+    setViewDisplayAvailable(false);
+    expect(toRow(view({ display }))['DisplayJson']).toBeUndefined();
+
+    setViewDisplayAvailable(true);
+    const row = toRow(view({ display }));
+    expect(row['DisplayJson']).toBeDefined();
+    expect(toView({ ROWID: '1', ...row }).display).toEqual(display);
+    setViewDisplayAvailable(false);
+  });
+
+  it('reads a row with unreadable display JSON as no choices', () => {
+    expect(toView({ ROWID: '1', ViewId: 'v', DisplayJson: '{oops' }).display).toEqual(DEFAULT_DISPLAY);
   });
 });

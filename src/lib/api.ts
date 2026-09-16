@@ -503,6 +503,13 @@ export const automationApi = {
 /** How the tasks page shows tasks. */
 export type TaskLayout = 'list' | 'matrix' | 'table' | 'board' | 'calendar';
 
+/** A table's columns in a saved view: hidden ones, their order, any dragged widths. */
+export interface ViewDisplay {
+  hidden: string[];
+  order: string[];
+  widths: Record<string, number>;
+}
+
 export interface ApiSavedView {
   id: string;
   name: string;
@@ -511,6 +518,7 @@ export interface ApiSavedView {
   scopeListId: string | null;
   filters: import('./taskFilters').FilterState;
   showDone: boolean;
+  display: ViewDisplay;
   viewOrder: number;
   createdAt: number;
   updatedAt: number;
@@ -518,6 +526,8 @@ export interface ApiSavedView {
 
 export type SavedViewInput = Pick<ApiSavedView, 'name' | 'layout' | 'scopeListId' | 'filters' | 'showDone'> & {
   viewOrder?: number;
+  /** Left out when a screen has no column choices to keep. */
+  display?: ViewDisplay;
 };
 
 export const viewApi = {

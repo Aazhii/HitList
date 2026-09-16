@@ -261,6 +261,8 @@ export const SCHEMA: TableSpec[] = [
       { name: 'ViewLayout', type: 'varchar', maxLength: 16, note: 'list | matrix' },
       { name: 'ScopeListId', type: 'varchar', maxLength: 64, note: 'A list the view opens; empty = whichever is open' },
       { name: 'FilterJson', type: 'text', note: 'src/lib/taskFilters FilterState, normalised on write' },
+      { name: 'DisplayJson', type: 'text',
+        note: 'Table columns: which are hidden, their order and widths. Added after launch — guarded by hasOptionalColumn.' },
       { name: 'ShowDone', type: 'boolean' },
       { name: 'ViewOrder', type: 'int' },
       { name: 'CreatedAt', type: 'bigint' },
