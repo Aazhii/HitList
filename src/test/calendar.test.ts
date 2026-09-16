@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CALENDAR_DAY_PREFIX, NO_DATE, calendarDrop, isInMonth, monthWeeks, shiftMonth, tasksByDay,
+  CALENDAR_DAY_PREFIX, NO_DATE, calendarDrop, isInMonth, monthWeeks, recordsByDay, shiftMonth, tasksByDay,
 } from '@/lib/calendar';
 import { compareTasks } from '@/lib/quadrantBuckets';
 import type { Todo } from '@/types/todo';
@@ -91,5 +91,42 @@ describe('calendarDrop', () => {
     expect(calendarDrop('a', 'board-column:x', todos)).toBeNull();
     expect(calendarDrop('a', day('not-a-date'), todos)).toBeNull();
     expect(calendarDrop('missing', day('2026-09-20'), todos)).toBeNull();
+  });
+});
+
+describe('recordsByDay', () => {
+  const rec = (id: string, title: string) => ({ id, title });
+  const byTitle = (a: { title: string }, b: { title: string }) => a.title.localeCompare(b.title);
+  const records = [rec('r1', 'beta'), rec('r2', 'alpha'), rec('r3', 'gamma'), rec('r4', 'delta')];
+
+  const values: Record<string, Record<string, unknown>> = {
+    r1: { due: '2026-09-18' },
+    r2: { due: '2026-09-18' },
+    r3: { due: 'not a date' },
+    // r4 has no value for the field at all.
+  };
+
+  it('puts records on the day their date field holds, sorted by the comparator', () => {
+    const { byDay } = recordsByDay(records, 'due', values, byTitle);
+    expect(byDay.get('2026-09-18')?.map((r) => r.title)).toEqual(['alpha', 'beta']);
+  });
+
+  it('treats anything that is not a YYYY-MM-DD string as no date', () => {
+    const { undated } = recordsByDay(records, 'due', values, byTitle);
+    expect(undated.map((r) => r.id).sort()).toEqual(['r3', 'r4']);
+  });
+
+  it('reads the field the database chose, not some other one', () => {
+    const both: Record<string, Record<string, unknown>> = {
+      r1: { due: '2026-09-18', started: '2026-09-01' },
+    };
+    expect(recordsByDay([rec('r1', 'x')], 'started', both, byTitle).byDay.get('2026-09-01')).toHaveLength(1);
+    expect(recordsByDay([rec('r1', 'x')], 'started', both, byTitle).byDay.get('2026-09-18')).toBeUndefined();
+  });
+
+  it('puts everything in the tray when no record has that field set', () => {
+    const { byDay, undated } = recordsByDay(records, 'missing', values, byTitle);
+    expect(byDay.size).toBe(0);
+    expect(undated).toHaveLength(4);
   });
 });

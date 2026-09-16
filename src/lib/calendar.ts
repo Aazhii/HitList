@@ -13,6 +13,8 @@ export interface CalendarMonth {
   month: number;
 }
 
+const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
+
 export const monthOf = (date: Date): CalendarMonth => ({ year: date.getFullYear(), month: date.getMonth() });
 
 export function shiftMonth(m: CalendarMonth, delta: number): CalendarMonth {
@@ -80,11 +82,39 @@ export function tasksByDay(
   return { byDay, undated };
 }
 
+/**
+ * Records by the date field the database calendars on, and those with no date.
+ *
+ * A record has no due date of its own — only the fields it was given — so the
+ * database says which date field its calendar reads. Everything else about the
+ * grid, and calendarDrop, is the same as for tasks.
+ */
+export function recordsByDay<T extends { id: string }>(
+  records: readonly T[],
+  fieldId: string,
+  values: Record<string, Record<string, unknown>>,
+  compare: (a: T, b: T) => number,
+): { byDay: Map<string, T[]>; undated: T[] } {
+  const byDay = new Map<string, T[]>();
+  const undated: T[] = [];
+
+  for (const record of records) {
+    const value = values[record.id]?.[fieldId];
+    // A date field holds YYYY-MM-DD; anything else has no place on the grid.
+    const day = typeof value === 'string' && DATE_KEY.test(value) ? value : null;
+    if (!day) { undated.push(record); continue; }
+    const bucket = byDay.get(day);
+    if (bucket) bucket.push(record); else byDay.set(day, [record]);
+  }
+
+  for (const day of byDay.values()) day.sort(compare);
+  undated.sort(compare);
+  return { byDay, undated };
+}
+
 export const CALENDAR_DAY_PREFIX = 'calendar-day:';
 /** The tray of tasks without a due date, as a drop target. */
 export const NO_DATE = 'none';
-
-const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
  * What dropping a task on a day, or on the no-date tray, changes — or null when

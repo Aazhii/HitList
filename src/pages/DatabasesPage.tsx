@@ -28,11 +28,14 @@ import {
   contextIconButton,
   contextRowClass,
 } from '@/components/shell/ViewLayout';
-import { TopBar, topBarPrimary } from '@/components/shell/TopBar';
+import { TopBar, TopBarToggle, topBarPrimary } from '@/components/shell/TopBar';
 import { FieldsManagerDialog } from '@/components/fields/FieldsManagerDialog';
 import { RecordTable } from '@/components/databases/RecordTable';
+import { RecordBoard } from '@/components/databases/RecordBoard';
 import { useDatabases } from '@/hooks/useDatabases';
+import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { fieldApi, databaseApi, type ApiDatabase, type FieldInput } from '@/lib/api';
+import { FIELD_EMPTY, isGroupableField } from '@/lib/taskFilters';
 import type { FieldDef, FieldValue } from '@/types/fields';
 
 /** recordId → fieldId → value, the same shape tasks use. */
@@ -46,12 +49,23 @@ export function DatabasesPage() {
     createDatabase, updateDatabase, deleteDatabase, createRow, updateRow, deleteRow,
   } = useDatabases(openId, notify);
 
+  /**
+   * Which view each database opens in, and the field its board groups by. Per
+   * database and per device: a database's views are not saved views yet.
+   */
+  const [viewByDatabase, setViewByDatabase] = useLocalStorage<Record<string, 'table' | 'board'>>('hitlist-db-view-v1', {});
+  const [boardFieldByDatabase, setBoardFieldByDatabase] = useLocalStorage<Record<string, string>>('hitlist-db-board-field-v1', {});
+
   const [fields, setFields] = useState<FieldDef[]>([]);
   const [values, setValues] = useState<RecordValues>({});
   const [fieldsOpen, setFieldsOpen] = useState(false);
   const [fieldsTarget, setFieldsTarget] = useState<{ fieldId?: string; startNew?: boolean }>({});
 
   const open = databases.find((d) => d.id === openId) ?? null;
+  const view = (openId && viewByDatabase[openId]) || 'table';
+  const boardField = openId
+    ? fields.find((f) => f.id === boardFieldByDatabase[openId] && isGroupableField(f)) ?? null
+    : null;
 
   // Open the first database once they arrive, so the page is never blank when
   // there is something to show.
@@ -95,6 +109,18 @@ export function DatabasesPage() {
       notify("Couldn't save the value");
     }
   }, [values, notify]);
+
+  /** "+ Add" in a board column: create the record, then give it that column's value. */
+  const addRecordInColumn = useCallback(async (title: string, columnKey: string) => {
+    const created = await createRow({ title });
+    if (!created || !boardField || !columnKey) return;
+    const value: FieldValue | null =
+      columnKey === FIELD_EMPTY ? null
+      : boardField.kind === 'checkbox' ? true
+      : boardField.kind === 'multi' ? [columnKey]
+      : columnKey;
+    await setValue(created.id, boardField.id, value);
+  }, [createRow, boardField, setValue]);
 
   const handleCreateField = useCallback(async (input: FieldInput) => {
     if (!openId) return null;
@@ -197,6 +223,27 @@ export function DatabasesPage() {
             />
           ) : !open ? null : (
             <>
+              <div className="mb-4 flex">
+                <TopBarToggle
+                  label="Table or board"
+                  value={view}
+                  onChange={(next) => setViewByDatabase((prev) => ({ ...prev, [open.id]: next }))}
+                  options={[{ value: 'table' as const, label: 'Table' }, { value: 'board' as const, label: 'Board' }]}
+                />
+              </div>
+
+              {view === 'board' ? (
+                <RecordBoard
+                  rows={rows}
+                  fields={fields}
+                  values={values}
+                  groupField={boardField}
+                  onGroupFieldChange={(fieldId) => setBoardFieldByDatabase((prev) => ({ ...prev, [open.id]: fieldId }))}
+                  onManageFields={() => { setFieldsTarget({ startNew: true }); setFieldsOpen(true); }}
+                  onSetValue={(recordId, fieldId, value) => { void setValue(recordId, fieldId, value); }}
+                  onAdd={(title, columnKey) => { void addRecordInColumn(title, columnKey); }}
+                />
+              ) : (
               <RecordTable
                 rows={rows}
                 fields={fields}
@@ -210,6 +257,7 @@ export function DatabasesPage() {
                 onDeleteField={(fieldId) => { void handleDeleteField(fieldId); }}
                 onCreateField={() => { setFieldsTarget({ startNew: true }); setFieldsOpen(true); }}
               />
+              )}
 
               <p className="mt-6 text-[12.5px] leading-relaxed text-a-faint">
                 Records have no reminders, escalation or automations — those are built on tasks.
