@@ -12,6 +12,7 @@
 import { accessTokenFromCli, readCatalystRc } from '../server/catalyst/cliCredentials.ts';
 import { endpointsFor } from '../server/catalyst/dc.ts';
 import { SCHEMA } from '../server/catalyst/schema.ts';
+import { parseCatalystJson } from './catalyst-json.mjs';
 
 function arg(name) {
   const i = process.argv.indexOf(`--${name}`);
@@ -48,7 +49,7 @@ async function api(method, path, body) {
   });
   const text = await res.text();
   if (!res.ok) throw new Error(`${method} ${path} -> ${res.status}: ${text.slice(0, 200)}`);
-  return text ? JSON.parse(text) : null;
+  return text ? parseCatalystJson(text) : null;
 }
 
 console.log(`${project.projectName}: "${FROM}" -> "${TO}"${APPLY ? '' : '  (dry run)'}\n`);

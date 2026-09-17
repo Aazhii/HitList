@@ -76,19 +76,11 @@ The URL is printed once on a successful deploy and otherwise only lives in the c
 easy to lose among similar-looking Slate hostnames. Also shows the running state — useful when
 something returns 503, since a stopped service and a crashed one look identical from a browser.
 
-### `pnpm run build:appsail` — [`scripts/build-appsail.mjs`](../../scripts/build-appsail.mjs)
+### Docker image build
 
-Stages a minimal bundle in `build/`: compiled server, built frontend, slim `package.json`,
-vendored `node_modules`.
-
-```
-before   ~310MB, 635 packages
-after      1.2MB,  73 packages, install in 371ms
-```
-
-Three guards worth copying, because a slim bundle fails at *runtime* rather than at build time:
-it scans the server for bare imports and refuses to build if one is missing from the runtime
-dependency list; it copies only what runs; and it refuses to build without `dist/index.html`.
+AppSail now deploys the Docker image built by [`Dockerfile`](../../Dockerfile).
+Build a Linux/amd64 OCI image and deploy it with `catalyst deploy appsail
+--source docker://…`; see [05-appsail-deploy](05-appsail-deploy.md).
 
 ### `scripts/build-login-css.sh` — the login stylesheet
 

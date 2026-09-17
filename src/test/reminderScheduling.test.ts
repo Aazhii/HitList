@@ -15,6 +15,7 @@ import {
   scheduleAllReminders,
   cancelAllReminders,
   DEFAULT_REMINDER_MINUTES,
+  MAX_REMINDER_TIMER_DELAY_MS,
 } from '@/lib/notifications';
 import type { Todo } from '@/types/todo';
 
@@ -149,5 +150,39 @@ describe('reminder reconciliation', () => {
 
     // Exactly one cancellation: b's stale timer. a was left alone.
     expect(clearSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('chains bounded timers until a reminder more than a day away fires', () => {
+    const notificationSpy = vi.fn();
+    const notificationWindow = window as unknown as { Notification: typeof Notification };
+    const originalNotification = notificationWindow.Notification;
+    class TestNotification {
+      static permission: NotificationPermission = 'granted';
+      static requestPermission = vi.fn().mockResolvedValue('granted' as NotificationPermission);
+      constructor(...args: unknown[]) { notificationSpy(...args); }
+      close() {}
+    }
+    notificationWindow.Notification = TestNotification as unknown as typeof Notification;
+    const due = new Date(Date.now() + MAX_REMINDER_TIMER_DELAY_MS * 2 + 60 * 60 * 1000);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const todo = reminderTodo({
+      dueDate: `${due.getFullYear()}-${pad(due.getMonth() + 1)}-${pad(due.getDate())}`,
+      dueTime: `${pad(due.getHours())}:${pad(due.getMinutes())}`,
+      reminderMinutesBefore: 0,
+    });
+    const setSpy = vi.spyOn(globalThis, 'setTimeout');
+
+    try {
+      scheduleAllReminders([todo]);
+      expect(setSpy).toHaveBeenLastCalledWith(expect.any(Function), MAX_REMINDER_TIMER_DELAY_MS);
+
+      vi.advanceTimersByTime(MAX_REMINDER_TIMER_DELAY_MS);
+      expect(setSpy).toHaveBeenLastCalledWith(expect.any(Function), MAX_REMINDER_TIMER_DELAY_MS);
+
+      vi.runAllTimers();
+      expect(notificationSpy).toHaveBeenCalledWith('⏰ Ship the scheduler', expect.any(Object));
+    } finally {
+      notificationWindow.Notification = originalNotification;
+    }
   });
 });

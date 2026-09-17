@@ -178,7 +178,7 @@ async function main(): Promise<void> {
   console.log(
     '\nThe service must carry the SAME TICK_SECRET, or every tick answers 401:\n\n' +
     '  pnpm catalyst:env\n\n' +
-    'Note that setting it in app-config.json is not enough — Catalyst does not\n' +
+    'Set TICK_SECRET in the deployed AppSail service configuration — Catalyst does not\n' +
     'apply env_variables on redeploy. See scripts/set-appsail-env.ts.\n'
   );
 }

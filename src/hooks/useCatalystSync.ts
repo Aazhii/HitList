@@ -18,6 +18,8 @@ import type { ServerSyncState } from './useServerSync';
 import type { ApiTask, ApiList, ApiMomentumStats, TaskCreateRequest, TaskUpdateRequest, Quadrant, TaskStatus } from '../lib/api';
 import { taskApi, listApi, statsApi, notificationApi, checkServerHealth, isNetworkError } from '../lib/api';
 import { mockTaskApi, mockListApi, mockStatsApi } from '../lib/mockApi';
+import { getActiveUserId, loadAppState } from '../lib/storage';
+import { migrateLocalState } from '../lib/localMigration';
 
 export { ServerSyncState };
 
@@ -59,6 +61,7 @@ export function useCatalystSync(activeListId?: string): ServerSyncState {
   const [serverOnline, setServerOnline] = useState(false);
 
   const savingCount = useRef(0);
+  const migrationRunning = useRef(false);
   // Read synchronously inside callbacks, so a mid-flight switch is seen
   // immediately rather than one render later.
   const onlineRef = useRef(false);
@@ -98,6 +101,24 @@ export function useCatalystSync(activeListId?: string): ServerSyncState {
     return null;
   }, []);
 
+  const migrateOfflineState = useCallback(async () => {
+    if (migrationRunning.current) return;
+    migrationRunning.current = true;
+    try {
+      await migrateLocalState(loadAppState(), getActiveUserId(), {
+        lists: listApi,
+        tasks: taskApi,
+      });
+    } catch (e) {
+      // The journal records the last confirmed item. Continue loading the
+      // server copy, then retry the incomplete migration on a later refresh.
+      if (isNetworkError(e)) setOnline(false);
+      else handleError(e);
+    } finally {
+      migrationRunning.current = false;
+    }
+  }, [handleError]);
+
   const withSaving = useCallback(async <T>(fn: () => Promise<T>): Promise<T> => {
     savingCount.current += 1;
     setSaving(true);
@@ -121,18 +142,18 @@ export function useCatalystSync(activeListId?: string): ServerSyncState {
         if (cancelled) return;
         setOnline(healthy);
 
-        const api = healthy ? REAL : MOCK;
+        if (healthy) await migrateOfflineState();
         const [fetchedTasks, fetchedLists] = await Promise.all([
-          api.task.list(),
-          api.list.list(),
+          viaBackend((api) => api.task.list()),
+          viaBackend((api) => api.list.list()),
         ]);
         if (cancelled) return;
         setTasks(fetchedTasks);
         setLists(fetchedLists);
 
-        const mom = await api.stats.momentum(activeListId);
+        const mom = await viaBackend((api) => api.stats.momentum(activeListId));
         if (!cancelled) setMomentum(mom);
-        const hist = await api.task.todayHistory(activeListId);
+        const hist = await viaBackend((api) => api.task.todayHistory(activeListId));
         if (!cancelled) setTodayHistory(hist);
 
         // Queue reminders for tasks that predate the delivery queue, or whose
@@ -142,7 +163,7 @@ export function useCatalystSync(activeListId?: string): ServerSyncState {
         //
         // Not awaited: nothing on screen depends on it, and it is the one call
         // here whose failure should cost nothing.
-        if (healthy) {
+        if (onlineRef.current) {
           void notificationApi.backfill().catch((e) => {
             console.warn('[kaizen] reminder backfill skipped:', e);
           });
@@ -178,6 +199,9 @@ export function useCatalystSync(activeListId?: string): ServerSyncState {
     setLoading(true);
     clearError();
     try {
+      const healthy = await checkServerHealth();
+      setOnline(healthy);
+      if (healthy) await migrateOfflineState();
       const [fetchedTasks, fetchedLists] = await Promise.all([
         viaBackend((api) => api.task.list()),
         viaBackend((api) => api.list.list()),
@@ -188,7 +212,13 @@ export function useCatalystSync(activeListId?: string): ServerSyncState {
       await refreshTodayHistory();
     } catch (e) { handleError(e); }
     finally { setLoading(false); }
-  }, [refreshMomentum, refreshTodayHistory, clearError, handleError, viaBackend]);
+  }, [refreshMomentum, refreshTodayHistory, clearError, handleError, viaBackend, migrateOfflineState]);
+
+  useEffect(() => {
+    const reconnect = () => { void refresh(); };
+    window.addEventListener('online', reconnect);
+    return () => window.removeEventListener('online', reconnect);
+  }, [refresh]);
 
   // ── Task mutations ────────────────────────────────────────────────────────
 

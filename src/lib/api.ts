@@ -70,6 +70,8 @@ export interface TaskCreateRequest {
   /** The note block this task was added from; '' clears on update. */
   sourceNoteId?: string;
   sourceBlockId?: string;
+  /** Stable local id used only by the one-time offline migration. */
+  clientId?: string;
 }
 
 export type TaskUpdateRequest = Partial<TaskCreateRequest>;
@@ -78,6 +80,8 @@ export interface ListCreateRequest {
   name: string;
   color?: string;
   listOrder?: number;
+  /** Stable local id used only by the one-time offline migration. */
+  clientId?: string;
 }
 
 export type ListUpdateRequest = Partial<ListCreateRequest>;

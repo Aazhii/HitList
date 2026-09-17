@@ -28,7 +28,7 @@ dist-ssr
 .env.local
 .env.*.local
 
-# Server JSON-file store (dev fallback backend — not source)
+# Historical local JSON data (no longer used by the server)
 server/*-db.json
 server/*-db.json.tmp
 server/*.tmp
@@ -50,6 +50,6 @@ backups/
 # Scratch dir used by `pnpm run lock:npm`
 .lockgen/
 
-# AppSail deploy bundle, produced by `pnpm run build:appsail`
+# Local build output
 build/
 catalyst-debug.log

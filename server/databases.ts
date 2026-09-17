@@ -18,6 +18,9 @@
 import type { CatalystApp } from './notifications/types.ts';
 import { DATABASES_TABLE, DB_ROWS_TABLE } from './catalyst/schema.ts';
 import { zcqlString, unwrapRows, str, num } from './notifications/zcql.ts';
+import {
+  DELETION_PENDING_UPDATED_AT, deletionLockKey, isDeletionPending, withDeletionLock, withDeletionLocks,
+} from './deletion.ts';
 
 export const MAX_DATABASES = 50;
 export const MAX_NAME = 100;
@@ -215,12 +218,13 @@ async function readPages<T>(
 }
 
 export async function listDatabases(app: CatalystApp, ownerId: string): Promise<DatabaseWithRowId[]> {
-  return readPages(
+  const databases = await readPages(
     app, DATABASES_TABLE,
     (offset) => `SELECT ${dbColumns()} FROM ${DATABASES_TABLE} WHERE OwnerId = ${zcqlString(ownerId)} ` +
       `ORDER BY DbOrder ASC LIMIT ${offset},${PAGE}`,
     toDatabase,
   );
+  return databases.filter((database) => !isDeletionPending(database));
 }
 
 export async function getDatabase(
@@ -239,23 +243,39 @@ export async function insertDatabase(app: CatalystApp, db: KaizenDatabase): Prom
 }
 
 export async function updateDatabase(app: CatalystApp, rowId: string, db: KaizenDatabase): Promise<void> {
-  await app.datastore().table(DATABASES_TABLE).updateRow({ ROWID: rowId, ...databaseToRow(db) });
+  await withDeletionLock(deletionLockKey('database', db.ownerId, db.id), async () => {
+    if (!isDeletionPending(db)) {
+      const current = await getDatabase(app, db.ownerId, db.id);
+      if (!current || isDeletionPending(current)) throw new Error('Database deletion is pending');
+    }
+    await app.datastore().table(DATABASES_TABLE).updateRow({ ROWID: rowId, ...databaseToRow(db) });
+  });
 }
 
 export async function deleteDatabase(app: CatalystApp, rowId: string): Promise<void> {
   await app.datastore().table(DATABASES_TABLE).deleteRow(rowId);
 }
 
+/** Hide a database before deleting its children, so a failed purge is retryable. */
+export async function markDatabaseDeleting(app: CatalystApp, database: DatabaseWithRowId): Promise<void> {
+  if (isDeletionPending(database)) return;
+  await app.datastore().table(DATABASES_TABLE).updateRow({
+    ROWID: database.rowId,
+    ...databaseToRow({ ...database, updatedAt: DELETION_PENDING_UPDATED_AT }),
+  });
+}
+
 export async function listRows(
-  app: CatalystApp, ownerId: string, databaseId: string,
+  app: CatalystApp, ownerId: string, databaseId: string, includeDeleting = false,
 ): Promise<RecordWithRowId[]> {
-  return readPages(
+  const rows = await readPages(
     app, DB_ROWS_TABLE,
     (offset) => `SELECT ${ROW_COLUMNS} FROM ${DB_ROWS_TABLE} ` +
       `WHERE OwnerId = ${zcqlString(ownerId)} AND DatabaseId = ${zcqlString(databaseId)} ` +
       `ORDER BY RowOrder ASC LIMIT ${offset},${PAGE}`,
     toDatabaseRow,
   );
+  return includeDeleting ? rows : rows.filter((row) => !isDeletionPending(row));
 }
 
 export async function getRow(
@@ -274,11 +294,31 @@ export async function insertRow(app: CatalystApp, record: DatabaseRow): Promise<
 }
 
 export async function updateRow(app: CatalystApp, rowId: string, record: DatabaseRow): Promise<void> {
-  await app.datastore().table(DB_ROWS_TABLE).updateRow({ ROWID: rowId, ...rowToRow(record) });
+  await withDeletionLocks([
+    deletionLockKey('database', record.ownerId, record.databaseId),
+    deletionLockKey('database-row', record.ownerId, record.id),
+  ], async () => {
+    if (!isDeletionPending(record)) {
+      const database = await getDatabase(app, record.ownerId, record.databaseId);
+      if (!database || isDeletionPending(database)) throw new Error('Database deletion is pending');
+      const current = await getRow(app, record.ownerId, record.id);
+      if (!current || isDeletionPending(current)) throw new Error('Record deletion is pending');
+    }
+    await app.datastore().table(DB_ROWS_TABLE).updateRow({ ROWID: rowId, ...rowToRow(record) });
+  });
 }
 
 export async function deleteRow(app: CatalystApp, rowId: string): Promise<void> {
   await app.datastore().table(DB_ROWS_TABLE).deleteRow(rowId);
+}
+
+/** Hide a record before removing its field values. */
+export async function markRowDeleting(app: CatalystApp, record: RecordWithRowId): Promise<void> {
+  if (isDeletionPending(record)) return;
+  await app.datastore().table(DB_ROWS_TABLE).updateRow({
+    ROWID: record.rowId,
+    ...rowToRow({ ...record, updatedAt: DELETION_PENDING_UPDATED_AT }),
+  });
 }
 
 /**
@@ -286,9 +326,15 @@ export async function deleteRow(app: CatalystApp, rowId: string): Promise<void> 
  * of them, so removing rows cannot shift the paging past one that is left.
  */
 export async function deleteRowsOfDatabase(
-  app: CatalystApp, ownerId: string, databaseId: string,
+  app: CatalystApp,
+  ownerId: string,
+  databaseId: string,
+  beforeDelete?: (record: RecordWithRowId) => Promise<void>,
 ): Promise<number> {
-  const rows = await listRows(app, ownerId, databaseId);
-  for (const record of rows) await deleteRow(app, record.rowId);
+  const rows = await listRows(app, ownerId, databaseId, true);
+  for (const record of rows) {
+    await beforeDelete?.(record);
+    await deleteRow(app, record.rowId);
+  }
   return rows.length;
 }

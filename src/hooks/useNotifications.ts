@@ -13,8 +13,13 @@ import {
   cancelAllReminders,
 } from '@/lib/notifications';
 import type { Todo } from '@/types/todo';
+import { getActiveUserId } from '@/lib/storage';
 
 const PERM_STORAGE_KEY = 'kaizen_notif_permission';
+
+export function notificationPermissionStorageKey(userId: string | null = getActiveUserId()): string {
+  return userId ? `${PERM_STORAGE_KEY}-${userId}` : PERM_STORAGE_KEY;
+}
 
 export interface UseNotificationsReturn {
   supported: boolean;
@@ -24,21 +29,33 @@ export interface UseNotificationsReturn {
   cancelAll: () => void;
 }
 
-export function useNotifications(todos: Todo[]): UseNotificationsReturn {
+export function useNotifications(
+  todos: Todo[],
+  userId: string | null = getActiveUserId(),
+): UseNotificationsReturn {
   const supported = isNotificationSupported();
 
   const [permission, setPermission] = useState<NotificationPermission>(() => {
     // Hydrate from live API first, fall back to cached value
     if (isNotificationSupported()) return Notification.permission;
-    const cached = localStorage.getItem(PERM_STORAGE_KEY);
+    const cached = localStorage.getItem(notificationPermissionStorageKey(userId));
     return (cached as NotificationPermission | null) ?? 'default';
   });
+
+  useEffect(() => {
+    if (isNotificationSupported()) {
+      setPermission(Notification.permission);
+      return;
+    }
+    const cached = localStorage.getItem(notificationPermissionStorageKey(userId));
+    setPermission((cached as NotificationPermission | null) ?? 'default');
+  }, [supported, userId]);
 
   // Persist the current permission to localStorage on mount
   useEffect(() => {
     if (!supported) return;
-    localStorage.setItem(PERM_STORAGE_KEY, Notification.permission);
-  }, [supported]);
+    localStorage.setItem(notificationPermissionStorageKey(userId), Notification.permission);
+  }, [supported, userId]);
 
   // Reconcile timers whenever tasks or permission change. scheduleAllReminders
   // now leaves unchanged reminders alone, so this is cheap to run often.
@@ -59,13 +76,13 @@ export function useNotifications(todos: Todo[]): UseNotificationsReturn {
   const requestPermission = useCallback(async (): Promise<NotificationPermission> => {
     const result = await requestNotificationPermission();
     setPermission(result);
-    localStorage.setItem(PERM_STORAGE_KEY, result);
+    localStorage.setItem(notificationPermissionStorageKey(userId), result);
     // Immediately schedule reminders if granted
     if (result === 'granted') {
       scheduleAllReminders(todos);
     }
     return result;
-  }, [todos]);
+  }, [todos, userId]);
 
   const scheduleAll = useCallback((taskList: Todo[]) => {
     scheduleAllReminders(taskList);

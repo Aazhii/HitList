@@ -1,0 +1,10 @@
+services:
+  hitlist:
+    build: .
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL to the host PostgreSQL 9.5 service}
+      PORT: ${PORT:-3001}
+    ports:
+      - "${HOST_PORT:-3001}:${PORT:-3001}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

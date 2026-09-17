@@ -4,16 +4,13 @@
  *   TICK_SECRET=… pnpm catalyst:env
  *   pnpm catalyst:env --dry-run
  *
- * This exists because **`env_variables` in `app-config.json` is not applied on
- * redeploy**. Verified the hard way: TICK_SECRET was baked into the bundle's
- * config, `catalyst deploy appsail` reported success, and the live service came
- * back still answering
+ * This writes the deployed AppSail service configuration after a Docker image
+ * deployment. The live service otherwise comes back still answering
  *
  *   503 {"error":"not_configured","message":"TICK_SECRET is not set…"}
  *
- * with `GET /appsail` showing only the variable the service was originally
- * created with. The block in app-config.json appears to seed the service once,
- * at creation, and be ignored from then on.
+ * with `GET /appsail` showing only the variables the service was originally
+ * created with.
  *
  * There is no CLI command for this either — `catalyst appsail:add` is the only
  * appsail subcommand, and `config:set` writes local CLI config, not service

@@ -5,8 +5,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   MAX_TITLE, databaseToRow, deleteDatabase, deleteRowsOfDatabase, getDatabase, getRow,
-  insertDatabase, insertRow, listDatabases, listRows, parseDatabaseBody, parseRowBody,
-  rowToRow, setDatabaseDateFieldAvailable, toDatabase, toDatabaseRow, updateDatabase,
+  insertDatabase, insertRow, listDatabases, listRows, markDatabaseDeleting, markRowDeleting,
+  parseDatabaseBody, parseRowBody, rowToRow, setDatabaseDateFieldAvailable, toDatabase, toDatabaseRow, updateDatabase,
   type DatabaseRow, type KaizenDatabase,
 } from '../../server/databases.ts';
 import { fakeCatalyst } from './helpers/fakeCatalyst.ts';
@@ -132,6 +132,22 @@ describe('storage', () => {
     expect(await deleteRowsOfDatabase(fake.app, 'user-1', 'db1')).toBe(2);
     expect(await listRows(fake.app, 'user-1', 'db1')).toHaveLength(0);
     expect((await listRows(fake.app, 'user-1', 'db2')).map((r) => r.id)).toEqual(['keep']);
+  });
+
+  it('hides a tombstoned database and record while their cleanup is retried', async () => {
+    const fake = fakeCatalyst();
+    await insertDatabase(fake.app, db());
+    await insertRow(fake.app, record());
+    const storedDb = (await getDatabase(fake.app, 'user-1', 'db1'))!;
+    const storedRow = (await getRow(fake.app, 'user-1', 'r1'))!;
+
+    await markDatabaseDeleting(fake.app, storedDb);
+    await markRowDeleting(fake.app, storedRow);
+
+    expect(await listDatabases(fake.app, 'user-1')).toEqual([]);
+    expect(await listRows(fake.app, 'user-1', 'db1')).toEqual([]);
+    expect(await getDatabase(fake.app, 'user-1', 'db1')).not.toBeNull();
+    expect(await getRow(fake.app, 'user-1', 'r1')).not.toBeNull();
   });
 });
 

@@ -27,8 +27,8 @@ import {
   TaskUpdateRequest,
 } from '../lib/api';
 import { mockTaskApi, mockListApi, mockStatsApi } from '../lib/mockApi';
-import { loadAppState, saveAppState } from '../lib/storage';
-import type { AppState } from '../types/todo';
+import { getActiveUserId, loadAppState, saveAppState } from '../lib/storage';
+import { migrateLocalState } from '../lib/localMigration';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -82,10 +82,6 @@ export interface ServerSyncState {
   clearError:      () => void;
 }
 
-// ── Migration key ─────────────────────────────────────────────────────────────
-
-const MIGRATION_FLAG = 'kaizen_migrated_v1';
-
 // ── Saving counter (tracks in-flight mutations) ───────────────────────────────
 
 // ── Hook ─────────────────────────────────────────────────────────────────────
@@ -107,6 +103,7 @@ export function useServerSync(activeListId?: string, filterParams?: import('../l
   // Prevent double-fetch in StrictMode
   const initialised  = useRef(false);
   const migrated     = useRef(false);
+  const migrationRunning = useRef(false);
 
   // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -184,48 +181,24 @@ export function useServerSync(activeListId?: string, filterParams?: import('../l
   // ── One-time localStorage → server migration (server-online only) ──────────
 
   const runMigration = useCallback(async () => {
-    if (migrated.current) return;
-    if (localStorage.getItem(MIGRATION_FLAG)) return;
-    migrated.current = true;
+    if (migrated.current || migrationRunning.current) return;
+    migrationRunning.current = true;
 
     try {
-      const localState: AppState = loadAppState();
-      const nonSeedTodos = localState.todos.filter((t) => !t.id.startsWith('seed-'));
-      if (nonSeedTodos.length === 0 && localState.lists.every((l) => l.id.startsWith('list-'))) {
-        localStorage.setItem(MIGRATION_FLAG, 'done');
-        return;
-      }
-
-      const serverListIds = new Set(lists.map((l) => l.id));
-      for (const list of localState.lists) {
-        if (!serverListIds.has(list.id)) {
-          try { await taskApi.create({ title: list.name }); } catch { /* ignore */ }
-        }
-      }
-
-      const serverTaskIds = new Set(tasks.map((t) => t.id));
-      for (const todo of nonSeedTodos) {
-        if (serverTaskIds.has(todo.id)) continue;
-        try {
-          const statusMap: Record<string, string> = { 'todo': 'TODO', 'in-progress': 'IN_PROGRESS', 'done': 'DONE' };
-          const quadrantMap: Record<string, string> = { 'do': 'DO', 'schedule': 'SCHEDULE', 'delegate': 'DELEGATE', 'eliminate': 'ELIMINATE' };
-          await taskApi.create({
-            title: todo.text,
-            status: (statusMap[todo.status] ?? 'TODO') as import('../lib/api').TaskStatus,
-            quadrant: (quadrantMap[todo.quadrant] ?? 'SCHEDULE') as import('../lib/api').Quadrant,
-            note: todo.note, dueDate: todo.dueDate, dueTime: todo.dueTime,
-            category: todo.category, listId: todo.listId, taskOrder: todo.order,
-            reminderEnabled: todo.reminderEnabled, reminderMinutesBefore: todo.reminderMinutesBefore,
-          });
-        } catch { /* ignore */ }
-      }
-
-      localStorage.setItem(MIGRATION_FLAG, 'done');
+      await migrateLocalState(loadAppState(), getActiveUserId(), {
+        lists: listApi,
+        tasks: taskApi,
+      });
+      migrated.current = true;
       await loadFromServer();
-    } catch {
-      localStorage.setItem(MIGRATION_FLAG, 'done');
+    } catch (e) {
+      // The journal is intentionally left incomplete. The next successful
+      // connection resumes at the first unconfirmed item.
+      handleError(e);
+    } finally {
+      migrationRunning.current = false;
     }
-  }, [lists, tasks, loadFromServer]);
+  }, [handleError, loadFromServer]);
 
   // ── Initial mount ──────────────────────────────────────────────────────────
 

@@ -8,6 +8,7 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fieldApi, type FieldInput } from '@/lib/api';
+import { LatestValueQueue } from '@/lib/latestValueQueue';
 import type { FieldDef, FieldValue, TaskFieldValues } from '@/types/fields';
 
 function errorMessage(e: unknown, fallback: string): string {
@@ -38,7 +39,12 @@ export function useTaskFields(onError: (message: string) => void): UseTaskFields
   const [online, setOnline] = useState(false);
   const [loading, setLoading] = useState(true);
   const valuesRef = useRef(values);
-  useEffect(() => { valuesRef.current = values; }, [values]);
+  const valueQueue = useRef(new LatestValueQueue<FieldValue | null | undefined>());
+  const updateValues = useCallback((update: (current: TaskFieldValues) => TaskFieldValues) => {
+    const next = update(valuesRef.current);
+    valuesRef.current = next;
+    setValues(next);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,13 +57,13 @@ export function useTaskFields(onError: (message: string) => void): UseTaskFields
           (map[row.taskId] ??= {})[row.fieldId] = row.value;
         }
         setFields([...defs].sort(byOrder));
-        setValues(map);
+        updateValues(() => map);
         setOnline(true);
       })
       .catch(() => { if (!cancelled) setOnline(false); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, []);
+  }, [updateValues]);
 
   const createField = useCallback(async (input: FieldInput) => {
     try {
@@ -77,7 +83,7 @@ export function useTaskFields(onError: (message: string) => void): UseTaskFields
       // A removed option no longer counts as a value.
       if (saved.kind === 'select' || saved.kind === 'multi') {
         const keep = new Set(saved.options.map((o) => o.id));
-        setValues((prev) => {
+        updateValues((prev) => {
           const next: TaskFieldValues = {};
           for (const [taskId, row] of Object.entries(prev)) {
             const copy = { ...row };
@@ -98,13 +104,13 @@ export function useTaskFields(onError: (message: string) => void): UseTaskFields
       onError(errorMessage(e, "Couldn't save the field"));
       return null;
     }
-  }, [onError]);
+  }, [onError, updateValues]);
 
   const deleteField = useCallback(async (id: string) => {
     try {
       await fieldApi.deleteField(id);
       setFields((prev) => prev.filter((f) => f.id !== id));
-      setValues((prev) => {
+      updateValues((prev) => {
         const next: TaskFieldValues = {};
         for (const [taskId, row] of Object.entries(prev)) {
           const { [id]: _removed, ...rest } = row;
@@ -117,34 +123,32 @@ export function useTaskFields(onError: (message: string) => void): UseTaskFields
       onError(errorMessage(e, "Couldn't delete the field"));
       return false;
     }
-  }, [onError]);
+  }, [onError, updateValues]);
 
   const setValue = useCallback(async (taskId: string, fieldId: string, value: FieldValue | null) => {
     const before = valuesRef.current[taskId]?.[fieldId];
-    const apply = (v: FieldValue | null | undefined) => setValues((prev) => {
-      const row = { ...(prev[taskId] ?? {}) };
+    const apply = (v: FieldValue | null | undefined) => updateValues((current) => {
+      const row = { ...(current[taskId] ?? {}) };
       if (v === null || v === undefined) delete row[fieldId]; else row[fieldId] = v;
-      return { ...prev, [taskId]: row };
+      return { ...current, [taskId]: row };
     });
-    apply(value);
-    try {
-      const saved = await fieldApi.setValue(taskId, fieldId, value);
-      apply(saved.value);
-      return true;
-    } catch (e) {
-      apply(before);
-      onError(errorMessage(e, "Couldn't save the value"));
-      return false;
-    }
-  }, [onError]);
+    return valueQueue.current.submit(
+      `${taskId}:${fieldId}`,
+      before,
+      value,
+      async () => (await fieldApi.setValue(taskId, fieldId, value)).value,
+      apply,
+      () => onError("Couldn't save the value"),
+    );
+  }, [onError, updateValues]);
 
   const forgetTask = useCallback((taskId: string) => {
-    setValues((prev) => {
+    updateValues((prev) => {
       if (!prev[taskId]) return prev;
       const { [taskId]: _removed, ...rest } = prev;
       return rest;
     });
-  }, []);
+  }, [updateValues]);
 
   return { fields, values, online, loading, createField, updateField, deleteField, setValue, forgetTask };
 }

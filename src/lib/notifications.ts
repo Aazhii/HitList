@@ -34,9 +34,11 @@ export const DEFAULT_REMINDER_MINUTES: ReminderMinutes = 15;
 interface ScheduledReminder {
   handle: ReturnType<typeof setTimeout>;
   signature: string;
+  fireAt: number;
 }
 
 const scheduledTimeouts = new Map<string, ScheduledReminder>();
+export const MAX_REMINDER_TIMER_DELAY_MS = 24 * 60 * 60 * 1000;
 
 /** Everything that determines when — and whether — a reminder fires. */
 function reminderSignature(todo: Todo): string {
@@ -136,16 +138,26 @@ export function scheduleReminder(todo: Todo): void {
   // Don't schedule if the reminder time is already past (but still fire if due is in the future)
   if (delay < 0) return;
 
-  // setTimeout is unreliable beyond ~24.8 days — skip those
-  const MAX_DELAY_MS = 24 * 60 * 60 * 1000; // 24 hours
-  if (delay > MAX_DELAY_MS) return;
+  armReminder(todo, minutesBefore, fireAt, reminderSignature(todo));
+}
 
+/**
+ * Browser timers are capped and can be clamped. Long reminders therefore wake
+ * once per day and re-check the absolute fire time instead of being dropped.
+ */
+function armReminder(todo: Todo, minutesBefore: number, fireAt: number, signature: string): void {
+  const delay = Math.min(Math.max(0, fireAt - Date.now()), MAX_REMINDER_TIMER_DELAY_MS);
   const handle = setTimeout(() => {
+    const current = scheduledTimeouts.get(todo.id);
+    if (!current || current.fireAt !== fireAt || current.signature !== signature) return;
+    if (Date.now() < fireAt) {
+      armReminder(todo, minutesBefore, fireAt, signature);
+      return;
+    }
     scheduledTimeouts.delete(todo.id);
     fireNotification(todo, minutesBefore);
   }, delay);
-
-  scheduledTimeouts.set(todo.id, { handle, signature: reminderSignature(todo) });
+  scheduledTimeouts.set(todo.id, { handle, signature, fireAt });
 }
 
 /** Cancel a scheduled reminder for a task. */

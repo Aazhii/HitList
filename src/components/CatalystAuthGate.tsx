@@ -22,7 +22,7 @@ import { CatalystLoginPage } from '@/pages/CatalystLoginPage';
 
 export interface CatalystUserContextValue {
   session: CatalystSession | null;
-  isCatalyst: true;
+  isCatalyst: boolean;
   signOut: () => void;
   /** Re-reads the session from Catalyst. */
   refreshSession: () => void;
@@ -42,13 +42,34 @@ export function useCatalystUser() {
 type Status =
   | { phase: 'loading' }
   | { phase: 'unavailable'; reason: string }
+  | { phase: 'local' }
   | { phase: 'ready' };
+
+function isLocalPostgresBackend(payload: unknown): boolean {
+  return typeof payload === 'object'
+    && payload !== null
+    && 'backend' in payload
+    && payload.backend === 'postgres';
+}
 
 export function CatalystAuthGate({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<Status>({ phase: 'loading' });
   const [session, setSession] = useState<CatalystSession | null>(null);
 
   const loadSession = useCallback(async () => {
+    // The same frontend image runs locally and on AppSail. The server is the
+    // runtime authority: local PostgreSQL mode deliberately has no Catalyst
+    // identity provider, while AppSail continues through Catalyst auth below.
+    try {
+      const response = await fetch('/api/health');
+      if (response.ok && isLocalPostgresBackend(await response.json())) {
+        setStatus({ phase: 'local' });
+        return;
+      }
+    } catch {
+      // A Catalyst deployment can still authenticate through its Web SDK.
+    }
+
     // The SDK's credentials arrive asynchronously via init.js; calling before
     // they land fails in ways that look like network errors.
     const ready = await waitForCatalyst();
@@ -70,10 +91,11 @@ export function CatalystAuthGate({ children }: { children: React.ReactNode }) {
   // Catalyst returns the user to the app after login, so re-check on focus
   // rather than leaving a signed-in user looking at the login form.
   useEffect(() => {
+    if (status.phase !== 'ready' || !session) return;
     function onFocus() { void getCurrentSession().then(setSession); }
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, []);
+  }, [session, status.phase]);
 
   const signOut = useCallback(() => {
     setSession(null);
@@ -84,6 +106,13 @@ export function CatalystAuthGate({ children }: { children: React.ReactNode }) {
 
   if (status.phase === 'loading') return <AuthLoadingScreen />;
   if (status.phase === 'unavailable') return <AuthUnavailableScreen reason={status.reason} />;
+  if (status.phase === 'local') {
+    return (
+      <CatalystUserContext.Provider value={{ session: null, isCatalyst: false, signOut: () => {}, refreshSession: () => {} }}>
+        {children}
+      </CatalystUserContext.Provider>
+    );
+  }
   if (!session) return <CatalystLoginPage />;
 
   return (

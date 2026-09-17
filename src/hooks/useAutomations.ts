@@ -13,18 +13,23 @@
  * cannot fire, because firing happens server-side, and pretending otherwise
  * would be the same false promise this work exists to remove.
  */
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import type {
   AutomationRule, AutomationRuleFormValues, AutomationStatus,
 } from '@/types/automation';
 import { automationApi, isNetworkError, type ApiAutomationRule, type AutomationRuleInput } from '@/lib/api';
 import { normaliseSteps } from '@/lib/reminderSteps';
+import { getActiveUserId } from '@/lib/storage';
 
 const STORAGE_KEY = 'kaizen-automations-v1';
 
-function loadFromStorage(): AutomationRule[] {
+export function automationStorageKey(userId: string | null = getActiveUserId()): string {
+  return userId ? `${STORAGE_KEY}-${userId}` : STORAGE_KEY;
+}
+
+function loadFromStorage(userId?: string | null): AutomationRule[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(automationStorageKey(userId));
     if (raw) return JSON.parse(raw) as AutomationRule[];
   } catch {
     // ignore
@@ -34,9 +39,9 @@ function loadFromStorage(): AutomationRule[] {
   return [];
 }
 
-function saveToStorage(rules: AutomationRule[]) {
+function saveToStorage(rules: AutomationRule[], userId?: string | null) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(rules));
+    localStorage.setItem(automationStorageKey(userId), JSON.stringify(rules));
   } catch {
     // ignore
   }
@@ -132,8 +137,12 @@ export interface UseAutomationsReturn {
   refresh: () => Promise<void>;
 }
 
-export function useAutomations(todos: { id: string; text: string }[]): UseAutomationsReturn {
-  const [rules, setRules] = useState<AutomationRule[]>(() => loadFromStorage());
+export function useAutomations(
+  todos: { id: string; text: string }[],
+  userId: string | null = getActiveUserId(),
+): UseAutomationsReturn {
+  const [rules, setRules] = useState<AutomationRule[]>(() => loadFromStorage(userId));
+  const [rulesUserId, setRulesUserId] = useState(userId);
   const [loading, setLoading] = useState(true);
   const [online, setOnline] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -142,29 +151,40 @@ export function useAutomations(todos: { id: string; text: string }[]): UseAutoma
   // task's text changes.
   const todosRef = useRef(todos);
   useEffect(() => { todosRef.current = todos; });
+  const userRef = useRef(userId);
+  useLayoutEffect(() => {
+    userRef.current = userId;
+    setRules(loadFromStorage(userId));
+    setRulesUserId(userId);
+    setOnline(false);
+    setLoading(true);
+  }, [userId]);
 
   const refresh = useCallback(async () => {
+    const requestUserId = userId;
     try {
       const fetched = await automationApi.listRules();
+      if (requestUserId !== userRef.current) return;
       setRules(fetched.map((r) => fromApi(r, todosRef.current)));
       setOnline(true);
       setError(null);
     } catch (e) {
+      if (requestUserId !== userRef.current) return;
       if (!isNetworkError(e)) console.warn('[kaizen] automation rules unavailable:', e);
       setOnline(false);
-      setRules(loadFromStorage());
+      setRules(loadFromStorage(requestUserId));
     } finally {
-      setLoading(false);
+      if (requestUserId === userRef.current) setLoading(false);
     }
-  }, []);
+  }, [userId]);
 
   useEffect(() => { void refresh(); }, [refresh]);
 
   /** Applies a change locally when offline, or through the server when not. */
   const persistLocally = useCallback((next: AutomationRule[]) => {
     setRules(next);
-    saveToStorage(next);
-  }, []);
+    saveToStorage(next, userId);
+  }, [userId]);
 
   const addRule = useCallback(async (values: AutomationRuleFormValues) => {
     const input = formValuesToInput(values);
@@ -265,5 +285,10 @@ export function useAutomations(todos: { id: string; text: string }[]): UseAutoma
     }
   }, [online, rules, persistLocally, refresh]);
 
-  return { rules, loading, online, error, addRule, updateRule, toggleStatus, deleteRule, refresh };
+  // A caller that does not remount this hook on account changes must not render
+  // the previous user's offline draft rules while the effect loads the new key.
+  return {
+    rules: rulesUserId === userId ? rules : [],
+    loading, online, error, addRule, updateRule, toggleStatus, deleteRule, refresh,
+  };
 }

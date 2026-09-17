@@ -9,14 +9,19 @@
  */
 
 import type { Todo, NotificationRecord, InAppNotificationType } from '@/types/todo';
+import { getActiveUserId } from '@/lib/storage';
 
 const STORAGE_KEY = 'kaizen_inapp_notifications';
 
+export function notificationStorageKey(userId: string | null = getActiveUserId()): string {
+  return userId ? `${STORAGE_KEY}-${userId}` : STORAGE_KEY;
+}
+
 // ── Persistence ──────────────────────────────────────────────────────────────
 
-export function loadNotifications(): NotificationRecord[] {
+export function loadNotifications(userId?: string | null): NotificationRecord[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(notificationStorageKey(userId));
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -26,16 +31,16 @@ export function loadNotifications(): NotificationRecord[] {
   }
 }
 
-export function saveNotifications(records: NotificationRecord[]): void {
+export function saveNotifications(records: NotificationRecord[], userId?: string | null): void {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(records));
+    localStorage.setItem(notificationStorageKey(userId), JSON.stringify(records));
   } catch {
     // Silently ignore storage errors
   }
 }
 
-export function clearNotifications(): void {
-  localStorage.removeItem(STORAGE_KEY);
+export function clearNotifications(userId?: string | null): void {
+  localStorage.removeItem(notificationStorageKey(userId));
 }
 
 // ── Detection helpers ────────────────────────────────────────────────────────
@@ -177,4 +182,3 @@ export function markSeenInToast(
   const idSet = new Set(ids);
   return records.map((r) => (idSet.has(r.id) ? { ...r, seenInToast: true } : r));
 }
-

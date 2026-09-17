@@ -3,9 +3,8 @@
  *
  * The bundled Catalyst documentation never explains how to initialise
  * zcatalyst-sdk-node outside a Catalyst-hosted function — every sample starts
- * from an ambient `app`. That gap is why this server has silently fallen back
- * to JSON-file storage on every local run: the old startup probe called
- * `catalyst.initialize({})`, which throws
+ * from an ambient `app`. Calling `catalyst.initialize({})` outside that
+ * environment throws
  *
  *   CatalystAppError: unable to find the type of initialisation
  *
@@ -80,7 +79,7 @@ export function readStandaloneConfig(): StandaloneConfig | null {
     const names = missing.map((k) => `CATALYST_${k.replace(/[A-Z]/g, (c) => '_' + c).toUpperCase()}`);
     throw new Error(
       `Catalyst standalone config is incomplete. Missing: ${names.join(', ')}. ` +
-      `Set them in .env.local, or remove them all to use JSON-file storage. See docs/catalyst/01-credentials.md.`
+      `Set them in .env.local, or remove them all when this process does not use Catalyst. See docs/catalyst/01-credentials.md.`
     );
   }
   return cfg as StandaloneConfig;
@@ -116,8 +115,8 @@ function getStandaloneApp(cfg: StandaloneConfig) {
  * Returns a Catalyst app for this request, preferring the gateway headers and
  * falling back to standalone credentials.
  *
- * Throws if neither is available — callers decide whether that means a 503 or
- * a switch to the JSON-file store.
+ * Throws if neither is available. The caller must surface the configuration
+ * error; this module never selects a persistence fallback.
  */
 export function initCatalystApp(
   req: express.Request,
@@ -239,7 +238,7 @@ let cliAppSeq = 0;
 // token (a duck-typed refreshing credential is accepted by initializeApp and
 // then silently ignored — requests go out with no Authorization header), so it
 // has to be rebuilt before the token goes stale. Otherwise local development
-// quietly drops to JSON-file storage mid-session and the only clue is a 401.
+// fails requests mid-session and the only clue is a 401.
 const CLI_APP_MAX_AGE_MS = 40 * 60 * 1000;
 
 export interface CliProject { projectId: string; orgId: string; projectName: string }

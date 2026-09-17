@@ -18,7 +18,7 @@
  * answers, its records win.
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useLayoutEffect, useRef } from 'react';
 import type { Todo, NotificationRecord } from '@/types/todo';
 import { notificationApi, isNetworkError } from '@/lib/api';
 import { toRecords } from '@/lib/notificationMapping';
@@ -55,14 +55,28 @@ export interface UseInAppNotificationsReturn {
   online: boolean;
 }
 
-export function useInAppNotifications(todos: Todo[]): UseInAppNotificationsReturn {
-  const [notifications, setNotifications] = useState<NotificationRecord[]>(() => loadNotifications());
+export function useInAppNotifications(
+  todos: Todo[],
+  userId: string | null = null,
+): UseInAppNotificationsReturn {
+  const [notifications, setNotifications] = useState<NotificationRecord[]>(() => loadNotifications(userId));
+  const [notificationsUserId, setNotificationsUserId] = useState(userId);
   const [online, setOnline] = useState(false);
 
   // Refs rather than dependencies: the poll must see current values without
   // being torn down and rebuilt every time a task changes.
   const todosRef = useRef(todos);
   useEffect(() => { todosRef.current = todos; });
+  const userRef = useRef(userId);
+  // Keep asynchronous responses from the previous session from landing during
+  // the commit-to-paint gap after an account changes.
+  useLayoutEffect(() => {
+    userRef.current = userId;
+    setOnline(false);
+    setNotifications(loadNotifications(userId));
+    setNotificationsUserId(userId);
+    toastedRef.current.clear();
+  }, [userId]);
 
   /**
    * Ids already shown as a toast in this tab.
@@ -75,22 +89,25 @@ export function useInAppNotifications(todos: Todo[]): UseInAppNotificationsRetur
 
   /** Local detection, for when the server cannot be reached. */
   const runLocalDetection = useCallback(() => {
-    const current = loadNotifications();
+    const current = loadNotifications(userId);
     const { allRecords, newRecords } = detectAndUpdate(todosRef.current, current);
     if (newRecords.length > 0 || allRecords.length !== current.length) {
-      saveNotifications(allRecords);
+      saveNotifications(allRecords, userId);
       setNotifications(allRecords);
     } else {
       setNotifications(current);
     }
-  }, []);
+  }, [userId]);
 
   const refresh = useCallback(async () => {
+    const requestUserId = userId;
     try {
       const entries = await notificationApi.list();
+      if (requestUserId !== userRef.current) return;
       setNotifications(toRecords(entries, todosRef.current, toastedRef.current));
       setOnline(true);
     } catch (e) {
+      if (requestUserId !== userRef.current) return;
       // A network failure means work offline. Anything else — a 401, a gateway
       // HTML page — means the same for the bell's purposes, but is worth a line
       // in the console rather than silence.
@@ -98,7 +115,7 @@ export function useInAppNotifications(todos: Todo[]): UseInAppNotificationsRetur
       setOnline(false);
       runLocalDetection();
     }
-  }, [runLocalDetection]);
+  }, [runLocalDetection, userId]);
 
   // Refresh on mount and whenever the task list changes — a completed task can
   // withdraw a reminder, and the bell should reflect that without a poll's wait.
@@ -119,7 +136,7 @@ export function useInAppNotifications(todos: Todo[]): UseInAppNotificationsRetur
     (update: (prev: NotificationRecord[]) => NotificationRecord[], sync: () => Promise<unknown>) => {
       setNotifications((prev) => {
         const updated = update(prev);
-        if (!online) saveNotifications(updated);
+        if (!online) saveNotifications(updated, userId);
         return updated;
       });
       if (online) {
@@ -129,7 +146,7 @@ export function useInAppNotifications(todos: Todo[]): UseInAppNotificationsRetur
         });
       }
     },
-    [online, refresh],
+    [online, refresh, userId],
   );
 
   const dismiss = useCallback((id: string) => {
@@ -149,13 +166,16 @@ export function useInAppNotifications(todos: Todo[]): UseInAppNotificationsRetur
       const updated = markSeenInToast(prev, ids);
       // Seen-in-toast is local state in both modes; the server has no column
       // for it, and persisting it offline is what the local path expects.
-      if (!online) saveNotifications(updated);
+      if (!online) saveNotifications(updated, userId);
       return updated;
     });
-  }, [online]);
+  }, [online, userId]);
 
-  const activeNotifications = notifications.filter((r) => !r.dismissed);
-  const freshToastRecords = notifications.filter((r) => !r.dismissed && !r.seenInToast);
+  // Effects load the newly scoped cache after a user changes. Until then, do
+  // not render the previous user's records for even one frame.
+  const scopedNotifications = notificationsUserId === userId ? notifications : [];
+  const activeNotifications = scopedNotifications.filter((r) => !r.dismissed);
+  const freshToastRecords = scopedNotifications.filter((r) => !r.dismissed && !r.seenInToast);
   const unreadCount = activeNotifications.length;
 
   return {

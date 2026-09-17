@@ -9,7 +9,7 @@
  * automations. Those are built on tasks, and the page says so rather than
  * offering something that would quietly never fire.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MoreHorizontal, Pencil, Plus, Table2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -35,6 +35,7 @@ import { RecordBoard } from '@/components/databases/RecordBoard';
 import { useDatabases } from '@/hooks/useDatabases';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { fieldApi, databaseApi, type ApiDatabase, type FieldInput } from '@/lib/api';
+import { LatestValueQueue } from '@/lib/latestValueQueue';
 import { FIELD_EMPTY, isGroupableField } from '@/lib/taskFilters';
 import type { FieldDef, FieldValue } from '@/types/fields';
 
@@ -73,6 +74,13 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled }: DatabasesPagePr
 
   const [fields, setFields] = useState<FieldDef[]>([]);
   const [values, setValues] = useState<RecordValues>({});
+  const valuesRef = useRef<RecordValues>({});
+  const valueQueue = useRef(new LatestValueQueue<FieldValue | null | undefined>());
+  const updateValues = useCallback((update: (current: RecordValues) => RecordValues) => {
+    const next = update(valuesRef.current);
+    valuesRef.current = next;
+    setValues(next);
+  }, []);
   const [fieldsOpen, setFieldsOpen] = useState(false);
   const [fieldsTarget, setFieldsTarget] = useState<{ fieldId?: string; startNew?: boolean }>({});
   /** Where the fields popover hangs from — the control that opened it. */
@@ -101,7 +109,7 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled }: DatabasesPagePr
   // This database's fields and values. Both are the server's: a record's
   // columns are field definitions, and there is no offline copy of those.
   useEffect(() => {
-    if (!openId) { setFields([]); setValues({}); return; }
+    if (!openId) { setFields([]); updateValues(() => ({})); return; }
     let cancelled = false;
     Promise.all([fieldApi.listFields(openId), databaseApi.listFieldValues(openId)])
       .then(([defs, rawValues]) => {
@@ -112,28 +120,28 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled }: DatabasesPagePr
           if (row.value === null) continue;
           (map[row.recordId] ??= {})[row.fieldId] = row.value;
         }
-        setValues(map);
+        updateValues(() => map);
       })
       .catch(() => { if (!cancelled) notify("Couldn't load this database's columns"); });
     return () => { cancelled = true; };
-  }, [openId, notify]);
+  }, [openId, notify, updateValues]);
 
   const setValue = useCallback(async (recordId: string, fieldId: string, value: FieldValue | null) => {
-    const before = values[recordId]?.[fieldId];
-    const apply = (v: FieldValue | null | undefined) => setValues((prev) => {
-      const row = { ...(prev[recordId] ?? {}) };
+    const before = valuesRef.current[recordId]?.[fieldId];
+    const apply = (v: FieldValue | null | undefined) => updateValues((current) => {
+      const row = { ...(current[recordId] ?? {}) };
       if (v === null || v === undefined) delete row[fieldId]; else row[fieldId] = v;
-      return { ...prev, [recordId]: row };
+      return { ...current, [recordId]: row };
     });
-    apply(value);
-    try {
-      const saved = await databaseApi.setFieldValue(recordId, fieldId, value);
-      apply(saved.value);
-    } catch {
-      apply(before);
-      notify("Couldn't save the value");
-    }
-  }, [values, notify]);
+    await valueQueue.current.submit(
+      `${recordId}:${fieldId}`,
+      before,
+      value,
+      async () => (await databaseApi.setFieldValue(recordId, fieldId, value)).value,
+      apply,
+      () => notify("Couldn't save the value"),
+    );
+  }, [notify, updateValues]);
 
   /** "+ Add" in a board column: create the record, then give it that column's value. */
   const addRecordInColumn = useCallback(async (title: string, columnKey: string) => {
@@ -174,7 +182,7 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled }: DatabasesPagePr
     try {
       await fieldApi.deleteField(id);
       setFields((prev) => prev.filter((f) => f.id !== id));
-      setValues((prev) => Object.fromEntries(
+      updateValues((prev) => Object.fromEntries(
         Object.entries(prev).map(([recordId, row]) => {
           const { [id]: _gone, ...rest } = row;
           return [recordId, rest];
@@ -185,7 +193,7 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled }: DatabasesPagePr
       notify("Couldn't delete the column");
       return false;
     }
-  }, [notify]);
+  }, [notify, updateValues]);
 
   const subtitle = useMemo(() => {
     if (!open) return 'Records that are not tasks';

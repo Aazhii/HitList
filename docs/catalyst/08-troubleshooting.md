@@ -34,7 +34,7 @@ These are worse, because nothing fails loudly.
 
 | You see | It actually is | Fix |
 |---|---|---|
-| Server logs `backend: json-file` while running inside Catalyst `[VERIFIED]` | A startup probe tried to authenticate with no request and failed; the failure was treated as "Catalyst unavailable" | Detect the runtime and let each request initialise from its own headers. [02](02-node-sdk.md#under-the-gateway-there-is-nothing-to-probe-with) |
+| Server rejects `DATABASE_URL` while running inside Catalyst | AppSail must use Catalyst Data Store, not an external local database | Remove `DATABASE_URL` from AppSail service configuration. |
 | A signed-in user gets 401 on every API call `[VERIFIED]` | Identity resolved with `scope: 'admin'`, which is the project admin — not an app user — so `getCurrentUser()` returns null | Use `scope: 'user'` for identity, `admin` for data. [02](02-node-sdk.md#scope) |
 | Writes rejected, error does not mention permissions `[DOCS]` | App User role has SELECT only by default | Use admin scope, or widen the role in the console. [03](03-datastore.md#table-permissions) |
 | `signUp()` does nothing and no email arrives `[DOCS]` | Public signup is disabled — console-only, and it fails silently | Console → Authentication → Settings. [04](04-auth-embedded.md#prerequisites-you-cannot-do-from-code) |
@@ -50,7 +50,7 @@ These are worse, because nothing fails loudly.
 | The app says "offline" on a deployment that *has* an API `[VERIFIED]` | Reached via a hostname the bundle's absolute API URL does not match — a trailing dot is enough to make a different origin | Use relative URLs same-origin; normalise the trailing dot in CORS. [05](05-appsail-deploy.md#domains-and-cookies) |
 | Every cross-origin request is a 401 `[VERIFIED]` | Missing `credentials: 'include'`, or `cors({origin:'*'})`, which cannot carry cookies | Allowlist plus credentials on both sides. [06](06-slate.md#pairing-slate-with-an-api) |
 | A deploy "succeeds" but nothing changed `[VERIFIED]` | Slate deploys from **git** (needs a push); AppSail uploads the **local** bundle | Check which platform you are on. [05](05-appsail-deploy.md#deploying) · [06](06-slate.md#deploying) |
-| A deploy uploads an empty directory `[VERIFIED]` | `catalyst appsail:add` overwrote `app-config.json` and dropped the `predeploy` hook that creates `build_path` | Re-check the file after running `appsail:add`. [05](05-appsail-deploy.md#the-cli-overwrites-this-file) |
+| AppSail cannot start the image | The image is not OCI Linux/amd64, the command exits, or the configured port is wrong | Build with `docker buildx build --platform linux/amd64`; ensure `/health` responds on AppSail's injected port. [05](05-appsail-deploy.md) |
 | A column is shorter than you declared `[VERIFIED]` | `varchar` is clamped to 255 with no error | Query the column list after creating a table. [03](03-datastore.md#varchar-is-silently-clamped-to-255) |
 | Numeric sorting is wrong — `"10"` before `"9"` `[VERIFIED]` | The column is `text`, not `int` | Use real column types. [03](03-datastore.md#column-types) |
 | A stale file keeps being served after you deleted it `[VERIFIED]` | Vite does not remove files dropped from `public/` out of an existing `dist/` | Clean the output directory before building. |

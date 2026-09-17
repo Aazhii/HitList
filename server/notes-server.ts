@@ -1,6 +1,6 @@
 /**
- * Kaizen — Catalyst DataStore persistence server
- * Default port: 3001 (dev). In Catalyst hosted env the platform manages the port.
+ * Kaizen — adaptive persistence server
+ * Default port: 9000. In Catalyst hosted env the platform manages the port.
  *
  * Tables used in Catalyst DataStore (auto-probed on startup):
  *
@@ -64,7 +64,8 @@
  *     CreatedAt   (number)
  *     UpdatedAt   (number)
  *
- * Falls back to JSON-file storage when Catalyst credentials are unavailable.
+ * Local development uses PostgreSQL through DATABASE_URL; Catalyst runtime uses
+ * Catalyst Data Store through the injected gateway credentials.
  */
 import express from 'express';
 import cors from 'cors';
@@ -76,9 +77,10 @@ import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { baasProxy } from './catalyst/baasProxy.ts';
+import { createPostgresStore, type PostgresStore } from './persistence/postgres.ts';
 import { runSweep, describeSweep } from './notifications/sweep.ts';
 import { startScheduler, schedulerEnabled, intervalFromEnv, type Scheduler } from './notifications/scheduler.ts';
-import { createTrialFeatureCache, sweepOptionsFor, ALL_ENABLED, type TrialFeatures } from './trialFeatures.ts';
+import { createTrialFeatureCache, sweepOptionsFor, type TrialFeatures } from './trialFeatures.ts';
 import { listInbox, markRead, markAllRead, removeEntry } from './notifications/inbox.ts';
 import {
   listRules, getRule, insertRule, updateRule, deleteRule,
@@ -102,13 +104,14 @@ import {
 } from './views.ts';
 import {
   MAX_DATABASES, databaseToApi, deleteDatabase, deleteRow, deleteRowsOfDatabase, getDatabase, getRow,
-  insertDatabase, insertRow, listDatabases, listRows, parseDatabaseBody, parseRowBody, rowToApi,
-  updateDatabase, updateRow, setDatabaseDateFieldAvailable,
+  insertDatabase, insertRow, listDatabases, listRows, markDatabaseDeleting, markRowDeleting,
+  parseDatabaseBody, parseRowBody, rowToApi, updateDatabase, updateRow, setDatabaseDateFieldAvailable,
   type DatabaseRow, type KaizenDatabase,
 } from './databases.ts';
 import {
-  MAX_FIELDS, decodeValue, defToApi, deleteDefRow, deletePropsForDef, deletePropsForTask, encodeValue,
-  getDef, insertDef, listDefs, listProps, parseFieldBody, setProp, updateDef, type FieldDef,
+  MAX_FIELDS, decodeValue, defToApi, deleteDefRow, deleteDefsAndPropsForDatabase, deletePropsForDef,
+  deletePropsForTask, encodeValue, getDef, insertDef, listDefs, listProps, markDefDeleting,
+  parseFieldBody, setProp, updateDef, type FieldDef,
   setFieldsDatabaseAvailable,
 } from './fields.ts';
 import {
@@ -120,12 +123,14 @@ import {
 } from './notifications/reminders.ts';
 import type { CatalystApp as NotificationApp } from './notifications/types.ts';
 import {
-  readStandaloneConfig, initCatalystApp, describeMode, getCliApp, cliProject, region,
-  ownerForAdminMode, ownerForAnonymousGateway, hasGatewayHeaders,
+  initCatalystApp, describeMode, ownerForAnonymousGateway,
   captureGatewayCredentials, backgroundCatalystApp, hasBackgroundCredentials,
-  type StandaloneConfig, type CatalystMode,
+  type CatalystMode,
 } from './catalyst/init.ts';
 import type { ICatalystRow } from 'zcatalyst-sdk-node/lib/utils/pojo/common';
+import {
+  DELETION_PENDING_UPDATED_AT, deletionLockKey, isDeletionPending, withDeletionLock, withDeletionLocks,
+} from './deletion.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Catalyst's convention for AppSail: the platform injects
@@ -147,8 +152,6 @@ const DEFAULT_PORT = 9000;
 //
 //   Value-carrying — the variable holds a credential, so a non-empty value means yes:
 //     CATALYST_CONFIG                 base64 JSON, injected by the Functions runtime
-//     ZOHO_CATALYST_PROJECT_KEY       legacy name
-//     CATALYST_PROJECT_KEY            legacy name
 //     X_ZOHO_CATALYST_LISTEN_PORT     injected by AppSail (see LISTEN_PORT below)
 //
 //   Boolean — the variable holds a flag whose value must be parsed:
@@ -156,7 +159,7 @@ const DEFAULT_PORT = 9000;
 //
 // Reading the boolean as a presence check is what the old code did, and
 // `!!"false"` is true — so X_ZOHO_CATALYST_IS_LOCAL="false" switched Catalyst ON
-// and disabled the JSON-file fallback.
+// and selected the wrong storage backend.
 
 /** True only for a value that actually spells out truth. */
 function envFlag(name: string): boolean {
@@ -174,21 +177,30 @@ function envPresent(name: string): boolean {
 const CATALYST_ENV_SIGNALS = {
   CATALYST_CONFIG:             envPresent('CATALYST_CONFIG'),
   X_ZOHO_CATALYST_LISTEN_PORT: envPresent('X_ZOHO_CATALYST_LISTEN_PORT'),
-  ZOHO_CATALYST_PROJECT_KEY:   envPresent('ZOHO_CATALYST_PROJECT_KEY'),
-  CATALYST_PROJECT_KEY:        envPresent('CATALYST_PROJECT_KEY'),
   X_ZOHO_CATALYST_IS_LOCAL:    envFlag('X_ZOHO_CATALYST_IS_LOCAL'),
 } as const;
 
-// Only enable Catalyst when we have an explicit credential signal.
-// Falling back to JSON-file storage is always safe and correct.
-// Standalone credentials count too, and are added below once they are read.
-let catalystAvailable = Object.values(CATALYST_ENV_SIGNALS).some(Boolean);
+const isCatalystRuntime = CATALYST_ENV_SIGNALS.CATALYST_CONFIG
+  || CATALYST_ENV_SIGNALS.X_ZOHO_CATALYST_LISTEN_PORT
+  || CATALYST_ENV_SIGNALS.X_ZOHO_CATALYST_IS_LOCAL;
+const databaseUrl = (process.env['DATABASE_URL'] ?? '').trim();
+
+if (isCatalystRuntime && databaseUrl) {
+  throw new Error('DATABASE_URL must not be set in Catalyst/AppSail. Catalyst runtime uses Catalyst Data Store.');
+}
+if (!isCatalystRuntime && !databaseUrl) {
+  throw new Error(
+    'No persistence backend configured. Set DATABASE_URL for local PostgreSQL, or run inside Catalyst/AppSail.',
+  );
+}
+
+const storageBackend: 'catalyst' | 'postgres' = isCatalystRuntime ? 'catalyst' : 'postgres';
+const postgresStore: PostgresStore | null = databaseUrl ? createPostgresStore(databaseUrl) : null;
 
 // ── Auth / owner scoping ──────────────────────────────────────────────────────
 
-// In JSON-file mode there is no identity provider, so every row belongs to a
-// single local developer. This is dev-only storage; see docs/catalyst/.
-const LOCAL_DEV_OWNER = 'local-dev-user';
+const LOCAL_DEV_OWNER = (process.env['LOCAL_DEV_OWNER'] ?? process.env['DEV_OWNER_ID'] ?? 'local-dev-user').trim()
+  || 'local-dev-user';
 
 /** Thrown when a request carries no usable Catalyst session. */
 class UnauthenticatedError extends Error {
@@ -246,23 +258,13 @@ async function getCurrentIdentity(req: express.Request): Promise<Identity> {
  *     the `if (!ownerId) return;` guard repeated at 14 call sites never fired.
  *     The API was effectively unauthenticated.
  *
- * In JSON-file mode (catalystAvailable=false) there is no session to check and
- * everything belongs to LOCAL_DEV_OWNER.
+ * Local PostgreSQL mode has no Catalyst session, so every row belongs to the
+ * configured local development owner.
  *
  * Call getCurrentIdentity() rather than this: it memoises the round trip.
  */
 async function resolveIdentity(req: express.Request): Promise<Identity> {
-  if (!catalystAvailable) return { userId: LOCAL_DEV_OWNER, email: '' };
-
-  // Admin credentials (CLI or standalone) carry no end-user session, so
-  // getCurrentUser() would always throw and every request would 401 — making
-  // local development against the real project impossible. Scope rows to the
-  // authenticated identity instead. Under the gateway a real session exists,
-  // and the strict path below still applies.
-  if (!hasGatewayHeaders(req)) {
-    const adminOwner = ownerForAdminMode();
-    if (adminOwner) return { userId: adminOwner, email: '' };
-  }
+  if (storageBackend === 'postgres') return { userId: LOCAL_DEV_OWNER, email: '' };
 
   let user: unknown;
   try {
@@ -325,26 +327,14 @@ async function resolveOwner(req: express.Request, res: express.Response): Promis
 
 // ── Catalyst app init ─────────────────────────────────────────────────────────
 
-// Standalone credentials, read once. A partial configuration throws here so
-// the mistake is reported at startup rather than as a per-request 503.
-let standaloneConfig: StandaloneConfig | null = null;
-try {
-  standaloneConfig = readStandaloneConfig();
-} catch (e) {
-  console.error(`[kaizen] ${String(e instanceof Error ? e.message : e)}`);
-}
-
-// A complete standalone configuration is a credential signal in its own right:
-// it is what makes Catalyst reachable from a plain `pnpm dev`.
-if (standaloneConfig) catalystAvailable = true;
-
 /** Which initialisation path the last request used; reported by /api/health. */
-let lastCatalystMode: CatalystMode = standaloneConfig ? 'standalone' : 'none';
+let lastCatalystMode: CatalystMode = isCatalystRuntime ? 'gateway' : 'none';
 
-/** Admin-scoped app, for reading and writing rows. */
-function initCatalyst(req: express.Request) {
-  lastCatalystMode = describeMode(req, standaloneConfig);
-  return initCatalystApp(req, standaloneConfig, 'admin');
+/** The selected persistence adapter, shaped like the Catalyst storage surface. */
+function initCatalyst(req: express.Request): NotificationApp {
+  if (storageBackend === 'postgres') return postgresStore as PostgresStore;
+  lastCatalystMode = describeMode(req, null);
+  return initCatalystApp(req, null, 'admin') as unknown as NotificationApp;
 }
 
 /**
@@ -355,232 +345,20 @@ function initCatalyst(req: express.Request) {
  * returns null for a signed-in visitor and every request answers 401.
  */
 function initCatalystAsUser(req: express.Request) {
-  return initCatalystApp(req, standaloneConfig, 'user');
+  return initCatalystApp(req, null, 'user');
 }
 
-// ── Catalyst table probe ──────────────────────────────────────────────────────
-//
-// Verifies the tables exist before we commit to the Catalyst backend, so a
-// misconfigured project degrades to JSON files with one clear message instead
-// of 503-ing every request.
-//
-// This replaces two things:
-//
-//   - `testTable`, a pre-existing table used as the primary tasks store with
-//     KaizenTasks as a "legacy" fallback. A successful testTable probe returned
-//     early without ever checking KaizenLists or KaizenNotes, so lists and
-//     notes 503'd while tasks appeared to work. The schema is now one set of
-//     three tables; see server/catalyst/schema.ts.
-//
-//   - A runtime column provisioner that reached into private SDK fields
-//     (`table.requester.send`) to POST undocumented endpoints on every boot,
-//     typing every column as `text`. Schema changes belong in
-//     `pnpm catalyst:setup`, which knows the real column types.
-
 import {
-  SCHEMA, TABLE_NAMES, TASKS_TABLE, LISTS_TABLE, NOTES_TABLE, RULES_TABLE, VIEWS_TABLE, PROP_DEFS_TABLE,
+  SCHEMA, TASKS_TABLE, LISTS_TABLE, NOTES_TABLE, RULES_TABLE, VIEWS_TABLE, PROP_DEFS_TABLE,
   DATABASES_TABLE,
 } from './catalyst/schema.ts';
 
-/**
- * Checks that every table in the schema is queryable.
- * Returns the names of any that are not.
- */
-async function probeCatalystTables(req: express.Request): Promise<boolean> {
-  let app = initCatalyst(req);
-  const missing: string[] = [];
-
-  // A token decrypted from the CLI's config may already have expired. Spend one
-  // retry on a forced refresh before concluding Catalyst is unreachable —
-  // otherwise a stale token silently downgrades the whole session to JSON-file
-  // storage, which looks identical to having no credentials at all.
-  try {
-    await app.zcql().executeZCQLQuery(`SELECT ROWID FROM ${SCHEMA[0].name} LIMIT 1`);
-  } catch (e) {
-    const status = (e as { statusCode?: number })?.statusCode;
-    if (status === 401 || status === 400) {
-      console.warn('[kaizen] Catalyst rejected the cached token — refreshing and retrying once');
-      const refreshed = await getCliApp({ forceRefresh: true });
-      if (refreshed) app = refreshed;
-    }
-  }
-
-  for (const table of SCHEMA) {
-    try {
-      await app.zcql().executeZCQLQuery(`SELECT ROWID FROM ${table.name} LIMIT 1`);
-    } catch (e) {
-      const msg = describeError(e);
-      if (/not found|does not exist|invalid table|no such table/i.test(msg)) {
-        missing.push(table.name);
-      } else {
-        // Something other than absence — a credential or connectivity problem.
-        // String(e) on an SDK error yields "[object Object]", which hides the
-        // one detail that matters (an expired token reads as 401).
-        console.error(`[kaizen] Probing ${table.name} failed: ${describeError(e)}`);
-        return false;
-      }
-    }
-  }
-
-  if (missing.length) {
-    console.error(
-      `[kaizen] Missing Catalyst table(s): ${missing.join(', ')}\n` +
-      `[kaizen]   Run \`pnpm catalyst:setup\` to create them, or\n` +
-      `[kaizen]   \`pnpm catalyst:setup --dry-run\` to see what is missing.\n` +
-      `[kaizen]   Falling back to JSON-file storage.`
-    );
-    return false;
-  }
-
-  console.log(`[kaizen] Catalyst tables verified: ${TABLE_NAMES.join(', ')}`);
-  return true;
-}
-
-
-// ── JSON-file fallback ────────────────────────────────────────────────────────
-
-const DB_PATH       = path.join(__dirname, 'notes-db.json');
-const TASKS_DB_PATH = path.join(__dirname, 'tasks-db.json');
-const LISTS_DB_PATH = path.join(__dirname, 'lists-db.json');
-
-interface NotesDb  { notes: DbNote[] }
-interface TasksDb  { tasks: DbTask[] }
-interface ListsDb  { lists: DbList[] }
-
-/**
- * Reads a JSON store, validating its shape.
- *
- * The previous version caught every failure and returned the empty value. A
- * corrupt or truncated file therefore read as "no records", and the very next
- * write overwrote it with a single row — silent, total, unrecoverable data
- * loss. A valid-but-wrong-shape file (say `{}`) was worse: it returned an
- * object whose `.tasks` was undefined, and the caller's `.filter` threw a
- * TypeError that surfaced as a 503.
- *
- * Now an unreadable or malformed file is moved aside as
- * <name>.corrupt.<timestamp> and loudly logged, so the bad data is preserved
- * for inspection and the next write starts from a known-empty store instead of
- * destroying evidence.
- */
-function readJson<T>(filePath: string, empty: T, isValid: (v: unknown) => v is T): T {
-  let raw: string;
-  try {
-    if (!fs.existsSync(filePath)) return empty;
-    raw = fs.readFileSync(filePath, 'utf8');
-  } catch (e) {
-    console.error(`[kaizen] Could not read ${filePath}:`, e);
-    return empty;
-  }
-
-  // An empty file is a legitimate "nothing stored yet".
-  if (raw.trim() === '') return empty;
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch (e) {
-    quarantine(filePath, `invalid JSON: ${String(e)}`);
-    return empty;
-  }
-
-  if (!isValid(parsed)) {
-    quarantine(filePath, 'JSON did not match the expected store shape');
-    return empty;
-  }
-  return parsed;
-}
-
-/** Moves a damaged store aside rather than letting the next write erase it. */
-function quarantine(filePath: string, reason: string): void {
-  const backup = `${filePath}.corrupt.${Date.now()}`;
-  try {
-    fs.renameSync(filePath, backup);
-    console.error(
-      `[kaizen] ${path.basename(filePath)} is unusable (${reason}).\n` +
-      `[kaizen]   Moved to ${backup}. Starting from an empty store.`
-    );
-  } catch (e) {
-    console.error(`[kaizen] ${filePath} is unusable (${reason}) and could not be moved aside:`, e);
-  }
-}
-
-// Shape guards. These check the container, not every record: a malformed row
-// is survivable, a malformed container is not.
-function isRecordArrayUnder<K extends string>(key: K) {
-  return (v: unknown): v is Record<K, unknown[]> =>
-    typeof v === 'object' && v !== null && Array.isArray((v as Record<string, unknown>)[key]);
-}
-
-const isNotesDb = isRecordArrayUnder('notes') as (v: unknown) => v is NotesDb;
-const isTasksDb = isRecordArrayUnder('tasks') as (v: unknown) => v is TasksDb;
-const isListsDb = isRecordArrayUnder('lists') as (v: unknown) => v is ListsDb;
-
-/** Typed readers, so no call site has to repeat the empty value and guard. */
-const readNotesDb = (): NotesDb => readJson<NotesDb>(DB_PATH,       { notes: [] }, isNotesDb);
-const readTasksDb = (): TasksDb => readJson<TasksDb>(TASKS_DB_PATH, { tasks: [] }, isTasksDb);
-const readListsDb = (): ListsDb => readJson<ListsDb>(LISTS_DB_PATH, { lists: [] }, isListsDb);
-
-/**
- * Writes a JSON store atomically and durably.
- *
- * Three problems with the previous version:
- *
- *   - The temp file was a fixed `<name>.tmp`. Two processes sharing the store
- *     (trivially reachable — `pnpm dev` and `pnpm preview:server` both point
- *     at server/) would interleave their writeFileSync calls into the same
- *     path, so one could rename a file the other was still writing and publish
- *     a half-written store. rename(2) is atomic; a shared temp file is not.
- *   - No fsync. After rename the directory entry points at data that may still
- *     be in the page cache, so a crash or power loss leaves a zero-length or
- *     garbage file — which the reader then quarantines as corrupt.
- *   - No mkdir. If server/ does not exist (a deploy bundle that ships only the
- *     compiled file, or a read-only mount) the first write throws ENOENT and
- *     every subsequent one fails the same way.
- *
- * Note this does not make the store safe for concurrent *processes* in
- * general: each handler's read-modify-write is serial only because it contains
- * no await, so within one process it cannot interleave. Two servers on the
- * same files will still lose each other's updates. The JSON store is a
- * single-process development fallback; Catalyst is the real backend.
- */
-function writeJson<T>(filePath: string, data: T): void {
-  const dir = path.dirname(filePath);
-  fs.mkdirSync(dir, { recursive: true });
-
-  // Unique per write, so a second process cannot share our temp file.
-  const tmp = `${filePath}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
-
-  let fd: number | undefined;
-  try {
-    fd = fs.openSync(tmp, 'w');
-    fs.writeFileSync(fd, JSON.stringify(data, null, 2), 'utf8');
-    fs.fsyncSync(fd);          // the data itself
-  } finally {
-    if (fd !== undefined) fs.closeSync(fd);
-  }
-
-  try {
-    fs.renameSync(tmp, filePath);
-  } catch (e) {
-    // Do not leave the temp file behind if the rename failed.
-    try { fs.unlinkSync(tmp); } catch { /* best effort */ }
-    throw e;
-  }
-
-  // fsync the directory so the rename itself survives a crash.
-  try {
-    const dirFd = fs.openSync(dir, 'r');
-    try { fs.fsyncSync(dirFd); } finally { fs.closeSync(dirFd); }
-  } catch {
-    // Not supported on every platform/filesystem; the rename is still atomic.
-  }
-}
 
 // ── Notes types & converters ──────────────────────────────────────────────────
 
 interface DbNote {
   id: string;
-  ownerId: string;       // Catalyst user_id (or LOCAL_DEV_OWNER in fallback)
+  ownerId: string;       // Catalyst user_id or LOCAL_DEV_OWNER locally
   title: string;
   blocksJson: string | null;
   emoji: string | null;
@@ -623,7 +401,7 @@ function noteToRow(note: DbNote): Record<string, string | number | null> {
 
 interface DbTask {
   id: string;
-  ownerId: string;       // Catalyst user_id (or LOCAL_DEV_OWNER in fallback)
+  ownerId: string;       // Catalyst user_id or LOCAL_DEV_OWNER locally
   title: string;
   status: string;
   quadrant: string;
@@ -643,6 +421,8 @@ interface DbTask {
   sourceNoteId: string;
   sourceBlockId: string;
 }
+
+const taskDeletionPending = (task: Pick<DbTask, 'updatedAt'>): boolean => isDeletionPending(task);
 
 // Resolved at startup: 'testTable' if available, else 'KaizenTasks'
 function getTasksTable(): string { return TASKS_TABLE; }
@@ -670,7 +450,7 @@ async function hasOptionalColumn(
   const key = `${table}.${column}`;
   const known = optionalColumns.get(key);
   if (known !== undefined) return known;
-  if (!catalystAvailable) return false;
+  if (storageBackend === 'postgres') return true;
 
   try {
     await initCatalyst(req).zcql().executeZCQLQuery(`SELECT ${column} FROM ${table} LIMIT 1`);
@@ -822,7 +602,7 @@ function dbTaskToApi(t: DbTask) {
     completedAt:           t.completedAt ? new Date(t.completedAt).toISOString() : null,
     createdAt:             new Date(t.createdAt).toISOString(),
     updatedAt:             new Date(t.updatedAt).toISOString(),
-    // `|| null` also covers JSON-file tasks written before these fields existed.
+    // `|| null` also covers records written before these columns existed.
     sourceNoteId:          t.sourceNoteId || null,
     sourceBlockId:         t.sourceBlockId || null,
   };
@@ -832,7 +612,7 @@ function dbTaskToApi(t: DbTask) {
 
 interface DbList {
   id: string;
-  ownerId: string;       // Catalyst user_id (or LOCAL_DEV_OWNER in fallback)
+  ownerId: string;       // Catalyst user_id or LOCAL_DEV_OWNER locally
   name: string;
   color: string;
   listOrder: number;
@@ -840,6 +620,7 @@ interface DbList {
   updatedAt: number;
 }
 
+const listDeletionPending = (list: Pick<DbList, 'updatedAt'>): boolean => isDeletionPending(list);
 
 // Full column list including OwnerId
 const LISTS_COLS = 'ListId,OwnerId,Name,Color,ListOrder,CreatedAt,UpdatedAt';
@@ -882,6 +663,27 @@ function dbListToApi(l: DbList) {
   };
 }
 
+async function withActiveListLocks<T>(
+  req: express.Request,
+  ownerId: string,
+  listIds: readonly string[],
+  operation: () => Promise<T>,
+): Promise<T | null> {
+  const ids = [...new Set(listIds.filter(Boolean))];
+  if (!ids.length) return operation();
+  return withDeletionLocks(ids.map((id) => deletionLockKey('list', ownerId, id)), async () => {
+    const lists = await catalystGetOwnerRows(req, LISTS_TABLE, 'OwnerId', ownerId, rowToList);
+    if (!ids.every((id) => lists.some((list) => list.id === id && !listDeletionPending(list)))) return null;
+    return operation();
+  });
+}
+
+async function withActiveListLock<T>(
+  req: express.Request, ownerId: string, listId: string, operation: () => Promise<T>,
+): Promise<T | null> {
+  return withActiveListLocks(req, ownerId, [listId], operation);
+}
+
 // ── ZCQL literal escaping ─────────────────────────────────────────────────────
 //
 // ZCQL is SQL-like, and SQL escapes a single quote inside a string literal by
@@ -908,6 +710,15 @@ function zcqlString(value: string): string {
   // and which some engines treat as statement terminators.
   const cleaned = value.replace(/[\u0000-\u001f\u007f]/g, '');
   return `'${cleaned.replace(/'/g, "''")}'`;
+}
+
+function zcqlRowId(rowId: string): string {
+  const id = String(rowId).trim();
+  if (/^\d{1,25}$/.test(id)) return id;
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)) {
+    return zcqlString(id);
+  }
+  throw new Error('Invalid datastore row id');
 }
 
 /** Identifiers we generate: UUIDs, Catalyst ROWIDs/user_ids, and slugs. */
@@ -992,8 +803,21 @@ async function catalystUpdateRow(
   rowData: Record<string, string | number | null>
 ): Promise<ICatalystRow> {
   const app = initCatalyst(req);
-  const tbl = app.datastore().table(table);
-  return tbl.updateRow({ ...rowData, ROWID: rowId }) as Promise<ICatalystRow>;
+  return withDeletionLock(deletionLockKey('row', table, rowId), async () => {
+    // Every mutable parent carries UpdatedAt. A write that began before a
+    // deletion must not clear the deletion tombstone when it finally reaches
+    // Data Store.
+    if (String(rowData['UpdatedAt']) !== String(DELETION_PENDING_UPDATED_AT)) {
+      const current = await app.zcql().executeZCQLQuery(
+        `SELECT UpdatedAt FROM ${table} WHERE ROWID = ${zcqlRowId(rowId)} LIMIT 1`,
+      );
+      const latest = current[0]?.[table] as ICatalystRow | undefined;
+      if (!latest || String(latest['UpdatedAt'] ?? '') === String(DELETION_PENDING_UPDATED_AT)) {
+        throw new Error('Record deletion is pending');
+      }
+    }
+    return app.datastore().table(table).updateRow({ ...rowData, ROWID: rowId }) as Promise<ICatalystRow>;
+  });
 }
 
 async function catalystDeleteRow(
@@ -1002,8 +826,9 @@ async function catalystDeleteRow(
   rowId: string
 ): Promise<void> {
   const app = initCatalyst(req);
-  const tbl = app.datastore().table(table);
-  await tbl.deleteRow(rowId);
+  await withDeletionLock(deletionLockKey('row', table, rowId), async () => {
+    await app.datastore().table(table).deleteRow(rowId);
+  });
 }
 
 // ── Request validation ────────────────────────────────────────────────────────
@@ -1421,26 +1246,25 @@ app.use('/api', (req, res, next) => {
 // KaizenTrialFeatures, so turning it back on needs no redeploy: the next request
 // starts the timer. Cached for a minute — one query a minute at most.
 app.use('/api', (req, _res, next) => {
-  if (catalystAvailable) {
-    try {
-      void syncTrialFeatures(initCatalyst(req) as unknown as NotificationApp);
-    } catch { /* no credentials on this request; the next one tries again */ }
-  }
+  try {
+    void syncTrialFeatures(initCatalyst(req) as unknown as NotificationApp);
+  } catch { /* no credentials on this request; the next one tries again */ }
   next();
 });
 
 // ── Health ────────────────────────────────────────────────────────────────────
 
 app.head('/api/health', (_req, res) => { res.sendStatus(200); });
+app.get('/health', (_req, res) => { res.status(200).json({ ok: true }); });
 app.get('/api/health', (req, res) => {
   res.json({
     ok: true,
     ts: Date.now(),
-    backend: catalystAvailable ? 'catalyst' : 'json-file',
+    backend: storageBackend,
     // How the SDK would authenticate this request: 'gateway' (Catalyst headers
     // present), 'standalone' (env credentials) or 'none'. Without this, a
     // misconfiguration is invisible until a write fails.
-    catalystMode: describeMode(req, standaloneConfig),
+    catalystMode: storageBackend === 'catalyst' ? describeMode(req, null) : 'none',
     lastCatalystMode,
   });
 });
@@ -1552,7 +1376,6 @@ async function ruleOwnerContext(
 app.get('/api/automation-rules', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.json([]); return; }
   await ensureRuleStepsColumn(req);
 
   try {
@@ -1566,7 +1389,6 @@ app.get('/api/automation-rules', async (req, res) => {
 app.post('/api/automation-rules', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
   await ensureRuleStepsColumn(req);
 
   const errs = new FieldErrors();
@@ -1602,7 +1424,6 @@ app.put('/api/automation-rules/:id', async (req, res) => {
   if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
   await ensureRuleStepsColumn(req);
 
   const errs = new FieldErrors();
@@ -1637,7 +1458,6 @@ app.delete('/api/automation-rules/:id', async (req, res) => {
   if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.sendStatus(204); return; }
   await ensureRuleStepsColumn(req);
 
   try {
@@ -1660,8 +1480,7 @@ app.delete('/api/automation-rules/:id', async (req, res) => {
 //
 // Named filter, sort and layout combinations over the owner's tasks. Filtering
 // happens in the browser over loaded tasks (src/lib/taskFilters.ts); these
-// routes only store the definitions. Without Catalyst they answer 503, so the
-// client keeps views on the device rather than believing they were saved.
+// routes only store the definitions through the selected persistence adapter.
 
 function sendViewErrors(res: express.Response, errors: Record<string, string>): void {
   res.status(400).json({ error: 'validation_failed', message: 'One or more fields are invalid', fields: errors });
@@ -1679,7 +1498,6 @@ function sendDbErrors(res: express.Response, errors: Record<string, string>): vo
 app.get('/api/databases', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   await ensureDatabaseDateFieldColumn(req);
 
@@ -1694,7 +1512,6 @@ app.get('/api/databases', async (req, res) => {
 app.post('/api/databases', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   await ensureDatabaseDateFieldColumn(req);
 
@@ -1729,7 +1546,6 @@ app.put('/api/databases/:id', async (req, res) => {
   if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   await ensureDatabaseDateFieldColumn(req);
 
@@ -1760,17 +1576,31 @@ app.post('/api/databases/:id/delete', async (req, res) => {
   if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  await ensureFieldsDatabaseColumn(req);
 
   try {
-    const catalyst = initCatalyst(req) as unknown as NotificationApp;
-    const existing = await getDatabase(catalyst, ownerId, req.params.id);
-    if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
+    const removed = await withDeletionLock(
+      deletionLockKey('database', ownerId, req.params.id),
+      async () => {
+        const catalyst = initCatalyst(req) as unknown as NotificationApp;
+        const existing = await getDatabase(catalyst, ownerId, req.params.id);
+        if (!existing) return null;
 
-    // Records first: stopping half-way leaves a database that still lists what
-    // is left, rather than records belonging to nothing.
-    const removed = await deleteRowsOfDatabase(catalyst, ownerId, existing.id);
-    await deleteDatabase(catalyst, existing.rowId);
+        // Tombstone the parent before touching children. If any child delete
+        // fails, normal reads hide this database and this request resumes it.
+        await markDatabaseDeleting(catalyst, existing);
+        await deleteDefsAndPropsForDatabase(catalyst, ownerId, existing.id);
+        const count = await deleteRowsOfDatabase(
+          catalyst,
+          ownerId,
+          existing.id,
+          async (record) => { await deletePropsForTask(catalyst, ownerId, record.id); },
+        );
+        await deleteDatabase(catalyst, existing.rowId);
+        return count;
+      },
+    );
+    if (removed === null) { res.status(404).json({ error: 'Not found' }); return; }
     res.json({ ok: true, recordsRemoved: removed });
   } catch (e) {
     sendError(res, '[POST /api/databases/:id/delete]', e);
@@ -1781,10 +1611,11 @@ app.get('/api/databases/:id/rows', async (req, res) => {
   if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   try {
     const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const database = await getDatabase(catalyst, ownerId, req.params.id);
+    if (!database || isDeletionPending(database)) { res.status(404).json({ error: 'Not found' }); return; }
     const rows = await listRows(catalyst, ownerId, req.params.id);
     res.json(rows.map(rowToApi));
   } catch (e) {
@@ -1796,28 +1627,40 @@ app.post('/api/databases/:id/rows', async (req, res) => {
   if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   const parsed = parseRowBody((req.body ?? {}) as Record<string, unknown>);
   if (!parsed.ok) { sendDbErrors(res, parsed.errors); return; }
 
   try {
-    const catalyst = initCatalyst(req) as unknown as NotificationApp;
-    const database = await getDatabase(catalyst, ownerId, req.params.id);
-    if (!database) { res.status(404).json({ error: 'Not found' }); return; }
+    const record = await withDeletionLock(
+      deletionLockKey('database', ownerId, req.params.id),
+      async () => {
+        const catalyst = initCatalyst(req) as unknown as NotificationApp;
+        const database = await getDatabase(catalyst, ownerId, req.params.id);
+        if (!database || isDeletionPending(database)) return null;
 
-    const existing = await listRows(catalyst, ownerId, database.id);
-    const now = Date.now();
-    const record: DatabaseRow = {
-      ...parsed.value,
-      id: randomUUID(),
-      ownerId,
-      databaseId: database.id,
-      rowOrder: parsed.value.rowOrder ?? existing.reduce((m, r) => Math.max(m, r.rowOrder), -1) + 1,
-      createdAt: now,
-      updatedAt: now,
-    };
-    await insertRow(catalyst, record);
+        const existing = await listRows(catalyst, ownerId, database.id);
+        const now = Date.now();
+        const next: DatabaseRow = {
+          ...parsed.value,
+          id: randomUUID(),
+          ownerId,
+          databaseId: database.id,
+          rowOrder: parsed.value.rowOrder ?? existing.reduce((m, r) => Math.max(m, r.rowOrder), -1) + 1,
+          createdAt: now,
+          updatedAt: now,
+        };
+        await insertRow(catalyst, next);
+        const current = await getDatabase(catalyst, ownerId, database.id);
+        if (!current || isDeletionPending(current)) {
+          const inserted = await getRow(catalyst, ownerId, next.id);
+          if (inserted) await deleteRow(catalyst, inserted.rowId);
+          throw new Error('Database deletion is pending');
+        }
+        return next;
+      },
+    );
+    if (!record) { res.status(404).json({ error: 'Not found' }); return; }
     res.status(201).json(rowToApi(record));
   } catch (e) {
     sendError(res, '[POST /api/databases/:id/rows]', e);
@@ -1828,7 +1671,6 @@ app.put('/api/databases/rows/:rowId', async (req, res) => {
   if (!assertSafeId(req.params.rowId, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   const parsed = parseRowBody((req.body ?? {}) as Record<string, unknown>);
   if (!parsed.ok) { sendDbErrors(res, parsed.errors); return; }
@@ -1836,7 +1678,7 @@ app.put('/api/databases/rows/:rowId', async (req, res) => {
   try {
     const catalyst = initCatalyst(req) as unknown as NotificationApp;
     const existing = await getRow(catalyst, ownerId, req.params.rowId);
-    if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
+    if (!existing || isDeletionPending(existing)) { res.status(404).json({ error: 'Not found' }); return; }
 
     const updated: DatabaseRow = {
       ...existing,
@@ -1860,16 +1702,21 @@ app.delete('/api/databases/rows/:rowId', async (req, res) => {
   if (!assertSafeId(req.params.rowId, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   try {
-    const catalyst = initCatalyst(req) as unknown as NotificationApp;
-    const existing = await getRow(catalyst, ownerId, req.params.rowId);
-    if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
-
-    // The record's field values go with it, as a deleted task's do.
-    await deletePropsForTask(catalyst, ownerId, existing.id);
-    await deleteRow(catalyst, existing.rowId);
+    const deleted = await withDeletionLock(
+      deletionLockKey('database-row', ownerId, req.params.rowId),
+      async () => {
+        const catalyst = initCatalyst(req) as unknown as NotificationApp;
+        const existing = await getRow(catalyst, ownerId, req.params.rowId);
+        if (!existing) return false;
+        await markRowDeleting(catalyst, existing);
+        await deletePropsForTask(catalyst, ownerId, existing.id);
+        await deleteRow(catalyst, existing.rowId);
+        return true;
+      },
+    );
+    if (!deleted) { res.status(404).json({ error: 'Not found' }); return; }
     res.json({ ok: true });
   } catch (e) {
     sendError(res, '[DELETE /api/databases/rows/:rowId]', e);
@@ -1886,24 +1733,25 @@ app.get('/api/databases/:id/field-values', async (req, res) => {
   if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
   await ensureFieldsDatabaseColumn(req);
 
   try {
     const catalyst = initCatalyst(req) as unknown as NotificationApp;
     const database = await getDatabase(catalyst, ownerId, req.params.id);
-    if (!database) { res.status(404).json({ error: 'Not found' }); return; }
+    if (!database || isDeletionPending(database)) { res.status(404).json({ error: 'Not found' }); return; }
 
-    const [defs, props] = await Promise.all([
+    const [defs, props, records] = await Promise.all([
       listDefs(catalyst, ownerId, database.id),
       listProps(catalyst, ownerId),
+      listRows(catalyst, ownerId, database.id),
     ]);
     const byId = new Map(defs.map((d) => [d.id, d]));
+    const recordIds = new Set(records.map((record) => record.id));
 
     const out: Array<{ recordId: string; fieldId: string; value: unknown }> = [];
     for (const prop of props) {
       const def = byId.get(prop.defId);
-      if (!def) continue;  // a task's value, or another database's
+      if (!def || !recordIds.has(prop.taskId)) continue;  // a task's value, another database's, or stale
       const value = decodeValue(def, prop.valueText);
       if (value !== null) out.push({ recordId: prop.taskId, fieldId: def.id, value });
     }
@@ -1919,31 +1767,52 @@ app.put('/api/databases/rows/:recordId/fields/:fieldId', async (req, res) => {
   if (!assertSafeId(req.params.fieldId, res, 'fieldId')) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
   await ensureFieldsDatabaseColumn(req);
 
   try {
     const catalyst = initCatalyst(req) as unknown as NotificationApp;
-    const record = await getRow(catalyst, ownerId, req.params.recordId);
-    if (!record) { res.status(404).json({ error: 'Not found', message: 'No such record' }); return; }
+    const preview = await getRow(catalyst, ownerId, req.params.recordId);
+    if (!preview || isDeletionPending(preview)) { res.status(404).json({ error: 'Not found', message: 'No such record' }); return; }
+    await withDeletionLocks([
+      deletionLockKey('database', ownerId, preview.databaseId),
+      deletionLockKey('database-row', ownerId, preview.id),
+      deletionLockKey('field', ownerId, req.params.fieldId),
+    ], async () => {
+      const record = await getRow(catalyst, ownerId, req.params.recordId);
+      if (!record || isDeletionPending(record)) { res.status(404).json({ error: 'Not found', message: 'No such record' }); return; }
+      const database = await getDatabase(catalyst, ownerId, record.databaseId);
+      if (!database || isDeletionPending(database)) { res.status(404).json({ error: 'Not found', message: 'No such database' }); return; }
 
-    const def = await getDef(catalyst, ownerId, req.params.fieldId);
-    if (!def) { res.status(404).json({ error: 'Not found', message: 'No such field' }); return; }
-    // A field belongs to one database; setting it on a record of another would
-    // store a value nothing can read back.
-    if (def.databaseId !== record.databaseId) {
-      res.status(404).json({ error: 'Not found', message: 'That field is not in this database' });
-      return;
-    }
+      const def = await getDef(catalyst, ownerId, req.params.fieldId);
+      if (!def || isDeletionPending(def)) { res.status(404).json({ error: 'Not found', message: 'No such field' }); return; }
+      // A field belongs to one database; setting it on a record of another would
+      // store a value nothing can read back.
+      if (def.databaseId !== record.databaseId) {
+        res.status(404).json({ error: 'Not found', message: 'That field is not in this database' });
+        return;
+      }
 
-    const encoded = encodeValue(def, (req.body ?? {})['value']);
-    if (!encoded.ok) { sendFieldErrors(res, { value: encoded.error }); return; }
+      const encoded = encodeValue(def, (req.body ?? {})['value']);
+      if (!encoded.ok) { sendFieldErrors(res, { value: encoded.error }); return; }
 
-    await setProp(catalyst, ownerId, record.id, def.id, encoded.text);
-    res.json({
-      recordId: record.id,
-      fieldId: def.id,
-      value: encoded.text === null ? null : decodeValue(def, encoded.text),
+      await setProp(catalyst, ownerId, record.id, def.id, encoded.text);
+      const [latestDatabase, latestRecord, latestDef] = await Promise.all([
+        getDatabase(catalyst, ownerId, record.databaseId),
+        getRow(catalyst, ownerId, record.id),
+        getDef(catalyst, ownerId, def.id),
+      ]);
+      if (!latestDatabase || isDeletionPending(latestDatabase) ||
+          !latestRecord || isDeletionPending(latestRecord) ||
+          !latestDef || isDeletionPending(latestDef)) {
+        await setProp(catalyst, ownerId, record.id, def.id, null);
+        res.status(404).json({ error: 'Not found', message: 'Database, record, or field was deleted' });
+        return;
+      }
+      res.json({
+        recordId: record.id,
+        fieldId: def.id,
+        value: encoded.text === null ? null : decodeValue(def, encoded.text),
+      });
     });
   } catch (e) {
     sendError(res, '[PUT /api/databases/rows/:recordId/fields/:fieldId]', e);
@@ -1963,7 +1832,6 @@ app.put('/api/databases/rows/:recordId/fields/:fieldId', async (req, res) => {
 app.get('/api/calendar', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
   await ensureDatabaseDateFieldColumn(req);
   await ensureFieldsDatabaseColumn(req);
 
@@ -2026,15 +1894,12 @@ app.get('/api/calendar', async (req, res) => {
 app.get('/api/trial-features', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  // The JSON-file fallback has no table of switches, and nothing to switch.
-  if (!catalystAvailable) { res.json(ALL_ENABLED); return; }
   res.json(await trialFeatures.get(initCatalyst(req) as unknown as NotificationApp));
 });
 
 app.get('/api/views', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
   await ensureViewDisplayColumn(req);
 
   try {
@@ -2048,7 +1913,6 @@ app.get('/api/views', async (req, res) => {
 app.post('/api/views', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   const parsed = parseViewBody((req.body ?? {}) as Record<string, unknown>);
   if (!parsed.ok) { sendViewErrors(res, parsed.errors); return; }
@@ -2082,7 +1946,6 @@ app.put('/api/views/:id', async (req, res) => {
   if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   const parsed = parseViewBody((req.body ?? {}) as Record<string, unknown>);
   if (!parsed.ok) { sendViewErrors(res, parsed.errors); return; }
@@ -2112,7 +1975,6 @@ app.delete('/api/views/:id', async (req, res) => {
   if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   try {
     const catalyst = initCatalyst(req) as unknown as NotificationApp;
@@ -2128,30 +1990,23 @@ app.delete('/api/views/:id', async (req, res) => {
 // ── Custom task fields ───────────────────────────────────────────────────────
 //
 // A user's own fields (select, multi-select, number, date, checkbox, text) and
-// each task's values. See server/fields.ts. Without Catalyst these answer 503;
-// fields have no offline copy.
+// each task's values. See server/fields.ts.
 
 function sendFieldErrors(res: express.Response, errors: Record<string, string>): void {
   res.status(400).json({ error: 'validation_failed', message: 'One or more fields are invalid', fields: errors });
 }
 
 /**
- * Removes a deleted task's field values. The task is already gone, so a failure
- * here is logged rather than turned into an error for a delete that worked;
- * values for a task that no longer exists are never shown.
+ * Removes a task's field values before its row is physically deleted. Callers
+ * have already tombstoned the task, so a failure leaves a retryable deletion.
  */
 async function removeTaskFieldValues(req: express.Request, ownerId: string, taskId: string): Promise<void> {
-  try {
-    await deletePropsForTask(initCatalyst(req) as unknown as NotificationApp, ownerId, taskId);
-  } catch (e) {
-    console.warn(`[kaizen] field values for deleted task ${taskId} not removed: ${describeError(e)}`);
-  }
+  await deletePropsForTask(initCatalyst(req) as unknown as NotificationApp, ownerId, taskId);
 }
 
 app.get('/api/fields', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
   await ensureFieldsDatabaseColumn(req);
 
   const databaseId = String(req.query['databaseId'] ?? '');
@@ -2168,35 +2023,57 @@ app.get('/api/fields', async (req, res) => {
 app.post('/api/fields', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   const parsed = parseFieldBody((req.body ?? {}) as Record<string, unknown>);
   if (!parsed.ok) { sendFieldErrors(res, parsed.errors); return; }
-  await ensureFieldsDatabaseColumn(req);
+  const databaseFieldsAvailable = await ensureFieldsDatabaseColumn(req);
 
   const databaseId = String((req.body as Record<string, unknown> | undefined)?.['databaseId'] ?? '');
   if (databaseId && !assertSafeId(databaseId, res)) return;
+  if (databaseId && !databaseFieldsAvailable) {
+    res.status(503).json({ error: 'feature_unavailable', message: 'Database fields are not configured' });
+    return;
+  }
 
   try {
     const catalyst = initCatalyst(req) as unknown as NotificationApp;
-    // The cap is per database, so one database's fields cannot use up another's.
-    const existing = await listDefs(catalyst, ownerId, databaseId);
-    if (existing.length >= MAX_FIELDS) {
-      sendFieldErrors(res, { name: `you already have ${MAX_FIELDS} fields; delete one first` });
-      return;
-    }
-    const now = Date.now();
-    const def: FieldDef = {
-      ...parsed.value,
-      id: randomUUID(),
-      ownerId,
-      databaseId,
-      fieldOrder: parsed.value.fieldOrder ?? existing.reduce((m, d) => Math.max(m, d.fieldOrder), -1) + 1,
-      createdAt: now,
-      updatedAt: now,
+    const create = async () => {
+      if (databaseId) {
+        const database = await getDatabase(catalyst, ownerId, databaseId);
+        if (!database || isDeletionPending(database)) { res.status(404).json({ error: 'Not found' }); return; }
+      }
+      // The cap is per database, so one database's fields cannot use up another's.
+      const existing = await listDefs(catalyst, ownerId, databaseId);
+      if (existing.length >= MAX_FIELDS) {
+        sendFieldErrors(res, { name: `you already have ${MAX_FIELDS} fields; delete one first` });
+        return;
+      }
+      const now = Date.now();
+      const def: FieldDef = {
+        ...parsed.value,
+        id: randomUUID(),
+        ownerId,
+        databaseId,
+        fieldOrder: parsed.value.fieldOrder ?? existing.reduce((m, d) => Math.max(m, d.fieldOrder), -1) + 1,
+        createdAt: now,
+        updatedAt: now,
+      };
+      await insertDef(catalyst, def);
+      if (databaseId) {
+        const current = await getDatabase(catalyst, ownerId, databaseId);
+        if (!current || isDeletionPending(current)) {
+          const inserted = await getDef(catalyst, ownerId, def.id);
+          if (inserted) await deleteDefRow(catalyst, inserted.rowId);
+          throw new Error('Database deletion is pending');
+        }
+      }
+      res.status(201).json(defToApi(def));
     };
-    await insertDef(catalyst, def);
-    res.status(201).json(defToApi(def));
+    if (databaseId) {
+      await withDeletionLock(deletionLockKey('database', ownerId, databaseId), create);
+    } else {
+      await create();
+    }
   } catch (e) {
     sendError(res, '[POST /api/fields]', e);
   }
@@ -2206,14 +2083,13 @@ app.put('/api/fields/:id', async (req, res) => {
   if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   await ensureFieldsDatabaseColumn(req);
 
   try {
     const catalyst = initCatalyst(req) as unknown as NotificationApp;
     const existing = await getDef(catalyst, ownerId, req.params.id);
-    if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
+    if (!existing || isDeletionPending(existing)) { res.status(404).json({ error: 'Not found' }); return; }
 
     const parsed = parseFieldBody((req.body ?? {}) as Record<string, unknown>, existing);
     if (!parsed.ok) { sendFieldErrors(res, parsed.errors); return; }
@@ -2240,18 +2116,36 @@ app.delete('/api/fields/:id', async (req, res) => {
   if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   await ensureFieldsDatabaseColumn(req);
 
   try {
     const catalyst = initCatalyst(req) as unknown as NotificationApp;
-    const existing = await getDef(catalyst, ownerId, req.params.id);
-    if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
-    // Values first: if this stops half-way the field still exists and still
-    // shows its remaining values, rather than leaving values with no field.
-    await deletePropsForDef(catalyst, ownerId, existing.id);
-    await deleteDefRow(catalyst, existing.rowId);
+    const preview = await getDef(catalyst, ownerId, req.params.id);
+    if (!preview) { res.status(404).json({ error: 'Not found' }); return; }
+    // Clear a database's selected calendar field before locking this field.
+    // Database field-value writes take the database lock first, so acquiring
+    // the two locks in the opposite order would deadlock.
+    if (preview.databaseId) {
+      const database = await getDatabase(catalyst, ownerId, preview.databaseId);
+      if (database && !isDeletionPending(database) && database.dateFieldId === preview.id) {
+        await updateDatabase(catalyst, database.rowId, { ...database, dateFieldId: '', updatedAt: Date.now() });
+      }
+    }
+    const deleted = await withDeletionLock(
+      deletionLockKey('field', ownerId, req.params.id),
+      async () => {
+        const existing = await getDef(catalyst, ownerId, req.params.id);
+        if (!existing) return false;
+        // Hide the definition before removing values. A retry discovers the
+        // tombstone through getDef() and continues from the remaining children.
+        await markDefDeleting(catalyst, existing);
+        await deletePropsForDef(catalyst, ownerId, existing.id);
+        await deleteDefRow(catalyst, existing.rowId);
+        return true;
+      },
+    );
+    if (!deleted) { res.status(404).json({ error: 'Not found' }); return; }
     res.sendStatus(204);
   } catch (e) {
     sendError(res, '[DELETE /api/fields/:id]', e);
@@ -2261,16 +2155,20 @@ app.delete('/api/fields/:id', async (req, res) => {
 app.get('/api/field-values', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   try {
     const catalyst = initCatalyst(req) as unknown as NotificationApp;
-    const [defs, props] = await Promise.all([listDefs(catalyst, ownerId), listProps(catalyst, ownerId)]);
+    const [defs, props, tasks] = await Promise.all([
+      listDefs(catalyst, ownerId),
+      listProps(catalyst, ownerId),
+      catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask),
+    ]);
     const byId = new Map(defs.map((d) => [d.id, d]));
+    const taskIds = new Set(tasks.filter((task) => !taskDeletionPending(task)).map((task) => task.id));
     const out: Array<{ taskId: string; fieldId: string; value: unknown }> = [];
     for (const prop of props) {
       const def = byId.get(prop.defId);
-      if (!def) continue;
+      if (!def || !taskIds.has(prop.taskId)) continue;
       const value = decodeValue(def, prop.valueText);
       if (value !== null) out.push({ taskId: prop.taskId, fieldId: def.id, value });
     }
@@ -2285,28 +2183,44 @@ app.put('/api/tasks/:id/fields/:fieldId', async (req, res) => {
   if (!assertSafeId(req.params.fieldId, res, 'fieldId')) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   try {
-    const catalyst = initCatalyst(req) as unknown as NotificationApp;
-    const def = await getDef(catalyst, ownerId, req.params.fieldId);
-    if (!def) { res.status(404).json({ error: 'Not found', message: 'No such field' }); return; }
+    await withDeletionLocks([
+      deletionLockKey('field', ownerId, req.params.fieldId),
+      deletionLockKey('task', ownerId, req.params.id),
+    ], async () => {
+      const catalyst = initCatalyst(req) as unknown as NotificationApp;
+      const def = await getDef(catalyst, ownerId, req.params.fieldId);
+      if (!def || isDeletionPending(def)) { res.status(404).json({ error: 'Not found', message: 'No such field' }); return; }
+      if (def.databaseId) {
+        res.status(404).json({ error: 'Not found', message: 'That field is not a task field' });
+        return;
+      }
 
-    // The task must be the caller's; reads the owner's tasks, as the other task routes do.
-    const tasks = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
-    if (!tasks.some((t) => t.id === req.params.id)) {
-      res.status(404).json({ error: 'Not found', message: 'No such task' });
-      return;
-    }
+      // The task must be the caller's; reads the owner's tasks, as the other task routes do.
+      const tasks = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
+      if (!tasks.some((t) => t.id === req.params.id && !taskDeletionPending(t))) {
+        res.status(404).json({ error: 'Not found', message: 'No such task' });
+        return;
+      }
 
-    const encoded = encodeValue(def, (req.body ?? {})['value']);
-    if (!encoded.ok) { sendFieldErrors(res, { value: encoded.error }); return; }
+      const encoded = encodeValue(def, (req.body ?? {})['value']);
+      if (!encoded.ok) { sendFieldErrors(res, { value: encoded.error }); return; }
 
-    await setProp(catalyst, ownerId, req.params.id, def.id, encoded.text);
-    res.json({
-      taskId: req.params.id,
-      fieldId: def.id,
-      value: encoded.text === null ? null : decodeValue(def, encoded.text),
+      await setProp(catalyst, ownerId, req.params.id, def.id, encoded.text);
+      const latestDef = await getDef(catalyst, ownerId, def.id);
+      const latestTasks = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
+      if (!latestDef || isDeletionPending(latestDef) ||
+          !latestTasks.some((task) => task.id === req.params.id && !taskDeletionPending(task))) {
+        await setProp(catalyst, ownerId, req.params.id, def.id, null);
+        res.status(404).json({ error: 'Not found', message: 'Task or field was deleted' });
+        return;
+      }
+      res.json({
+        taskId: req.params.id,
+        fieldId: def.id,
+        value: encoded.text === null ? null : decodeValue(def, encoded.text),
+      });
     });
   } catch (e) {
     sendError(res, '[PUT /api/tasks/:id/fields/:fieldId]', e);
@@ -2322,7 +2236,6 @@ app.put('/api/tasks/:id/fields/:fieldId', async (req, res) => {
 app.get('/api/automation-runs/recent', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.json([]); return; }
 
   const limit = Number(req.query['limit'] ?? 20);
   try {
@@ -2353,7 +2266,6 @@ app.post('/api/automation-runs/trigger/:id', async (req, res) => {
   if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
   await ensureRuleStepsColumn(req);
 
   try {
@@ -2416,7 +2328,6 @@ app.get('/api/automation-runs/rule/:id', async (req, res) => {
   if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.json([]); return; }
 
   try {
     const runs = await listRunsForRule(
@@ -2441,7 +2352,6 @@ app.get('/api/notifications', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
 
-  if (!catalystAvailable) { res.json([]); return; }
 
   try {
     res.json(await listInbox(initCatalyst(req) as unknown as NotificationApp, ownerId));
@@ -2456,7 +2366,6 @@ app.patch('/api/notifications/:id/read', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
 
-  if (!catalystAvailable) { res.status(404).json({ error: 'Not found' }); return; }
 
   try {
     const ok = await markRead(
@@ -2476,7 +2385,6 @@ app.patch('/api/notifications/read-all', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
 
-  if (!catalystAvailable) { res.json({ updated: 0 }); return; }
 
   try {
     const updated = await markAllRead(
@@ -2494,7 +2402,6 @@ app.delete('/api/notifications/:id', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
 
-  if (!catalystAvailable) { res.sendStatus(204); return; }
 
   try {
     const ok = await removeEntry(
@@ -2528,7 +2435,6 @@ async function syncReminderFor(
   task: DbTask,
   previousStatus?: string,
 ): Promise<void> {
-  if (!catalystAvailable) return;  // the JSON-file fallback has no queue
 
   const catalyst = initCatalyst(req) as unknown as NotificationApp;
   const email = (await getCurrentIdentity(req)).email;
@@ -2575,7 +2481,6 @@ async function syncReminderFor(
 async function cancelRemindersFor(
   req: express.Request, ownerId: string, taskId: string,
 ): Promise<void> {
-  if (!catalystAvailable) return;
 
   const catalyst = initCatalyst(req) as unknown as NotificationApp;
 
@@ -2585,6 +2490,33 @@ async function cancelRemindersFor(
 
   const rules = await cancelTaskRules(catalyst, ownerId, taskId);
   if (rules > 0) console.log(`[kaizen] task rules ${taskId}: withdrew ${rules}`);
+}
+
+/**
+ * A task has several dependent records. The tombstone is written first, so it
+ * disappears from reads while the idempotent child cleanup can be retried.
+ */
+async function deleteTaskWithChildren(
+  req: express.Request,
+  ownerId: string,
+  task: DbTask,
+  rowId?: string,
+): Promise<void> {
+  await withDeletionLock(deletionLockKey('task', ownerId, task.id), async () => {
+    const taskRowId = rowId ?? await catalystGetRowId(req, getTasksTable(), 'TaskId', task.id);
+    if (!taskRowId) return;
+    if (!taskDeletionPending(task)) {
+      await catalystUpdateRow(
+        req,
+        getTasksTable(),
+        taskRowId,
+        taskToRow({ ...task, updatedAt: DELETION_PENDING_UPDATED_AT }),
+      );
+    }
+    await cancelRemindersFor(req, ownerId, task.id);
+    await removeTaskFieldValues(req, ownerId, task.id);
+    await catalystDeleteRow(req, getTasksTable(), taskRowId);
+  });
 }
 
 /**
@@ -2603,11 +2535,6 @@ async function cancelRemindersFor(
 app.post('/api/reminders/backfill', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-
-  if (!catalystAvailable) {
-    res.json({ scanned: 0, enqueued: 0, failed: 0, skipped: 'no Catalyst backend' });
-    return;
-  }
 
   try {
     const tasks = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
@@ -2708,16 +2635,6 @@ app.post('/api/internal/tick', async (req, res) => {
     return;
   }
 
-  if (!catalystAvailable) {
-    // The JSON-file fallback has no queue; say so rather than silently
-    // reporting a successful sweep that did nothing.
-    res.status(503).json({
-      error: 'datastore_unavailable',
-      message: 'The sweep requires the Catalyst backend',
-    });
-    return;
-  }
-
   try {
     const catalyst = initCatalyst(req) as unknown as NotificationApp;
     const sweepOptions = sweepOptionsFor(await syncTrialFeatures(catalyst));
@@ -2763,10 +2680,10 @@ function timingSafeEqual(a: string, b: string): boolean {
 // This endpoint does NOT require auth so it can be called before session is established.
 //
 app.get('/api/setup', async (req, res) => {
-  if (!catalystAvailable) {
+  if (storageBackend === 'postgres') {
     res.json({
-      mode: 'json-file',
-      message: 'Catalyst credentials not detected. Using JSON-file fallback.',
+      mode: 'postgres',
+      message: 'PostgreSQL storage is configured locally.',
       tables: null,
     });
     return;
@@ -2808,14 +2725,13 @@ app.get('/api/tasks', async (req, res) => {
   if (!ownerId) return;
 
   try {
-    let tasks: DbTask[];
-    if (catalystAvailable) {
-      // Use owner-scoped ZCQL query to avoid fetching all rows
-      tasks = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
-    } else {
-      tasks = readTasksDb().tasks;
-      tasks = tasks.filter((t) => t.ownerId === ownerId);
-    }
+    // The selected adapter performs this owner-scoped read in both runtimes.
+    let tasks = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
+    const lists = await catalystGetOwnerRows(req, LISTS_TABLE, 'OwnerId', ownerId, rowToList);
+    const activeListIds = new Set(lists.filter((list) => !listDeletionPending(list)).map((list) => list.id));
+    tasks = tasks.filter((task) => (
+      !taskDeletionPending(task) && (!task.listId || activeListIds.has(task.listId))
+    ));
 
     const q = req.query as Record<string, string>;
 
@@ -2903,13 +2819,8 @@ app.get('/api/tasks/today-history', async (req, res) => {
   if (!ownerId) return;
 
   try {
-    let tasks: DbTask[];
-    if (catalystAvailable) {
-      tasks = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
-    } else {
-      tasks = readTasksDb().tasks;
-      tasks = tasks.filter((t) => t.ownerId === ownerId);
-    }
+    let tasks = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
+    tasks = tasks.filter((task) => !taskDeletionPending(task));
 
     // The user's calendar day, not the server's — production runs in UTC.
     const zone = resolveTimeZone(req.headers['x-timezone']);
@@ -2933,15 +2844,9 @@ app.get('/api/tasks/:id', async (req, res) => {
   if (!ownerId) return;
 
   try {
-    let task: DbTask | undefined;
-    if (catalystAvailable) {
-      const all = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
-      task = all.find((t) => t.id === req.params.id);
-    } else {
-      task = readTasksDb().tasks
-        .find((t) => t.id === req.params.id && t.ownerId === ownerId);
-    }
-    if (!task) { res.status(404).json({ error: 'Not found' }); return; }
+    const all = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
+    const task = all.find((t) => t.id === req.params.id);
+    if (!task || taskDeletionPending(task)) { res.status(404).json({ error: 'Not found' }); return; }
     res.json(dbTaskToApi(task));
   } catch (e) {
     sendError(res, '[GET /api/tasks/:id]', e);
@@ -2971,16 +2876,18 @@ app.post('/api/tasks', async (req, res) => {
     reminderMinutesBefore: optNumber(errs, 'reminderMinutesBefore', body['reminderMinutesBefore'], 0, 0),
     sourceNoteId:          optSafeId(errs, 'sourceNoteId', body['sourceNoteId']),
     sourceBlockId:         optSafeId(errs, 'sourceBlockId', body['sourceBlockId']),
+    clientId:              optSafeId(errs, 'clientId', body['clientId']),
   };
 
   if (!errs.ok || title === undefined) { errs.send(res); return; }
 
+  const { clientId, ...taskFields } = fields;
   const now = Date.now();
   const task: DbTask = {
-    id:          randomUUID(),
+    id:          clientId || randomUUID(),
     ownerId,
     title,
-    ...fields,
+    ...taskFields,
     // completedAt is set by the server when a task is completed, never by the
     // client — accepting it here let a caller forge the momentum/streak stats.
     completedAt: 0,
@@ -2989,19 +2896,22 @@ app.post('/api/tasks', async (req, res) => {
   };
 
   try {
-    if (catalystAvailable) {
-      // An insert reads no rows first, so check the columns here or the link
-      // would be dropped from a task created before any read.
+    const inserted = await withActiveListLock(req, ownerId, task.listId, async () => {
       await ensureTaskLinkColumns(req);
       await catalystInsertRow(req, getTasksTable(), taskToRow(task));
-      await syncReminderFor(req, ownerId, task);
-      res.status(201).json(dbTaskToApi(task));
-    } else {
-      const db = readTasksDb();
-      db.tasks.push(task);
-      writeJson(TASKS_DB_PATH, db);
-      res.status(201).json(dbTaskToApi(task));
-    }
+      if (task.listId) {
+        const lists = await catalystGetOwnerRows(req, LISTS_TABLE, 'OwnerId', ownerId, rowToList);
+        if (!lists.some((list) => list.id === task.listId && !listDeletionPending(list))) {
+          const rowId = await catalystGetRowId(req, getTasksTable(), 'TaskId', task.id);
+          if (rowId) await catalystDeleteRow(req, getTasksTable(), rowId);
+          throw new Error('List deletion is pending');
+        }
+      }
+      return true;
+    });
+    if (!inserted) { res.status(404).json({ error: 'Not found', message: 'No such list' }); return; }
+    await syncReminderFor(req, ownerId, task);
+    res.status(201).json(dbTaskToApi(task));
   } catch (e) {
     sendError(res, '[POST /api/tasks]', e);
   }
@@ -3019,27 +2929,26 @@ app.put('/api/tasks/:id', async (req, res) => {
   const now = Date.now();
 
   try {
-    if (catalystAvailable) {
-      const rowId = await catalystGetRowId(req, getTasksTable(), 'TaskId', req.params.id);
-      if (!rowId) { res.status(404).json({ error: 'Not found' }); return; }
-
-      const all = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
-      const existing = all.find((t) => t.id === req.params.id);
-      if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
-
-      const updated: DbTask = { ...existing, ...body, id: req.params.id, ownerId, updatedAt: now };
+    const rowId = await catalystGetRowId(req, getTasksTable(), 'TaskId', req.params.id);
+    if (!rowId) { res.status(404).json({ error: 'Not found' }); return; }
+    const all = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
+    const existing = all.find((t) => t.id === req.params.id);
+    if (!existing || taskDeletionPending(existing)) { res.status(404).json({ error: 'Not found' }); return; }
+    const updated: DbTask = { ...existing, ...body, id: req.params.id, ownerId, updatedAt: now };
+    const saved = await withActiveListLocks(req, ownerId, [existing.listId, updated.listId], async () => {
       await catalystUpdateRow(req, getTasksTable(), rowId, taskToRow(updated));
-      await syncReminderFor(req, ownerId, updated, existing.status);
-      res.json(dbTaskToApi(updated));
-    } else {
-      const db = readTasksDb();
-      const idx = db.tasks.findIndex((t) => t.id === req.params.id && t.ownerId === ownerId);
-      if (idx < 0) { res.status(404).json({ error: 'Not found' }); return; }
-      const updated: DbTask = { ...db.tasks[idx], ...body, id: req.params.id, ownerId, updatedAt: now };
-      db.tasks[idx] = updated;
-      writeJson(TASKS_DB_PATH, db);
-      res.json(dbTaskToApi(updated));
-    }
+      if (updated.listId) {
+        const lists = await catalystGetOwnerRows(req, LISTS_TABLE, 'OwnerId', ownerId, rowToList);
+        if (!lists.some((list) => list.id === updated.listId && !listDeletionPending(list))) {
+          await catalystUpdateRow(req, getTasksTable(), rowId, taskToRow(existing));
+          return false;
+        }
+      }
+      return true;
+    });
+    if (!saved) { res.status(404).json({ error: 'Not found', message: 'No such list' }); return; }
+    await syncReminderFor(req, ownerId, updated, existing.status);
+    res.json(dbTaskToApi(updated));
   } catch (e) {
     sendError(res, '[PUT /api/tasks/:id]', e);
   }
@@ -3069,25 +2978,15 @@ app.patch('/api/tasks/:id/status', async (req, res) => {
   const now = Date.now();
 
   try {
-    if (catalystAvailable) {
-      const rowId = await catalystGetRowId(req, getTasksTable(), 'TaskId', req.params.id);
-      if (!rowId) { res.status(404).json({ error: 'Not found' }); return; }
-      const all = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
-      const existing = all.find((t) => t.id === req.params.id);
-      if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
-      const updated: DbTask = { ...existing, status, completedAt: completedAtFor(existing, status, now), updatedAt: now };
-      await catalystUpdateRow(req, getTasksTable(), rowId, taskToRow(updated));
-      await syncReminderFor(req, ownerId, updated, existing.status);
-      res.json(dbTaskToApi(updated));
-    } else {
-      const db = readTasksDb();
-      const idx = db.tasks.findIndex((t) => t.id === req.params.id && t.ownerId === ownerId);
-      if (idx < 0) { res.status(404).json({ error: 'Not found' }); return; }
-      const existing = db.tasks[idx];
-      db.tasks[idx] = { ...existing, status, completedAt: completedAtFor(existing, status, now), updatedAt: now };
-      writeJson(TASKS_DB_PATH, db);
-      res.json(dbTaskToApi(db.tasks[idx]));
-    }
+    const rowId = await catalystGetRowId(req, getTasksTable(), 'TaskId', req.params.id);
+    if (!rowId) { res.status(404).json({ error: 'Not found' }); return; }
+    const all = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
+    const existing = all.find((t) => t.id === req.params.id);
+    if (!existing || taskDeletionPending(existing)) { res.status(404).json({ error: 'Not found' }); return; }
+    const updated: DbTask = { ...existing, status, completedAt: completedAtFor(existing, status, now), updatedAt: now };
+    await catalystUpdateRow(req, getTasksTable(), rowId, taskToRow(updated));
+    await syncReminderFor(req, ownerId, updated, existing.status);
+    res.json(dbTaskToApi(updated));
   } catch (e) {
     sendError(res, '[PATCH /api/tasks/:id/status]', e);
   }
@@ -3102,26 +3001,15 @@ app.patch('/api/tasks/:id/complete', async (req, res) => {
   const now = Date.now();
 
   try {
-    if (catalystAvailable) {
-      const rowId = await catalystGetRowId(req, getTasksTable(), 'TaskId', req.params.id);
-      if (!rowId) { res.status(404).json({ error: 'Not found' }); return; }
-      const all = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
-      const existing = all.find((t) => t.id === req.params.id);
-      if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
-      const updated: DbTask = { ...existing, status: 'DONE', completedAt: now, updatedAt: now };
-      await catalystUpdateRow(req, getTasksTable(), rowId, taskToRow(updated));
-      // Completion withdraws the reminder; syncTaskReminder reaches that via
-      // status === 'DONE', so there is one code path deciding what is due.
-      await syncReminderFor(req, ownerId, updated, existing.status);
-      res.json(dbTaskToApi(updated));
-    } else {
-      const db = readTasksDb();
-      const idx = db.tasks.findIndex((t) => t.id === req.params.id && t.ownerId === ownerId);
-      if (idx < 0) { res.status(404).json({ error: 'Not found' }); return; }
-      db.tasks[idx] = { ...db.tasks[idx], status: 'DONE', completedAt: now, updatedAt: now };
-      writeJson(TASKS_DB_PATH, db);
-      res.json(dbTaskToApi(db.tasks[idx]));
-    }
+    const rowId = await catalystGetRowId(req, getTasksTable(), 'TaskId', req.params.id);
+    if (!rowId) { res.status(404).json({ error: 'Not found' }); return; }
+    const all = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
+    const existing = all.find((t) => t.id === req.params.id);
+    if (!existing || taskDeletionPending(existing)) { res.status(404).json({ error: 'Not found' }); return; }
+    const updated: DbTask = { ...existing, status: 'DONE', completedAt: now, updatedAt: now };
+    await catalystUpdateRow(req, getTasksTable(), rowId, taskToRow(updated));
+    await syncReminderFor(req, ownerId, updated, existing.status);
+    res.json(dbTaskToApi(updated));
   } catch (e) {
     sendError(res, '[PATCH /api/tasks/:id/complete]', e);
   }
@@ -3140,23 +3028,14 @@ app.patch('/api/tasks/:id/quadrant', async (req, res) => {
   const now = Date.now();
 
   try {
-    if (catalystAvailable) {
-      const rowId = await catalystGetRowId(req, getTasksTable(), 'TaskId', req.params.id);
-      if (!rowId) { res.status(404).json({ error: 'Not found' }); return; }
-      const all = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
-      const existing = all.find((t) => t.id === req.params.id);
-      if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
-      const updated: DbTask = { ...existing, quadrant, updatedAt: now };
-      await catalystUpdateRow(req, getTasksTable(), rowId, taskToRow(updated));
-      res.json(dbTaskToApi(updated));
-    } else {
-      const db = readTasksDb();
-      const idx = db.tasks.findIndex((t) => t.id === req.params.id && t.ownerId === ownerId);
-      if (idx < 0) { res.status(404).json({ error: 'Not found' }); return; }
-      db.tasks[idx] = { ...db.tasks[idx], quadrant, updatedAt: now };
-      writeJson(TASKS_DB_PATH, db);
-      res.json(dbTaskToApi(db.tasks[idx]));
-    }
+    const rowId = await catalystGetRowId(req, getTasksTable(), 'TaskId', req.params.id);
+    if (!rowId) { res.status(404).json({ error: 'Not found' }); return; }
+    const all = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
+    const existing = all.find((t) => t.id === req.params.id);
+    if (!existing || taskDeletionPending(existing)) { res.status(404).json({ error: 'Not found' }); return; }
+    const updated: DbTask = { ...existing, quadrant, updatedAt: now };
+    await catalystUpdateRow(req, getTasksTable(), rowId, taskToRow(updated));
+    res.json(dbTaskToApi(updated));
   } catch (e) {
     sendError(res, '[PATCH /api/tasks/:id/quadrant]', e);
   }
@@ -3169,25 +3048,13 @@ app.delete('/api/tasks/:id', async (req, res) => {
   if (!ownerId) return;
 
   try {
-    if (catalystAvailable) {
-      // Verify ownership before delete
-      const all = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
-      const task = all.find((t) => t.id === req.params.id);
-      if (!task) { res.status(404).json({ error: 'Not found' }); return; }
-      const rowId = await catalystGetRowId(req, getTasksTable(), 'TaskId', req.params.id);
-      if (!rowId) { res.status(404).json({ error: 'Not found' }); return; }
-      await catalystDeleteRow(req, getTasksTable(), rowId);
-      await cancelRemindersFor(req, ownerId, req.params.id);
-      await removeTaskFieldValues(req, ownerId, req.params.id);
-      res.sendStatus(204);
-    } else {
-      const db = readTasksDb();
-      const before = db.tasks.length;
-      db.tasks = db.tasks.filter((t) => !(t.id === req.params.id && t.ownerId === ownerId));
-      if (db.tasks.length === before) { res.status(404).json({ error: 'Not found' }); return; }
-      writeJson(TASKS_DB_PATH, db);
-      res.sendStatus(204);
-    }
+    const all = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
+    const task = all.find((t) => t.id === req.params.id);
+    if (!task) { res.status(404).json({ error: 'Not found' }); return; }
+    const rowId = await catalystGetRowId(req, getTasksTable(), 'TaskId', req.params.id);
+    if (!rowId) { res.status(404).json({ error: 'Not found' }); return; }
+    await deleteTaskWithChildren(req, ownerId, task, rowId);
+    res.sendStatus(204);
   } catch (e) {
     sendError(res, '[DELETE /api/tasks/:id]', e);
   }
@@ -3203,15 +3070,10 @@ app.get('/api/lists', async (req, res) => {
   if (!ownerId) return;
 
   try {
-    let lists: DbList[];
-    if (catalystAvailable) {
-      lists = await catalystGetOwnerRows(req, LISTS_TABLE, 'OwnerId', ownerId, rowToList);
-    } else {
-      lists = readListsDb().lists;
-      lists = lists.filter((l) => l.ownerId === ownerId);
-    }
-    lists.sort((a, b) => a.listOrder - b.listOrder || a.createdAt - b.createdAt);
-    res.json(lists.map(dbListToApi));
+    const lists = await catalystGetOwnerRows(req, LISTS_TABLE, 'OwnerId', ownerId, rowToList);
+    const activeLists = lists.filter((list) => !listDeletionPending(list));
+    activeLists.sort((a, b) => a.listOrder - b.listOrder || a.createdAt - b.createdAt);
+    res.json(activeLists.map(dbListToApi));
   } catch (e) {
     sendError(res, '[GET /api/lists]', e);
   }
@@ -3224,15 +3086,9 @@ app.get('/api/lists/:id', async (req, res) => {
   if (!ownerId) return;
 
   try {
-    let list: DbList | undefined;
-    if (catalystAvailable) {
-      const all = await catalystGetOwnerRows(req, LISTS_TABLE, 'OwnerId', ownerId, rowToList);
-      list = all.find((l) => l.id === req.params.id);
-    } else {
-      list = readListsDb().lists
-        .find((l) => l.id === req.params.id && l.ownerId === ownerId);
-    }
-    if (!list) { res.status(404).json({ error: 'Not found' }); return; }
+    const all = await catalystGetOwnerRows(req, LISTS_TABLE, 'OwnerId', ownerId, rowToList);
+    const list = all.find((l) => l.id === req.params.id);
+    if (!list || listDeletionPending(list)) { res.status(404).json({ error: 'Not found' }); return; }
     res.json(dbListToApi(list));
   } catch (e) {
     sendError(res, '[GET /api/lists/:id]', e);
@@ -3249,11 +3105,12 @@ app.post('/api/lists', async (req, res) => {
   const name = reqString(errs, 'name', body['name'], MAX_TITLE_LEN);
   const color = optString(errs, 'color', body['color'], 32, 'emerald');
   const listOrder = optNumber(errs, 'listOrder', body['listOrder'], 0);
+  const clientId = optSafeId(errs, 'clientId', body['clientId']);
   if (!errs.ok || name === undefined) { errs.send(res); return; }
 
   const now = Date.now();
   const list: DbList = {
-    id:        randomUUID(),
+    id:        clientId || randomUUID(),
     ownerId,
     name,
     color,
@@ -3263,15 +3120,8 @@ app.post('/api/lists', async (req, res) => {
   };
 
   try {
-    if (catalystAvailable) {
-      await catalystInsertRow(req, LISTS_TABLE, listToRow(list));
-      res.status(201).json(dbListToApi(list));
-    } else {
-      const db = readListsDb();
-      db.lists.push(list);
-      writeJson(LISTS_DB_PATH, db);
-      res.status(201).json(dbListToApi(list));
-    }
+    await catalystInsertRow(req, LISTS_TABLE, listToRow(list));
+    res.status(201).json(dbListToApi(list));
   } catch (e) {
     sendError(res, '[POST /api/lists]', e);
   }
@@ -3289,24 +3139,14 @@ app.put('/api/lists/:id', async (req, res) => {
   const now = Date.now();
 
   try {
-    if (catalystAvailable) {
-      const rowId = await catalystGetRowId(req, LISTS_TABLE, 'ListId', req.params.id);
-      if (!rowId) { res.status(404).json({ error: 'Not found' }); return; }
-      const all = await catalystGetOwnerRows(req, LISTS_TABLE, 'OwnerId', ownerId, rowToList);
-      const existing = all.find((l) => l.id === req.params.id);
-      if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
-      const updated: DbList = { ...existing, ...body, id: req.params.id, ownerId, updatedAt: now };
-      await catalystUpdateRow(req, LISTS_TABLE, rowId, listToRow(updated));
-      res.json(dbListToApi(updated));
-    } else {
-      const db = readListsDb();
-      const idx = db.lists.findIndex((l) => l.id === req.params.id && l.ownerId === ownerId);
-      if (idx < 0) { res.status(404).json({ error: 'Not found' }); return; }
-      const updated: DbList = { ...db.lists[idx], ...body, id: req.params.id, ownerId, updatedAt: now };
-      db.lists[idx] = updated;
-      writeJson(LISTS_DB_PATH, db);
-      res.json(dbListToApi(updated));
-    }
+    const rowId = await catalystGetRowId(req, LISTS_TABLE, 'ListId', req.params.id);
+    if (!rowId) { res.status(404).json({ error: 'Not found' }); return; }
+    const all = await catalystGetOwnerRows(req, LISTS_TABLE, 'OwnerId', ownerId, rowToList);
+    const existing = all.find((l) => l.id === req.params.id);
+    if (!existing || listDeletionPending(existing)) { res.status(404).json({ error: 'Not found' }); return; }
+    const updated: DbList = { ...existing, ...body, id: req.params.id, ownerId, updatedAt: now };
+    await catalystUpdateRow(req, LISTS_TABLE, rowId, listToRow(updated));
+    res.json(dbListToApi(updated));
   } catch (e) {
     sendError(res, '[PUT /api/lists/:id]', e);
   }
@@ -3319,36 +3159,33 @@ app.delete('/api/lists/:id', async (req, res) => {
   if (!ownerId) return;
 
   try {
-    if (catalystAvailable) {
-      // Verify ownership before delete
-      const allLists = await catalystGetOwnerRows(req, LISTS_TABLE, 'OwnerId', ownerId, rowToList);
-      const list = allLists.find((l) => l.id === req.params.id);
-      if (!list) { res.status(404).json({ error: 'Not found' }); return; }
-      {
+    const deleted = await withDeletionLock(
+      deletionLockKey('list', ownerId, req.params.id),
+      async () => {
+        const allLists = await catalystGetOwnerRows(req, LISTS_TABLE, 'OwnerId', ownerId, rowToList);
+        const list = allLists.find((item) => item.id === req.params.id);
+        if (!list) return false;
         const rowId = await catalystGetRowId(req, LISTS_TABLE, 'ListId', req.params.id);
-        if (rowId) await catalystDeleteRow(req, LISTS_TABLE, rowId);
-        // Also delete tasks belonging to this list (owner-scoped)
+        if (!rowId) return false;
+        if (!listDeletionPending(list)) {
+          await catalystUpdateRow(
+            req,
+            LISTS_TABLE,
+            rowId,
+            listToRow({ ...list, updatedAt: DELETION_PENDING_UPDATED_AT }),
+          );
+        }
         const tasks = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
-        const toDelete = tasks.filter((t) => t.listId === req.params.id);
-        await Promise.all(toDelete.map(async (t) => {
-          const rid = await catalystGetRowId(req, getTasksTable(), 'TaskId', t.id);
-          if (rid) await catalystDeleteRow(req, getTasksTable(), rid);
-          await removeTaskFieldValues(req, ownerId, t.id);
-        }));
-      }
-      res.sendStatus(204);
-    } else {
-      const db = readListsDb();
-      const before = db.lists.length;
-      db.lists = db.lists.filter((l) => !(l.id === req.params.id && l.ownerId === ownerId));
-      if (db.lists.length === before) { res.status(404).json({ error: 'Not found' }); return; }
-      writeJson(LISTS_DB_PATH, db);
-      // Also remove tasks for this list (owner-scoped)
-      const tdb = readTasksDb();
-      tdb.tasks = tdb.tasks.filter((t) => !(t.listId === req.params.id && t.ownerId === ownerId));
-      writeJson(TASKS_DB_PATH, tdb);
-      res.sendStatus(204);
-    }
+        for (const task of tasks.filter((item) => item.listId === req.params.id)) {
+          const taskRowId = await catalystGetRowId(req, getTasksTable(), 'TaskId', task.id);
+          await deleteTaskWithChildren(req, ownerId, task, taskRowId ?? undefined);
+        }
+        await catalystDeleteRow(req, LISTS_TABLE, rowId);
+        return true;
+      },
+    );
+    if (!deleted) { res.status(404).json({ error: 'Not found' }); return; }
+    res.sendStatus(204);
   } catch (e) {
     sendError(res, '[DELETE /api/lists/:id]', e);
   }
@@ -3364,13 +3201,7 @@ app.get('/api/stats/momentum', async (req, res) => {
   if (!ownerId) return;
 
   try {
-    let tasks: DbTask[];
-    if (catalystAvailable) {
-      tasks = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
-    } else {
-      tasks = readTasksDb().tasks;
-      tasks = tasks.filter((t) => t.ownerId === ownerId);
-    }
+    let tasks = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
 
     const { listId } = req.query as Record<string, string>;
     if (listId) tasks = tasks.filter((t) => t.listId === listId);
@@ -3425,15 +3256,6 @@ async function catalystFindNote(
 }
 
 /**
- * Owner of a stored note. Notes written before OwnerId existed have no owner
- * field; in JSON-file mode there was only ever one user, so they belong to
- * LOCAL_DEV_OWNER rather than disappearing.
- */
-function noteOwner(note: DbNote): string {
-  return note.ownerId || LOCAL_DEV_OWNER;
-}
-
-/**
  * A note's blocks are one Catalyst Text column, which holds 10,000 characters.
  * Nothing checked that: an oversized note reached the datastore, failed with an
  * unnamed 400, and the client retried the same payload forever. Rejecting it
@@ -3452,26 +3274,16 @@ function assertNoteFits(body: Partial<DbNote>, res: express.Response): boolean {
   return false;
 }
 
-/** Reads the owner's notes from the JSON-file store. */
-function readOwnedNotes(ownerId: string): DbNote[] {
-  return readNotesDb().notes.filter((n) => noteOwner(n) === ownerId);
-}
-
 // GET /api/notes — pinned first, then by updatedAt desc
 app.get('/api/notes', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
 
   try {
-    let notes: DbNote[];
-    if (catalystAvailable) {
-      const results = await initCatalyst(req).zcql().executeZCQLQuery(
-        `SELECT ${NOTES_COLS} FROM ${NOTES_TABLE} WHERE OwnerId = ${zcqlString(ownerId)}`
-      );
-      notes = results.map((r) => rowToNote(r[NOTES_TABLE] as ICatalystRow));
-    } else {
-      notes = readOwnedNotes(ownerId);
-    }
+    const results = await initCatalyst(req).zcql().executeZCQLQuery(
+      `SELECT ${NOTES_COLS} FROM ${NOTES_TABLE} WHERE OwnerId = ${zcqlString(ownerId)}`
+    );
+    const notes = results.map((r) => rowToNote(r[NOTES_TABLE] as ICatalystRow));
     const sorted = [...notes].sort((a, b) => {
       if (a.pinned && !b.pinned) return -1;
       if (!a.pinned && b.pinned) return 1;
@@ -3490,12 +3302,7 @@ app.get('/api/notes/:id', async (req, res) => {
   if (!ownerId) return;
 
   try {
-    let note: DbNote | null = null;
-    if (catalystAvailable) {
-      note = (await catalystFindNote(req, ownerId, req.params.id))?.note ?? null;
-    } else {
-      note = readOwnedNotes(ownerId).find((n) => n.id === req.params.id) ?? null;
-    }
+    const note = (await catalystFindNote(req, ownerId, req.params.id))?.note ?? null;
     if (!note) { res.status(404).json({ error: 'Not found' }); return; }
     res.json(note);
   } catch (e) {
@@ -3526,35 +3333,17 @@ app.post('/api/notes', async (req, res) => {
   };
 
   try {
-    if (catalystAvailable) {
-      const found = await catalystFindNote(req, ownerId, note.id);
-      if (found) {
-        if (note.updatedAt >= found.note.updatedAt) {
-          await catalystUpdateRow(req, NOTES_TABLE, found.rowId, noteToRow(note));
-          res.json(note);
-        } else {
-          res.json(found.note);
-        }
+    const found = await catalystFindNote(req, ownerId, note.id);
+    if (found) {
+      if (note.updatedAt >= found.note.updatedAt) {
+        await catalystUpdateRow(req, NOTES_TABLE, found.rowId, noteToRow(note));
+        res.json(note);
       } else {
-        await catalystInsertRow(req, NOTES_TABLE, noteToRow(note));
-        res.status(201).json(note);
+        res.json(found.note);
       }
     } else {
-      const db = readNotesDb();
-      const idx = db.notes.findIndex((n) => n.id === note.id && noteOwner(n) === ownerId);
-      if (idx >= 0) {
-        if (note.updatedAt >= db.notes[idx].updatedAt) {
-          db.notes[idx] = note;
-          writeJson(DB_PATH, db);
-          res.json(note);
-        } else {
-          res.json(db.notes[idx]);
-        }
-      } else {
-        db.notes.push(note);
-        writeJson(DB_PATH, db);
-        res.status(201).json(note);
-      }
+      await catalystInsertRow(req, NOTES_TABLE, noteToRow(note));
+      res.status(201).json(note);
     }
   } catch (e) {
     sendError(res, '[POST /api/notes]', e);
@@ -3571,40 +3360,20 @@ app.put('/api/notes/:id', async (req, res) => {
   if (!assertNoteFits(body, res)) return;
 
   try {
-    if (catalystAvailable) {
-      const found = await catalystFindNote(req, ownerId, req.params.id);
-      if (!found) { res.status(404).json({ error: 'Not found' }); return; }
-      const incoming: DbNote = {
-        ...found.note,
-        ...body,
-        id: req.params.id,
-        ownerId,
-        updatedAt: body.updatedAt ?? Date.now(),
-      };
-      if (incoming.updatedAt >= found.note.updatedAt) {
-        await catalystUpdateRow(req, NOTES_TABLE, found.rowId, noteToRow(incoming));
-        res.json(incoming);
-      } else {
-        res.json(found.note);
-      }
+    const found = await catalystFindNote(req, ownerId, req.params.id);
+    if (!found) { res.status(404).json({ error: 'Not found' }); return; }
+    const incoming: DbNote = {
+      ...found.note,
+      ...body,
+      id: req.params.id,
+      ownerId,
+      updatedAt: body.updatedAt ?? Date.now(),
+    };
+    if (incoming.updatedAt >= found.note.updatedAt) {
+      await catalystUpdateRow(req, NOTES_TABLE, found.rowId, noteToRow(incoming));
+      res.json(incoming);
     } else {
-      const db = readNotesDb();
-      const idx = db.notes.findIndex((n) => n.id === req.params.id && noteOwner(n) === ownerId);
-      if (idx < 0) { res.status(404).json({ error: 'Not found' }); return; }
-      const incoming: DbNote = {
-        ...db.notes[idx],
-        ...body,
-        id: req.params.id,
-        ownerId,
-        updatedAt: body.updatedAt ?? Date.now(),
-      };
-      if (incoming.updatedAt >= db.notes[idx].updatedAt) {
-        db.notes[idx] = incoming;
-        writeJson(DB_PATH, db);
-        res.json(incoming);
-      } else {
-        res.json(db.notes[idx]);
-      }
+      res.json(found.note);
     }
   } catch (e) {
     sendError(res, '[PUT /api/notes/:id]', e);
@@ -3618,19 +3387,10 @@ app.delete('/api/notes/:id', async (req, res) => {
   if (!ownerId) return;
 
   try {
-    if (catalystAvailable) {
-      const found = await catalystFindNote(req, ownerId, req.params.id);
-      if (!found) { res.status(404).json({ error: 'Not found' }); return; }
-      await catalystDeleteRow(req, NOTES_TABLE, found.rowId);
-      res.sendStatus(204);
-    } else {
-      const db = readNotesDb();
-      const before = db.notes.length;
-      db.notes = db.notes.filter((n) => !(n.id === req.params.id && noteOwner(n) === ownerId));
-      if (db.notes.length === before) { res.status(404).json({ error: 'Not found' }); return; }
-      writeJson(DB_PATH, db);
-      res.sendStatus(204);
-    }
+    const found = await catalystFindNote(req, ownerId, req.params.id);
+    if (!found) { res.status(404).json({ error: 'Not found' }); return; }
+    await catalystDeleteRow(req, NOTES_TABLE, found.rowId);
+    res.sendStatus(204);
   } catch (e) {
     sendError(res, '[DELETE /api/notes/:id]', e);
   }
@@ -3742,85 +3502,24 @@ function resolvePort(): number {
 
 const LISTEN_PORT = resolvePort();
 
-/**
- * Probes Catalyst and settles `catalystAvailable` BEFORE the socket opens.
- *
- * This used to run inside the app.listen callback, i.e. after the server was
- * already accepting connections. Two things went wrong in that window:
- *
- *   - catalystAvailable was true while useTestTable was still false, so early
- *     requests queried a table that often does not exist and got a 503.
- *   - If the probe then flipped catalystAvailable to false, a request that had
- *     already resolved its owner against Catalyst wrote that owner into the
- *     JSON store — where the LOCAL_DEV_OWNER filter would never match it
- *     again. The row was written and permanently invisible.
- *
- * Probing first costs a little startup latency and removes the window entirely.
- */
+/** Prepares the selected persistence adapter without changing the selection. */
 async function settleBackend(): Promise<void> {
-  const activeSignals = Object.entries(CATALYST_ENV_SIGNALS)
-    .filter(([, on]) => on)
-    .map(([name]) => name);
-  console.log(
-    activeSignals.length
-      ? `[kaizen] Catalyst credentials detected via: ${activeSignals.join(', ')}`
-      : '[kaizen] No Catalyst credentials in env — using JSON-file storage'
-  );
+  if (storageBackend === 'postgres') {
+    await (postgresStore as PostgresStore).initialize();
+    setStepsColumnAvailable(true);
+    setDatabaseDateFieldAvailable(true);
+    setFieldsDatabaseAvailable(true);
+    setViewDisplayAvailable(true);
+    console.log('[kaizen] PostgreSQL storage schema is ready');
+    return;
+  }
 
-  // With no gateway headers and no standalone config, fall back to the CLI's
-  // own login if someone has run `catalyst login` + `catalyst init` here. This
-  // is what lets `pnpm dev` reach the real project with no secrets in the repo.
-  // Under the Catalyst gateway (AppSail, Functions) the project credentials
-  // arrive as per-request headers, so there is nothing for a startup probe to
-  // authenticate with: it would fail, and the old code then disabled Catalyst
-  // for the whole process — which is why the first successful deployment
-  // reported "json-file" while running inside Catalyst.
-  //
-  // Trust the runtime instead and let each request initialise from its own
-  // headers. Table problems surface as classified per-request errors rather
-  // than a silent process-wide downgrade.
-  if (catalystAvailable && !standaloneConfig && CATALYST_ENV_SIGNALS.X_ZOHO_CATALYST_LISTEN_PORT) {
+  if (CATALYST_ENV_SIGNALS.X_ZOHO_CATALYST_LISTEN_PORT) {
     console.log('[kaizen] Catalyst gateway runtime detected — credentials arrive per request');
     lastCatalystMode = 'gateway';
     return;
   }
-
-  if (!catalystAvailable) {
-    const app = await getCliApp();
-    if (app) {
-      const project = cliProject();
-      catalystAvailable = true;
-      lastCatalystMode = 'cli';
-      const r = region();
-      console.log(
-        `[kaizen] Using the Catalyst CLI login` +
-        (project ? ` for project ${project.projectName} (${project.projectId})` : '') +
-        ` — dc ${r.dataCentre}, ${r.consoleUrl}`
-      );
-    } else {
-      return;
-    }
-  }
-
-  try {
-    // The SDK reads credentials from the platform env rather than the request
-    // when running inside Catalyst, so a bare object is enough for the probe.
-    const tablesOk = await probeCatalystTables({} as express.Request);
-    if (tablesOk) {
-      console.log('[kaizen] Catalyst DataStore tables verified');
-      // Settle the after-launch columns here too, so the in-process sweep
-      // knows about them before any request has arrived to probe them. Under
-      // the gateway there are no credentials yet and this is a no-op; the
-      // per-request probes cover that case.
-      await ensureTaskLinkColumns({} as express.Request);
-      await ensureRuleStepsColumn({} as express.Request);
-      return;
-    }
-    console.warn('[kaizen] Catalyst DataStore tables unavailable — using JSON-file fallback.');
-  } catch (e) {
-    console.warn('[kaizen] Catalyst table probe failed — using JSON-file fallback:', e);
-  }
-  catalystAvailable = false;
+  console.log('[kaizen] Catalyst runtime detected — credentials arrive per request');
 }
 
 // Bind the port first so the platform's health check succeeds, then settle the
@@ -3832,14 +3531,12 @@ const server = app.listen(LISTEN_PORT, '0.0.0.0', () => {
 
 backendReady = settleBackend()
   .then(() => {
-    console.log(`[kaizen] Backend: ${catalystAvailable ? 'Catalyst DataStore' : 'JSON file fallback'}`);
+    console.log(`[kaizen] Backend: ${storageBackend === 'catalyst' ? 'Catalyst Data Store' : 'PostgreSQL'}`);
     bootSweepScheduler();
   })
   .catch((e) => {
-    // Never leave the gate rejected: fall back to the JSON store rather than
-    // refusing every request for the life of the process.
-    console.error('[kaizen] Backend setup failed, using JSON-file storage:', e);
-    catalystAvailable = false;
+    console.error('[kaizen] Backend setup failed:', e);
+    throw e;
   });
 
 /**
@@ -3872,8 +3569,7 @@ async function syncTrialFeatures(app: NotificationApp): Promise<TrialFeatures> {
  * middleware above starts the timer then.
  */
 function bootSweepScheduler(): void {
-  if (!catalystAvailable) return;
-  const app = backgroundCatalystApp(standaloneConfig);
+  const app = backgroundStorageApp();
   if (!app) {
     console.log('[kaizen] Sweep scheduler starts on the first request, once KaizenTrialFeatures can be read');
     return;
@@ -3887,7 +3583,6 @@ function bootSweepScheduler(): void {
 
 function startSweepScheduler(): void {
   if (sweepScheduler) return;            // already running
-  if (!catalystAvailable) return;       // the JSON-file fallback has no queue
   if (!schedulerEnabled()) {
     if (!sweepDisabledLogged) console.log('[kaizen] Sweep scheduler disabled by SWEEP_DISABLED');
     sweepDisabledLogged = true;
@@ -3895,7 +3590,7 @@ function startSweepScheduler(): void {
   }
 
   sweepScheduler = startScheduler(() => {
-    const app = backgroundCatalystApp(standaloneConfig);
+    const app = backgroundStorageApp();
     if (!app) {
       // Under the gateway this just means no request has arrived yet. The
       // tick is skipped and the next one tries again.
@@ -3909,12 +3604,17 @@ function startSweepScheduler(): void {
     onError: (e) => {
       // Expected before the first request under the gateway; not worth a
       // warning every five minutes until then.
-      const waiting = !hasBackgroundCredentials(standaloneConfig);
+      const waiting = storageBackend === 'catalyst' && !hasBackgroundCredentials(null);
       if (!waiting) console.warn(`[kaizen] sweep failed: ${String(e)}`);
     },
   });
 
   console.log(`[kaizen] Sweep scheduler running every ${intervalFromEnv() / 1000}s`);
+}
+
+function backgroundStorageApp(): NotificationApp | null {
+  if (storageBackend === 'postgres') return postgresStore;
+  return backgroundCatalystApp(null) as unknown as NotificationApp | null;
 }
 
 function stopSweepScheduler(): void {

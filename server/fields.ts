@@ -15,6 +15,10 @@ import { createHash, randomUUID } from 'node:crypto';
 import type { CatalystApp } from './notifications/types.ts';
 import { PROP_DEFS_TABLE, TASK_PROPS_TABLE } from './catalyst/schema.ts';
 import { zcqlString, unwrapRows, str, num } from './notifications/zcql.ts';
+import { getDatabase } from './databases.ts';
+import {
+  DELETION_PENDING_UPDATED_AT, deletionLockKey, isDeletionPending, withDeletionLocks,
+} from './deletion.ts';
 
 export const FIELD_KINDS = ['select', 'multi', 'number', 'date', 'checkbox', 'text'] as const;
 export type FieldKind = typeof FIELD_KINDS[number];
@@ -309,12 +313,23 @@ async function pagedRows(app: CatalystApp, table: string, columns: string, where
 }
 
 /** One database's fields, or the task fields when databaseId is ''. */
-export async function listDefs(app: CatalystApp, ownerId: string, databaseId = ''): Promise<FieldDefRow[]> {
+export async function listDefs(
+  app: CatalystApp,
+  ownerId: string,
+  databaseId = '',
+  includeDeleting = false,
+): Promise<FieldDefRow[]> {
+  // Before DatabaseId exists, every stored definition is a task field. Treating
+  // those as a database's fields would make a database deletion purge them.
+  if (databaseId && !databaseColumnAvailable) return [];
   const rows = await pagedRows(
     app, PROP_DEFS_TABLE, defColumns(),
     `OwnerId = ${zcqlString(ownerId)}${databaseWhere(databaseId)}`, 'DefOrder',
   );
-  return rows.map(toDef).sort((a, b) => a.fieldOrder - b.fieldOrder || a.createdAt - b.createdAt);
+  return rows
+    .map(toDef)
+    .filter((def) => includeDeleting || !isDeletionPending(def))
+    .sort((a, b) => a.fieldOrder - b.fieldOrder || a.createdAt - b.createdAt);
 }
 
 export async function getDef(app: CatalystApp, ownerId: string, defId: string): Promise<FieldDefRow | null> {
@@ -331,11 +346,32 @@ export async function insertDef(app: CatalystApp, def: FieldDef): Promise<void> 
 }
 
 export async function updateDef(app: CatalystApp, rowId: string, def: FieldDef): Promise<void> {
-  await app.datastore().table(PROP_DEFS_TABLE).updateRow({ ROWID: rowId, ...defToRow(def) });
+  const keys = [deletionLockKey('field', def.ownerId, def.id)];
+  if (def.databaseId) keys.push(deletionLockKey('database', def.ownerId, def.databaseId));
+  await withDeletionLocks(keys, async () => {
+    if (!isDeletionPending(def)) {
+      if (def.databaseId) {
+        const database = await getDatabase(app, def.ownerId, def.databaseId);
+        if (!database || isDeletionPending(database)) throw new Error('Database deletion is pending');
+      }
+      const current = await getDef(app, def.ownerId, def.id);
+      if (!current || isDeletionPending(current)) throw new Error('Field deletion is pending');
+    }
+    await app.datastore().table(PROP_DEFS_TABLE).updateRow({ ROWID: rowId, ...defToRow(def) });
+  });
 }
 
 export async function deleteDefRow(app: CatalystApp, rowId: string): Promise<void> {
   await app.datastore().table(PROP_DEFS_TABLE).deleteRow(rowId);
+}
+
+/** Hide a field definition before removing the values that depend on it. */
+export async function markDefDeleting(app: CatalystApp, def: FieldDefRow): Promise<void> {
+  if (isDeletionPending(def)) return;
+  await app.datastore().table(PROP_DEFS_TABLE).updateRow({
+    ROWID: def.rowId,
+    ...defToRow({ ...def, updatedAt: DELETION_PENDING_UPDATED_AT }),
+  });
 }
 
 export interface PropRow { rowId: string; propId: string; taskId: string; defId: string; valueText: string }
@@ -409,4 +445,24 @@ export function deletePropsForDef(app: CatalystApp, ownerId: string, defId: stri
 /** A task was deleted: remove its values so they do not orphan. */
 export function deletePropsForTask(app: CatalystApp, ownerId: string, taskId: string): Promise<number> {
   return deletePropsWhere(app, `OwnerId = ${zcqlString(ownerId)} AND TaskId = ${zcqlString(taskId)}`);
+}
+
+/**
+ * Removes one database's field definitions and every value written through
+ * them. Definitions are left intact until their values are gone, which makes a
+ * failed cleanup safe to retry without leaving unreadable orphan values.
+ */
+export async function deleteDefsAndPropsForDatabase(
+  app: CatalystApp,
+  ownerId: string,
+  databaseId: string,
+): Promise<{ definitionsRemoved: number; propertiesRemoved: number }> {
+  if (!databaseColumnAvailable) return { definitionsRemoved: 0, propertiesRemoved: 0 };
+  const defs = await listDefs(app, ownerId, databaseId, true);
+  let propertiesRemoved = 0;
+  for (const def of defs) {
+    propertiesRemoved += await deletePropsForDef(app, ownerId, def.id);
+    await deleteDefRow(app, def.rowId);
+  }
+  return { definitionsRemoved: defs.length, propertiesRemoved };
 }

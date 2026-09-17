@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
-  decodeValue, deletePropsForDef, deletePropsForTask, encodeValue, getDef, insertDef, listDefs,
-  listProps, normaliseOptions, parseFieldBody, propId, setProp, toDef, defToRow, type FieldDef,
+  decodeValue, deleteDefsAndPropsForDatabase, deletePropsForDef, deletePropsForTask, encodeValue,
+  getDef, insertDef, listDefs, listProps, normaliseOptions, parseFieldBody, propId, setFieldsDatabaseAvailable,
+  setProp, toDef, defToRow, type FieldDef,
 } from '../../server/fields.ts';
 import { fakeCatalyst } from './helpers/fakeCatalyst.ts';
 
@@ -145,5 +146,26 @@ describe('storage', () => {
     expect(await deletePropsForTask(fake.app, 'user-1', 't1')).toBe(1);
     expect(await listProps(fake.app, 'user-1')).toHaveLength(0);
     expect(await listProps(fake.app, 'user-2')).toHaveLength(1);
+  });
+
+  it('deletes every database field and value without touching another database', async () => {
+    const fake = fakeCatalyst();
+    setFieldsDatabaseAvailable(true);
+    try {
+      await insertDef(fake.app, def({ id: 'db1-field', databaseId: 'db1' }));
+      await insertDef(fake.app, def({ id: 'db2-field', databaseId: 'db2' }));
+      await setProp(fake.app, 'user-1', 'record-1', 'db1-field', 'lo');
+      await setProp(fake.app, 'user-1', 'record-2', 'db2-field', 'hi');
+
+      expect(await deleteDefsAndPropsForDatabase(fake.app, 'user-1', 'db1'))
+        .toEqual({ definitionsRemoved: 1, propertiesRemoved: 1 });
+      expect(await listDefs(fake.app, 'user-1', 'db1')).toEqual([]);
+      expect((await listDefs(fake.app, 'user-1', 'db2')).map((field) => field.id)).toEqual(['db2-field']);
+      expect((await listProps(fake.app, 'user-1')).map((prop) => prop.defId)).toEqual(['db2-field']);
+      expect(await deleteDefsAndPropsForDatabase(fake.app, 'user-1', 'db1'))
+        .toEqual({ definitionsRemoved: 0, propertiesRemoved: 0 });
+    } finally {
+      setFieldsDatabaseAvailable(false);
+    }
   });
 });

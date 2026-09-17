@@ -39,6 +39,7 @@ import type { ApiAutomationRun } from '@/api/automationRunsApi';
 
 interface AutomationsPageProps {
   todos: Todo[];
+  userId?: string | null;
   /** A task sent here from its detail panel; opens the rule form for it. */
   escalationTaskId?: string | null;
   onEscalationHandled?: () => void;
@@ -175,14 +176,14 @@ function RecentRunsPanel({ runs, isLoading, error, lastChecked, onRefresh }: Rec
 
 // ── AutomationsPage ───────────────────────────────────────────────────────────
 
-export function AutomationsPage({ todos, escalationTaskId, onEscalationHandled }: AutomationsPageProps) {
+export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationHandled }: AutomationsPageProps) {
   const todoStubs = useMemo(
     () => todos.map((t) => ({ id: t.id, text: t.text })),
     [todos]
   );
 
   const { rules, online: rulesOnline, error: rulesError, addRule, updateRule, toggleStatus, deleteRule } =
-    useAutomations(todoStubs);
+    useAutomations(todoStubs, userId);
 
   const { runs, lastChecked, isLoading: runsLoading, error: runsError, triggerRule, refresh: refreshRuns } =
     useAutomationRuns();

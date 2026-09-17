@@ -400,9 +400,15 @@ function ErrorBanner({ message, onRetry, onDismiss }: { message: string; onRetry
 // ── App ────────────────────────────────────────────────────────────────────
 
 function App() {
-  // ── Scope storage to the signed-in user ──────────────────────────────────
   const { session } = useCatalystUser();
+  const activeUserId = session?.userId ?? null;
+  setActiveUserId(activeUserId);
+  // A different authenticated user needs a clean hook tree: server queries,
+  // local state, notification timers, and offline caches must never carry over.
+  return <UserScopedApp key={activeUserId ?? 'local'} activeUserId={activeUserId} />;
+}
 
+function UserScopedApp({ activeUserId }: { activeUserId: string | null }) {
   // ── Organic theme ────────────────────────────────────────────────────────
   // On <html>, not on App's root element: sheets, dialogs, menus, popovers and
   // the toaster portal into document.body, outside this tree, and would render
@@ -414,8 +420,6 @@ function App() {
 
   // ── localStorage state scoped to the signed-in user ──────────────────────
   const [appState, setAppState] = useState<AppState>(() => {
-    // setActiveUserId is synchronous — set it before the first loadAppState call
-    setActiveUserId(session?.userId ?? null);
     return loadAppState();
   });
 
@@ -505,7 +509,7 @@ function App() {
   const [pendingDatabaseId, setPendingDatabaseId] = useState<string | null>(null);
 
   // ── Notifications ─────────────────────────────────────────────────────────
-  const { permission: notificationPermission, requestPermission } = useNotifications(todos);
+  const { permission: notificationPermission, requestPermission } = useNotifications(todos, activeUserId);
   const {
     activeNotifications,
     freshToastRecords,
@@ -513,7 +517,7 @@ function App() {
     dismiss: dismissNotification,
     dismissAll: dismissAllNotifications,
     markToastSeen,
-  } = useInAppNotifications(todos);
+  } = useInAppNotifications(todos, activeUserId);
 
   // ── Derived ──────────────────────────────────────────────────────────────
 
@@ -1392,7 +1396,9 @@ function App() {
         ) : activeView === 'automations' ? (
           <div className="flex min-h-0 min-w-0 flex-1">
             <AutomationsPage
+              key={activeUserId ?? 'local'}
               todos={todos}
+              userId={activeUserId}
               escalationTaskId={pendingEscalationTaskId}
               onEscalationHandled={handleEscalationHandled}
             />

@@ -2,7 +2,8 @@
 
 A task manager built around the **Eisenhower Matrix**, with a block-based notes
 editor and rule-driven reminders. React 19 + Vite on the front, Express on the
-back, persisting to **Zoho Catalyst Data Store**.
+back. The same Express image uses **PostgreSQL 9.5-compatible storage locally**
+and **Zoho Catalyst Data Store** in Catalyst/AppSail.
 
 ## Features
 
@@ -20,10 +21,13 @@ back, persisting to **Zoho Catalyst Data Store**.
 
 - Node.js 20+ (developed on 24)
 - pnpm 10 (`corepack enable pnpm`)
+- A PostgreSQL 9.5 service for local persistence
 
 ## Getting started
 
 ```bash
+cp .env.example .env.local
+# set DATABASE_URL in .env.local
 pnpm install
 pnpm dev
 ```
@@ -57,11 +61,36 @@ The server persists through one of two backends, chosen at startup:
 
 | Backend | When | Notes |
 |---------|------|-------|
-| Catalyst Data Store | Catalyst credentials present | the real backend |
-| JSON files | no credentials | `server/*-db.json`; local development only, gitignored |
+| PostgreSQL | outside Catalyst with `DATABASE_URL` | local-only; schema initializes idempotently |
+| Catalyst Data Store | Catalyst/AppSail runtime signal | production Catalyst backend |
 
-See `docs/catalyst/` for the Catalyst reference — setup, schema, deployment,
-and a symptom-first troubleshooting table. Copy `.env.example` to `.env.local` and fill it in.
+The server fails clearly at startup when neither configuration is available.
+Local rows use `LOCAL_DEV_OWNER` (default `local-dev-user`); Catalyst keeps
+request-scoped Catalyst owner isolation. JSON-file persistence is not supported.
+
+## Docker and Catalyst AppSail
+
+`Dockerfile` builds the production Express server and frontend in one image.
+Compose deliberately starts **only HitList**; point `DATABASE_URL` at the
+pre-existing PostgreSQL 9.5 service. On Docker Desktop use
+`host.docker.internal` (for example,
+`postgres://user:password@host.docker.internal:5432/hitlist`):
+
+```bash
+DATABASE_URL='postgres://user:password@host.docker.internal:5432/hitlist' docker compose up --build
+```
+
+Do not set `DATABASE_URL` in AppSail. Build and push an OCI Linux/amd64 image,
+then deploy it as Docker AppSail:
+
+```bash
+docker buildx build --platform linux/amd64 -t registry.example/hitlist:tag --push .
+catalyst deploy appsail --name hitlist-api --source docker://registry.example/hitlist:tag --port 9000
+```
+
+Catalyst injects `X_ZOHO_CATALYST_LISTEN_PORT`; the image exposes `/health` for
+the AppSail health check and uses Catalyst Data Store rather than external
+PostgreSQL.
 
 ## Layout
 
