@@ -1,5 +1,5 @@
 /**
- * Kaizen — Catalyst DataStore persistence server
+ * Kaizen — persistence server.
  * Default port: 3001 (dev). In Catalyst hosted env the platform manages the port.
  *
  * Tables used in Catalyst DataStore (auto-probed on startup):
@@ -64,7 +64,11 @@
  *     CreatedAt   (number)
  *     UpdatedAt   (number)
  *
- * Falls back to JSON-file storage when Catalyst credentials are unavailable.
+ * Runtime storage is explicit:
+ *   - KAIZEN_STORE=sqlite   → local SQLite
+ *   - KAIZEN_STORE=json-file → existing JSON fallback
+ *   - KAIZEN_STORE=catalyst → require Catalyst
+ *   - unset / auto          → Catalyst when available, else JSON fallback
  */
 import express from 'express';
 import cors from 'cors';
@@ -126,6 +130,8 @@ import {
   type StandaloneConfig, type CatalystMode,
 } from './catalyst/init.ts';
 import type { ICatalystRow } from 'zcatalyst-sdk-node/lib/utils/pojo/common';
+import { readStoreConfig, storeSupportsStructuredData, type StoreConfig, type StoreKind } from './store/runtime.ts';
+import { sharedSqliteStore, type SqliteStore } from './store/sqlite.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Catalyst's convention for AppSail: the platform injects
@@ -137,7 +143,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // proxy.
 const DEFAULT_PORT = 9000;
 
-// ── Catalyst availability ──────────────────────────────────────────────────────
+// ── Backend selection ──────────────────────────────────────────────────────────
 //
 // Catalyst is available only when the SDK can actually authenticate, which means
 // the platform (or `catalyst serve`) has injected credentials into the env.
@@ -179,10 +185,11 @@ const CATALYST_ENV_SIGNALS = {
   X_ZOHO_CATALYST_IS_LOCAL:    envFlag('X_ZOHO_CATALYST_IS_LOCAL'),
 } as const;
 
-// Only enable Catalyst when we have an explicit credential signal.
-// Falling back to JSON-file storage is always safe and correct.
-// Standalone credentials count too, and are added below once they are read.
-let catalystAvailable = Object.values(CATALYST_ENV_SIGNALS).some(Boolean);
+const storeConfig: StoreConfig = readStoreConfig();
+let backendKind: StoreKind = storeConfig.requestedKind
+  ?? (Object.values(CATALYST_ENV_SIGNALS).some(Boolean) ? 'catalyst' : 'json-file');
+let structuredStoreAvailable = storeSupportsStructuredData(backendKind);
+let sqliteStore: SqliteStore | null = null;
 
 // ── Auth / owner scoping ──────────────────────────────────────────────────────
 
@@ -246,13 +253,19 @@ async function getCurrentIdentity(req: express.Request): Promise<Identity> {
  *     the `if (!ownerId) return;` guard repeated at 14 call sites never fired.
  *     The API was effectively unauthenticated.
  *
- * In JSON-file mode (catalystAvailable=false) there is no session to check and
+ * In local-storage modes there is no Catalyst session to check and
  * everything belongs to LOCAL_DEV_OWNER.
  *
  * Call getCurrentIdentity() rather than this: it memoises the round trip.
  */
 async function resolveIdentity(req: express.Request): Promise<Identity> {
-  if (!catalystAvailable) return { userId: LOCAL_DEV_OWNER, email: '' };
+  // Local Electron/dev runs have no Catalyst session and intentionally use one
+  // local owner. If a Catalyst gateway did supply a session, keep resolving it
+  // even when a non-Catalyst store was selected or became the fallback: a hosted
+  // request must never collapse every caller into the local shared owner.
+  if (backendKind !== 'catalyst' && !hasGatewayHeaders(req)) {
+    return { userId: LOCAL_DEV_OWNER, email: '' };
+  }
 
   // Admin credentials (CLI or standalone) carry no end-user session, so
   // getCurrentUser() would always throw and every request would 401 — making
@@ -336,15 +349,39 @@ try {
 
 // A complete standalone configuration is a credential signal in its own right:
 // it is what makes Catalyst reachable from a plain `pnpm dev`.
-if (standaloneConfig) catalystAvailable = true;
+if (standaloneConfig && storeConfig.requestedKind !== 'sqlite' && storeConfig.requestedKind !== 'json-file') {
+  backendKind = 'catalyst';
+  structuredStoreAvailable = true;
+}
 
 /** Which initialisation path the last request used; reported by /api/health. */
 let lastCatalystMode: CatalystMode = standaloneConfig ? 'standalone' : 'none';
 
-/** Admin-scoped app, for reading and writing rows. */
-function initCatalyst(req: express.Request) {
+/** The shared SQLite-backed store, initialised during startup when opted in. */
+function initSqliteStore(): SqliteStore {
+  if (!sqliteStore) sqliteStore = sharedSqliteStore(storeConfig.sqlitePath);
+  return sqliteStore;
+}
+
+/** The active structured store, whatever backend was selected. */
+function initStore(req: express.Request): NotificationApp {
+  if (backendKind === 'sqlite') return initSqliteStore().app;
+  if (backendKind !== 'catalyst') {
+    throw new Error('Structured storage is unavailable in JSON-file mode');
+  }
   lastCatalystMode = describeMode(req, standaloneConfig);
-  return initCatalystApp(req, standaloneConfig, 'admin');
+  return initCatalystApp(req, standaloneConfig, 'admin') as unknown as NotificationApp;
+}
+
+function backgroundStoreApp(): NotificationApp | null {
+  if (backendKind === 'sqlite') return initSqliteStore().app;
+  if (backendKind !== 'catalyst') return null;
+  const app = backgroundCatalystApp(standaloneConfig);
+  return app ? app as unknown as NotificationApp : null;
+}
+
+function backgroundStoreReady(): boolean {
+  return backendKind === 'sqlite' || hasBackgroundCredentials(standaloneConfig);
 }
 
 /**
@@ -387,7 +424,7 @@ import {
  * Returns the names of any that are not.
  */
 async function probeCatalystTables(req: express.Request): Promise<boolean> {
-  let app = initCatalyst(req);
+  let app = initStore(req);
   const missing: string[] = [];
 
   // A token decrypted from the CLI's config may already have expired. Spend one
@@ -670,10 +707,14 @@ async function hasOptionalColumn(
   const key = `${table}.${column}`;
   const known = optionalColumns.get(key);
   if (known !== undefined) return known;
-  if (!catalystAvailable) return false;
+  if (!structuredStoreAvailable) return false;
+  if (backendKind === 'sqlite') {
+    optionalColumns.set(key, true);
+    return true;
+  }
 
   try {
-    await initCatalyst(req).zcql().executeZCQLQuery(`SELECT ${column} FROM ${table} LIMIT 1`);
+    await initStore(req).zcql().executeZCQLQuery(`SELECT ${column} FROM ${table} LIMIT 1`);
     optionalColumns.set(key, true);
     return true;
   } catch (e) {
@@ -741,6 +782,20 @@ async function ensureViewDisplayColumn(req: express.Request): Promise<boolean> {
   );
   setViewDisplayAvailable(available);
   return available;
+}
+
+function enableAllOptionalColumns(): void {
+  taskLinkColumns = true;
+  optionalColumns.set(`${TASKS_TABLE}.SourceNoteId`, true);
+  optionalColumns.set(`${TASKS_TABLE}.SourceBlockId`, true);
+  optionalColumns.set(`${RULES_TABLE}.OffsetSteps`, true);
+  optionalColumns.set(`${DATABASES_TABLE}.DateFieldId`, true);
+  optionalColumns.set(`${PROP_DEFS_TABLE}.DatabaseId`, true);
+  optionalColumns.set(`${VIEWS_TABLE}.DisplayJson`, true);
+  setStepsColumnAvailable(true);
+  setDatabaseDateFieldAvailable(true);
+  setFieldsDatabaseAvailable(true);
+  setViewDisplayAvailable(true);
 }
 
 /** The task columns to SELECT, given what the table has. */
@@ -932,7 +987,7 @@ async function catalystGetOwnerRows<T>(
   ownerId: string,
   converter: (row: ICatalystRow) => T
 ): Promise<T[]> {
-  const app = initCatalyst(req);
+  const app = initStore(req);
   if (table === getTasksTable()) await ensureTaskLinkColumns(req);
   const cols = table === getTasksTable() ? tasksCols() : LISTS_COLS;
   try {
@@ -966,7 +1021,7 @@ async function catalystGetRowId(
   idCol: string,
   idVal: string
 ): Promise<string | null> {
-  const app = initCatalyst(req);
+  const app = initStore(req);
   const results = await app.zcql().executeZCQLQuery(
     `SELECT ROWID, ${idCol} FROM ${table} WHERE ${idCol} = ${zcqlString(idVal)}`
   );
@@ -980,7 +1035,7 @@ async function catalystInsertRow(
   table: string,
   rowData: Record<string, string | number | null>
 ): Promise<ICatalystRow> {
-  const app = initCatalyst(req);
+  const app = initStore(req);
   const tbl = app.datastore().table(table);
   return tbl.insertRow(rowData) as Promise<ICatalystRow>;
 }
@@ -991,7 +1046,7 @@ async function catalystUpdateRow(
   rowId: string,
   rowData: Record<string, string | number | null>
 ): Promise<ICatalystRow> {
-  const app = initCatalyst(req);
+  const app = initStore(req);
   const tbl = app.datastore().table(table);
   return tbl.updateRow({ ...rowData, ROWID: rowId }) as Promise<ICatalystRow>;
 }
@@ -1001,7 +1056,7 @@ async function catalystDeleteRow(
   table: string,
   rowId: string
 ): Promise<void> {
-  const app = initCatalyst(req);
+  const app = initStore(req);
   const tbl = app.datastore().table(table);
   await tbl.deleteRow(rowId);
 }
@@ -1421,9 +1476,9 @@ app.use('/api', (req, res, next) => {
 // KaizenTrialFeatures, so turning it back on needs no redeploy: the next request
 // starts the timer. Cached for a minute — one query a minute at most.
 app.use('/api', (req, _res, next) => {
-  if (catalystAvailable) {
+  if (structuredStoreAvailable) {
     try {
-      void syncTrialFeatures(initCatalyst(req) as unknown as NotificationApp);
+      void syncTrialFeatures(initStore(req));
     } catch { /* no credentials on this request; the next one tries again */ }
   }
   next();
@@ -1436,11 +1491,13 @@ app.get('/api/health', (req, res) => {
   res.json({
     ok: true,
     ts: Date.now(),
-    backend: catalystAvailable ? 'catalyst' : 'json-file',
+    backend: backendKind,
+    configuredStore: storeConfig.requestedKind ?? 'auto',
+    ...(backendKind === 'sqlite' ? { sqlitePath: storeConfig.sqlitePath } : {}),
     // How the SDK would authenticate this request: 'gateway' (Catalyst headers
     // present), 'standalone' (env credentials) or 'none'. Without this, a
     // misconfiguration is invisible until a write fails.
-    catalystMode: describeMode(req, standaloneConfig),
+    catalystMode: backendKind === 'catalyst' ? describeMode(req, standaloneConfig) : 'none',
     lastCatalystMode,
   });
 });
@@ -1552,11 +1609,11 @@ async function ruleOwnerContext(
 app.get('/api/automation-rules', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.json([]); return; }
+  if (!structuredStoreAvailable) { res.json([]); return; }
   await ensureRuleStepsColumn(req);
 
   try {
-    const rules = await listRules(initCatalyst(req) as unknown as NotificationApp, ownerId);
+    const rules = await listRules(initStore(req), ownerId);
     res.json(rules.map(ruleToApi));
   } catch (e) {
     sendError(res, '[GET /api/automation-rules]', e);
@@ -1566,7 +1623,7 @@ app.get('/api/automation-rules', async (req, res) => {
 app.post('/api/automation-rules', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  if (!structuredStoreAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
   await ensureRuleStepsColumn(req);
 
   const errs = new FieldErrors();
@@ -1591,7 +1648,7 @@ app.post('/api/automation-rules', async (req, res) => {
   rule.nextTriggerAt = initialTrigger({ ...rule, rowId: '' }, owner.ownerTimezone, now);
 
   try {
-    await insertRule(initCatalyst(req) as unknown as NotificationApp, rule);
+    await insertRule(initStore(req), rule);
     res.status(201).json(ruleToApi(rule));
   } catch (e) {
     sendError(res, '[POST /api/automation-rules]', e);
@@ -1602,7 +1659,7 @@ app.put('/api/automation-rules/:id', async (req, res) => {
   if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  if (!structuredStoreAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
   await ensureRuleStepsColumn(req);
 
   const errs = new FieldErrors();
@@ -1610,7 +1667,7 @@ app.put('/api/automation-rules/:id', async (req, res) => {
   if (!fields) { errs.send(res); return; }
 
   try {
-    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const catalyst = initStore(req);
     const existing = await getRule(catalyst, ownerId, req.params.id);
     if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
 
@@ -1637,11 +1694,11 @@ app.delete('/api/automation-rules/:id', async (req, res) => {
   if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.sendStatus(204); return; }
+  if (!structuredStoreAvailable) { res.sendStatus(204); return; }
   await ensureRuleStepsColumn(req);
 
   try {
-    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const catalyst = initStore(req);
     const existing = await getRule(catalyst, ownerId, req.params.id);
     if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
 
@@ -1679,12 +1736,12 @@ function sendDbErrors(res: express.Response, errors: Record<string, string>): vo
 app.get('/api/databases', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  if (!structuredStoreAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   await ensureDatabaseDateFieldColumn(req);
 
   try {
-    const dbs = await listDatabases(initCatalyst(req) as unknown as NotificationApp, ownerId);
+    const dbs = await listDatabases(initStore(req), ownerId);
     res.json(dbs.map(databaseToApi));
   } catch (e) {
     sendError(res, '[GET /api/databases]', e);
@@ -1694,7 +1751,7 @@ app.get('/api/databases', async (req, res) => {
 app.post('/api/databases', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  if (!structuredStoreAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   await ensureDatabaseDateFieldColumn(req);
 
@@ -1702,7 +1759,7 @@ app.post('/api/databases', async (req, res) => {
   if (!parsed.ok) { sendDbErrors(res, parsed.errors); return; }
 
   try {
-    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const catalyst = initStore(req);
     const existing = await listDatabases(catalyst, ownerId);
     if (existing.length >= MAX_DATABASES) {
       sendDbErrors(res, { name: `you already have ${MAX_DATABASES} databases; delete one first` });
@@ -1729,7 +1786,7 @@ app.put('/api/databases/:id', async (req, res) => {
   if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  if (!structuredStoreAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   await ensureDatabaseDateFieldColumn(req);
 
@@ -1737,7 +1794,7 @@ app.put('/api/databases/:id', async (req, res) => {
   if (!parsed.ok) { sendDbErrors(res, parsed.errors); return; }
 
   try {
-    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const catalyst = initStore(req);
     const existing = await getDatabase(catalyst, ownerId, req.params.id);
     if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
 
@@ -1760,10 +1817,10 @@ app.post('/api/databases/:id/delete', async (req, res) => {
   if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  if (!structuredStoreAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   try {
-    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const catalyst = initStore(req);
     const existing = await getDatabase(catalyst, ownerId, req.params.id);
     if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
 
@@ -1781,10 +1838,10 @@ app.get('/api/databases/:id/rows', async (req, res) => {
   if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  if (!structuredStoreAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   try {
-    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const catalyst = initStore(req);
     const rows = await listRows(catalyst, ownerId, req.params.id);
     res.json(rows.map(rowToApi));
   } catch (e) {
@@ -1796,13 +1853,13 @@ app.post('/api/databases/:id/rows', async (req, res) => {
   if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  if (!structuredStoreAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   const parsed = parseRowBody((req.body ?? {}) as Record<string, unknown>);
   if (!parsed.ok) { sendDbErrors(res, parsed.errors); return; }
 
   try {
-    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const catalyst = initStore(req);
     const database = await getDatabase(catalyst, ownerId, req.params.id);
     if (!database) { res.status(404).json({ error: 'Not found' }); return; }
 
@@ -1828,13 +1885,13 @@ app.put('/api/databases/rows/:rowId', async (req, res) => {
   if (!assertSafeId(req.params.rowId, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  if (!structuredStoreAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   const parsed = parseRowBody((req.body ?? {}) as Record<string, unknown>);
   if (!parsed.ok) { sendDbErrors(res, parsed.errors); return; }
 
   try {
-    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const catalyst = initStore(req);
     const existing = await getRow(catalyst, ownerId, req.params.rowId);
     if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
 
@@ -1860,10 +1917,10 @@ app.delete('/api/databases/rows/:rowId', async (req, res) => {
   if (!assertSafeId(req.params.rowId, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  if (!structuredStoreAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   try {
-    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const catalyst = initStore(req);
     const existing = await getRow(catalyst, ownerId, req.params.rowId);
     if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
 
@@ -1886,11 +1943,11 @@ app.get('/api/databases/:id/field-values', async (req, res) => {
   if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  if (!structuredStoreAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
   await ensureFieldsDatabaseColumn(req);
 
   try {
-    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const catalyst = initStore(req);
     const database = await getDatabase(catalyst, ownerId, req.params.id);
     if (!database) { res.status(404).json({ error: 'Not found' }); return; }
 
@@ -1919,11 +1976,11 @@ app.put('/api/databases/rows/:recordId/fields/:fieldId', async (req, res) => {
   if (!assertSafeId(req.params.fieldId, res, 'fieldId')) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  if (!structuredStoreAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
   await ensureFieldsDatabaseColumn(req);
 
   try {
-    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const catalyst = initStore(req);
     const record = await getRow(catalyst, ownerId, req.params.recordId);
     if (!record) { res.status(404).json({ error: 'Not found', message: 'No such record' }); return; }
 
@@ -1963,12 +2020,12 @@ app.put('/api/databases/rows/:recordId/fields/:fieldId', async (req, res) => {
 app.get('/api/calendar', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  if (!structuredStoreAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
   await ensureDatabaseDateFieldColumn(req);
   await ensureFieldsDatabaseColumn(req);
 
   try {
-    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const catalyst = initStore(req);
 
     const [tasks, databases] = await Promise.all([
       catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask),
@@ -2027,18 +2084,18 @@ app.get('/api/trial-features', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
   // The JSON-file fallback has no table of switches, and nothing to switch.
-  if (!catalystAvailable) { res.json(ALL_ENABLED); return; }
-  res.json(await trialFeatures.get(initCatalyst(req) as unknown as NotificationApp));
+  if (!structuredStoreAvailable) { res.json(ALL_ENABLED); return; }
+  res.json(await trialFeatures.get(initStore(req)));
 });
 
 app.get('/api/views', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  if (!structuredStoreAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
   await ensureViewDisplayColumn(req);
 
   try {
-    const views = await listViews(initCatalyst(req) as unknown as NotificationApp, ownerId);
+    const views = await listViews(initStore(req), ownerId);
     res.json(views.map(viewToApi));
   } catch (e) {
     sendError(res, '[GET /api/views]', e);
@@ -2048,14 +2105,14 @@ app.get('/api/views', async (req, res) => {
 app.post('/api/views', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  if (!structuredStoreAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   const parsed = parseViewBody((req.body ?? {}) as Record<string, unknown>);
   if (!parsed.ok) { sendViewErrors(res, parsed.errors); return; }
   await ensureViewDisplayColumn(req);
 
   try {
-    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const catalyst = initStore(req);
     const existing = await listViews(catalyst, ownerId);
     if (existing.length >= MAX_VIEWS) {
       sendViewErrors(res, { name: `you already have ${MAX_VIEWS} saved views; delete one first` });
@@ -2082,14 +2139,14 @@ app.put('/api/views/:id', async (req, res) => {
   if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  if (!structuredStoreAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   const parsed = parseViewBody((req.body ?? {}) as Record<string, unknown>);
   if (!parsed.ok) { sendViewErrors(res, parsed.errors); return; }
   await ensureViewDisplayColumn(req);
 
   try {
-    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const catalyst = initStore(req);
     const existing = await getView(catalyst, ownerId, req.params.id);
     if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
 
@@ -2112,10 +2169,10 @@ app.delete('/api/views/:id', async (req, res) => {
   if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  if (!structuredStoreAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   try {
-    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const catalyst = initStore(req);
     const existing = await getView(catalyst, ownerId, req.params.id);
     if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
     await deleteView(catalyst, existing.rowId);
@@ -2142,7 +2199,7 @@ function sendFieldErrors(res: express.Response, errors: Record<string, string>):
  */
 async function removeTaskFieldValues(req: express.Request, ownerId: string, taskId: string): Promise<void> {
   try {
-    await deletePropsForTask(initCatalyst(req) as unknown as NotificationApp, ownerId, taskId);
+    await deletePropsForTask(initStore(req), ownerId, taskId);
   } catch (e) {
     console.warn(`[kaizen] field values for deleted task ${taskId} not removed: ${describeError(e)}`);
   }
@@ -2151,14 +2208,14 @@ async function removeTaskFieldValues(req: express.Request, ownerId: string, task
 app.get('/api/fields', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  if (!structuredStoreAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
   await ensureFieldsDatabaseColumn(req);
 
   const databaseId = String(req.query['databaseId'] ?? '');
   if (databaseId && !assertSafeId(databaseId, res)) return;
 
   try {
-    const defs = await listDefs(initCatalyst(req) as unknown as NotificationApp, ownerId, databaseId);
+    const defs = await listDefs(initStore(req), ownerId, databaseId);
     res.json(defs.map(defToApi));
   } catch (e) {
     sendError(res, '[GET /api/fields]', e);
@@ -2168,7 +2225,7 @@ app.get('/api/fields', async (req, res) => {
 app.post('/api/fields', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  if (!structuredStoreAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   const parsed = parseFieldBody((req.body ?? {}) as Record<string, unknown>);
   if (!parsed.ok) { sendFieldErrors(res, parsed.errors); return; }
@@ -2178,7 +2235,7 @@ app.post('/api/fields', async (req, res) => {
   if (databaseId && !assertSafeId(databaseId, res)) return;
 
   try {
-    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const catalyst = initStore(req);
     // The cap is per database, so one database's fields cannot use up another's.
     const existing = await listDefs(catalyst, ownerId, databaseId);
     if (existing.length >= MAX_FIELDS) {
@@ -2206,12 +2263,12 @@ app.put('/api/fields/:id', async (req, res) => {
   if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  if (!structuredStoreAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   await ensureFieldsDatabaseColumn(req);
 
   try {
-    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const catalyst = initStore(req);
     const existing = await getDef(catalyst, ownerId, req.params.id);
     if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
 
@@ -2240,12 +2297,12 @@ app.delete('/api/fields/:id', async (req, res) => {
   if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  if (!structuredStoreAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   await ensureFieldsDatabaseColumn(req);
 
   try {
-    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const catalyst = initStore(req);
     const existing = await getDef(catalyst, ownerId, req.params.id);
     if (!existing) { res.status(404).json({ error: 'Not found' }); return; }
     // Values first: if this stops half-way the field still exists and still
@@ -2261,10 +2318,10 @@ app.delete('/api/fields/:id', async (req, res) => {
 app.get('/api/field-values', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  if (!structuredStoreAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   try {
-    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const catalyst = initStore(req);
     const [defs, props] = await Promise.all([listDefs(catalyst, ownerId), listProps(catalyst, ownerId)]);
     const byId = new Map(defs.map((d) => [d.id, d]));
     const out: Array<{ taskId: string; fieldId: string; value: unknown }> = [];
@@ -2285,10 +2342,10 @@ app.put('/api/tasks/:id/fields/:fieldId', async (req, res) => {
   if (!assertSafeId(req.params.fieldId, res, 'fieldId')) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  if (!structuredStoreAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
 
   try {
-    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const catalyst = initStore(req);
     const def = await getDef(catalyst, ownerId, req.params.fieldId);
     if (!def) { res.status(404).json({ error: 'Not found', message: 'No such field' }); return; }
 
@@ -2322,12 +2379,12 @@ app.put('/api/tasks/:id/fields/:fieldId', async (req, res) => {
 app.get('/api/automation-runs/recent', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.json([]); return; }
+  if (!structuredStoreAvailable) { res.json([]); return; }
 
   const limit = Number(req.query['limit'] ?? 20);
   try {
     const runs = await listRuns(
-      initCatalyst(req) as unknown as NotificationApp,
+      initStore(req),
       ownerId,
       Number.isFinite(limit) ? limit : 20,
     );
@@ -2353,11 +2410,11 @@ app.post('/api/automation-runs/trigger/:id', async (req, res) => {
   if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
+  if (!structuredStoreAvailable) { res.status(503).json({ error: 'datastore_unavailable' }); return; }
   await ensureRuleStepsColumn(req);
 
   try {
-    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const catalyst = initStore(req);
     if (!(await trialFeatures.get(catalyst)).automations) {
       res.status(409).json({ error: 'feature_paused', message: 'Automations are paused' });
       return;
@@ -2416,11 +2473,11 @@ app.get('/api/automation-runs/rule/:id', async (req, res) => {
   if (!assertSafeId(req.params.id, res)) return;
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
-  if (!catalystAvailable) { res.json([]); return; }
+  if (!structuredStoreAvailable) { res.json([]); return; }
 
   try {
     const runs = await listRunsForRule(
-      initCatalyst(req) as unknown as NotificationApp, ownerId, req.params.id,
+      initStore(req), ownerId, req.params.id,
     );
     res.json(runs);
   } catch (e) {
@@ -2441,10 +2498,10 @@ app.get('/api/notifications', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
 
-  if (!catalystAvailable) { res.json([]); return; }
+  if (!structuredStoreAvailable) { res.json([]); return; }
 
   try {
-    res.json(await listInbox(initCatalyst(req) as unknown as NotificationApp, ownerId));
+    res.json(await listInbox(initStore(req), ownerId));
   } catch (e) {
     sendError(res, '[GET /api/notifications]', e);
   }
@@ -2456,11 +2513,11 @@ app.patch('/api/notifications/:id/read', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
 
-  if (!catalystAvailable) { res.status(404).json({ error: 'Not found' }); return; }
+  if (!structuredStoreAvailable) { res.status(404).json({ error: 'Not found' }); return; }
 
   try {
     const ok = await markRead(
-      initCatalyst(req) as unknown as NotificationApp, ownerId, req.params.id,
+      initStore(req), ownerId, req.params.id,
     );
     // A 404 covers both "no such id" and "not yours" — telling the two apart
     // would confirm to a caller that someone else's notification exists.
@@ -2476,11 +2533,11 @@ app.patch('/api/notifications/read-all', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
 
-  if (!catalystAvailable) { res.json({ updated: 0 }); return; }
+  if (!structuredStoreAvailable) { res.json({ updated: 0 }); return; }
 
   try {
     const updated = await markAllRead(
-      initCatalyst(req) as unknown as NotificationApp, ownerId,
+      initStore(req), ownerId,
     );
     res.json({ updated });
   } catch (e) {
@@ -2494,11 +2551,11 @@ app.delete('/api/notifications/:id', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
 
-  if (!catalystAvailable) { res.sendStatus(204); return; }
+  if (!structuredStoreAvailable) { res.sendStatus(204); return; }
 
   try {
     const ok = await removeEntry(
-      initCatalyst(req) as unknown as NotificationApp, ownerId, req.params.id,
+      initStore(req), ownerId, req.params.id,
     );
     if (!ok) { res.status(404).json({ error: 'Not found' }); return; }
     res.sendStatus(204);
@@ -2528,9 +2585,9 @@ async function syncReminderFor(
   task: DbTask,
   previousStatus?: string,
 ): Promise<void> {
-  if (!catalystAvailable) return;  // the JSON-file fallback has no queue
+  if (!structuredStoreAvailable) return;  // the JSON-file fallback has no queue
 
-  const catalyst = initCatalyst(req) as unknown as NotificationApp;
+  const catalyst = initStore(req);
   const email = (await getCurrentIdentity(req)).email;
   const timeZone = resolveTimeZone(req.headers['x-timezone']);
 
@@ -2575,9 +2632,9 @@ async function syncReminderFor(
 async function cancelRemindersFor(
   req: express.Request, ownerId: string, taskId: string,
 ): Promise<void> {
-  if (!catalystAvailable) return;
+  if (!structuredStoreAvailable) return;
 
-  const catalyst = initCatalyst(req) as unknown as NotificationApp;
+  const catalyst = initStore(req);
 
   const result = await cancelTaskReminders(catalyst, taskId);
   if (result.error) console.warn(`[kaizen] reminder ${taskId}: ${result.detail}`);
@@ -2604,8 +2661,8 @@ app.post('/api/reminders/backfill', async (req, res) => {
   const ownerId = await resolveOwner(req, res);
   if (!ownerId) return;
 
-  if (!catalystAvailable) {
-    res.json({ scanned: 0, enqueued: 0, failed: 0, skipped: 'no Catalyst backend' });
+  if (!structuredStoreAvailable) {
+    res.json({ scanned: 0, enqueued: 0, failed: 0, skipped: 'no structured storage backend' });
     return;
   }
 
@@ -2618,7 +2675,7 @@ app.post('/api/reminders/backfill', async (req, res) => {
       timeZone: resolveTimeZone(req.headers['x-timezone']),
     };
 
-    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const catalyst = initStore(req);
     const schedulable = tasks.map((t) => ({
       id: t.id,
       title: t.title,
@@ -2708,18 +2765,18 @@ app.post('/api/internal/tick', async (req, res) => {
     return;
   }
 
-  if (!catalystAvailable) {
+  if (!structuredStoreAvailable) {
     // The JSON-file fallback has no queue; say so rather than silently
     // reporting a successful sweep that did nothing.
     res.status(503).json({
       error: 'datastore_unavailable',
-      message: 'The sweep requires the Catalyst backend',
+      message: 'The sweep requires the structured storage backend',
     });
     return;
   }
 
   try {
-    const catalyst = initCatalyst(req) as unknown as NotificationApp;
+    const catalyst = initStore(req);
     const sweepOptions = sweepOptionsFor(await syncTrialFeatures(catalyst));
     if (!sweepOptions) {
       res.json({ ok: true, paused: true, reason: 'notifications are switched off in KaizenTrialFeatures' });
@@ -2763,17 +2820,17 @@ function timingSafeEqual(a: string, b: string): boolean {
 // This endpoint does NOT require auth so it can be called before session is established.
 //
 app.get('/api/setup', async (req, res) => {
-  if (!catalystAvailable) {
+  if (!structuredStoreAvailable) {
     res.json({
       mode: 'json-file',
-      message: 'Catalyst credentials not detected. Using JSON-file fallback.',
+      message: 'Using the JSON-file fallback.',
       tables: null,
     });
     return;
   }
 
   const tableStatus: Record<string, 'ok' | 'missing' | 'error'> = {};
-  const app2 = initCatalyst(req);
+  const app2 = initStore(req);
 
   for (const { name } of SCHEMA) {
     try {
@@ -2789,12 +2846,17 @@ app.get('/api/setup', async (req, res) => {
 
   const allOk = Object.values(tableStatus).every((s) => s === 'ok');
   res.json({
-    mode: 'catalyst',
+    mode: backendKind,
     tablesReady: allOk,
     tables: tableStatus,
+    ...(backendKind === 'sqlite' ? { sqlitePath: storeConfig.sqlitePath } : {}),
     message: allOk
-      ? 'All Catalyst DataStore tables are ready.'
-      : 'Some tables are missing. Run `pnpm catalyst:setup` to create them.',
+      ? backendKind === 'sqlite'
+        ? 'SQLite store schema is ready.'
+        : 'All Catalyst DataStore tables are ready.'
+      : backendKind === 'sqlite'
+        ? 'The SQLite store schema is incomplete.'
+        : 'Some tables are missing. Run `pnpm catalyst:setup` to create them.',
   });
 });
 
@@ -2809,7 +2871,7 @@ app.get('/api/tasks', async (req, res) => {
 
   try {
     let tasks: DbTask[];
-    if (catalystAvailable) {
+    if (structuredStoreAvailable) {
       // Use owner-scoped ZCQL query to avoid fetching all rows
       tasks = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
     } else {
@@ -2904,7 +2966,7 @@ app.get('/api/tasks/today-history', async (req, res) => {
 
   try {
     let tasks: DbTask[];
-    if (catalystAvailable) {
+    if (structuredStoreAvailable) {
       tasks = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
     } else {
       tasks = readTasksDb().tasks;
@@ -2934,7 +2996,7 @@ app.get('/api/tasks/:id', async (req, res) => {
 
   try {
     let task: DbTask | undefined;
-    if (catalystAvailable) {
+    if (structuredStoreAvailable) {
       const all = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
       task = all.find((t) => t.id === req.params.id);
     } else {
@@ -2989,7 +3051,7 @@ app.post('/api/tasks', async (req, res) => {
   };
 
   try {
-    if (catalystAvailable) {
+    if (structuredStoreAvailable) {
       // An insert reads no rows first, so check the columns here or the link
       // would be dropped from a task created before any read.
       await ensureTaskLinkColumns(req);
@@ -3019,7 +3081,7 @@ app.put('/api/tasks/:id', async (req, res) => {
   const now = Date.now();
 
   try {
-    if (catalystAvailable) {
+    if (structuredStoreAvailable) {
       const rowId = await catalystGetRowId(req, getTasksTable(), 'TaskId', req.params.id);
       if (!rowId) { res.status(404).json({ error: 'Not found' }); return; }
 
@@ -3069,7 +3131,7 @@ app.patch('/api/tasks/:id/status', async (req, res) => {
   const now = Date.now();
 
   try {
-    if (catalystAvailable) {
+    if (structuredStoreAvailable) {
       const rowId = await catalystGetRowId(req, getTasksTable(), 'TaskId', req.params.id);
       if (!rowId) { res.status(404).json({ error: 'Not found' }); return; }
       const all = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
@@ -3102,7 +3164,7 @@ app.patch('/api/tasks/:id/complete', async (req, res) => {
   const now = Date.now();
 
   try {
-    if (catalystAvailable) {
+    if (structuredStoreAvailable) {
       const rowId = await catalystGetRowId(req, getTasksTable(), 'TaskId', req.params.id);
       if (!rowId) { res.status(404).json({ error: 'Not found' }); return; }
       const all = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
@@ -3140,7 +3202,7 @@ app.patch('/api/tasks/:id/quadrant', async (req, res) => {
   const now = Date.now();
 
   try {
-    if (catalystAvailable) {
+    if (structuredStoreAvailable) {
       const rowId = await catalystGetRowId(req, getTasksTable(), 'TaskId', req.params.id);
       if (!rowId) { res.status(404).json({ error: 'Not found' }); return; }
       const all = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
@@ -3169,7 +3231,7 @@ app.delete('/api/tasks/:id', async (req, res) => {
   if (!ownerId) return;
 
   try {
-    if (catalystAvailable) {
+    if (structuredStoreAvailable) {
       // Verify ownership before delete
       const all = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
       const task = all.find((t) => t.id === req.params.id);
@@ -3204,7 +3266,7 @@ app.get('/api/lists', async (req, res) => {
 
   try {
     let lists: DbList[];
-    if (catalystAvailable) {
+    if (structuredStoreAvailable) {
       lists = await catalystGetOwnerRows(req, LISTS_TABLE, 'OwnerId', ownerId, rowToList);
     } else {
       lists = readListsDb().lists;
@@ -3225,7 +3287,7 @@ app.get('/api/lists/:id', async (req, res) => {
 
   try {
     let list: DbList | undefined;
-    if (catalystAvailable) {
+    if (structuredStoreAvailable) {
       const all = await catalystGetOwnerRows(req, LISTS_TABLE, 'OwnerId', ownerId, rowToList);
       list = all.find((l) => l.id === req.params.id);
     } else {
@@ -3263,7 +3325,7 @@ app.post('/api/lists', async (req, res) => {
   };
 
   try {
-    if (catalystAvailable) {
+    if (structuredStoreAvailable) {
       await catalystInsertRow(req, LISTS_TABLE, listToRow(list));
       res.status(201).json(dbListToApi(list));
     } else {
@@ -3289,7 +3351,7 @@ app.put('/api/lists/:id', async (req, res) => {
   const now = Date.now();
 
   try {
-    if (catalystAvailable) {
+    if (structuredStoreAvailable) {
       const rowId = await catalystGetRowId(req, LISTS_TABLE, 'ListId', req.params.id);
       if (!rowId) { res.status(404).json({ error: 'Not found' }); return; }
       const all = await catalystGetOwnerRows(req, LISTS_TABLE, 'OwnerId', ownerId, rowToList);
@@ -3319,7 +3381,7 @@ app.delete('/api/lists/:id', async (req, res) => {
   if (!ownerId) return;
 
   try {
-    if (catalystAvailable) {
+    if (structuredStoreAvailable) {
       // Verify ownership before delete
       const allLists = await catalystGetOwnerRows(req, LISTS_TABLE, 'OwnerId', ownerId, rowToList);
       const list = allLists.find((l) => l.id === req.params.id);
@@ -3365,7 +3427,7 @@ app.get('/api/stats/momentum', async (req, res) => {
 
   try {
     let tasks: DbTask[];
-    if (catalystAvailable) {
+    if (structuredStoreAvailable) {
       tasks = await catalystGetOwnerRows(req, getTasksTable(), 'OwnerId', ownerId, rowToTask);
     } else {
       tasks = readTasksDb().tasks;
@@ -3414,7 +3476,7 @@ async function catalystFindNote(
   ownerId: string,
   noteId: string
 ): Promise<{ rowId: string; note: DbNote } | null> {
-  const app = initCatalyst(req);
+  const app = initStore(req);
   const results = await app.zcql().executeZCQLQuery(
     `SELECT ROWID,${NOTES_COLS} FROM ${NOTES_TABLE} ` +
     `WHERE NoteId = ${zcqlString(noteId)} AND OwnerId = ${zcqlString(ownerId)}`
@@ -3464,8 +3526,8 @@ app.get('/api/notes', async (req, res) => {
 
   try {
     let notes: DbNote[];
-    if (catalystAvailable) {
-      const results = await initCatalyst(req).zcql().executeZCQLQuery(
+    if (structuredStoreAvailable) {
+      const results = await initStore(req).zcql().executeZCQLQuery(
         `SELECT ${NOTES_COLS} FROM ${NOTES_TABLE} WHERE OwnerId = ${zcqlString(ownerId)}`
       );
       notes = results.map((r) => rowToNote(r[NOTES_TABLE] as ICatalystRow));
@@ -3491,7 +3553,7 @@ app.get('/api/notes/:id', async (req, res) => {
 
   try {
     let note: DbNote | null = null;
-    if (catalystAvailable) {
+    if (structuredStoreAvailable) {
       note = (await catalystFindNote(req, ownerId, req.params.id))?.note ?? null;
     } else {
       note = readOwnedNotes(ownerId).find((n) => n.id === req.params.id) ?? null;
@@ -3526,7 +3588,7 @@ app.post('/api/notes', async (req, res) => {
   };
 
   try {
-    if (catalystAvailable) {
+    if (structuredStoreAvailable) {
       const found = await catalystFindNote(req, ownerId, note.id);
       if (found) {
         if (note.updatedAt >= found.note.updatedAt) {
@@ -3571,7 +3633,7 @@ app.put('/api/notes/:id', async (req, res) => {
   if (!assertNoteFits(body, res)) return;
 
   try {
-    if (catalystAvailable) {
+    if (structuredStoreAvailable) {
       const found = await catalystFindNote(req, ownerId, req.params.id);
       if (!found) { res.status(404).json({ error: 'Not found' }); return; }
       const incoming: DbNote = {
@@ -3618,7 +3680,7 @@ app.delete('/api/notes/:id', async (req, res) => {
   if (!ownerId) return;
 
   try {
-    if (catalystAvailable) {
+    if (structuredStoreAvailable) {
       const found = await catalystFindNote(req, ownerId, req.params.id);
       if (!found) { res.status(404).json({ error: 'Not found' }); return; }
       await catalystDeleteRow(req, NOTES_TABLE, found.rowId);
@@ -3743,14 +3805,14 @@ function resolvePort(): number {
 const LISTEN_PORT = resolvePort();
 
 /**
- * Probes Catalyst and settles `catalystAvailable` BEFORE the socket opens.
+ * Probes Catalyst and settles `structuredStoreAvailable` BEFORE the socket opens.
  *
  * This used to run inside the app.listen callback, i.e. after the server was
  * already accepting connections. Two things went wrong in that window:
  *
- *   - catalystAvailable was true while useTestTable was still false, so early
+ *   - structuredStoreAvailable was true while useTestTable was still false, so early
  *     requests queried a table that often does not exist and got a 503.
- *   - If the probe then flipped catalystAvailable to false, a request that had
+ *   - If the probe then flipped structuredStoreAvailable to false, a request that had
  *     already resolved its owner against Catalyst wrote that owner into the
  *     JSON store — where the LOCAL_DEV_OWNER filter would never match it
  *     again. The row was written and permanently invisible.
@@ -3758,13 +3820,27 @@ const LISTEN_PORT = resolvePort();
  * Probing first costs a little startup latency and removes the window entirely.
  */
 async function settleBackend(): Promise<void> {
+  if (backendKind === 'sqlite') {
+    initSqliteStore();
+    structuredStoreAvailable = true;
+    lastCatalystMode = 'none';
+    enableAllOptionalColumns();
+    console.log(`[kaizen] KAIZEN_STORE=sqlite — using SQLite at ${storeConfig.sqlitePath}`);
+    return;
+  }
+
+  if (backendKind === 'json-file' && storeConfig.requestedKind === 'json-file') {
+    console.log('[kaizen] KAIZEN_STORE=json-file — using JSON-file fallback');
+    return;
+  }
+
   const activeSignals = Object.entries(CATALYST_ENV_SIGNALS)
     .filter(([, on]) => on)
     .map(([name]) => name);
   console.log(
     activeSignals.length
       ? `[kaizen] Catalyst credentials detected via: ${activeSignals.join(', ')}`
-      : '[kaizen] No Catalyst credentials in env — using JSON-file storage'
+      : '[kaizen] No Catalyst credentials in env — checking CLI before JSON-file fallback'
   );
 
   // With no gateway headers and no standalone config, fall back to the CLI's
@@ -3779,17 +3855,21 @@ async function settleBackend(): Promise<void> {
   // Trust the runtime instead and let each request initialise from its own
   // headers. Table problems surface as classified per-request errors rather
   // than a silent process-wide downgrade.
-  if (catalystAvailable && !standaloneConfig && CATALYST_ENV_SIGNALS.X_ZOHO_CATALYST_LISTEN_PORT) {
+  const gatewayRuntime = CATALYST_ENV_SIGNALS.X_ZOHO_CATALYST_LISTEN_PORT
+    || CATALYST_ENV_SIGNALS.X_ZOHO_CATALYST_IS_LOCAL;
+  if (backendKind === 'catalyst' && !standaloneConfig && gatewayRuntime) {
     console.log('[kaizen] Catalyst gateway runtime detected — credentials arrive per request');
     lastCatalystMode = 'gateway';
     return;
   }
 
-  if (!catalystAvailable) {
+  if (!standaloneConfig) {
     const app = await getCliApp();
     if (app) {
       const project = cliProject();
-      catalystAvailable = true;
+      void app;
+      backendKind = 'catalyst';
+      structuredStoreAvailable = true;
       lastCatalystMode = 'cli';
       const r = region();
       console.log(
@@ -3798,15 +3878,25 @@ async function settleBackend(): Promise<void> {
         ` — dc ${r.dataCentre}, ${r.consoleUrl}`
       );
     } else {
-      return;
+      if (storeConfig.requestedKind === 'catalyst') {
+        throw new Error('KAIZEN_STORE=catalyst was requested but no Catalyst credentials were usable');
+      }
+      if (backendKind !== 'catalyst') {
+        backendKind = 'json-file';
+        structuredStoreAvailable = false;
+        return;
+      }
     }
   }
 
+  let catalystFailure: unknown;
   try {
     // The SDK reads credentials from the platform env rather than the request
     // when running inside Catalyst, so a bare object is enough for the probe.
     const tablesOk = await probeCatalystTables({} as express.Request);
     if (tablesOk) {
+      backendKind = 'catalyst';
+      structuredStoreAvailable = true;
       console.log('[kaizen] Catalyst DataStore tables verified');
       // Settle the after-launch columns here too, so the in-process sweep
       // knows about them before any request has arrived to probe them. Under
@@ -3814,13 +3904,23 @@ async function settleBackend(): Promise<void> {
       // per-request probes cover that case.
       await ensureTaskLinkColumns({} as express.Request);
       await ensureRuleStepsColumn({} as express.Request);
+      await ensureDatabaseDateFieldColumn({} as express.Request);
+      await ensureFieldsDatabaseColumn({} as express.Request);
+      await ensureViewDisplayColumn({} as express.Request);
       return;
     }
-    console.warn('[kaizen] Catalyst DataStore tables unavailable — using JSON-file fallback.');
   } catch (e) {
-    console.warn('[kaizen] Catalyst table probe failed — using JSON-file fallback:', e);
+    catalystFailure = e;
+    console.warn('[kaizen] Catalyst table probe failed:', e);
   }
-  catalystAvailable = false;
+  if (storeConfig.requestedKind === 'catalyst') {
+    const detail = catalystFailure ? `: ${describeError(catalystFailure)}` : '';
+    throw new Error(`KAIZEN_STORE=catalyst was requested but Catalyst DataStore is unavailable${detail}`);
+  }
+  console.warn('[kaizen] Catalyst DataStore tables unavailable — using JSON-file fallback.');
+  backendKind = 'json-file';
+  structuredStoreAvailable = false;
+  lastCatalystMode = 'none';
 }
 
 // Bind the port first so the platform's health check succeeds, then settle the
@@ -3832,14 +3932,37 @@ const server = app.listen(LISTEN_PORT, '0.0.0.0', () => {
 
 backendReady = settleBackend()
   .then(() => {
-    console.log(`[kaizen] Backend: ${catalystAvailable ? 'Catalyst DataStore' : 'JSON file fallback'}`);
+    console.log(
+      `[kaizen] Backend: ${backendKind === 'sqlite'
+        ? `SQLite (${storeConfig.sqlitePath})`
+        : backendKind === 'catalyst'
+          ? 'Catalyst DataStore'
+          : 'JSON file fallback'}`,
+    );
     bootSweepScheduler();
   })
   .catch((e) => {
+    if (storeConfig.explicit) {
+      console.error(
+        `[kaizen] Explicit KAIZEN_STORE=${storeConfig.requestedKind} backend setup failed; no fallback selected:`,
+        e,
+      );
+      // A local store that cannot initialise must not keep the HTTP health
+      // endpoint alive while every API call waits forever for readiness. Closing
+      // the listener lets the local launcher or Catalyst report the startup
+      // failure instead of serving a deceptively healthy process.
+      process.exitCode = 1;
+      const close = () => server.close();
+      if (server.listening) close();
+      else server.once('listening', close);
+      return new Promise<void>(() => {});
+    }
     // Never leave the gate rejected: fall back to the JSON store rather than
     // refusing every request for the life of the process.
     console.error('[kaizen] Backend setup failed, using JSON-file storage:', e);
-    catalystAvailable = false;
+    backendKind = 'json-file';
+    structuredStoreAvailable = false;
+    lastCatalystMode = 'none';
   });
 
 /**
@@ -3872,13 +3995,13 @@ async function syncTrialFeatures(app: NotificationApp): Promise<TrialFeatures> {
  * middleware above starts the timer then.
  */
 function bootSweepScheduler(): void {
-  if (!catalystAvailable) return;
-  const app = backgroundCatalystApp(standaloneConfig);
+  if (!structuredStoreAvailable) return;
+  const app = backgroundStoreApp();
   if (!app) {
     console.log('[kaizen] Sweep scheduler starts on the first request, once KaizenTrialFeatures can be read');
     return;
   }
-  void syncTrialFeatures(app as unknown as NotificationApp).then((flags) => {
+  void syncTrialFeatures(app).then((flags) => {
     if (!flags.notifications) {
       console.log('[kaizen] Notifications are switched off in KaizenTrialFeatures — sweep scheduler not started');
     }
@@ -3887,7 +4010,7 @@ function bootSweepScheduler(): void {
 
 function startSweepScheduler(): void {
   if (sweepScheduler) return;            // already running
-  if (!catalystAvailable) return;       // the JSON-file fallback has no queue
+  if (!structuredStoreAvailable) return;       // the JSON-file fallback has no queue
   if (!schedulerEnabled()) {
     if (!sweepDisabledLogged) console.log('[kaizen] Sweep scheduler disabled by SWEEP_DISABLED');
     sweepDisabledLogged = true;
@@ -3895,21 +4018,21 @@ function startSweepScheduler(): void {
   }
 
   sweepScheduler = startScheduler(() => {
-    const app = backgroundCatalystApp(standaloneConfig);
+    const app = backgroundStoreApp();
     if (!app) {
       // Under the gateway this just means no request has arrived yet. The
       // tick is skipped and the next one tries again.
-      throw new Error('no Catalyst credentials for background work yet');
+      throw new Error('no storage backend credentials for background work yet');
     }
-    return app as unknown as NotificationApp;
+    return app;
   }, {
     // Re-checks the switches every tick, so switching notifications off stops
     // the timer within one interval even if no request arrives.
-    prepareTick: async (app) => sweepOptionsFor(await syncTrialFeatures(app as unknown as NotificationApp)),
+    prepareTick: async (app) => sweepOptionsFor(await syncTrialFeatures(app)),
     onError: (e) => {
       // Expected before the first request under the gateway; not worth a
       // warning every five minutes until then.
-      const waiting = !hasBackgroundCredentials(standaloneConfig);
+      const waiting = !backgroundStoreReady();
       if (!waiting) console.warn(`[kaizen] sweep failed: ${String(e)}`);
     },
   });
@@ -3933,6 +4056,7 @@ process.on('unhandledRejection', (reason) => {
 // Graceful shutdown
 function shutdown(signal: string): void {
   console.log(`[kaizen] ${signal} received, shutting down gracefully`);
+  if (sqliteStore) sqliteStore.close();
   server.close(() => process.exit(0));
 }
 process.on('SIGTERM', () => shutdown('SIGTERM'));

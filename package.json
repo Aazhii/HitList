@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "main": "electron/dist/main.cjs",
   "scripts": {
     "dev": "concurrently --names \"vite,notes\" --prefix-colors \"cyan,green\" \"vite\" \"NODE_ENV=development pnpm run server\"",
     "dev:ui": "vite",
@@ -23,7 +24,11 @@
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:ui": "vitest --ui"
+    "test:ui": "vitest --ui",
+    "electron:build": "node scripts/build-electron.mjs",
+    "electron:dev": "pnpm run electron:build && electron .",
+    "electron:preview": "pnpm run build && pnpm run electron:build && KAIZEN_ELECTRON_FORCE_PROD=1 electron .",
+    "dist:mac": "pnpm run build && pnpm run electron:build && electron-builder --mac dmg"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -64,6 +69,8 @@
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.2",
     "concurrently": "^10.0.5",
+    "electron": "^44.4.1",
+    "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "eslint": "^10.3.0",
     "eslint-plugin-react-hooks": "^7.1.1",

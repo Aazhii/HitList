@@ -1,0 +1,52 @@
+# electron-builder configuration — see docs/desktop-app.md for the build
+# workflow (`pnpm run dist:mac`).
+#
+# Deliberately minimal "files": main.cjs/preload.cjs/server.cjs/
+# reminder-sweep.cjs (scripts/build-electron.mjs) each bundle their own npm
+# dependencies, so nothing under node_modules needs to ship — Electron itself
+# supplies the `electron` module. This keeps the packaged app to roughly
+# Electron's own size plus a few MB, and sidesteps every pnpm-symlink /
+# asar-packaging interaction that vendoring node_modules would otherwise
+# raise.
+appId: com.kaizen.hitlist
+productName: HitList
+copyright: Copyright © HitList
+
+directories:
+  output: release
+
+files:
+  - electron/dist/**/*
+  - package.json
+  - "!**/*.map"
+
+# reminder-sweep.cjs must exist as a real file on disk — it is the
+# ProgramArguments target of the LaunchAgent installed by electron/launchAgent.ts,
+# invoked directly by launchd/the OS rather than by this app's own process, and
+# neither can read out of an .asar archive.
+asarUnpack:
+  - electron/dist/reminder-sweep.cjs
+
+mac:
+  category: public.app-category.productivity
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+  # No Apple Developer identity is configured in this environment. Unset
+  # (rather than a specific team id) so a local/CI build produces an unsigned
+  # .app instead of failing while searching for a signing identity. Signing
+  # and notarising is a real prerequisite for distributing the DMG outside
+  # this machine — see docs/desktop-app.md's limitations section.
+  identity: null
+  hardenedRuntime: false
+
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications

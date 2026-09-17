@@ -18,11 +18,13 @@ import {
   signOut as catalystSignOut,
   type CatalystSession,
 } from '@/lib/catalystAuth';
+import { getServerBackend } from '@/lib/api';
 import { CatalystLoginPage } from '@/pages/CatalystLoginPage';
 
 export interface CatalystUserContextValue {
   session: CatalystSession | null;
-  isCatalyst: true;
+  /** False for a local-only backend (SQLite/JSON-file) — see LOCAL_SESSION below. */
+  isCatalyst: boolean;
   signOut: () => void;
   /** Re-reads the session from Catalyst. */
   refreshSession: () => void;
@@ -39,6 +41,22 @@ export function useCatalystUser() {
   return useContext(CatalystUserContext);
 }
 
+/**
+ * The single local user, for backends with no identity provider.
+ *
+ * `userId` matches LOCAL_DEV_OWNER in server/notes-server.ts exactly — every
+ * row a local backend writes is already scoped to that owner, so this session
+ * must resolve to the same id for the app's own client-side scoping
+ * (setActiveUserId) to agree with what the server persisted.
+ */
+const LOCAL_SESSION: CatalystSession = {
+  userId: 'local-dev-user',
+  email: '',
+  username: 'Local',
+  emailVerified: true,
+  roleName: 'local',
+};
+
 type Status =
   | { phase: 'loading' }
   | { phase: 'unavailable'; reason: string }
@@ -47,8 +65,27 @@ type Status =
 export function CatalystAuthGate({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<Status>({ phase: 'loading' });
   const [session, setSession] = useState<CatalystSession | null>(null);
+  // A local-only backend (SQLite or JSON-file) has no SDK session to re-read
+  // on focus, and no real account to sign out of. Tracked separately from
+  // `session` so those effects can tell the two modes apart.
+  const [isLocalBackend, setIsLocalBackend] = useState(false);
 
   const loadSession = useCallback(async () => {
+    // Local-only backends — the desktop app, or `pnpm dev`/`pnpm start` with
+    // no Catalyst project linked — have no identity provider to check
+    // against. The server already scopes every row to one local owner in
+    // that mode (LOCAL_DEV_OWNER in server/notes-server.ts); mirror that here
+    // instead of blocking on a Catalyst SDK that was never going to load. A
+    // hosted deployment (AppSail/Slate) reports 'catalyst' and falls through
+    // to the unchanged flow below.
+    const backend = await getServerBackend();
+    if (backend && backend !== 'catalyst') {
+      setIsLocalBackend(true);
+      setSession(LOCAL_SESSION);
+      setStatus({ phase: 'ready' });
+      return;
+    }
+
     // The SDK's credentials arrive asynchronously via init.js; calling before
     // they land fails in ways that look like network errors.
     const ready = await waitForCatalyst();
@@ -68,26 +105,36 @@ export function CatalystAuthGate({ children }: { children: React.ReactNode }) {
   useEffect(() => { void loadSession(); }, [loadSession]);
 
   // Catalyst returns the user to the app after login, so re-check on focus
-  // rather than leaving a signed-in user looking at the login form.
+  // rather than leaving a signed-in user looking at the login form. Skipped
+  // for a local backend, which would otherwise overwrite LOCAL_SESSION with
+  // whatever an SDK that was never loaded resolves to.
   useEffect(() => {
+    if (isLocalBackend) return;
     function onFocus() { void getCurrentSession().then(setSession); }
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
-  }, []);
+  }, [isLocalBackend]);
 
   const signOut = useCallback(() => {
+    // No account to sign out of locally — left as a no-op rather than
+    // clearing the session, which would otherwise strand a local user on
+    // CatalystLoginPage with no Catalyst project to sign into.
+    if (isLocalBackend) return;
     setSession(null);
     catalystSignOut();
-  }, []);
+  }, [isLocalBackend]);
 
-  const refreshSession = useCallback(() => { void getCurrentSession().then(setSession); }, []);
+  const refreshSession = useCallback(() => {
+    if (isLocalBackend) return;
+    void getCurrentSession().then(setSession);
+  }, [isLocalBackend]);
 
   if (status.phase === 'loading') return <AuthLoadingScreen />;
   if (status.phase === 'unavailable') return <AuthUnavailableScreen reason={status.reason} />;
   if (!session) return <CatalystLoginPage />;
 
   return (
-    <CatalystUserContext.Provider value={{ session, isCatalyst: true, signOut, refreshSession }}>
+    <CatalystUserContext.Provider value={{ session, isCatalyst: !isLocalBackend, signOut, refreshSession }}>
       {children}
     </CatalystUserContext.Provider>
   );

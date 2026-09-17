@@ -76,6 +76,18 @@ export interface SweepOptions {
    * so they cannot pile up at the head of the queue and pour out later.
    */
   withdrawRules?: boolean;
+  /**
+   * Called once a row has actually been delivered (at least one channel
+   * succeeded) — after markSent, so a hook that throws cannot undo the
+   * delivery. Optional and side-effect only; the sweep's own result does not
+   * depend on it.
+   *
+   * Exists for the desktop LaunchAgent runner (electron/reminder-sweep.ts),
+   * which has no HTTP server or renderer to show anything and uses this to
+   * fire a native macOS banner directly. The in-process scheduler (see
+   * scheduler.ts) leaves it unset.
+   */
+  onDelivered?: (row: QueueRow) => void;
 }
 
 /**
@@ -128,7 +140,7 @@ export async function runSweep(
       await withdraw(app, row, report, 'not sent: automations are switched off');
       continue;
     }
-    await deliverOne(app, row, report);
+    await deliverOne(app, row, report, options.onDelivered);
   }
 
   // ── PLAN ──
@@ -173,7 +185,12 @@ async function withdraw(
   }
 }
 
-async function deliverOne(app: CatalystApp, row: QueueRow, report: SweepReport): Promise<void> {
+async function deliverOne(
+  app: CatalystApp,
+  row: QueueRow,
+  report: SweepReport,
+  onDelivered?: (row: QueueRow) => void,
+): Promise<void> {
   // Claim FIRST, and only proceed if we actually won the row. This is what
   // stops two AppSail instances, or a retried tick, delivering the same
   // reminder twice.
@@ -197,6 +214,12 @@ async function deliverOne(app: CatalystApp, row: QueueRow, report: SweepReport):
     await markSent(app, row);
     report.delivered++;
     report.details.push(`${row.queueId} sent — ${summary}`);
+    try {
+      onDelivered?.(row);
+    } catch {
+      // A notification hook failing must not turn a delivered reminder into
+      // a reported failure — the row is already marked SENT above.
+    }
     return;
   }
 

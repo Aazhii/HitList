@@ -53,3 +53,8 @@ backups/
 # AppSail deploy bundle, produced by `pnpm run build:appsail`
 build/
 catalyst-debug.log
+
+# Electron bundle output and packaged installers
+electron/dist/
+release/
+

@@ -739,3 +739,35 @@ export async function checkServerHealth(): Promise<boolean> {
     return false;
   }
 }
+
+export type ServerBackend = 'catalyst' | 'sqlite' | 'json-file';
+
+/**
+ * Which storage backend the server is running — see the `backend` field on
+ * GET /api/health (server/notes-server.ts). 'sqlite' and 'json-file' have no
+ * identity provider; CatalystAuthGate uses this to skip the Catalyst SDK
+ * check entirely for those, rather than blocking on a login flow that has
+ * nothing to authenticate against (the desktop app, or `pnpm dev`/`pnpm
+ * start` with no Catalyst project linked).
+ *
+ * Returns null on any failure — including an unreachable server or a non-JSON
+ * response — so the caller falls back to the original Catalyst-only flow
+ * rather than guessing.
+ */
+export async function getServerBackend(): Promise<ServerBackend | null> {
+  try {
+    const res = await fetch(`${BASE_URL}/api/health`, {
+      method: 'GET',
+      credentials: 'include',
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!res.ok || !isJsonResponse(res)) return null;
+    const body = await res.json() as { backend?: string };
+    if (body.backend === 'catalyst' || body.backend === 'sqlite' || body.backend === 'json-file') {
+      return body.backend;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
