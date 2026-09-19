@@ -63,6 +63,7 @@ export const TASK_PROPS_TABLE = 'KaizenTaskProps';
 export const TRIAL_FEATURES_TABLE = 'KaizenTrialFeatures';
 export const DATABASES_TABLE = 'KaizenDatabases';
 export const DB_ROWS_TABLE = 'KaizenDbRows';
+export const ZOHO_CALENDAR_CONNECTIONS_TABLE = 'KaizenZohoCalendarConnections';
 
 export const SCHEMA: TableSpec[] = [
   {
@@ -345,6 +346,23 @@ export const SCHEMA: TableSpec[] = [
       { name: 'Title', type: 'varchar', maxLength: 255 },
       { name: 'RowOrder', type: 'int' },
       { name: 'CreatedAt', type: 'bigint' },
+      { name: 'UpdatedAt', type: 'bigint' },
+    ],
+  },
+
+  // OAuth credentials for the one Zoho Calendar account a HitList owner has
+  // connected. The token value is encrypted before it reaches this table.
+  {
+    name: ZOHO_CALENDAR_CONNECTIONS_TABLE,
+    columns: [
+      { name: 'ConnectionId', type: 'varchar', maxLength: 64, mandatory: true, unique: true },
+      OWNER_COLUMN,
+      { name: 'Provider', type: 'varchar', maxLength: 32, mandatory: true },
+      { name: 'RefreshTokenEncrypted', type: 'text', mandatory: true },
+      { name: 'ApiDomain', type: 'varchar', maxLength: 255 },
+      { name: 'AccountId', type: 'varchar', maxLength: 255 },
+      { name: 'Scopes', type: 'text' },
+      { name: 'ConnectedAt', type: 'bigint' },
       { name: 'UpdatedAt', type: 'bigint' },
     ],
   },

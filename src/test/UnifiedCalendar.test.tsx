@@ -22,10 +22,15 @@ const record = (over: Partial<CalendarItem> = {}): CalendarItem => ({
   kind: 'record', id: 'r1', title: 'Dune', date: '2026-09-18',
   sourceId: 'books', sourceName: 'Reading list', ...over,
 });
+const zohoEvent = (over: Partial<CalendarItem> = {}): CalendarItem => ({
+  kind: 'zoho', id: 'z1', title: 'Team planning', date: '2026-09-18', time: '09:00',
+  sourceId: 'zoho:primary', sourceName: 'Zoho Personal', ...over,
+});
 
 const sources: CalendarSource[] = [
   { kind: 'task', id: 'work', name: 'Work Focus', dotClass: 'bg-blue-500' },
   { kind: 'record', id: 'books', name: 'Reading list', dotClass: 'bg-a-sage' },
+  { kind: 'zoho', id: 'zoho:primary', name: 'Zoho Personal', dotClass: 'bg-sky-500' },
 ];
 
 function setup(over: Partial<UnifiedCalendarProps> = {}) {
@@ -91,6 +96,19 @@ describe('UnifiedCalendar', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Ship the table/ }));
     expect(props.onOpen).toHaveBeenCalledWith(expect.objectContaining({ kind: 'task', id: 't1' }));
+  });
+
+  it('renders Zoho events as read-only and filters their calendar', () => {
+    const props = setup({ items: [task(), zohoEvent()] });
+    expect(screen.getByRole('button', { name: /Team planning, 09:00 — Zoho Personal/ })).toHaveAttribute(
+      'aria-roledescription', 'Read-only Zoho Calendar event',
+    );
+    fireEvent.click(screen.getByRole('button', { name: /Team planning/ }));
+    expect(props.onOpen).toHaveBeenCalledWith(expect.objectContaining({ kind: 'zoho' }));
+    expect(props.onMove).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Zoho Personal' }));
+    expect(props.onToggleSource).toHaveBeenCalledWith('zoho:primary');
   });
 
   it('asks the caller to add on a day', () => {

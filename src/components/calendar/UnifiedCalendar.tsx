@@ -35,7 +35,7 @@ import {
 
 /** A task or a record, reduced to what a month grid actually needs. */
 export interface CalendarItem {
-  kind: 'task' | 'record';
+  kind: 'task' | 'record' | 'zoho';
   /** Task id, or record id. */
   id: string;
   title: string;
@@ -51,7 +51,7 @@ export interface CalendarItem {
 }
 
 export interface CalendarSource {
-  kind: 'task' | 'record';
+  kind: 'task' | 'record' | 'zoho';
   id: string;
   name: string;
   /** A tailwind class for the 7px dot, so lists keep their colours. */
@@ -370,6 +370,15 @@ function NoDateTray({
 function ItemChip({
   item, dotBySource, onOpen,
 }: { item: CalendarItem; dotBySource: Map<string, string>; onOpen: (item: CalendarItem) => void }) {
+  if (item.kind === 'zoho') {
+    return <ReadOnlyItemChip item={item as CalendarItem & { kind: 'zoho' }} dotBySource={dotBySource} onOpen={onOpen} />;
+  }
+  return <DraggableItemChip item={item as CalendarItem & { kind: 'task' | 'record' }} dotBySource={dotBySource} onOpen={onOpen} />;
+}
+
+function DraggableItemChip({
+  item, dotBySource, onOpen,
+}: { item: CalendarItem & { kind: 'task' | 'record' }; dotBySource: Map<string, string>; onOpen: (item: CalendarItem) => void }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `${item.kind}:${item.id}` });
 
   return (
@@ -382,6 +391,22 @@ function ItemChip({
       aria-roledescription={item.kind === 'task' ? 'Draggable task' : 'Draggable record'}
       aria-label={`${item.title}${item.time ? `, ${item.time}` : ''}${item.done ? ', done' : ''} — ${item.sourceName}`}
       className={cn('block w-full touch-none text-left', isDragging && 'opacity-40')}
+    >
+      <ItemChipBody item={item} dotBySource={dotBySource} />
+    </button>
+  );
+}
+
+function ReadOnlyItemChip({
+  item, dotBySource, onOpen,
+}: { item: CalendarItem & { kind: 'zoho' }; dotBySource: Map<string, string>; onOpen: (item: CalendarItem) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onOpen(item)}
+      aria-roledescription="Read-only Zoho Calendar event"
+      aria-label={`${item.title}${item.time ? `, ${item.time}` : ''} — ${item.sourceName}`}
+      className="block w-full cursor-default text-left"
     >
       <ItemChipBody item={item} dotBySource={dotBySource} />
     </button>

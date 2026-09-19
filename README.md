@@ -16,6 +16,7 @@ and **Zoho Catalyst Data Store** in Catalyst/AppSail.
 - **Automations** — reminder rules (due-date offset, overdue, recurring,
   status-change, daily digest) with a run history.
 - **Reminders** — browser notifications plus an in-app notification centre.
+- **Zoho Calendar** — per-user, read-only calendar import after a user connects their Zoho account. Setup: [docs/catalyst/13-zoho-calendar.md](docs/catalyst/13-zoho-calendar.md).
 
 ## Requirements
 

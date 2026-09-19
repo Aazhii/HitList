@@ -87,6 +87,7 @@ curl -s https://hitlist-api-50045863073.development.catalystappsail.in/api/healt
 | Deploy a server | [05-appsail-deploy.md](05-appsail-deploy.md) |
 | Host a frontend | [06-slate.md](06-slate.md) |
 | Run scheduled work, send email or push | [12-scheduling-and-delivery.md](12-scheduling-and-delivery.md) |
+| Connect a user's Zoho Calendar | [13-zoho-calendar.md](13-zoho-calendar.md) |
 | Use Functions, Cache, Stratus, NoSQL, Signals, Zia | [07-other-services.md](07-other-services.md) |
 | Look up an SDK method, or find the authoritative source | [09-sdks-and-sources.md](09-sdks-and-sources.md) |
 | Copy a working script | [10-recipes.md](10-recipes.md) |

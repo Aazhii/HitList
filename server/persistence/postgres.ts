@@ -27,6 +27,7 @@ const PRIMARY_KEYS: Record<string, string> = {
   KaizenTrialFeatures: 'FeatureKey',
   KaizenDatabases: 'DatabaseId',
   KaizenDbRows: 'RecordId',
+  KaizenZohoCalendarConnections: 'ConnectionId',
 };
 
 // Catalyst serializes several numeric fields as strings. Their local Postgres

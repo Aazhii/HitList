@@ -702,6 +702,37 @@ export const calendarApi = {
   },
 };
 
+export interface ZohoCalendarConnectionStatus {
+  configured: boolean;
+  connected: boolean;
+  connectedAt: number | null;
+}
+
+export interface ZohoCalendarEvent {
+  id: string;
+  calendarId: string;
+  calendarName: string;
+  title: string;
+  date: string;
+  time?: string;
+}
+
+export const zohoCalendarApi = {
+  connection(): Promise<ZohoCalendarConnectionStatus> {
+    return get<ZohoCalendarConnectionStatus>('/zoho-calendar/connection');
+  },
+  disconnect(): Promise<{ disconnected: boolean }> {
+    return del<{ disconnected: boolean }>('/zoho-calendar/connection');
+  },
+  events(): Promise<{ events: ZohoCalendarEvent[] }> {
+    return get<{ events: ZohoCalendarEvent[] }>('/zoho-calendar/events');
+  },
+  /** Starts navigation to the server-side OAuth consent flow. */
+  connect(): void {
+    window.location.assign(`${BASE_URL}/api/zoho-calendar/connect`);
+  },
+};
+
 // ── Trial features ───────────────────────────────────────────────────────────
 
 /** App-wide switches set in the KaizenTrialFeatures table. See server/trialFeatures.ts. */

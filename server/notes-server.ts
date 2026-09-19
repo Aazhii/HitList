@@ -127,6 +127,14 @@ import {
   captureGatewayCredentials, backgroundCatalystApp, hasBackgroundCredentials,
   type CatalystMode,
 } from './catalyst/init.ts';
+import {
+  connectionIdFor, deleteZohoCalendarConnection, getZohoCalendarConnection, saveZohoCalendarConnection,
+} from './zohoCalendar/connections.ts';
+import {
+  authorizationUrl, createOAuthState, encryptSecret, exchangeAuthorizationCode, readZohoCalendarConfig,
+  decryptSecret, refreshAccessToken, verifyOAuthState,
+} from './zohoCalendar/oauth.ts';
+import { loadZohoCalendarEvents } from './zohoCalendar/events.ts';
 import type { ICatalystRow } from 'zcatalyst-sdk-node/lib/utils/pojo/common';
 import {
   DELETION_PENDING_UPDATED_AT, deletionLockKey, isDeletionPending, withDeletionLock, withDeletionLocks,
@@ -1885,6 +1893,100 @@ app.get('/api/calendar', async (req, res) => {
     });
   } catch (e) {
     sendError(res, '[GET /api/calendar]', e);
+  }
+});
+
+// ── Zoho Calendar connection ─────────────────────────────────────────────────
+
+/** Public connection metadata only; OAuth credentials never leave the server. */
+app.get('/api/zoho-calendar/connection', async (req, res) => {
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  try {
+    const configured = readZohoCalendarConfig() !== null;
+    const connection = await getZohoCalendarConnection(initCatalyst(req), ownerId);
+    res.json({ configured, connected: Boolean(connection), connectedAt: connection?.connectedAt ?? null });
+  } catch (e) {
+    sendError(res, '[GET /api/zoho-calendar/connection]', e);
+  }
+});
+
+/** Starts a server-side authorization-code grant for the current owner. */
+app.get('/api/zoho-calendar/connect', async (req, res) => {
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  try {
+    const config = readZohoCalendarConfig();
+    if (!config) {
+      res.status(503).json({ error: 'not_configured', message: 'Zoho Calendar is not configured on this server.' });
+      return;
+    }
+    res.redirect(302, authorizationUrl(config, createOAuthState(ownerId, config.encryptionKey)));
+  } catch (e) {
+    sendError(res, '[GET /api/zoho-calendar/connect]', e);
+  }
+});
+
+/** Completes the grant on the same authenticated origin that began it. */
+app.get('/api/zoho-calendar/callback', async (req, res) => {
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  const config = readZohoCalendarConfig();
+  const code = typeof req.query['code'] === 'string' ? req.query['code'] : '';
+  const state = typeof req.query['state'] === 'string' ? req.query['state'] : '';
+  if (!config || !code || code.length > 2_000 || !verifyOAuthState(state, ownerId, config?.encryptionKey)) {
+    res.redirect(302, '/?zohoCalendar=failed');
+    return;
+  }
+  try {
+    const tokens = await exchangeAuthorizationCode(config, code);
+    if (!tokens.refreshToken) throw new Error('Zoho did not return a refresh token. Reconnect and grant offline access.');
+    const now = Date.now();
+    const existing = await getZohoCalendarConnection(initCatalyst(req), ownerId);
+    await saveZohoCalendarConnection(initCatalyst(req), {
+      connectionId: connectionIdFor(ownerId),
+      ownerId,
+      refreshTokenEncrypted: encryptSecret(tokens.refreshToken, config.encryptionKey),
+      apiDomain: tokens.apiDomain,
+      accountId: '',
+      scopes: 'ZohoCalendar.calendar.READ,ZohoCalendar.event.READ',
+      connectedAt: existing?.connectedAt || now,
+      updatedAt: now,
+    });
+    res.redirect(302, '/?zohoCalendar=connected');
+  } catch (e) {
+    console.warn('[kaizen] Zoho Calendar authorization could not be completed');
+    res.redirect(302, '/?zohoCalendar=failed');
+  }
+});
+
+/** Removes the current owner's stored credential. The UI asks for confirmation. */
+app.delete('/api/zoho-calendar/connection', async (req, res) => {
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  try {
+    const disconnected = await deleteZohoCalendarConnection(initCatalyst(req), ownerId);
+    res.json({ disconnected });
+  } catch (e) {
+    sendError(res, '[DELETE /api/zoho-calendar/connection]', e);
+  }
+});
+
+/** Imports read-only events from the current owner's connected Zoho calendars. */
+app.get('/api/zoho-calendar/events', async (req, res) => {
+  const ownerId = await resolveOwner(req, res);
+  if (!ownerId) return;
+  try {
+    const config = readZohoCalendarConfig();
+    const connection = await getZohoCalendarConnection(initCatalyst(req), ownerId);
+    if (!config || !connection) { res.json({ events: [] }); return; }
+    const tokens = await refreshAccessToken(config, decryptSecret(connection.refreshTokenEncrypted, config.encryptionKey));
+    const events = await loadZohoCalendarEvents(
+      config.calendarApiDomain, tokens.accessToken, resolveTimeZone(req.headers['x-timezone']),
+    );
+    res.json({ events });
+  } catch {
+    res.status(502).json({ error: 'zoho_unavailable', message: 'Zoho Calendar events could not be loaded. Try again.' });
   }
 });
 
