@@ -56,7 +56,7 @@ export function EisenhowerMatrix({
     <div className="mx-auto grid max-w-6xl grid-cols-1 gap-4 md:grid-cols-2 animate-fade-in">
       {QUADRANTS.map((q) => {
         const quadrantTodos = todosByQuadrant.get(q.id) ?? [];
-        const openCount = quadrantTodos.filter((t) => t.status !== 'done').length;
+        const taskCount = quadrantTodos.length;
         const headingId = `matrix-quadrant-${q.id}`;
 
         return (
@@ -74,8 +74,8 @@ export function EisenhowerMatrix({
                 {q.subtitle}
               </span>
               <span className={cn('ml-auto text-[13px] font-bold tabular-nums', q.inkClass)}>
-                {openCount}
-                <span className="sr-only"> open</span>
+                {taskCount}
+                <span className="sr-only"> tasks</span>
               </span>
             </header>
 

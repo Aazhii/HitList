@@ -3522,6 +3522,18 @@ app.use('/api', (req, res) => {
   });
 });
 
+// /__catalyst/* only exists under real Catalyst hosting (AppSail/Slate), which
+// serves /__catalyst/sdk/init.js to populate the Web SDK's project credentials.
+// Outside that hosting — local dev, this Docker/Postgres setup — nothing
+// answers it, and without this guard it fell through to the SPA fallback
+// below: the browser's <script src="/__catalyst/sdk/init.js"> got back
+// dist/index.html with a 200, fired `onload` instead of `onerror`, and threw
+// "SyntaxError: Unexpected token '<'" trying to parse it as JS. This must come
+// before the SPA fallback, same as the /api 404 above.
+app.use('/__catalyst', (_req, res) => {
+  res.status(404).end();
+});
+
 // ── Static SPA serving ────────────────────────────────────────────────────────
 
 /**

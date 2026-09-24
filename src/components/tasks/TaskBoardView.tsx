@@ -15,7 +15,7 @@
  * Cards are the matrix's own, so a task looks the same on the board. Within a
  * column, cards keep the filter's sort; a board column has no manual order.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -142,11 +142,26 @@ export function TaskBoardView({
   onGroupFieldChange, onManageFields, onSetFieldValue, onAddTask, ...cardHandlers
 }: TaskBoardViewProps) {
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollRight, setCanScrollRight] = useState(false);
 
   const columns = useMemo(
     () => (groupField ? groupByField(todos, showDone, compare, groupField, fieldValues, { includeEmpty: true }) : []),
     [todos, showDone, compare, groupField, fieldValues],
   );
+
+  // The right-edge fade is a "there's more" hint, not decoration — it must
+  // disappear once scrolled to the actual end, or it lies about the last column.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) { setCanScrollRight(false); return; }
+    const update = () => setCanScrollRight(el.scrollWidth - el.clientWidth - el.scrollLeft > 1);
+    update();
+    el.addEventListener('scroll', update);
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => { el.removeEventListener('scroll', update); observer.disconnect(); };
+  }, [columns]);
 
   const sensors = useSensors(
     // A small distance, so a click on a card is not mistaken for a drag.
@@ -193,7 +208,7 @@ export function TaskBoardView({
 
         {/* The fade shows there is more board to the right; the columns scroll under it. */}
         <div className="relative">
-          <div className="w-full overflow-x-auto pb-3">
+          <div ref={scrollRef} className="w-full overflow-x-auto pb-3">
             <div className="flex min-w-max items-start gap-4">
               {columns.map((column) => (
                 <BoardColumn
@@ -208,10 +223,12 @@ export function TaskBoardView({
               ))}
             </div>
           </div>
-          <div
-            className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-a-bg to-transparent"
-            aria-hidden
-          />
+          {canScrollRight && (
+            <div
+              className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-a-bg to-transparent"
+              aria-hidden
+            />
+          )}
         </div>
       </div>
 
@@ -289,7 +306,7 @@ interface BoardColumnProps extends CardHandlers {
 function BoardColumn({ fieldId, column, fieldDefs, fieldValues, onAddTask, ...handlers }: BoardColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: `${BOARD_COLUMN_PREFIX}${column.key}` });
   const headingId = `board-${fieldId}-${column.key}`;
-  const openCount = column.tasks.filter((t) => t.status !== 'done').length;
+  const taskCount = column.tasks.length;
 
   return (
     <section
@@ -303,8 +320,8 @@ function BoardColumn({ fieldId, column, fieldDefs, fieldValues, onAddTask, ...ha
         />
         <h2 id={headingId} className="min-w-0 truncate font-display text-[16px] leading-tight text-a-ink">{column.label}</h2>
         <span className="text-[12.5px] font-bold tabular-nums text-a-muted">
-          {openCount}
-          <span className="sr-only"> open</span>
+          {taskCount}
+          <span className="sr-only"> tasks</span>
         </span>
       </header>
 

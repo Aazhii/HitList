@@ -124,7 +124,12 @@ export function ViewLayout({
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           {topBar}
-          <div className={cn('min-h-0 flex-1', scrollMain ? 'overflow-y-auto' : 'overflow-hidden')}>
+          {/* explicit overflow-x-hidden: per the CSS overflow spec, setting only
+              overflow-y computes overflow-x to auto too, so a wide child (e.g. a
+              Board view's columns) made this whole pane scroll horizontally as
+              well, dragging the Table/Board ViewTabs bar in `children` off-screen
+              along with it. */}
+          <div className={cn('min-h-0 flex-1', scrollMain ? 'overflow-y-auto overflow-x-hidden' : 'overflow-hidden')}>
             {children}
           </div>
         </div>
