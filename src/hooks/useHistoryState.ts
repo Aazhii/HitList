@@ -1,10 +1,11 @@
 /**
  * Browser Back between screens.
  *
- * The app has no router: which page, list, layout and saved view are on screen
- * are all React state, so Back left the app entirely — the one thing nobody
- * expects it to do. This pushes a history entry whenever that combination
- * changes, and puts it back when Back (or Forward) is pressed.
+ * The app has no router: which page, list, layout, saved view, and open panel
+ * (task detail, a note, a database) are all React state, so Back left the app
+ * entirely — the one thing nobody expects it to do. This pushes a history
+ * entry whenever that combination changes, and puts it back when Back (or
+ * Forward) is pressed.
  *
  * Deliberately not a router: no paths, no route table, nothing to keep in step
  * with the UI. One entry per screen, restored through the callback.
@@ -12,18 +13,30 @@
 import { useEffect, useRef } from 'react';
 
 export interface ScreenState {
-  /** 'tasks' | 'notes' | 'automations' */
+  /** 'tasks' | 'notes' | 'automations' | 'databases' | 'calendar' */
   view: string;
   listId: string;
   layout: string;
   /** The saved view whose tab is open, or null. */
   viewId: string | null;
+  /** The task open in the task detail panel, or null. */
+  detailTaskId: string | null;
+  /** The note open in Notes, or null. */
+  noteId: string | null;
+  /** The database open in Databases, or null. */
+  databaseId: string | null;
 }
 
 const KEY = 'hitlist-screen';
 
 function sameScreen(a: ScreenState, b: ScreenState): boolean {
-  return a.view === b.view && a.listId === b.listId && a.layout === b.layout && a.viewId === b.viewId;
+  return a.view === b.view && a.listId === b.listId && a.layout === b.layout && a.viewId === b.viewId
+    && a.detailTaskId === b.detailTaskId && a.noteId === b.noteId && a.databaseId === b.databaseId;
+}
+
+/** Reads the screen the current history entry holds, for seeding state on mount. */
+export function readInitialScreen(): ScreenState | null {
+  return (window.history.state as Record<string, unknown> | null)?.[KEY] as ScreenState | undefined ?? null;
 }
 
 /**

@@ -391,9 +391,11 @@ interface NotesWorkspaceProps {
   /** A note to open, e.g. from a task's "Note" chip. Cleared through onOpenNoteHandled. */
   openNoteId?: string | null;
   onOpenNoteHandled?: () => void;
+  /** Reports which note is on screen, so Back/refresh can return to it. */
+  onActiveNoteChange?: (noteId: string | null) => void;
 }
 
-export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled }: NotesWorkspaceProps = {}) {
+export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiveNoteChange }: NotesWorkspaceProps = {}) {
   const {
     notes,
     activeNote,
@@ -431,6 +433,8 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled }: Notes
     }
     onOpenNoteHandled?.();
   }, [openNoteId, isLoading, notes, setActiveNoteId, onOpenNoteHandled]);
+
+  useEffect(() => { onActiveNoteChange?.(activeNoteId ?? null); }, [activeNoteId, onActiveNoteChange]);
 
   const filtered = search.trim()
     ? notes.filter(

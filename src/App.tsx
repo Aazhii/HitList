@@ -16,7 +16,7 @@ import { CalendarPage } from '@/pages/CalendarPage';
 import { useNotifications } from '@/hooks/useNotifications';
 import { useInAppNotifications } from '@/hooks/useInAppNotifications';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
-import { useHistoryState } from '@/hooks/useHistoryState';
+import { useHistoryState, readInitialScreen } from '@/hooks/useHistoryState';
 import { NotificationBell } from '@/components/NotificationBell';
 import { NotificationToast } from '@/components/NotificationToast';
 import { RemindersSettingsPanel } from '@/components/RemindersSettingsPanel';
@@ -488,9 +488,18 @@ function UserScopedApp({ activeUserId }: { activeUserId: string | null }) {
   const [showReminders, setShowReminders] = useState(false);
   const [showTodayHistory, setShowTodayHistory] = useState(false);
   const [defaultReminderMinutes, setDefaultReminderMinutes] = useState<ReminderMinutes>(DEFAULT_REMINDER_MINUTES);
-  const [activeView, setActiveView] = useState<AppView>('tasks');
-  /** A note to open once Notes mounts — set from a task's "Note" chip. */
-  const [pendingNoteId, setPendingNoteId] = useState<string | null>(null);
+  // Read once: what Back/refresh should restore the open panels to.
+  const [initialScreen] = useState(() => readInitialScreen());
+  // Remembered across reloads, same as tasksMode — a refresh must not always
+  // dump you back on Tasks.
+  const [activeView, setActiveView] = useLocalStorage<AppView>('hitlist-active-view', 'tasks');
+  /** A note to open once Notes mounts — set from a task's "Note" chip, or restored. */
+  const [pendingNoteId, setPendingNoteId] = useState<string | null>(() => initialScreen?.noteId ?? null);
+  /** The note NotesWorkspace currently has open — unlike pendingNoteId, this
+   * doesn't clear itself once acted on; it's what Back/refresh should return to. */
+  const [activeNoteId, setActiveNoteId] = useState<string | null>(() => initialScreen?.noteId ?? null);
+  /** A task to open in the detail panel once tasks load — set on click, or restored. */
+  const [pendingDetailTaskId, setPendingDetailTaskId] = useState<string | null>(() => initialScreen?.detailTaskId ?? null);
   /** A task to write an escalation rule for — set from the task detail panel. */
   const [pendingEscalationTaskId, setPendingEscalationTaskId] = useState<string | null>(null);
   // List vs Matrix is a mode within Tasks, remembered across reloads.
@@ -505,8 +514,11 @@ function UserScopedApp({ activeUserId }: { activeUserId: string | null }) {
   const [displayByList, setDisplayByList] = useLocalStorage<Record<string, ViewDisplay>>('hitlist-table-display-v1', {});
   /** The saved view whose tab is open, or null on a built-in tab. */
   const [appliedViewId, setAppliedViewId] = useState<string | null>(null);
-  /** A database the calendar asked to open, handed to the Databases page once. */
-  const [pendingDatabaseId, setPendingDatabaseId] = useState<string | null>(null);
+  /** A database the calendar asked to open, handed to the Databases page once — or restored. */
+  const [pendingDatabaseId, setPendingDatabaseId] = useState<string | null>(() => initialScreen?.databaseId ?? null);
+  /** The database DatabasesPage currently has open — unlike pendingDatabaseId, this
+   * doesn't clear itself once acted on; it's what Back/refresh should return to. */
+  const [activeDatabaseId, setActiveDatabaseId] = useState<string | null>(() => initialScreen?.databaseId ?? null);
 
   // ── Notifications ─────────────────────────────────────────────────────────
   const { permission: notificationPermission, requestPermission } = useNotifications(todos, activeUserId);
@@ -650,15 +662,28 @@ function UserScopedApp({ activeUserId }: { activeUserId: string | null }) {
   // Back returns to the previous screen instead of leaving the app.
   useHistoryState(
     useMemo(
-      () => ({ view: activeView, listId: activeListId, layout: tasksMode, viewId: appliedViewId }),
-      [activeView, activeListId, tasksMode, appliedViewId],
+      () => ({
+        view: activeView, listId: activeListId, layout: tasksMode, viewId: appliedViewId,
+        detailTaskId: detailOpen ? detailTodo?.id ?? null : null,
+        noteId: activeNoteId, databaseId: activeDatabaseId,
+      }),
+      [activeView, activeListId, tasksMode, appliedViewId, detailOpen, detailTodo, activeNoteId, activeDatabaseId],
     ),
     useCallback((screen) => {
       setActiveView(screen.view as typeof activeView);
       setAppState((prev) => ({ ...prev, activeListId: screen.listId }));
       setTasksMode(screen.layout as TaskLayout);
       setAppliedViewId(screen.viewId);
-      setDetailOpen(false);
+      setActiveNoteId(screen.noteId);
+      setPendingNoteId(screen.noteId);
+      setActiveDatabaseId(screen.databaseId);
+      setPendingDatabaseId(screen.databaseId);
+      if (screen.detailTaskId) {
+        setPendingDetailTaskId(screen.detailTaskId);
+      } else {
+        setDetailOpen(false);
+        setPendingDetailTaskId(null);
+      }
     }, [setTasksMode]),
   );
 
@@ -1065,6 +1090,16 @@ function UserScopedApp({ activeUserId }: { activeUserId: string | null }) {
     setDetailOpen(true);
   }, []);
 
+  // A task the detail panel should reopen once tasks load — set by Back/Forward
+  // or a page refresh, mirroring DatabasesPage's own openDatabaseId effect.
+  useEffect(() => {
+    if (!pendingDetailTaskId) return;
+    const t = todos.find((task) => task.id === pendingDetailTaskId);
+    if (!t) return;
+    handleOpenDetail(t);
+    setPendingDetailTaskId(null);
+  }, [pendingDetailTaskId, todos, handleOpenDetail]);
+
   const handleAddToQuadrant = useCallback((quadrant: Quadrant) => {
     setDefaultQuadrant(quadrant);
     setDialogOpen(true);
@@ -1391,6 +1426,7 @@ function UserScopedApp({ activeUserId }: { activeUserId: string | null }) {
               linking={noteLinking}
               openNoteId={pendingNoteId}
               onOpenNoteHandled={handleOpenNoteHandled}
+              onActiveNoteChange={setActiveNoteId}
             />
           </div>
         ) : activeView === 'automations' ? (
@@ -1404,7 +1440,11 @@ function UserScopedApp({ activeUserId }: { activeUserId: string | null }) {
             />
           </div>
         ) : activeView === 'databases' ? (
-          <DatabasesPage openDatabaseId={pendingDatabaseId} onOpenHandled={() => setPendingDatabaseId(null)} />
+          <DatabasesPage
+            openDatabaseId={pendingDatabaseId}
+            onOpenHandled={() => setPendingDatabaseId(null)}
+            onOpenChange={setActiveDatabaseId}
+          />
         ) : activeView === 'calendar' ? (
           <CalendarPage
             lists={lists}

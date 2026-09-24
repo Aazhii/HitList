@@ -55,9 +55,11 @@ export interface DatabasesPageProps {
   /** A database the calendar asked to open. */
   openDatabaseId?: string | null;
   onOpenHandled?: () => void;
+  /** Reports which database is on screen, so Back/refresh can return to it. */
+  onOpenChange?: (databaseId: string | null) => void;
 }
 
-export function DatabasesPage({ openDatabaseId, onOpenHandled }: DatabasesPageProps = {}) {
+export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange }: DatabasesPageProps = {}) {
   const notify = useCallback((message: string) => toast.error(message, { duration: 3000 }), []);
   const [openId, setOpenId] = useState<string | null>(null);
   const {
@@ -105,6 +107,8 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled }: DatabasesPagePr
     setOpenId(openDatabaseId);
     onOpenHandled?.();
   }, [openDatabaseId, onOpenHandled]);
+
+  useEffect(() => { onOpenChange?.(openId); }, [openId, onOpenChange]);
 
   // This database's fields and values. Both are the server's: a record's
   // columns are field definitions, and there is no offline copy of those.

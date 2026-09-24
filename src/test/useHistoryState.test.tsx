@@ -12,7 +12,8 @@ function Harness({ screen, onRestore }: { screen: ScreenState; onRestore: (s: Sc
 }
 
 const screen = (over: Partial<ScreenState> = {}): ScreenState => ({
-  view: 'tasks', listId: 'list-1', layout: 'table', viewId: null, ...over,
+  view: 'tasks', listId: 'list-1', layout: 'table', viewId: null,
+  detailTaskId: null, noteId: null, databaseId: null, ...over,
 });
 
 afterEach(() => { vi.restoreAllMocks(); });
