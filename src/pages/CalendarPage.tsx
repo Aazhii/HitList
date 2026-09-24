@@ -56,8 +56,12 @@ export function CalendarPage({ lists, onOpenTask, onOpenDatabase }: CalendarPage
           if (!connection.connected) { setZohoEvents([]); return; }
           return zohoCalendarApi.events().then(({ events }) => setZohoEvents(events));
         })
-        .catch(() => { setZohoConnection(null); setZohoEvents([]); });
-    } catch {
+        .catch((e: unknown) => {
+          console.error('[calendar] zoho connection/events load failed:', e);
+          setZohoConnection(null); setZohoEvents([]);
+        });
+    } catch (e) {
+      console.error('[calendar] load failed:', e);
       setOnline(false);
     } finally {
       setLoading(false);
@@ -83,7 +87,8 @@ export function CalendarPage({ lists, onOpenTask, onOpenDatabase }: CalendarPage
       await zohoCalendarApi.disconnect();
       setZohoConnection((current) => current ? { ...current, connected: false, connectedAt: null } : current);
       toast.success('Zoho Calendar disconnected');
-    } catch {
+    } catch (e) {
+      console.error('[calendar] zoho disconnect failed:', e);
       toast.error("Couldn't disconnect Zoho Calendar");
     } finally {
       setDisconnecting(false);
@@ -175,11 +180,15 @@ export function CalendarPage({ lists, onOpenTask, onOpenDatabase }: CalendarPage
           label: 'Undo',
           onClick: () => {
             apply(previous);
-            void write(previous).catch(() => { apply(date); toast.error("Couldn't undo"); });
+            void write(previous).catch((e: unknown) => {
+              console.error('[calendar] undo failed:', e);
+              apply(date); toast.error("Couldn't undo");
+            });
           },
         },
       });
-    } catch {
+    } catch (e) {
+      console.error('[calendar] date change failed:', e);
       apply(previous);
       toast.error("Couldn't save the date");
     }
@@ -337,7 +346,8 @@ function AddOnDayDialog({
       }
       toast.success('Added', { duration: 2000 });
       onDone();
-    } catch {
+    } catch (e) {
+      console.error('[calendar] add failed:', e);
       toast.error("Couldn't add it");
       setSaving(false);
     }
