@@ -8,7 +8,7 @@
  * due date or reminder, and that a record cannot be "done", so nothing is
  * hidden from a column.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -59,11 +59,26 @@ export function RecordBoard({
   rows, fields, values, groupField, onGroupFieldChange, onManageFields, onSetValue, onAdd,
 }: RecordBoardProps) {
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollRight, setCanScrollRight] = useState(false);
 
   const columns = useMemo<Array<FieldGroup<ApiDatabaseRow>>>(
     () => (groupField ? groupItemsByField(rows, byOrder, groupField, values, { includeEmpty: true }) : []),
     [rows, groupField, values],
   );
+
+  // The right-edge fade is a "there's more" hint, not decoration — it must
+  // disappear once scrolled to the actual end, or it lies about the last column.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) { setCanScrollRight(false); return; }
+    const update = () => setCanScrollRight(el.scrollWidth - el.clientWidth - el.scrollLeft > 1);
+    update();
+    el.addEventListener('scroll', update);
+    const observer = new ResizeObserver(update);
+    observer.observe(el);
+    return () => { el.removeEventListener('scroll', update); observer.disconnect(); };
+  }, [columns]);
 
   const sensors = useSensors(
     // A small distance, so a click on a card is not mistaken for a drag.
@@ -133,7 +148,7 @@ export function RecordBoard({
         </div>
 
         <div className="relative">
-          <div className="w-full overflow-x-auto pb-3">
+          <div ref={scrollRef} className="w-full overflow-x-auto pb-3">
             <div className="flex min-w-max items-start gap-4">
               {columns.map((column) => (
                 <BoardColumn
@@ -147,10 +162,12 @@ export function RecordBoard({
               ))}
             </div>
           </div>
-          <div
-            className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-a-bg to-transparent"
-            aria-hidden
-          />
+          {canScrollRight && (
+            <div
+              className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-a-bg to-transparent"
+              aria-hidden
+            />
+          )}
         </div>
       </div>
 

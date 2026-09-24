@@ -487,7 +487,7 @@ function UserScopedApp({ activeUserId }: { activeUserId: string | null }) {
   const [detailOpen, setDetailOpen] = useState(false);
   const [showReminders, setShowReminders] = useState(false);
   const [showTodayHistory, setShowTodayHistory] = useState(false);
-  const [defaultReminderMinutes, setDefaultReminderMinutes] = useState<ReminderMinutes>(DEFAULT_REMINDER_MINUTES);
+  const [defaultReminderMinutes, setDefaultReminderMinutes] = useLocalStorage<ReminderMinutes>('hitlist-default-reminder-minutes', DEFAULT_REMINDER_MINUTES);
   // Read once: what Back/refresh should restore the open panels to.
   const [initialScreen] = useState(() => readInitialScreen());
   // Remembered across reloads, same as tasksMode — a refresh must not always

@@ -103,7 +103,7 @@ export function ViewLayout({
 
   const column = (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="min-h-0 flex-1 overflow-y-auto px-3 pt-[18px] pb-3">{context}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 pt-[18px] pb-3">{context}</div>
       {contextFoot && (
         <div className="flex-shrink-0 border-t border-a-line-soft px-1 pt-1 pb-3">{contextFoot}</div>
       )}

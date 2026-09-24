@@ -262,7 +262,7 @@ export function AutomationRuleForm({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto overflow-x-hidden">
         <DialogHeader>
           <DialogTitle className="text-base font-semibold flex items-center gap-2">
             <Zap className="size-4 text-primary" />
@@ -313,6 +313,15 @@ export function AutomationRuleForm({
                 <SelectItem value="__none__">
                   <span className="text-muted-foreground">No task linked (global rule)</span>
                 </SelectItem>
+                {values.taskId && !todos.some((t) => t.id === values.taskId) && (
+                  // The rule's linked task was deleted elsewhere. Surfacing this
+                  // explicitly instead of silently falling back to the "none"
+                  // placeholder, which would misrepresent — and on save, erase —
+                  // that this rule is still pointed at a task that no longer exists.
+                  <SelectItem value={values.taskId}>
+                    <span className="text-q-do">⚠ Deleted task — pick another or clear this field</span>
+                  </SelectItem>
+                )}
                 {todos.map((t) => (
                   <SelectItem key={t.id} value={t.id}>
                     <span className="truncate max-w-[300px]">{t.text}</span>

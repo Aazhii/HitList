@@ -1985,7 +1985,8 @@ app.get('/api/zoho-calendar/events', async (req, res) => {
       config.calendarApiDomain, tokens.accessToken, resolveTimeZone(req.headers['x-timezone']),
     );
     res.json({ events });
-  } catch {
+  } catch (e) {
+    console.error('[kaizen] [GET /api/zoho-calendar/events] -> 502 zoho_unavailable:', e);
     res.status(502).json({ error: 'zoho_unavailable', message: 'Zoho Calendar events could not be loaded. Try again.' });
   }
 });

@@ -6,6 +6,7 @@ import {
   Calendar,
   Clock,
   ExternalLink,
+  Loader2,
   Pause,
   Pencil,
   Play,
@@ -341,6 +342,8 @@ const RuleCard = memo(function RuleCard({
 
 interface AutomationListProps {
   rules: AutomationRule[];
+  /** True while the initial fetch is in flight — an empty list doesn't yet mean "no rules". */
+  loading?: boolean;
   filter: FilterStatus;
   onNew: () => void;
   onEdit: (rule: AutomationRule) => void;
@@ -355,6 +358,7 @@ interface AutomationListProps {
  */
 export function AutomationList({
   rules,
+  loading,
   filter,
   onNew,
   onEdit,
@@ -362,6 +366,14 @@ export function AutomationList({
   onDelete,
   onRunNow,
 }: AutomationListProps) {
+  if (rules.length === 0 && loading) {
+    return (
+      <div className="flex items-center justify-center gap-2 py-10 text-a-faint">
+        <Loader2 className="size-4 animate-spin" aria-hidden />
+        <span className="text-[13.5px]">Loading…</span>
+      </div>
+    );
+  }
   if (rules.length === 0) {
     return <EmptyAutomations onNew={onNew} />;
   }

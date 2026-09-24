@@ -968,6 +968,15 @@ export function NoteEditor({
     pendingFocusId.current = newId;
   }, [onAddBlock]);
 
+  // Deleting a linked block must also unlink its task — otherwise the task is
+  // left pointing at a note/block that no longer exists, same cleanup the
+  // LinkedTaskChip's own "unlink" action does.
+  const handleDeleteBlock = useCallback((blockId: string) => {
+    const block = blocks.find((b) => b.id === blockId);
+    if (block?.taskId) linking?.unlinkTask(block.taskId);
+    onDeleteBlock(blockId);
+  }, [blocks, linking, onDeleteBlock]);
+
 
   return (
     <div className="relative">
@@ -1026,7 +1035,7 @@ export function NoteEditor({
             onToggleCheck={handleToggleCheck}
             onKeyDown={handleKeyDown}
             onAddAfter={handleAddAfter}
-            onDelete={onDeleteBlock}
+            onDelete={handleDeleteBlock}
             onChangeType={onChangeBlockType}
             onMoveUp={(id) => onMoveBlock(id, 'up')}
             onMoveDown={(id) => onMoveBlock(id, 'down')}

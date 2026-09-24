@@ -182,7 +182,7 @@ export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationH
     [todos]
   );
 
-  const { rules, online: rulesOnline, error: rulesError, addRule, updateRule, toggleStatus, deleteRule } =
+  const { rules, loading: rulesLoading, online: rulesOnline, error: rulesError, addRule, updateRule, toggleStatus, deleteRule } =
     useAutomations(todoStubs, userId);
 
   const { runs, lastChecked, isLoading: runsLoading, error: runsError, triggerRule, refresh: refreshRuns } =
@@ -391,6 +391,7 @@ export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationH
 
           <AutomationList
             rules={rules}
+            loading={rulesLoading}
             filter={filter}
             onNew={handleNew}
             onEdit={handleEdit}
