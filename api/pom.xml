@@ -37,6 +37,13 @@
       <scope>runtime</scope>
     </dependency>
     <dependency>
+      <!-- STORAGE_MODE=sqlite — the desktop app's local, serverless backend. -->
+      <groupId>org.xerial</groupId>
+      <artifactId>sqlite-jdbc</artifactId>
+      <version>3.53.4.0</version>
+      <scope>runtime</scope>
+    </dependency>
+    <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-test</artifactId>
       <scope>test</scope>

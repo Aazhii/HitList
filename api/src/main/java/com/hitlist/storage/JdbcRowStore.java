@@ -11,14 +11,24 @@ import java.util.UUID;
 import javax.sql.DataSource;
 import org.springframework.jdbc.core.JdbcTemplate;
 
-public class PostgresRowStore implements RowStore {
+/**
+ * The one RowStore implementation, plain JDBC against whichever DataSource it
+ * is given — nothing here is specific to a database engine. Every statement
+ * (CREATE TABLE/INDEX IF NOT EXISTS, a partial unique index, parameterized
+ * INSERT/UPDATE/DELETE/SELECT) runs unchanged on both Postgres and SQLite, so
+ * "which database" is entirely StorageConfiguration's decision — this class
+ * just needs a DataSource and a label for mode() to report.
+ */
+public class JdbcRowStore implements RowStore {
     private static final TypeReference<LinkedHashMap<String, Object>> ROW_TYPE = new TypeReference<>() { };
     private final JdbcTemplate jdbc;
     private final ObjectMapper objectMapper;
+    private final String mode;
 
-    public PostgresRowStore(DataSource dataSource, ObjectMapper objectMapper) {
+    public JdbcRowStore(DataSource dataSource, ObjectMapper objectMapper, String mode) {
         this.jdbc = new JdbcTemplate(dataSource);
         this.objectMapper = objectMapper;
+        this.mode = mode;
         initialize();
     }
 
@@ -98,7 +108,7 @@ public class PostgresRowStore implements RowStore {
 
     @Override
     public String mode() {
-        return "postgres";
+        return mode;
     }
 
     private Map<String, Object> rowWithId(String rowId, String data) {

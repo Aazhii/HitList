@@ -40,8 +40,9 @@ public class PlatformController {
     @GetMapping("/api/setup")
     Map<String, Object> setup() {
         Map<String, Object> response = new LinkedHashMap<>();
-        response.put("mode", repository.mode());
-        response.put("message", "PostgreSQL-backed storage is configured.");
+        String mode = repository.mode();
+        response.put("mode", mode);
+        response.put("message", ("sqlite".equals(mode) ? "SQLite" : "PostgreSQL") + "-backed storage is configured.");
         response.put("tables", java.util.List.of("hitlist_storage_rows"));
         return response;
     }
