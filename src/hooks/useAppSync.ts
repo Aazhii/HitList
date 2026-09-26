@@ -1,35 +1,20 @@
 /**
- * useCatalystSync — the app's data layer.
+ * useAppSync — the app's active data layer.
  *
- * This hook used to import mockApi exclusively and hardcode
- * `serverOnline: true`, so every task, list and stat the UI showed came from
- * localStorage. lib/api.ts — the typed REST client for the Express server —
- * was never invoked at runtime, which meant nothing the app did ever reached
- * the server, and therefore never reached Catalyst either. Creating a task
- * wrote to localStorage and stopped there.
- *
- * Now the server is the source of truth, and mockApi is what it was always
- * named for: a fallback for when the backend genuinely is not reachable.
- * `serverOnline` reports which one is live instead of always claiming true.
+ * The server is the source of truth, and mockApi is a fallback for when the
+ * backend genuinely is not reachable.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ServerSyncState } from './useServerSync';
 import type { ApiTask, ApiList, ApiMomentumStats, TaskCreateRequest, TaskUpdateRequest, Quadrant, TaskStatus } from '../lib/api';
-import { taskApi, listApi, statsApi, notificationApi, checkServerHealth, isNetworkError } from '../lib/api';
+import { taskApi, listApi, statsApi, checkServerHealth, isNetworkError } from '../lib/api';
 import { mockTaskApi, mockListApi, mockStatsApi } from '../lib/mockApi';
 import { getActiveUserId, loadAppState } from '../lib/storage';
 import { migrateLocalState } from '../lib/localMigration';
 
 export { ServerSyncState };
 
-/**
- * Renders a thrown value as something a person can read.
- *
- * lib/api.ts rejects with a plain ApiError object rather than an Error, so
- * String(e) yielded "[object Object]" — which is what the app's error banner
- * was showing instead of the actual problem.
- */
 function describeApiError(e: unknown): string {
   if (e instanceof Error) return e.message;
   if (e && typeof e === 'object') {
@@ -41,15 +26,11 @@ function describeApiError(e: unknown): string {
   return 'Something went wrong. Please try again.';
 }
 
-/** The two interchangeable data sources. */
 const REAL = { task: taskApi,     list: listApi,     stats: statsApi };
 const MOCK = { task: mockTaskApi, list: mockListApi, stats: mockStatsApi };
 type Backend = typeof REAL;
 
-// There used to be a second parameter, the filter bar's state, which this hook
-// accepted and never used — so filters changed nothing on screen. Filtering now
-// happens in App over the loaded tasks; see lib/taskFilters for why not here.
-export function useCatalystSync(activeListId?: string): ServerSyncState {
+export function useAppSync(activeListId?: string): ServerSyncState {
   const [loading, setLoading]           = useState(true);
   const [saving, setSaving]             = useState(false);
   const [error, setError]               = useState<string | null>(null);
@@ -62,8 +43,6 @@ export function useCatalystSync(activeListId?: string): ServerSyncState {
 
   const savingCount = useRef(0);
   const migrationRunning = useRef(false);
-  // Read synchronously inside callbacks, so a mid-flight switch is seen
-  // immediately rather than one render later.
   const onlineRef = useRef(false);
 
   const setOnline = useCallback((online: boolean) => {
@@ -73,16 +52,6 @@ export function useCatalystSync(activeListId?: string): ServerSyncState {
     console.info(`[sync] backend is now ${online ? 'server' : 'local (offline)'}`);
   }, []);
 
-  const backend = useCallback((): Backend => (onlineRef.current ? REAL : MOCK), []);
-
-  /**
-   * Runs an operation against the live backend, falling back to the local one
-   * if the server turns out to be unreachable.
-   *
-   * Only a network-level failure triggers the fallback. A 4xx is a real answer
-   * from a working server — retrying it locally would hide validation errors
-   * and silently diverge the two stores.
-   */
   const viaBackend = useCallback(async <T>(op: (api: Backend) => Promise<T>): Promise<T> => {
     if (!onlineRef.current) return op(MOCK);
     try {
@@ -110,14 +79,12 @@ export function useCatalystSync(activeListId?: string): ServerSyncState {
         tasks: taskApi,
       });
     } catch (e) {
-      // The journal records the last confirmed item. Continue loading the
-      // server copy, then retry the incomplete migration on a later refresh.
       if (isNetworkError(e)) setOnline(false);
       else handleError(e);
     } finally {
       migrationRunning.current = false;
     }
-  }, [handleError]);
+  }, [handleError, setOnline]);
 
   const withSaving = useCallback(async <T>(fn: () => Promise<T>): Promise<T> => {
     savingCount.current += 1;
@@ -130,14 +97,11 @@ export function useCatalystSync(activeListId?: string): ServerSyncState {
     }
   }, []);
 
-  // ── Initial load ──────────────────────────────────────────────────────────
-
   useEffect(() => {
     let cancelled = false;
 
     async function init() {
       try {
-        // Decide once, up front, which backend we are talking to.
         const healthy = await checkServerHealth();
         if (cancelled) return;
         setOnline(healthy);
@@ -155,19 +119,6 @@ export function useCatalystSync(activeListId?: string): ServerSyncState {
         if (!cancelled) setMomentum(mom);
         const hist = await viaBackend((api) => api.task.todayHistory(activeListId));
         if (!cancelled) setTodayHistory(hist);
-
-        // Queue reminders for tasks that predate the delivery queue, or whose
-        // scheduling failed during a task write. Idempotent — each task
-        // re-derives the DedupeKey it would have had all along — so calling it
-        // on every load is a self-heal rather than a migration step.
-        //
-        // Not awaited: nothing on screen depends on it, and it is the one call
-        // here whose failure should cost nothing.
-        if (onlineRef.current) {
-          void notificationApi.backfill().catch((e) => {
-            console.warn('[kaizen] reminder backfill skipped:', e);
-          });
-        }
       } catch (e) {
         if (!cancelled) handleError(e);
       } finally {
@@ -179,21 +130,29 @@ export function useCatalystSync(activeListId?: string): ServerSyncState {
     return () => { cancelled = true; };
   }, []); // initial load only — activeListId changes are handled by refresh
 
-  // ── Refresh helpers ───────────────────────────────────────────────────────
-
   const refreshMomentum = useCallback(async (listId?: string) => {
     try {
       const mom = await viaBackend((api) => api.stats.momentum(listId ?? activeListId));
       setMomentum(mom);
-    } catch { /* non-critical */ }
+    } catch {
+      // non-critical
+    }
   }, [activeListId, viaBackend]);
 
   const refreshTodayHistory = useCallback(async (listId?: string) => {
     try {
       const hist = await viaBackend((api) => api.task.todayHistory(listId ?? activeListId));
       setTodayHistory(hist);
-    } catch { /* non-critical */ }
+    } catch {
+      // non-critical
+    }
   }, [activeListId, viaBackend]);
+
+  useEffect(() => {
+    if (loading) return;
+    void refreshMomentum(activeListId);
+    void refreshTodayHistory(activeListId);
+  }, [activeListId, loading, refreshMomentum, refreshTodayHistory]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -212,15 +171,13 @@ export function useCatalystSync(activeListId?: string): ServerSyncState {
       await refreshTodayHistory();
     } catch (e) { handleError(e); }
     finally { setLoading(false); }
-  }, [refreshMomentum, refreshTodayHistory, clearError, handleError, viaBackend, migrateOfflineState]);
+  }, [refreshMomentum, refreshTodayHistory, clearError, handleError, migrateOfflineState, setOnline, viaBackend]);
 
   useEffect(() => {
     const reconnect = () => { void refresh(); };
     window.addEventListener('online', reconnect);
     return () => window.removeEventListener('online', reconnect);
   }, [refresh]);
-
-  // ── Task mutations ────────────────────────────────────────────────────────
 
   const createTask = useCallback(async (req: TaskCreateRequest): Promise<ApiTask | null> => {
     clearError();
@@ -232,7 +189,7 @@ export function useCatalystSync(activeListId?: string): ServerSyncState {
         return task;
       } catch (e) { return handleError(e); }
     });
-  }, [clearError, handleError, withSaving, viaBackend, refreshMomentum, refreshTodayHistory]);
+  }, [clearError, handleError, refreshMomentum, refreshTodayHistory, viaBackend, withSaving]);
 
   const updateTask = useCallback(async (id: string, req: TaskUpdateRequest): Promise<ApiTask | null> => {
     clearError();
@@ -243,7 +200,7 @@ export function useCatalystSync(activeListId?: string): ServerSyncState {
         return task;
       } catch (e) { return handleError(e); }
     });
-  }, [clearError, handleError, withSaving, viaBackend]);
+  }, [clearError, handleError, viaBackend, withSaving]);
 
   const updateStatus = useCallback(async (id: string, status: TaskStatus): Promise<ApiTask | null> => {
     clearError();
@@ -251,13 +208,11 @@ export function useCatalystSync(activeListId?: string): ServerSyncState {
       try {
         const task = await viaBackend((api) => api.task.updateStatus(id, status));
         setTasks((prev) => prev.map((t) => t.id === id ? task : t));
-        // Any change can move a task into or out of DONE — an undo included —
-        // so both are refreshed, not only on completion.
         await Promise.all([refreshMomentum(), refreshTodayHistory()]);
         return task;
       } catch (e) { return handleError(e); }
     });
-  }, [clearError, handleError, withSaving, viaBackend, refreshMomentum, refreshTodayHistory]);
+  }, [clearError, handleError, refreshMomentum, refreshTodayHistory, viaBackend, withSaving]);
 
   const markComplete = useCallback(async (id: string): Promise<ApiTask | null> => {
     clearError();
@@ -269,7 +224,7 @@ export function useCatalystSync(activeListId?: string): ServerSyncState {
         return task;
       } catch (e) { return handleError(e); }
     });
-  }, [clearError, handleError, withSaving, viaBackend, refreshMomentum, refreshTodayHistory]);
+  }, [clearError, handleError, refreshMomentum, refreshTodayHistory, viaBackend, withSaving]);
 
   const reprioritize = useCallback(async (id: string, quadrant: Quadrant): Promise<ApiTask | null> => {
     clearError();
@@ -280,7 +235,7 @@ export function useCatalystSync(activeListId?: string): ServerSyncState {
         return task;
       } catch (e) { return handleError(e); }
     });
-  }, [clearError, handleError, withSaving, viaBackend]);
+  }, [clearError, handleError, viaBackend, withSaving]);
 
   const deleteTask = useCallback(async (id: string): Promise<void> => {
     clearError();
@@ -290,9 +245,7 @@ export function useCatalystSync(activeListId?: string): ServerSyncState {
         setTasks((prev) => prev.filter((t) => t.id !== id));
       } catch (e) { handleError(e); }
     });
-  }, [clearError, handleError, withSaving, viaBackend]);
-
-  // ── List mutations ────────────────────────────────────────────────────────
+  }, [clearError, handleError, viaBackend, withSaving]);
 
   const createList = useCallback(async (name: string, color = 'emerald'): Promise<ApiList | null> => {
     clearError();
@@ -303,7 +256,7 @@ export function useCatalystSync(activeListId?: string): ServerSyncState {
         return list;
       } catch (e) { return handleError(e); }
     });
-  }, [clearError, handleError, withSaving, viaBackend, lists.length]);
+  }, [clearError, handleError, lists.length, viaBackend, withSaving]);
 
   const updateList = useCallback(async (id: string, name: string, color?: string): Promise<ApiList | null> => {
     clearError();
@@ -314,7 +267,7 @@ export function useCatalystSync(activeListId?: string): ServerSyncState {
         return list;
       } catch (e) { return handleError(e); }
     });
-  }, [clearError, handleError, withSaving, viaBackend]);
+  }, [clearError, handleError, viaBackend, withSaving]);
 
   const deleteList = useCallback(async (id: string): Promise<void> => {
     clearError();
@@ -324,13 +277,12 @@ export function useCatalystSync(activeListId?: string): ServerSyncState {
         setLists((prev) => prev.filter((l) => l.id !== id));
       } catch (e) { handleError(e); }
     });
-  }, [clearError, handleError, withSaving, viaBackend]);
+  }, [clearError, handleError, viaBackend, withSaving]);
 
   return {
-    // Previously hardcoded `true` while every call went to localStorage.
     serverOnline,
     backendUnavailable: !serverOnline,
-    catalystReady: serverOnline,
+    backendReady: serverOnline,
     loading,
     saving,
     error,
@@ -354,5 +306,4 @@ export function useCatalystSync(activeListId?: string): ServerSyncState {
   };
 }
 
-// Re-export converters so App.tsx import stays the same
 export { apiTaskToTodo, apiListToKaizenList } from './useServerSync';

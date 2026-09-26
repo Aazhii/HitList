@@ -1,10 +1,9 @@
 import React, { useState } from 'react';
-import { AlertCircle, Bell, BellOff, FileText, Trash2 } from 'lucide-react';
+import { AlertCircle, FileText, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { StatusBox } from '@/components/ui/status-box';
 import { getCategoryConfig } from '@/types/todo';
 import type { Todo, TodoStatus } from '@/types/todo';
-import { isNotificationSupported, getReminderStatus } from '@/lib/notifications';
 import { DUE_TONE_CLASS, dueTone, getDueInfo } from '@/lib/dueInfo';
 import { NEXT_STATUS } from '@/lib/taskStatus';
 import { FieldChips } from '@/components/fields/FieldChips';
@@ -51,9 +50,7 @@ export function MatrixTaskCard({
   onStatusChange,
   onDelete,
   onOpen,
-  onToggleReminder,
   index,
-  notificationPermission,
   onOpenNote,
   fieldDefs,
   fieldValues,
@@ -63,24 +60,15 @@ export function MatrixTaskCard({
   const next = NEXT_STATUS[todo.status];
   const categoryConfig = getCategoryConfig(todo.category);
   const dueInfo = !isDone ? getDueInfo(todo.dueDate, todo.dueTime) : null;
-  const reminderStatus = !isDone && todo.dueDate ? getReminderStatus(todo) : null;
-  const supported = isNotificationSupported();
-  const showReminderChip = !isDone && !!reminderStatus && reminderStatus !== 'no-reminder';
   const fromNote = !!todo.sourceNoteId && !!onOpenNote;
   const hasFieldChips = !!fieldDefs && !!fieldValues
     && fieldDefs.some((f) => f.showOnCard && fieldValues[f.id] !== undefined);
-  const hasMeta = !!categoryConfig || !!dueInfo || showReminderChip || !!todo.note || fromNote || hasFieldChips;
+  const hasMeta = !!categoryConfig || !!dueInfo || !!todo.note || fromNote || hasFieldChips;
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
     setDeleting(true);
     setTimeout(() => onDelete(todo.id), 300);
-  };
-
-  const handleReminderToggle = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    if (!supported || notificationPermission !== 'granted') return;
-    onToggleReminder?.(todo.id, !todo.reminderEnabled);
   };
 
   return (
@@ -138,18 +126,6 @@ export function MatrixTaskCard({
         )}
 
         <div className="flex flex-shrink-0 items-center gap-0.5">
-          {!isDone && todo.dueDate && supported && notificationPermission === 'granted' && (
-            <button
-              type="button"
-              onClick={handleReminderToggle}
-              aria-label={todo.reminderEnabled ? 'Disable reminder' : 'Enable reminder'}
-              className={cn(CARD_ACTION, todo.reminderEnabled && 'text-a-accent-700')}
-            >
-              {todo.reminderEnabled
-                ? <Bell className="size-3.5" strokeWidth={2.75} />
-                : <BellOff className="size-3.5" strokeWidth={2.75} />}
-            </button>
-          )}
           <button type="button" onClick={handleDelete} aria-label="Delete task" className={cn(CARD_ACTION, 'hover:text-q-do')}>
             <Trash2 className="size-3.5" strokeWidth={2.75} />
           </button>
@@ -183,32 +159,6 @@ export function MatrixTaskCard({
             <span className={cn(CHIP, DUE_TONE_CLASS[dueTone(dueInfo)])}>
               {dueInfo.isOverdue && <AlertCircle className="size-3" strokeWidth={2.75} aria-hidden />}
               {dueInfo.label}
-            </span>
-          )}
-
-          {showReminderChip && (
-            <span
-              className={cn(
-                CHIP,
-                reminderStatus === 'overdue' || reminderStatus === 'due-soon'
-                  ? DUE_TONE_CLASS.urgent
-                  : reminderStatus === 'upcoming'
-                    ? 'bg-a-accent-tint text-a-accent-700'
-                    : DUE_TONE_CLASS.plain,
-              )}
-            >
-              {reminderStatus === 'denied'
-                ? <BellOff className="size-3" strokeWidth={2.75} aria-hidden />
-                : <Bell className="size-3" strokeWidth={2.75} aria-hidden />}
-              {reminderStatus === 'overdue'
-                ? 'Overdue'
-                : reminderStatus === 'due-soon'
-                  ? 'Due soon'
-                  : reminderStatus === 'upcoming'
-                    ? 'Reminder set'
-                    : reminderStatus === 'denied'
-                      ? 'Notifs blocked'
-                      : null}
             </span>
           )}
 

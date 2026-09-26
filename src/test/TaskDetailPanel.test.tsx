@@ -28,7 +28,6 @@ const defaultProps = {
   onUpdate: vi.fn(),
   onDelete: vi.fn(),
   onStatusChange: vi.fn(),
-  notificationPermission: 'default' as NotificationPermission,
 };
 
 beforeEach(() => {
@@ -47,6 +46,13 @@ describe('TaskDetailPanel', () => {
     const todo = makeTodo({ note: 'Some important note' });
     render(<TaskDetailPanel {...defaultProps} todo={todo} />);
     expect(screen.getByDisplayValue('Some important note')).toBeInTheDocument();
+  });
+
+  it('does not render reminder or escalation controls', () => {
+    const todo = makeTodo({ dueDate: '2026-09-30', dueTime: '09:00', reminderEnabled: true });
+    render(<TaskDetailPanel {...defaultProps} todo={todo} />);
+    expect(screen.queryByText('Reminder')).not.toBeInTheDocument();
+    expect(screen.queryByText('Set up escalation')).not.toBeInTheDocument();
   });
 
   it('syncs state when a different todo is passed (state-sync regression)', async () => {
@@ -86,7 +92,7 @@ describe('TaskDetailPanel', () => {
     fireEvent.click(deleteBtn);
 
     // Confirm delete
-    const confirmBtn = await screen.findByRole('button', { name: /confirm/i });
+    const confirmBtn = await screen.findByRole('button', { name: /yes, delete/i });
     fireEvent.click(confirmBtn);
 
     await waitFor(() => {
@@ -118,7 +124,7 @@ describe('TaskDetailPanel', () => {
     const input = screen.getByDisplayValue('Original text');
     fireEvent.change(input, { target: { value: 'Updated text' } });
 
-    const saveBtn = screen.getByRole('button', { name: /save/i });
+    const saveBtn = screen.getByRole('button', { name: /save changes/i });
     fireEvent.click(saveBtn);
 
     await waitFor(() => {

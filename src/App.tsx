@@ -10,18 +10,10 @@ import {
 } from 'lucide-react';
 import { NotesWorkspace } from '@/components/NotesWorkspace';
 import type { NoteTaskLinking } from '@/components/NoteEditor';
-import { AutomationsPage } from '@/pages/AutomationsPage';
 import { DatabasesPage } from '@/pages/DatabasesPage';
 import { CalendarPage } from '@/pages/CalendarPage';
-import { useNotifications } from '@/hooks/useNotifications';
-import { useInAppNotifications } from '@/hooks/useInAppNotifications';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { useHistoryState, readInitialScreen } from '@/hooks/useHistoryState';
-import { NotificationBell } from '@/components/NotificationBell';
-import { NotificationToast } from '@/components/NotificationToast';
-import { RemindersSettingsPanel } from '@/components/RemindersSettingsPanel';
-import type { ReminderMinutes } from '@/lib/notifications';
-import { DEFAULT_REMINDER_MINUTES, isNotificationSupported } from '@/lib/notifications';
 import { Toaster, toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -58,7 +50,7 @@ import { useTaskFields } from '@/hooks/useTaskFields';
 import { FieldsManagerDialog, anchorRectOf, type AnchorRect } from '@/components/fields/FieldsManager';
 import type { FieldValue } from '@/types/fields';
 import type { ReorderChange } from '@/lib/reorder';
-import { useCatalystSync, apiTaskToTodo, apiListToKaizenList } from '@/hooks/useCatalystSync';
+import { useAppSync, apiTaskToTodo, apiListToKaizenList } from '@/hooks/useAppSync';
 import { SyncStatusBar } from '@/components/SyncStatusBar';
 import {
   AdvancedFilterBar,
@@ -67,7 +59,6 @@ import {
 } from '@/components/AdvancedFilterBar';
 import type { FilterState } from '@/components/AdvancedFilterBar';
 import { EmptyState } from '@/components/EmptyState';
-import { useCatalystUser } from '@/components/CatalystAuthGate';
 import type {
   Todo,
   TodoStatus,
@@ -400,15 +391,11 @@ function ErrorBanner({ message, onRetry, onDismiss }: { message: string; onRetry
 // ── App ────────────────────────────────────────────────────────────────────
 
 function App() {
-  const { session } = useCatalystUser();
-  const activeUserId = session?.userId ?? null;
-  setActiveUserId(activeUserId);
-  // A different authenticated user needs a clean hook tree: server queries,
-  // local state, notification timers, and offline caches must never carry over.
-  return <UserScopedApp key={activeUserId ?? 'local'} activeUserId={activeUserId} />;
+  setActiveUserId(null);
+  return <UserScopedApp key="local" />;
 }
 
-function UserScopedApp({ activeUserId }: { activeUserId: string | null }) {
+function UserScopedApp() {
   // ── Organic theme ────────────────────────────────────────────────────────
   // On <html>, not on App's root element: sheets, dialogs, menus, popovers and
   // the toaster portal into document.body, outside this tree, and would render
@@ -418,7 +405,7 @@ function UserScopedApp({ activeUserId }: { activeUserId: string | null }) {
     return () => document.documentElement.classList.remove('app-organic');
   }, []);
 
-  // ── localStorage state scoped to the signed-in user ──────────────────────
+  // ── localStorage state scoped to the active workspace ────────────────────
   const [appState, setAppState] = useState<AppState>(() => {
     return loadAppState();
   });
@@ -427,7 +414,7 @@ function UserScopedApp({ activeUserId }: { activeUserId: string | null }) {
   const [filterState, setFilterState] = useState<FilterState>(DEFAULT_FILTERS);
 
   // ── Server sync ───────────────────────────────────────────────────────────
-  const server = useCatalystSync(appState.activeListId);
+  const server = useAppSync(appState.activeListId);
 
   // Persist to localStorage whenever appState changes (offline fallback)
   useEffect(() => {
@@ -455,14 +442,15 @@ function UserScopedApp({ activeUserId }: { activeUserId: string | null }) {
         ? { streak: momentum.streak, totalCompleted: momentum.totalCompleted, todayCompleted: momentum.todayCompleted }
         : prev.stats;
 
-      // Always use local mock data — keep conditional merge so the app
-      // remains usable with local seed data when no tasks exist yet.
-      const mergedLists = serverLists.length > 0 ? serverLists : prev.lists;
+      // The reachable server is authoritative, even for a new empty browser
+      // workspace. Keeping local seed lists here would let the UI submit a
+      // non-existent list id and receive a server-side 404 on its first task.
+      const mergedLists = server.serverOnline ? serverLists : (serverLists.length > 0 ? serverLists : prev.lists);
 
       const validListIds = new Set(mergedLists.map((l) => l.id));
       const newActiveId  = validListIds.has(prev.activeListId)
         ? prev.activeListId
-        : (mergedLists[0]?.id ?? prev.activeListId);
+        : (mergedLists[0]?.id ?? '');
 
       return {
         ...prev,
@@ -473,7 +461,7 @@ function UserScopedApp({ activeUserId }: { activeUserId: string | null }) {
         activeListId: newActiveId,
       };
     });
-  }, [server.tasks, server.lists, server.momentum, server.loading]);
+  }, [server.tasks, server.lists, server.momentum, server.loading, server.serverOnline]);
 
   const { lists, activeListId, todos, stats } = appState;
 
@@ -485,9 +473,7 @@ function UserScopedApp({ activeUserId }: { activeUserId: string | null }) {
   const [showDone, setShowDone] = useState(false);
   const [detailTodo, setDetailTodo] = useState<Todo | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [showReminders, setShowReminders] = useState(false);
   const [showTodayHistory, setShowTodayHistory] = useState(false);
-  const [defaultReminderMinutes, setDefaultReminderMinutes] = useLocalStorage<ReminderMinutes>('hitlist-default-reminder-minutes', DEFAULT_REMINDER_MINUTES);
   // Read once: what Back/refresh should restore the open panels to.
   const [initialScreen] = useState(() => readInitialScreen());
   // Remembered across reloads, same as tasksMode — a refresh must not always
@@ -500,8 +486,6 @@ function UserScopedApp({ activeUserId }: { activeUserId: string | null }) {
   const [activeNoteId, setActiveNoteId] = useState<string | null>(() => initialScreen?.noteId ?? null);
   /** A task to open in the detail panel once tasks load — set on click, or restored. */
   const [pendingDetailTaskId, setPendingDetailTaskId] = useState<string | null>(() => initialScreen?.detailTaskId ?? null);
-  /** A task to write an escalation rule for — set from the task detail panel. */
-  const [pendingEscalationTaskId, setPendingEscalationTaskId] = useState<string | null>(null);
   // List vs Matrix is a mode within Tasks, remembered across reloads.
   const [tasksMode, setTasksMode] = useLocalStorage<TaskLayout>('hitlist-tasks-mode', 'matrix');
   // Grouping belongs to the layout it was chosen in: picking the board's columns
@@ -519,17 +503,6 @@ function UserScopedApp({ activeUserId }: { activeUserId: string | null }) {
   /** The database DatabasesPage currently has open — unlike pendingDatabaseId, this
    * doesn't clear itself once acted on; it's what Back/refresh should return to. */
   const [activeDatabaseId, setActiveDatabaseId] = useState<string | null>(() => initialScreen?.databaseId ?? null);
-
-  // ── Notifications ─────────────────────────────────────────────────────────
-  const { permission: notificationPermission, requestPermission } = useNotifications(todos, activeUserId);
-  const {
-    activeNotifications,
-    freshToastRecords,
-    unreadCount,
-    dismiss: dismissNotification,
-    dismissAll: dismissAllNotifications,
-    markToastSeen,
-  } = useInAppNotifications(todos, activeUserId);
 
   // ── Derived ──────────────────────────────────────────────────────────────
 
@@ -557,7 +530,7 @@ function UserScopedApp({ activeUserId }: { activeUserId: string | null }) {
 
   // What the list and matrix show: the active list, narrowed by the filter bar.
   // Filtered here and not on the server on purpose — `todos` also feeds list
-  // counts, reminders, note chips and the offline copy, and a filtered fetch
+  // counts, date badges, note chips and the offline copy, and a filtered fetch
   // would replace all of them with the subset. See lib/taskFilters.
   const fieldContext = useMemo(
     () => ({ defs: taskFields.fields, values: taskFields.values }),
@@ -670,7 +643,11 @@ function UserScopedApp({ activeUserId }: { activeUserId: string | null }) {
       [activeView, activeListId, tasksMode, appliedViewId, detailOpen, detailTodo, activeNoteId, activeDatabaseId],
     ),
     useCallback((screen) => {
-      setActiveView(screen.view as typeof activeView);
+      setActiveView(
+        screen.view === 'notes' || screen.view === 'databases' || screen.view === 'calendar'
+          ? screen.view
+          : 'tasks'
+      );
       setAppState((prev) => ({ ...prev, activeListId: screen.listId }));
       setTasksMode(screen.layout as TaskLayout);
       setAppliedViewId(screen.viewId);
@@ -686,6 +663,13 @@ function UserScopedApp({ activeUserId }: { activeUserId: string | null }) {
       }
     }, [setTasksMode]),
   );
+
+  useEffect(() => {
+    if (activeView === 'tasks' || activeView === 'notes' || activeView === 'databases' || activeView === 'calendar') {
+      return;
+    }
+    setActiveView('tasks');
+  }, [activeView, setActiveView]);
 
   const changeLayout = useCallback((next: TaskLayout) => {
     setGroupByByLayout((prev) => ({ ...prev, [tasksMode]: filterState.groupBy }));
@@ -777,33 +761,6 @@ function UserScopedApp({ activeUserId }: { activeUserId: string | null }) {
       return dueTs < nowTs || (t.dueTime && dueTs - nowTs < 2 * 60 * 60 * 1000);
     }).length;
   }, [activeTodos]);
-
-  // Reminder summary counts (for RemindersSettingsPanel)
-  const reminderOverdueCount = useMemo(() => {
-    const nowTs = new Date().getTime();
-    return activeTodos.filter((t) => {
-      if (!t.dueDate) return false;
-      const dueTs = t.dueTime
-        ? new Date(`${t.dueDate}T${t.dueTime}:00`).getTime()
-        : new Date(`${t.dueDate}T23:59:59`).getTime();
-      return dueTs < nowTs;
-    }).length;
-  }, [activeTodos]);
-
-  const reminderDueSoonCount = useMemo(() => {
-    const nowTs = new Date().getTime();
-    return activeTodos.filter((t) => {
-      if (!t.dueDate || !t.dueTime) return false;
-      const dueTs = new Date(`${t.dueDate}T${t.dueTime}:00`).getTime();
-      const diff = dueTs - nowTs;
-      return diff > 0 && diff <= 15 * 60 * 1000;
-    }).length;
-  }, [activeTodos]);
-
-  const activeReminderCount = useMemo(
-    () => activeTodos.filter((t) => t.reminderEnabled && t.dueDate).length,
-    [activeTodos]
-  );
 
   // ── Local state helpers ────────────────────────────────────────────────────
 
@@ -1105,27 +1062,6 @@ function UserScopedApp({ activeUserId }: { activeUserId: string | null }) {
     setDialogOpen(true);
   }, []);
 
-  const handleToggleReminder = useCallback((id: string, enabled: boolean) => {
-    setTodos((prev) =>
-      prev.map((t) =>
-        t.id === id
-          ? { ...t, reminderEnabled: enabled, reminderMinutesBefore: t.reminderMinutesBefore ?? defaultReminderMinutes }
-          : t
-      )
-    );
-    setDetailTodo((prev) =>
-      prev?.id === id
-        ? { ...prev, reminderEnabled: enabled, reminderMinutesBefore: prev.reminderMinutesBefore ?? defaultReminderMinutes }
-        : prev
-    );
-    if (server.serverOnline) {
-      server.updateTask(id, {
-        reminderEnabled: enabled,
-        reminderMinutesBefore: todos.find((t) => t.id === id)?.reminderMinutesBefore ?? defaultReminderMinutes,
-      });
-    }
-  }, [setTodos, defaultReminderMinutes, server, todos]);
-
   // ── List CRUD ─────────────────────────────────────────────────────────────
 
   const handleCreateList = useCallback(async (name: string, color: string) => {
@@ -1288,15 +1224,6 @@ function UserScopedApp({ activeUserId }: { activeUserId: string | null }) {
 
   const handleOpenNoteHandled = useCallback(() => setPendingNoteId(null), []);
 
-  /** "Add escalation" on a task: hand it to Automations with the form open. */
-  const handleAddEscalation = useCallback((taskId: string) => {
-    setDetailOpen(false);
-    setPendingEscalationTaskId(taskId);
-    setActiveView('automations');
-  }, []);
-
-  const handleEscalationHandled = useCallback(() => setPendingEscalationTaskId(null), []);
-
   // ── Clear done (server-aware) ─────────────────────────────────────────────
 
   const handleClearDone = useCallback(async () => {
@@ -1309,8 +1236,6 @@ function UserScopedApp({ activeUserId }: { activeUserId: string | null }) {
   }, [listTodos, activeListId, setTodos, server]);
 
   // ── Layout ────────────────────────────────────────────────────────────────
-
-  const remindersNeedAttention = isNotificationSupported() && notificationPermission !== 'granted';
 
   const tasksTopBar = (
     <TopBar
@@ -1396,27 +1321,9 @@ function UserScopedApp({ activeUserId }: { activeUserId: string | null }) {
       <AppShell
         rail={
           <IconRail
-            activeView={activeView}
+            activeView={activeView === 'notes' || activeView === 'databases' || activeView === 'calendar' ? activeView : 'tasks'}
             onViewChange={setActiveView}
-            bell={
-              <NotificationBell
-                notifications={activeNotifications}
-                unreadCount={unreadCount}
-                onDismiss={dismissNotification}
-                onDismissAll={dismissAllNotifications}
-                onNavigateToTask={(taskId) => {
-                  const t = todos.find((x) => x.id === taskId);
-                  if (t) { setActiveView('tasks'); handleOpenDetail(t); }
-                }}
-                className="size-10 rounded-[14px] text-a-rail-fg/60 hover:bg-a-rail-fg/10 hover:text-a-rail-fg"
-              />
-            }
-            account={
-              <UserMenu
-                onOpenReminders={() => setShowReminders(true)}
-                remindersNeedAttention={remindersNeedAttention}
-              />
-            }
+            account={<UserMenu />}
           />
         }
       >
@@ -1427,16 +1334,6 @@ function UserScopedApp({ activeUserId }: { activeUserId: string | null }) {
               openNoteId={pendingNoteId}
               onOpenNoteHandled={handleOpenNoteHandled}
               onActiveNoteChange={setActiveNoteId}
-            />
-          </div>
-        ) : activeView === 'automations' ? (
-          <div className="flex min-h-0 min-w-0 flex-1">
-            <AutomationsPage
-              key={activeUserId ?? 'local'}
-              todos={todos}
-              userId={activeUserId}
-              escalationTaskId={pendingEscalationTaskId}
-              onEscalationHandled={handleEscalationHandled}
             />
           </div>
         ) : activeView === 'databases' ? (
@@ -1581,9 +1478,7 @@ function UserScopedApp({ activeUserId }: { activeUserId: string | null }) {
                   onOpen={handleOpenDetail}
                   onAddToQuadrant={handleAddToQuadrant}
                   onReorder={handleReorder}
-                  onToggleReminder={handleToggleReminder}
                   onOpenNote={handleOpenSourceNote}
-                  notificationPermission={notificationPermission}
                 />
               ) : tasksMode === 'board' ? (
                 <TaskBoardView
@@ -1607,9 +1502,7 @@ function UserScopedApp({ activeUserId }: { activeUserId: string | null }) {
                   onStatusChange={handleStatusChange}
                   onDelete={handleDelete}
                   onOpen={handleOpenDetail}
-                  onToggleReminder={handleToggleReminder}
                   onOpenNote={handleOpenSourceNote}
-                  notificationPermission={notificationPermission}
                 />
               ) : tasksMode === 'table' ? (
                 <TaskTableView
@@ -1660,22 +1553,13 @@ function UserScopedApp({ activeUserId }: { activeUserId: string | null }) {
                   onAddToQuadrant={handleAddToQuadrant}
                   nextId={nextId}
                   showDone={showDoneEffective}
-                  onToggleReminder={handleToggleReminder}
                   onOpenNote={handleOpenSourceNote}
-                  notificationPermission={notificationPermission}
                 />
               )}
             </div>
           </ViewLayout>
         )}
       </AppShell>
-
-      {/* In-app notification toasts */}
-      <NotificationToast
-        freshRecords={freshToastRecords}
-        onDismiss={dismissNotification}
-        onMarkSeen={markToastSeen}
-      />
 
       {/* Add task dialog */}
       <AddTaskDialog
@@ -1695,24 +1579,6 @@ function UserScopedApp({ activeUserId }: { activeUserId: string | null }) {
         onUndo={handleUndoComplete}
       />
 
-      {/* Reminder settings — reached from the account menu in the rail. */}
-      <Dialog open={showReminders} onOpenChange={setShowReminders}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle className="font-display text-[22px] font-normal">Reminders</DialogTitle>
-          </DialogHeader>
-          <RemindersSettingsPanel
-            permission={notificationPermission}
-            defaultMinutes={defaultReminderMinutes}
-            onRequestPermission={requestPermission}
-            onDefaultMinutesChange={setDefaultReminderMinutes}
-            activeReminderCount={activeReminderCount}
-            overdueCount={reminderOverdueCount}
-            dueSoonCount={reminderDueSoonCount}
-          />
-        </DialogContent>
-      </Dialog>
-
       {/* Weekly progress — reached from the momentum foot. */}
       <Dialog open={showStreak} onOpenChange={setShowStreak}>
         <DialogContent className="sm:max-w-2xl">
@@ -1729,13 +1595,10 @@ function UserScopedApp({ activeUserId }: { activeUserId: string | null }) {
         open={detailOpen}
         onClose={() => setDetailOpen(false)}
         onOpenNote={handleOpenSourceNote}
-        onAddEscalation={handleAddEscalation}
         fields={taskPanelFields}
         onUpdate={handleUpdate}
         onDelete={handleDelete}
         onStatusChange={handleStatusChange}
-        notificationPermission={notificationPermission}
-        defaultReminderMinutes={defaultReminderMinutes}
       />
 
       <FieldsManagerDialog

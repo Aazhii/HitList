@@ -1,13 +1,12 @@
 import type { ReactNode } from 'react';
-import { CalendarDays, Leaf, ListChecks, StickyNote, Table2, Zap } from 'lucide-react';
+import { CalendarDays, Leaf, ListChecks, StickyNote, Table2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
-export type AppView = 'tasks' | 'notes' | 'automations' | 'databases' | 'calendar';
+export type AppView = 'tasks' | 'notes' | 'databases' | 'calendar';
 
 const VIEWS: ReadonlyArray<{ id: AppView; label: string; icon: typeof ListChecks }> = [
   { id: 'tasks', label: 'Tasks', icon: ListChecks },
   { id: 'notes', label: 'Notes', icon: StickyNote },
-  { id: 'automations', label: 'Automations', icon: Zap },
   { id: 'databases', label: 'Databases', icon: Table2 },
   // One calendar for everything that has a date: tasks and database records.
   { id: 'calendar', label: 'Calendar', icon: CalendarDays },
@@ -16,23 +15,21 @@ const VIEWS: ReadonlyArray<{ id: AppView; label: string; icon: typeof ListChecks
 interface IconRailProps {
   activeView: AppView;
   onViewChange: (view: AppView) => void;
-  /** The notification bell, rendered in the rail. */
-  bell: ReactNode;
   /** The account menu. */
   account: ReactNode;
 }
 
 /**
- * The app's views, then the bell and the account.
+ * The app's views, then the account.
  *
  * The only dark surface in the product, so "where am I" is answered by contrast
  * rather than by a label. List vs Matrix is a mode within Tasks and lives in the
  * top bar, not here.
  *
- * This replaces two switchers: the Tasks/Notes/Automations block in the old
- * sidebar, and a mobile-only header toggle that could not reach Automations.
+ * This replaces the old sidebar's primary navigation and the mobile-only header
+ * toggle.
  */
-export function IconRail({ activeView, onViewChange, bell, account }: IconRailProps) {
+export function IconRail({ activeView, onViewChange, account }: IconRailProps) {
   return (
     <nav
       aria-label="Views"
@@ -66,9 +63,7 @@ export function IconRail({ activeView, onViewChange, bell, account }: IconRailPr
           </button>
         );
       })}
-
       <div className="flex items-center gap-1 md:mt-auto md:flex-col md:gap-1.5">
-        {bell}
         {account}
       </div>
     </nav>

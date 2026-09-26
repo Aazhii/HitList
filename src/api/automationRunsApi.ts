@@ -7,9 +7,9 @@
  * of those endpoints existed, so `useAutomationRuns` polled a 404 every thirty
  * seconds for the life of the session.
  *
- * It now goes through the shared request helper in lib/api.ts, which is what
- * carries the Catalyst session cookie and the browser's timezone — both of
- * which the automation endpoints need, the second because a rule's recurrence
+ * It now goes through the shared request helper in lib/api.ts, which carries
+ * the browser's timezone — which the automation endpoints need, because a
+ * rule's recurrence
  * time is a wall clock with no zone of its own.
  */
 import { automationApi } from '@/lib/api';
@@ -18,7 +18,7 @@ import type { ApiAutomationRule, ApiAutomationRun } from '@/lib/api';
 export type { ApiAutomationRule, ApiAutomationRun };
 
 export const automationRunsApi = {
-  /** Recent runs for the signed-in user, newest first. */
+  /** Recent runs for the active workspace owner, newest first. */
   getRecent(limit = 20): Promise<ApiAutomationRun[]> {
     return automationApi.recentRuns(limit);
   },

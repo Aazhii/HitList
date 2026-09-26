@@ -11,11 +11,9 @@ import {
   ArrowRight,
   FileText,
   Tag,
-  Bell,
-  BellOff,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { FileText as FileTextIcon, Zap } from 'lucide-react';
+import { FileText as FileTextIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -31,9 +29,6 @@ import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { CATEGORIES, QUADRANTS, getCategoryConfig, getQuadrantConfig } from '@/types/todo';
 import type { Todo, TodoStatus, Quadrant } from '@/types/todo';
 import { getDueInfo } from '@/components/MatrixTaskCard';
-
-import { REMINDER_OPTIONS, DEFAULT_REMINDER_MINUTES, isNotificationSupported } from '@/lib/notifications';
-import type { ReminderMinutes } from '@/lib/notifications';
 import { TaskFieldsSection } from '@/components/fields/TaskFieldsSection';
 import type { FieldDef, FieldValue } from '@/types/fields';
 
@@ -44,16 +39,8 @@ interface TaskDetailPanelProps {
   onUpdate: (id: string, changes: Partial<Todo>) => void;
   onDelete: (id: string) => void;
   onStatusChange: (id: string, status: TodoStatus) => void;
-  notificationPermission?: NotificationPermission;
-  defaultReminderMinutes?: ReminderMinutes;
   /** Opens the note a task was added from. */
   onOpenNote?: (noteId: string) => void;
-  /**
-   * Opens the rule editor for this task. Automations decides whether that is a
-   * new rule or the one this task already has, because it is the side holding
-   * the rules — this panel would have to fetch them a second time to know.
-   */
-  onAddEscalation?: (taskId: string) => void;
   /** Custom fields. The section is left out when this is not given. */
   fields?: {
     defs: FieldDef[];
@@ -93,10 +80,7 @@ export function TaskDetailPanel({
   onUpdate,
   onDelete,
   onStatusChange,
-  notificationPermission,
-  defaultReminderMinutes = DEFAULT_REMINDER_MINUTES,
   onOpenNote,
-  onAddEscalation,
   fields,
 }: TaskDetailPanelProps) {
   const [text, setText] = useState(todo?.text ?? '');
@@ -106,10 +90,6 @@ export function TaskDetailPanel({
   const [category, setCategory] = useState(todo?.category ?? '');
   const [quadrant, setQuadrant] = useState<Quadrant>(todo?.quadrant ?? 'schedule');
   const [status, setStatus] = useState<TodoStatus>(todo?.status ?? 'todo');
-  const [reminderEnabled, setReminderEnabled] = useState(todo?.reminderEnabled ?? false);
-  const [reminderMinutes, setReminderMinutes] = useState<ReminderMinutes>(
-    (todo?.reminderMinutesBefore as ReminderMinutes) ?? defaultReminderMinutes
-  );
   const [isDirty, setIsDirty] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -125,8 +105,6 @@ export function TaskDetailPanel({
     setCategory(todo.category ?? '');
     setQuadrant(todo.quadrant ?? 'schedule');
     setStatus(todo.status ?? 'todo');
-    setReminderEnabled(todo.reminderEnabled ?? false);
-    setReminderMinutes((todo.reminderMinutesBefore as ReminderMinutes) ?? defaultReminderMinutes);
     setIsDirty(false);
     setConfirmDelete(false);
   }, [todoId]);
@@ -142,8 +120,6 @@ export function TaskDetailPanel({
       dueTime: dueTime || undefined,
       category: category || undefined,
       quadrant,
-      reminderEnabled,
-      reminderMinutesBefore: reminderMinutes,
     };
     // Handle status change separately (for streak tracking)
     if (status !== todo.status) {
@@ -151,7 +127,7 @@ export function TaskDetailPanel({
     }
     onUpdate(todo.id, changes);
     setIsDirty(false);
-  }, [todo, text, note, dueDate, dueTime, category, quadrant, status, reminderEnabled, reminderMinutes, onUpdate, onStatusChange]);
+  }, [todo, text, note, dueDate, dueTime, category, quadrant, status, onUpdate, onStatusChange]);
 
   const handleDelete = useCallback(() => {
     if (!todo) return;
@@ -365,98 +341,6 @@ export function TaskDetailPanel({
                 </p>
               )}
             </div>
-
-            {/* Reminder */}
-            {isNotificationSupported() && notificationPermission === 'granted' && dueDate && !isDone && (
-              <div className="space-y-2">
-                <Label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
-                  <Bell className="size-3" />
-                  Reminder
-                </Label>
-                <div className="flex items-center gap-3 rounded-xl bg-muted/30 px-3.5 py-3">
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={reminderEnabled}
-                    onClick={() => { setReminderEnabled((v) => !v); markDirty(); }}
-                    className={cn(
-                      'relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
-                      reminderEnabled ? 'bg-primary' : 'bg-muted-foreground/30'
-                    )}
-                  >
-                    <span
-                      className={cn(
-                        'pointer-events-none inline-block size-4 rounded-full bg-white shadow-lg ring-0 transition-transform duration-200',
-                        reminderEnabled ? 'translate-x-4' : 'translate-x-0'
-                      )}
-                    />
-                  </button>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium text-foreground">
-                      {reminderEnabled ? 'Reminder on' : 'No reminder'}
-                    </p>
-                    {reminderEnabled && (
-                      <p className="text-[11px] text-muted-foreground mt-0.5">
-                        Notify me before this task is due
-                      </p>
-                    )}
-                  </div>
-                  {reminderEnabled && (
-                    <Select
-                      value={String(reminderMinutes)}
-                      onValueChange={(v) => { setReminderMinutes(Number(v) as ReminderMinutes); markDirty(); }}
-                    >
-                      <SelectTrigger className="h-8 w-32 text-xs rounded-lg flex-shrink-0 bg-card border-border">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {REMINDER_OPTIONS.map((opt) => (
-                          <SelectItem key={opt.value} value={String(opt.value)} className="text-xs">
-                            {opt.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Escalation rules for this task.
-                The reminder above fires once, before the due time. Anything
-                after it — or more than one notification — is a rule, and this
-                is where the task itself points at that. */}
-            {onAddEscalation && !isDone && (
-              <div className="space-y-2">
-                <Label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
-                  <Zap className="size-3" />
-                  Escalation
-                </Label>
-                <button
-                  type="button"
-                  onClick={() => onAddEscalation(todo.id)}
-                  className="w-full rounded-xl bg-muted/30 px-3.5 py-3 text-left transition-colors duration-150 hover:bg-muted/50"
-                >
-                  <p className="text-xs font-medium text-foreground">Set up escalation</p>
-                  <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">
-                    Notify me at several points — an hour before, five minutes before,
-                    and again once it is overdue.
-                  </p>
-                </button>
-              </div>
-            )}
-
-            {/* Reminder — permission not granted */}
-            {isNotificationSupported() && notificationPermission !== 'granted' && dueDate && !isDone && (
-              <div className="rounded-xl bg-muted/30 px-3.5 py-3 flex items-center gap-2.5">
-                <BellOff className="size-4 text-muted-foreground flex-shrink-0" />
-                <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  {notificationPermission === 'denied'
-                    ? 'Notifications are blocked. Enable them in browser settings to set reminders.'
-                    : 'Enable notifications in the Reminders panel to set task reminders.'}
-                </p>
-              </div>
-            )}
 
             {/* Category */}
             <div className="space-y-1.5">

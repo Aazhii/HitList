@@ -2,7 +2,7 @@
  * The task filter bar's model, and applying it.
  *
  * The filter bar used to change nothing on screen: its state was handed to
- * useCatalystSync, which ignored it, and every fetch returned every task.
+ * useAppSync, which ignored it, and every fetch returned every task.
  *
  * Filters are applied here, to the tasks already loaded, rather than by asking
  * the server for a filtered list. That is deliberate. App's task array also
@@ -127,8 +127,8 @@ const FIELD_SORT = /^field:[A-Za-z0-9_-]{1,64}$/;
 const DATE_KEY = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
- * A filter read from storage or the server, made safe to apply: unknown fields
- * dropped, illegal values reset to the default. Mirrors server/views.ts.
+ * A filter read from storage or the API, made safe to apply: unknown fields
+ * dropped, illegal values reset to the default.
  */
 export function normaliseFilters(raw: unknown): FilterState {
   const o = (raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {}) as Record<string, unknown>;

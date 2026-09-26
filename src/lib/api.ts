@@ -67,6 +67,8 @@ export interface TaskCreateRequest {
   taskOrder?: number;
   reminderEnabled?: boolean;
   reminderMinutesBefore?: number;
+  /** Completion time retained when importing an already completed local task. */
+  completedAt?: string;
   /** The note block this task was added from; '' clears on update. */
   sourceNoteId?: string;
   sourceBlockId?: string;
@@ -100,7 +102,7 @@ export interface ApiError {
  *  2. Empty string → same-origin /api (works for both Vite dev proxy and
  *     production deployments where the frontend and API share an origin)
  *
- * Do NOT hardcode a port here. The Vite dev server proxies /api → localhost:3001
+ * Do NOT hardcode a port here. The Vite dev server proxies /api → localhost:8080
  * so relative paths work in dev. In production the server serves the built
  * frontend from the same origin, so /api is always correct.
  */
@@ -109,11 +111,16 @@ const BASE_URL: string = (import.meta.env.VITE_API_BASE_URL as string | undefine
 /** The API origin, '' when same-origin. Shared with notes sync. */
 export const API_BASE_URL = BASE_URL;
 
+export const AUTOMATIONS_UNAVAILABLE_REASON =
+  'Reminders and automations are unavailable in the PostgreSQL-only migration.';
+export const ZOHO_CALENDAR_UNAVAILABLE_REASON =
+  'Zoho Calendar import is unavailable in the PostgreSQL-only migration.';
+
 // ── Core fetch helper ────────────────────────────────────────────────────────
 
 /**
  * Returns true if the response Content-Type indicates JSON.
- * Guards against Catalyst gateway returning HTML (login redirects, 401 pages).
+ * Guards against an HTML error page or redirect being mistaken for JSON.
  */
 function isJsonResponse(res: Response): boolean {
   const ct = res.headers.get('content-type') ?? '';
@@ -156,10 +163,8 @@ async function request<T>(
   options: RequestInit = {}
 ): Promise<T> {
   // Sent as a CORS simple request — no custom headers, no JSON content type,
-  // no PUT/PATCH/DELETE — because the AppSail gateway answers preflights
-  // itself without CORS headers. See lib/simpleRequest.ts. It also sends the
-  // session cookie (credentials: 'include'), without which the cross-origin
-  // Slate build would get a 401 on every call.
+  // no PUT/PATCH/DELETE — to avoid unnecessary preflights. See
+  // lib/simpleRequest.ts.
   const { method, body, headers: _headers, ...rest } = options;
   const simple = simpleRequest(
     `${BASE_URL}/api${path}`,
@@ -170,8 +175,7 @@ async function request<T>(
   const res = await fetch(simple.url, { ...rest, ...simple.init });
 
   if (!res.ok) {
-    // 401/403 from Catalyst gateway often returns an HTML login page.
-    // Treat as an auth/connectivity error without trying to parse the body.
+    // 401/403 responses may be HTML or JSON; treat both as access failures.
     if (res.status === 401 || res.status === 403) {
       const err: ApiError = {
         status: res.status,
@@ -202,7 +206,7 @@ async function request<T>(
         // ignore parse errors on error body
       }
     } else {
-      // Non-JSON error body (HTML gateway page, etc.) — use a clean message
+      // Non-JSON error body (HTML error page, etc.) — use a clean message
       message = res.statusText
         ? `${res.statusText} (${res.status})`
         : `Request failed (${res.status})`;
@@ -214,7 +218,7 @@ async function request<T>(
   // 204 No Content
   if (res.status === 204) return undefined as unknown as T;
 
-  // Guard: if the server returned non-JSON (e.g. HTML from a gateway redirect),
+  // Guard: if the server returned non-JSON (e.g. HTML from a fallback page),
   // throw a descriptive error instead of letting JSON.parse fail with
   // "Unexpected token '<'".
   if (!isJsonResponse(res)) {
@@ -402,15 +406,6 @@ export const notificationApi = {
     return del<void>(`/notifications/${id}`);
   },
 
-  /**
-   * POST /api/reminders/backfill
-   *
-   * Queues reminders for tasks that predate the queue. Idempotent, so the
-   * client can call it on sign-in without tracking whether it already has.
-   */
-  backfill(): Promise<{ scanned: number; enqueued: number; failed: number }> {
-    return post<{ scanned: number; enqueued: number; failed: number }>('/reminders/backfill', {});
-  },
 };
 
 // ── Automations ──────────────────────────────────────────────────────────────
@@ -473,32 +468,38 @@ export interface ApiAutomationRun {
 
 export const automationApi = {
   listRules(): Promise<ApiAutomationRule[]> {
-    return get<ApiAutomationRule[]>('/automation-rules');
+    return Promise.resolve([]);
   },
 
   createRule(rule: AutomationRuleInput): Promise<ApiAutomationRule> {
-    return post<ApiAutomationRule>('/automation-rules', rule);
+    void rule;
+    return Promise.reject(new Error(AUTOMATIONS_UNAVAILABLE_REASON));
   },
 
   updateRule(id: string, rule: AutomationRuleInput): Promise<ApiAutomationRule> {
-    return put<ApiAutomationRule>(`/automation-rules/${id}`, rule);
+    void id;
+    void rule;
+    return Promise.reject(new Error(AUTOMATIONS_UNAVAILABLE_REASON));
   },
 
   deleteRule(id: string): Promise<void> {
-    return del<void>(`/automation-rules/${id}`);
+    void id;
+    return Promise.reject(new Error(AUTOMATIONS_UNAVAILABLE_REASON));
   },
 
   recentRuns(limit = 20): Promise<ApiAutomationRun[]> {
-    return get<ApiAutomationRun[]>(`/automation-runs/recent?limit=${limit}`);
+    void limit;
+    return Promise.resolve([]);
   },
 
   runsForRule(ruleId: string): Promise<ApiAutomationRun[]> {
-    return get<ApiAutomationRun[]>(`/automation-runs/rule/${ruleId}`);
+    void ruleId;
+    return Promise.resolve([]);
   },
 
-  /** Queues one firing by hand. Delivery still happens on the next sweep. */
   trigger(ruleId: string): Promise<ApiAutomationRun> {
-    return post<ApiAutomationRun>(`/automation-runs/trigger/${ruleId}`, {});
+    void ruleId;
+    return Promise.reject(new Error(AUTOMATIONS_UNAVAILABLE_REASON));
   },
 };
 
@@ -597,7 +598,7 @@ export const fieldApi = {
 
 // ── Databases ────────────────────────────────────────────────────────────────
 
-/** A collection of records that are not tasks. See server/databases.ts. */
+/** A collection of records that are not tasks. */
 export interface ApiDatabase {
   id: string;
   name: string;
@@ -702,49 +703,24 @@ export const calendarApi = {
   },
 };
 
-export interface ZohoCalendarConnectionStatus {
-  configured: boolean;
-  connected: boolean;
-  connectedAt: number | null;
-}
-
-export interface ZohoCalendarEvent {
-  id: string;
-  calendarId: string;
-  calendarName: string;
-  title: string;
-  date: string;
-  time?: string;
-}
-
-export const zohoCalendarApi = {
-  connection(): Promise<ZohoCalendarConnectionStatus> {
-    return get<ZohoCalendarConnectionStatus>('/zoho-calendar/connection');
-  },
-  disconnect(): Promise<{ disconnected: boolean }> {
-    return del<{ disconnected: boolean }>('/zoho-calendar/connection');
-  },
-  events(): Promise<{ events: ZohoCalendarEvent[] }> {
-    return get<{ events: ZohoCalendarEvent[] }>('/zoho-calendar/events');
-  },
-  /** Starts navigation to the server-side OAuth consent flow. */
-  connect(): void {
-    window.location.assign(`${BASE_URL}/api/zoho-calendar/connect`);
-  },
-};
-
 // ── Trial features ───────────────────────────────────────────────────────────
 
-/** App-wide switches set in the KaizenTrialFeatures table. See server/trialFeatures.ts. */
+/** App-wide switches returned by the backend. */
 export interface TrialFeatures {
   notifications: boolean;
   automations: boolean;
+  unavailableReason?: string;
 }
 
 export const trialFeatureApi = {
   /** GET /api/trial-features */
-  get(): Promise<TrialFeatures> {
-    return get<TrialFeatures>('/trial-features');
+  async get(): Promise<TrialFeatures> {
+    await get<{ notifications: boolean; automations: boolean }>('/trial-features');
+    return {
+      notifications: false,
+      automations: false,
+      unavailableReason: AUTOMATIONS_UNAVAILABLE_REASON,
+    };
   },
 };
 
@@ -752,10 +728,9 @@ export const trialFeatureApi = {
 
 /**
  * Lightweight connectivity check.
- * Returns true if the server is reachable AND returns a valid JSON health response.
- * Explicitly rejects HTML responses (Catalyst gateway login redirects, 401 pages)
- * so the app correctly falls back to localStorage instead of treating a gateway
- * intercept as a live server.
+ * Returns true if the server is reachable AND returns a valid JSON health
+ * response. Explicitly rejects HTML responses so the app correctly falls back
+ * to localStorage instead of treating a fallback page as a live server.
  */
 export async function checkServerHealth(): Promise<boolean> {
   try {
@@ -765,8 +740,8 @@ export async function checkServerHealth(): Promise<boolean> {
       signal: AbortSignal.timeout(4000),
     });
     if (!res.ok) return false;
-    // Verify the response is actually JSON — a Catalyst gateway redirect or
-    // auth page returns text/html which must NOT be treated as a healthy server.
+    // Verify the response is actually JSON — text/html must NOT be treated as a
+    // healthy server.
     if (!isJsonResponse(res)) return false;
     const body = await res.json() as { ok?: boolean };
     return body.ok === true;

@@ -13,7 +13,7 @@ import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useAutomations } from '@/hooks/useAutomations';
 import { useAutomationRuns } from '@/hooks/useAutomationRuns';
-import { trialFeatureApi, type TrialFeatures } from '@/lib/api';
+import { AUTOMATIONS_UNAVAILABLE_REASON } from '@/lib/api';
 import {
   AutomationFilters,
   AutomationList,
@@ -188,20 +188,12 @@ export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationH
   const { runs, lastChecked, isLoading: runsLoading, error: runsError, triggerRule, refresh: refreshRuns } =
     useAutomationRuns();
 
-  // App-wide switches (KaizenTrialFeatures). null until read, or when the
-  // server cannot be reached — the offline notice covers that case.
-  const [features, setFeatures] = useState<TrialFeatures | null>(null);
-  useEffect(() => {
-    let live = true;
-    trialFeatureApi.get().then((f) => { if (live) setFeatures(f); }).catch(() => {});
-    return () => { live = false; };
-  }, []);
-  const automationsPaused = features?.automations === false;
+  const automationsPaused = true;
 
   // Run Now handler
   const handleRunNow = useCallback(async (ruleId: string) => {
     if (automationsPaused) {
-      toast.error('Automations are paused — rules cannot run right now', { duration: 3000 });
+      toast.error(AUTOMATIONS_UNAVAILABLE_REASON, { duration: 3000 });
       return;
     }
     const rule = rules.find((r) => r.id === ruleId);
@@ -224,6 +216,10 @@ export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationH
 
   useEffect(() => {
     if (!escalationTaskId) return;
+    if (automationsPaused) {
+      onEscalationHandled?.();
+      return;
+    }
     // Its existing rule if it has one, so "Add escalation" edits rather than
     // silently creating a second rule beside the first.
     const existing = rules.find((r) => r.taskId === escalationTaskId && isTaskDriven(r));
@@ -231,7 +227,7 @@ export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationH
     setPrefillTaskId(existing ? null : escalationTaskId);
     setFormOpen(true);
     onEscalationHandled?.();
-  }, [escalationTaskId, rules, onEscalationHandled]);
+  }, [automationsPaused, escalationTaskId, rules, onEscalationHandled]);
 
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<AutomationRule | null>(null);
@@ -267,16 +263,28 @@ export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationH
   // ── Handlers ───────────────────────────────────────────────────────────────
 
   const handleNew = () => {
+    if (automationsPaused) {
+      toast.error(AUTOMATIONS_UNAVAILABLE_REASON, { duration: 3000 });
+      return;
+    }
     setEditingRule(null);
     setFormOpen(true);
   };
 
   const handleEdit = (rule: AutomationRule) => {
+    if (automationsPaused) {
+      toast.error(AUTOMATIONS_UNAVAILABLE_REASON, { duration: 3000 });
+      return;
+    }
     setEditingRule(rule);
     setFormOpen(true);
   };
 
   const handleFormSubmit = async (values: AutomationRuleFormValues) => {
+    if (automationsPaused) {
+      toast.error(AUTOMATIONS_UNAVAILABLE_REASON, { duration: 3000 });
+      return;
+    }
     // Await before reporting. These calls used to be fire-and-forget with an
     // unconditional success toast, which told the user their rule was saved
     // whether or not it was.
@@ -299,6 +307,10 @@ export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationH
   };
 
   const handleToggle = async (id: string) => {
+    if (automationsPaused) {
+      toast.error(AUTOMATIONS_UNAVAILABLE_REASON, { duration: 3000 });
+      return;
+    }
     const rule = rules.find((r) => r.id === id);
     if (!rule) return;
     await toggleStatus(id);
@@ -310,11 +322,20 @@ export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationH
   };
 
   const handleDeleteRequest = (id: string) => {
+    if (automationsPaused) {
+      toast.error(AUTOMATIONS_UNAVAILABLE_REASON, { duration: 3000 });
+      return;
+    }
     const rule = rules.find((r) => r.id === id);
     if (rule) setDeleteTarget(rule);
   };
 
   const handleDeleteConfirm = async () => {
+    if (automationsPaused) {
+      setDeleteTarget(null);
+      toast.error(AUTOMATIONS_UNAVAILABLE_REASON, { duration: 3000 });
+      return;
+    }
     if (!deleteTarget) return;
     const name = deleteTarget.name;
     setDeleteTarget(null);
@@ -346,7 +367,13 @@ export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationH
             title="Automations"
             subtitle={`${counts.all} rule${counts.all !== 1 ? 's' : ''} · ${counts.active} active`}
             actions={
-              <button type="button" onClick={handleNew} className={topBarPrimary} aria-label="New rule">
+              <button
+                type="button"
+                onClick={handleNew}
+                className={topBarPrimary}
+                aria-label="New rule"
+                disabled={automationsPaused}
+              >
                 <Plus className="size-[15px]" strokeWidth={2.75} aria-hidden />
                 <span className="hidden sm:inline">New rule</span>
               </button>
@@ -365,21 +392,10 @@ export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationH
             </div>
           )}
 
-          {features && (!features.notifications || !features.automations) && (
+          {automationsPaused && (
             <div className="rounded-[14px] bg-q-delegate-bg px-4 py-3 text-[13.5px] text-q-delegate" role="status">
-              {!features.notifications ? (
-                <>
-                  <strong>Notifications are paused.</strong> Reminders and automation alerts are not
-                  being sent right now. When they are turned back on, reminders more than a day
-                  late are skipped and the rest are sent.
-                  {!features.automations && ' Automations are paused too, so rules will not run.'}
-                </>
-              ) : (
-                <>
-                  <strong>Automations are paused.</strong> Your rules are kept, but they will not run
-                  until automations are turned back on.
-                </>
-              )}
+              <strong>Automations are unavailable.</strong> Rules and reminders cannot run in the
+              PostgreSQL-only migration, so creating, editing, and triggering rules is disabled.
             </div>
           )}
 

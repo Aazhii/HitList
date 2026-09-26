@@ -115,6 +115,7 @@ function taskSnapshot(todo: Todo, listId: string | undefined): string {
     dueDate: todo.dueDate, dueTime: todo.dueTime, category: todo.category, listId,
     order: todo.order, reminderEnabled: todo.reminderEnabled,
     reminderMinutesBefore: todo.reminderMinutesBefore,
+    completedAt: todo.completedAt,
   });
 }
 
@@ -208,6 +209,7 @@ export async function migrateLocalState(
         taskOrder: todo.order,
         reminderEnabled: todo.reminderEnabled,
         reminderMinutesBefore: todo.reminderMinutesBefore,
+        completedAt: todo.completedAt ? new Date(todo.completedAt).toISOString() : undefined,
         clientId: todo.id,
       };
       try {
@@ -231,6 +233,7 @@ export async function migrateLocalState(
         taskOrder: todo.order,
         reminderEnabled: todo.reminderEnabled,
         reminderMinutesBefore: todo.reminderMinutesBefore,
+        completedAt: todo.completedAt ? new Date(todo.completedAt).toISOString() : undefined,
       });
     }
     journal.tasks[todo.id] = created.id;

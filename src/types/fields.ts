@@ -1,4 +1,4 @@
-/** Custom task fields, as the client sees them. Mirrors server/fields.ts. */
+/** Custom task fields, as the client sees them. */
 
 export type FieldKind = 'select' | 'multi' | 'number' | 'date' | 'checkbox' | 'text';
 export type OptionColor = 'accent' | 'sage' | 'do' | 'schedule' | 'delegate' | 'eliminate';

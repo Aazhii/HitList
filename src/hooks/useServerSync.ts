@@ -41,12 +41,8 @@ export interface ServerSyncState {
    * back to mockApi for subsequent operations.
    */
   backendUnavailable: boolean;
-  /**
-   * True when Catalyst DataStore is confirmed ready and the user is
-   * authenticated. Used by App.tsx to decide whether an empty server
-   * result should unconditionally replace local seed data.
-   */
-  catalystReady?: boolean;
+  /** True when the active backend is ready to answer API calls. */
+  backendReady?: boolean;
   /** True while the initial load is in progress. */
   loading: boolean;
   /** True while a mutation is in-flight (optimistic save). */

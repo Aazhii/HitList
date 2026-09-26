@@ -2,8 +2,8 @@
  * The escalation steps of an automation rule, as the editor talks about them.
  *
  * A step is signed minutes from the task's due instant: -60 is an hour before,
- * 0 is the moment it falls due, 30 is half an hour after. The server stores
- * exactly these numbers (see server/automations/steps.ts) — a unit is not
+ * 0 is the moment it falls due, 30 is half an hour after. The backend stores
+ * exactly these numbers — a unit is not
  * stored, because "1 hour" and "60 minutes" are the same instant and picking
  * the larger exact unit back out reads the way the user typed it.
  */
@@ -17,7 +17,7 @@ export const UNIT_MINUTES: Record<StepUnit, number> = {
   days: 24 * 60,
 };
 
-/** Matches the server's cap. Every step is a notification. */
+/** Matches the backend cap. Every step is a notification. */
 export const MAX_STEPS = 8;
 export const MAX_STEP_MINUTES = 365 * 24 * 60;
 
@@ -78,7 +78,7 @@ export function summarise(steps: readonly number[]): string {
 
 /**
  * What gets sent: whole minutes, in range, no duplicates, earliest first,
- * capped. The server normalises again — this is for the preview and for
+ * capped. The backend normalises again — this is for the preview and for
  * keeping the editor honest, not a substitute for validation.
  */
 export function normaliseSteps(steps: readonly number[]): number[] {

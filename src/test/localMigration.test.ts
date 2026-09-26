@@ -47,6 +47,37 @@ describe('local server migration', () => {
     expect(taskRequests[0]).toMatchObject({ clientId: 'old-task', listId: 'server-list', title: 'Local task' });
   });
 
+  it('retains the completion time of an already completed local task', async () => {
+    const local = state();
+    local.todos[0] = {
+      ...local.todos[0],
+      status: 'done',
+      completedAt: Date.parse('2026-09-24T12:34:56Z'),
+    };
+    const taskRequests: TaskCreateRequest[] = [];
+
+    await migrateLocalState(local, 'user-a', {
+      lists: {
+        list: async () => [],
+        get: async () => list('old-list'),
+        create: async () => list('old-list'),
+      },
+      tasks: {
+        list: async () => [],
+        get: async () => task('old-task', 'old-list'),
+        create: async (request) => {
+          taskRequests.push(request);
+          return task('old-task', 'old-list');
+        },
+      },
+    });
+
+    expect(taskRequests[0]).toMatchObject({
+      status: 'DONE',
+      completedAt: '2026-09-24T12:34:56.000Z',
+    });
+  });
+
   it('keeps durable per-item progress and retries only the failed item', async () => {
     const local = state();
     local.todos.push({ ...local.todos[0], id: 'second-task', text: 'Second task' });

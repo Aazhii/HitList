@@ -10,7 +10,7 @@
  * per database.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarDays, Link2, Plus, RefreshCw, Unplug } from 'lucide-react';
+import { CalendarDays, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { ViewLayout, ContextSectionHeader } from '@/components/shell/ViewLayout';
 import { TopBar } from '@/components/shell/TopBar';
@@ -21,8 +21,8 @@ import {
 } from '@/components/calendar/UnifiedCalendar';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import {
-  calendarApi, databaseApi, taskApi, zohoCalendarApi,
-  type CalendarRecord, type CalendarTask, type ZohoCalendarConnectionStatus, type ZohoCalendarEvent,
+  calendarApi, databaseApi, taskApi, ZOHO_CALENDAR_UNAVAILABLE_REASON,
+  type CalendarRecord, type CalendarTask,
 } from '@/lib/api';
 import { getListColorDot, type KaizenList } from '@/types/todo';
 
@@ -39,9 +39,6 @@ export function CalendarPage({ lists, onOpenTask, onOpenDatabase }: CalendarPage
   const [records, setRecords] = useState<CalendarRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [online, setOnline] = useState(true);
-  const [zohoConnection, setZohoConnection] = useState<ZohoCalendarConnectionStatus | null>(null);
-  const [zohoEvents, setZohoEvents] = useState<ZohoCalendarEvent[]>([]);
-  const [disconnecting, setDisconnecting] = useState(false);
   const [hiddenSources, setHiddenSources] = useLocalStorage<string[]>('hitlist-calendar-hidden-v1', []);
 
   const load = useCallback(async () => {
@@ -50,16 +47,6 @@ export function CalendarPage({ lists, onOpenTask, onOpenDatabase }: CalendarPage
       setTasks(t);
       setRecords(r);
       setOnline(true);
-      void zohoCalendarApi.connection()
-        .then((connection) => {
-          setZohoConnection(connection);
-          if (!connection.connected) { setZohoEvents([]); return; }
-          return zohoCalendarApi.events().then(({ events }) => setZohoEvents(events));
-        })
-        .catch((e: unknown) => {
-          console.error('[calendar] zoho connection/events load failed:', e);
-          setZohoConnection(null); setZohoEvents([]);
-        });
     } catch (e) {
       console.error('[calendar] load failed:', e);
       setOnline(false);
@@ -69,31 +56,6 @@ export function CalendarPage({ lists, onOpenTask, onOpenDatabase }: CalendarPage
   }, []);
 
   useEffect(() => { void load(); }, [load]);
-
-  useEffect(() => {
-    const result = new URLSearchParams(window.location.search).get('zohoCalendar');
-    if (!result) return;
-    window.history.replaceState({}, '', window.location.pathname);
-    toast[result === 'connected' ? 'success' : 'error'](
-      result === 'connected' ? 'Zoho Calendar connected' : "Couldn't connect Zoho Calendar",
-    );
-    void load();
-  }, [load]);
-
-  const disconnectZohoCalendar = useCallback(async () => {
-    if (disconnecting || !window.confirm('Disconnect Zoho Calendar? Your imported events will disappear from HitList.')) return;
-    setDisconnecting(true);
-    try {
-      await zohoCalendarApi.disconnect();
-      setZohoConnection((current) => current ? { ...current, connected: false, connectedAt: null } : current);
-      toast.success('Zoho Calendar disconnected');
-    } catch (e) {
-      console.error('[calendar] zoho disconnect failed:', e);
-      toast.error("Couldn't disconnect Zoho Calendar");
-    } finally {
-      setDisconnecting(false);
-    }
-  }, [disconnecting]);
 
   const listById = useMemo(() => new Map(lists.map((l) => [l.id, l])), [lists]);
 
@@ -116,16 +78,7 @@ export function CalendarPage({ lists, onOpenTask, onOpenDatabase }: CalendarPage
       sourceId: r.databaseId,
       sourceName: r.databaseName,
     })),
-    ...zohoEvents.map((event) => ({
-      kind: 'zoho' as const,
-      id: event.id,
-      title: event.title,
-      date: event.date,
-      time: event.time,
-      sourceId: `zoho:${event.calendarId}`,
-      sourceName: event.calendarName,
-    })),
-  ], [tasks, records, zohoEvents, listById]);
+  ], [tasks, records, listById]);
 
   const sources = useMemo<CalendarSource[]>(() => {
     const out: CalendarSource[] = lists
@@ -138,15 +91,8 @@ export function CalendarPage({ lists, onOpenTask, onOpenDatabase }: CalendarPage
       seen.add(record.databaseId);
       out.push({ kind: 'record', id: record.databaseId, name: record.databaseName, dotClass: 'bg-a-sage' });
     }
-    const zohoCalendars = new Set<string>();
-    for (const event of zohoEvents) {
-      const id = `zoho:${event.calendarId}`;
-      if (zohoCalendars.has(id)) continue;
-      zohoCalendars.add(id);
-      out.push({ kind: 'zoho', id, name: event.calendarName, dotClass: 'bg-sky-500' });
-    }
     return out;
-  }, [lists, tasks, records, zohoEvents]);
+  }, [lists, tasks, records]);
 
   /** A task writes its due date; a record writes its database's date column. */
   const handleMove = useCallback(async (item: CalendarItem, date: string) => {
@@ -166,7 +112,7 @@ export function CalendarPage({ lists, onOpenTask, onOpenDatabase }: CalendarPage
         await taskApi.update(item.id, to ? { dueDate: to } : { dueDate: '', dueTime: '' });
         return;
       }
-      if (item.kind !== 'record') throw new Error('Zoho Calendar events are read-only');
+      if (item.kind !== 'record') throw new Error('Only tasks and records can be moved');
       const database = await databaseApi.list().then((all) => all.find((d) => d.id === item.sourceId));
       if (!database?.dateFieldId) throw new Error('no date column');
       await databaseApi.setFieldValue(item.id, database.dateFieldId, to || null);
@@ -197,7 +143,6 @@ export function CalendarPage({ lists, onOpenTask, onOpenDatabase }: CalendarPage
   const handleOpen = useCallback((item: CalendarItem) => {
     if (item.kind === 'task') onOpenTask(item.id);
     else if (item.kind === 'record') onOpenDatabase(item.sourceId);
-    else toast.message('Zoho Calendar events are read-only');
   }, [onOpenTask, onOpenDatabase]);
 
   const [addOn, setAddOn] = useState<string | null>(null);
@@ -216,41 +161,9 @@ export function CalendarPage({ lists, onOpenTask, onOpenDatabase }: CalendarPage
               Tasks with a due date, and records from every database that has chosen a date column.
               Drag anything to another day.
             </p>
-            <div className="flex items-center gap-1.5 px-3 pb-3">
-              {zohoConnection?.connected ? (
-                <>
-                  <span className="min-w-0 flex-1 truncate text-[12.5px] text-a-muted">Zoho Calendar connected</span>
-                  <button
-                    type="button"
-                    onClick={() => { void load(); }}
-                    className="flex size-7 items-center justify-center rounded-full text-a-muted transition-colors hover:bg-a-row-hover hover:text-a-ink"
-                    aria-label="Refresh Zoho Calendar connection"
-                    title="Refresh connection"
-                  >
-                    <RefreshCw className="size-3.5" strokeWidth={2.3} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { void disconnectZohoCalendar(); }}
-                    disabled={disconnecting}
-                    className="flex size-7 items-center justify-center rounded-full text-a-muted transition-colors hover:bg-a-row-hover hover:text-a-ink disabled:opacity-50"
-                    aria-label="Disconnect Zoho Calendar"
-                    title="Disconnect Zoho Calendar"
-                  >
-                    <Unplug className="size-3.5" strokeWidth={2.3} />
-                  </button>
-                </>
-              ) : zohoConnection?.configured ? (
-                <button
-                  type="button"
-                  onClick={() => zohoCalendarApi.connect()}
-                  className="flex h-8 items-center gap-1.5 rounded-full px-3 text-[12.5px] font-semibold text-a-ink shadow-[inset_0_0_0_1px_var(--a-line)] transition-colors hover:bg-a-row-hover"
-                >
-                  <Link2 className="size-3.5" strokeWidth={2.3} />
-                  Connect Zoho Calendar
-                </button>
-              ) : null}
-            </div>
+            <p className="px-3 pb-3 text-[12px] leading-relaxed text-a-faint">
+              {ZOHO_CALENDAR_UNAVAILABLE_REASON}
+            </p>
             <ul className="space-y-0.5 px-3">
               {sources.map((source) => (
                 <li key={source.id} className="flex items-center gap-2 py-1 text-[13.5px] text-a-muted">

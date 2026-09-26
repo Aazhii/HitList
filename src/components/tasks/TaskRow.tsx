@@ -1,15 +1,15 @@
 /**
  * One task in the list view: a row on flat ground, not a card.
  *
- * Left to right: drag grip (on hover) → status → text → Next → reminder bell →
- * due chip → category chip → overflow menu (on hover). The text is its own
+ * Left to right: drag grip (on hover) → status → text → Next → due chip →
+ * category chip → overflow menu (on hover). The text is its own
  * button that opens the detail panel, so the row never nests one interactive
  * element inside another.
  */
 import { useState } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import { Bell, BellOff, FileText, GripVertical, MoreHorizontal, PanelRightOpen, Trash2 } from 'lucide-react';
+import { FileText, GripVertical, MoreHorizontal, PanelRightOpen, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { StatusBox } from '@/components/ui/status-box';
 import {
@@ -25,7 +25,6 @@ import { DUE_TONE_CLASS, dueTone, getDueInfo } from '@/lib/dueInfo';
 import { NEXT_STATUS } from '@/lib/taskStatus';
 import { FieldChips } from '@/components/fields/FieldChips';
 import type { FieldDef, FieldValue } from '@/types/fields';
-import { isNotificationSupported } from '@/lib/notifications';
 
 export interface TaskRowProps {
   todo: Todo;
@@ -61,8 +60,6 @@ export function TaskRow({
   onStatusChange,
   onDelete,
   onOpen,
-  onToggleReminder,
-  notificationPermission,
   onOpenNote,
   fieldDefs,
   fieldValues,
@@ -72,9 +69,6 @@ export function TaskRow({
   const next = NEXT_STATUS[todo.status];
   const category = getCategoryConfig(todo.category);
   const due = isDone ? null : getDueInfo(todo.dueDate, todo.dueTime);
-  const canToggleReminder =
-    !isDone && !!todo.dueDate && !!onToggleReminder &&
-    isNotificationSupported() && notificationPermission === 'granted';
 
   const canDrag = !isDone && !dragDisabled;
   const {
@@ -148,13 +142,6 @@ export function TaskRow({
           <span className="text-[11.5px] font-bold uppercase tracking-[0.06em] text-a-accent-700">Next</span>
         )}
 
-        {todo.reminderEnabled && todo.dueDate && !isDone && (
-          <span title="Reminder set" className="flex text-a-accent-700">
-            <Bell className="size-3.5" strokeWidth={2.75} aria-hidden />
-            <span className="sr-only">Reminder set</span>
-          </span>
-        )}
-
         {due && <span className={cn(CHIP, DUE_TONE_CLASS[dueTone(due)])}>{due.label}</span>}
 
         {todo.sourceNoteId && onOpenNote && (
@@ -187,12 +174,6 @@ export function TaskRow({
             <DropdownMenuItem onClick={() => onOpen(todo)}>
               <PanelRightOpen className="size-3.5" /> Open details
             </DropdownMenuItem>
-            {canToggleReminder && (
-              <DropdownMenuItem onClick={() => onToggleReminder!(todo.id, !todo.reminderEnabled)}>
-                {todo.reminderEnabled ? <BellOff className="size-3.5" /> : <Bell className="size-3.5" />}
-                {todo.reminderEnabled ? 'Turn reminder off' : 'Turn reminder on'}
-              </DropdownMenuItem>
-            )}
             <DropdownMenuSeparator />
             <DropdownMenuItem variant="destructive" onClick={handleDelete}>
               <Trash2 className="size-3.5" /> Delete task
