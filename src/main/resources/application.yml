@@ -1,0 +1,22 @@
+server:
+  address: 0.0.0.0
+  port: ${SERVER_PORT:8080}
+  forward-headers-strategy: framework
+  error:
+    whitelabel:
+      enabled: false
+
+spring:
+  application:
+    name: hitlist
+  jackson:
+    default-property-inclusion: non_null
+  web:
+    resources:
+      cache:
+        cachecontrol:
+          max-age: 365d
+
+hitlist:
+  allowed-origins: ${ALLOWED_ORIGINS:}
+  owner-cookie-secret: ${OWNER_COOKIE_SECRET:}
