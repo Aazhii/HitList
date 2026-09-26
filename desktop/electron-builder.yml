@@ -1,0 +1,25 @@
+# Packages the shell (main.js), api/'s jar, and a minimal Java runtime into a
+# real .app / .dmg. web/dist isn't listed separately — it's already inside
+# hitlist.jar as static resources (see scripts/prepare-jar.sh), so bundling
+# the jar is bundling the whole frontend too; nothing here reimplements that.
+
+appId: com.hitlist.desktop
+productName: HitList
+directories:
+  output: dist
+
+files:
+  - main.js
+  - package.json
+
+extraResources:
+  - from: resources/hitlist.jar
+    to: hitlist.jar
+  - from: resources/jre
+    to: jre
+
+mac:
+  category: public.app-category.productivity
+  target:
+    - target: dmg
+      arch: [arm64]

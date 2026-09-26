@@ -1,2 +1,6 @@
 node_modules
 dist
+
+# Rebuilt by `pnpm run build` (scripts/prepare-jar.sh, scripts/prepare-jre.sh)
+# — regenerated binaries, not source.
+resources/

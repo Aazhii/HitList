@@ -5,7 +5,10 @@
   "description": "Desktop shell for HitList — spawns api/'s own jar locally (SQLite, no server) and shows web/'s own build in a window.",
   "main": "main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "prepare:jar": "sh scripts/prepare-jar.sh",
+    "prepare:jre": "sh scripts/prepare-jre.sh",
+    "build": "pnpm run prepare:jar && pnpm run prepare:jre && electron-builder"
   },
   "devDependencies": {
     "electron": "^44.3.0",
