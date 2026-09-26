@@ -1,9 +1,0 @@
-{
-  "appsail": [
-    {
-      "source": "docker://hitlist-api:latest",
-      "name": "hitlist-api",
-      "port": 9000
-    }
-  ]
-}
