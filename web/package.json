@@ -6,9 +6,9 @@
   "scripts": {
     "dev": "pnpm dev:ui",
     "dev:ui": "vite",
-    "server": "mvn spring-boot:run",
+    "server": "mvn -f ../api/pom.xml spring-boot:run",
     "build": "tsc -b && vite build",
-    "lint": "eslint src/ --format stylish --cache",
+    "lint": "eslint src/ test/ --format stylish --cache",
     "preview": "vite preview",
     "start": "pnpm run server",
     "lock:npm": "rm -rf .lockgen && mkdir -p .lockgen && cp package.json .lockgen/ && npm install --package-lock-only --no-audit --no-fund --prefix .lockgen && mv .lockgen/package-lock.json package-lock.json && rm -rf .lockgen",

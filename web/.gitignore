@@ -1,0 +1,10 @@
+# Dependencies and build output
+node_modules
+dist
+dist-ssr
+
+# Tool caches
+.eslintcache
+
+# Scratch dir used by `pnpm run lock:npm`
+.lockgen/

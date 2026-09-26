@@ -15,19 +15,21 @@ and uses **PostgreSQL only** for persistence.
 
 ```bash
 cp .env.example .env.local
-pnpm install
+cd web && pnpm install
 ```
 
 ### Frontend against the Java backend
 
-Run Spring Boot on `:3001`, then start Vite:
+From `web/`, run Spring Boot on `:3001`, then start Vite:
 
 ```bash
 pnpm server
 pnpm dev:ui
 ```
 
-Vite proxies `/api/*` to `http://localhost:3001` by default.
+Vite proxies `/api/*` to `http://localhost:3001` by default. `pnpm server` (see
+Scripts below) runs Maven against `api/pom.xml`, so this works from `web/`
+without a second `cd`.
 
 ## Docker
 
@@ -43,14 +45,16 @@ docker compose up --build
 
 ## Scripts
 
+Run from `web/`.
+
 | Script | Purpose |
 |--------|---------|
 | `pnpm dev` | Vite UI dev server |
 | `pnpm dev:ui` | Vite only |
-| `pnpm server` | Spring Boot API + static asset server |
-| `pnpm start` | Spring Boot API + static asset server |
+| `pnpm server` | Spring Boot API + static asset server (`mvn -f ../api/pom.xml spring-boot:run`) |
+| `pnpm start` | Same as `pnpm server` |
 | `pnpm build` | Typecheck and build the frontend |
-| `pnpm lint` | ESLint over `src/` |
+| `pnpm lint` | ESLint over `src/` and `test/` |
 | `pnpm test` | Vitest |
 | `pnpm typecheck` | `tsc -b --noEmit` |
 
@@ -132,7 +136,12 @@ curl -X POST https://your-host/api/migrations/remote-export \
 ## Layout
 
 ```text
-src/                 React app
-src/main/java/       Spring Boot API
-src/main/resources/  Spring configuration + static assets
+web/                       React app (Vite, TypeScript)
+  src/                     application code
+  test/                    Vitest suite
+api/                       Spring Boot service (Java 25, Maven)
+  src/main/java/           controllers, domain services, storage
+  src/main/resources/      application.yml + (at build time) the built SPA as static assets
+docs/                      product/architecture notes shared by both sides
+Dockerfile, compose.yaml   build and run both services as one container
 ```

@@ -1,11 +1,11 @@
 .git
 .agents
-node_modules
-dist
+**/node_modules
+**/dist
 build
 release
+**/target
 .env*
 *.log
 .DS_Store
 coverage
-target

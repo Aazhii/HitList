@@ -6,6 +6,11 @@ import { fileURLToPath } from 'node:url';
 const apiProxyTarget = process.env.VITE_API_PROXY_TARGET || 'http://localhost:3001';
 
 export default defineConfig({
+  // The repo root, not this folder, holds the one .env.local shared by Vite
+  // (VITE_API_BASE_URL) and Docker Compose (DATABASE_URL, SERVER_PORT,
+  // OWNER_COOKIE_SECRET) — without this, Vite would look for web/.env.local
+  // and silently see none of those variables.
+  envDir: '..',
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
@@ -36,7 +41,7 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     globals: true,
-    setupFiles: ['src/test/setup.ts'],
+    setupFiles: ['test/setup.ts'],
     css: false,
   },
 });

@@ -7,9 +7,6 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
 *.local
 
 # Editor directories and files
@@ -28,25 +25,14 @@ dist-ssr
 .env.local
 .env.*.local
 
-# Historical local JSON data (no longer used by the server)
-server/*-db.json
-server/*-db.json.tmp
-server/*.tmp
-server/*.corrupt.*
-
-# Data Store backups (scripts/backup-tables.mjs) — real user data, never commit
+# Data Store backups (written by a since-removed script) — real user data, never commit
 backups/
 
-# Tool caches
-.eslintcache
-
-# Vendored agent skills (reinstall with: npx skills add — see skills-lock.json)
-.agents/
-.claude/skills/
-
-# Scratch dir used by `pnpm run lock:npm`
-.lockgen/
-
-# Local build output
+# Leftover build output from build processes this repo no longer has
 build/
-target/
+electron/dist/
+release/
+
+# Claude Code's own tooling — not part of this project
+.agents/
+.claude/
