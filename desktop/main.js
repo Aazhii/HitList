@@ -1,0 +1,183 @@
+/**
+ * The desktop shell's entire job: start the real API as a local sidecar
+ * process (SQLite-backed, no server, no Postgres), wait for it to answer,
+ * and show it in a window. Nothing here duplicates app logic — the backend
+ * is api/'s own jar unmodified, the UI is web/'s own build unmodified, and
+ * reminders are the browser Notification API web/src/hooks/useNotifications.ts
+ * already calls, which Electron's Chromium honors natively. There is no
+ * background process, no OS-level scheduling, no LaunchAgent: the backend
+ * lives exactly as long as this app's own process does.
+ */
+const { app, BrowserWindow, dialog } = require('electron');
+const { spawn } = require('node:child_process');
+const { createServer } = require('node:net');
+const path = require('node:path');
+const fs = require('node:fs');
+const crypto = require('node:crypto');
+
+const HEALTH_TIMEOUT_MS = 15_000;
+const HEALTH_POLL_MS = 200;
+
+// One instance at a time — two processes writing the same SQLite file at
+// once is exactly the kind of corruption SQLite's own docs warn about.
+if (!app.requestSingleInstanceLock()) {
+  app.quit();
+}
+
+/** An unused local port, chosen by the OS — avoids ever colliding with
+ * whatever else might be running (the lesson from Slice 1's own port mix-up
+ * with a leftover Docker container on 3001). */
+function getFreePort() {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.unref();
+    server.on('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address();
+      server.close(() => resolve(port));
+    });
+  });
+}
+
+/**
+ * A stable per-install secret, generated once and reused on every launch.
+ * Without this, the API mints a fresh signing secret every boot, which
+ * invalidates every previously-issued owner cookie — the app would look like
+ * it lost your data on every restart, when the data was never gone, just
+ * unreachable under an identity nothing points to anymore.
+ */
+function getOrCreateOwnerSecret(userDataDir) {
+  const secretPath = path.join(userDataDir, 'owner-secret.txt');
+  if (fs.existsSync(secretPath)) {
+    return fs.readFileSync(secretPath, 'utf8').trim();
+  }
+  const secret = crypto.randomBytes(32).toString('base64');
+  fs.writeFileSync(secretPath, secret, { mode: 0o600 });
+  return secret;
+}
+
+/** Where the packaged app keeps hitlist.jar vs. where this dev checkout does. */
+function getJarPath() {
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'hitlist.jar')
+    : path.join(__dirname, '..', 'api', 'target', 'hitlist.jar');
+}
+
+/** Same idea for the Java runtime: a bundled JRE once packaged (Slice 3),
+ * the `java` already on PATH during development. */
+function getJavaExecutable() {
+  if (!app.isPackaged) return 'java';
+  const jre = path.join(process.resourcesPath, 'jre', 'bin', 'java');
+  return fs.existsSync(jre) ? jre : 'java';
+}
+
+function waitForHealth(port) {
+  const deadline = Date.now() + HEALTH_TIMEOUT_MS;
+  const tryOnce = () => new Promise((resolve) => {
+    const req = require('node:http').get(`http://127.0.0.1:${port}/api/health`, (res) => {
+      res.resume();
+      resolve(res.statusCode === 200);
+    });
+    req.on('error', () => resolve(false));
+  });
+  return (async function poll() {
+    if (await tryOnce()) return true;
+    if (Date.now() > deadline) return false;
+    await new Promise((r) => setTimeout(r, HEALTH_POLL_MS));
+    return poll();
+  })();
+}
+
+let backendProcess = null;
+
+function startBackend(port, userDataDir) {
+  const jarPath = getJarPath();
+  if (!fs.existsSync(jarPath)) {
+    throw new Error(`hitlist.jar not found at ${jarPath} — build api/ first (mvn package).`);
+  }
+  const sqlitePath = path.join(userDataDir, 'hitlist.db');
+  const ownerSecret = getOrCreateOwnerSecret(userDataDir);
+
+  backendProcess = spawn(getJavaExecutable(), ['-jar', jarPath], {
+    env: {
+      ...process.env,
+      STORAGE_MODE: 'sqlite',
+      SQLITE_PATH: sqlitePath,
+      SERVER_PORT: String(port),
+      OWNER_COOKIE_SECRET: ownerSecret,
+    },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  // Surfaced on failure only — a healthy backend doesn't need its log
+  // narrated, but a silent one that never becomes healthy is undebuggable
+  // without this.
+  let log = '';
+  backendProcess.stdout.on('data', (chunk) => { log += chunk; });
+  backendProcess.stderr.on('data', (chunk) => { log += chunk; });
+  backendProcess.on('exit', (code) => {
+    if (code !== 0 && code !== null) {
+      console.error(`[hitlist backend] exited with code ${code}\n${log}`);
+    }
+  });
+}
+
+function stopBackend() {
+  return new Promise((resolve) => {
+    if (!backendProcess || backendProcess.exitCode !== null) { resolve(); return; }
+    backendProcess.once('exit', resolve);
+    backendProcess.kill('SIGTERM');
+    // A hung JVM shouldn't hold the app open indefinitely.
+    setTimeout(() => { if (backendProcess?.exitCode === null) backendProcess.kill('SIGKILL'); }, 5000);
+  });
+}
+
+async function createWindow() {
+  const userDataDir = app.getPath('userData');
+  fs.mkdirSync(userDataDir, { recursive: true });
+
+  let port;
+  try {
+    port = await getFreePort();
+    startBackend(port, userDataDir);
+  } catch (error) {
+    dialog.showErrorBox('HitList could not start', String(error?.message ?? error));
+    app.quit();
+    return;
+  }
+
+  const ready = await waitForHealth(port);
+  if (!ready) {
+    dialog.showErrorBox(
+      'HitList could not start',
+      'The local backend did not respond in time. Check that Java is installed and try again.',
+    );
+    await stopBackend();
+    app.quit();
+    return;
+  }
+
+  const win = new BrowserWindow({
+    width: 1280,
+    height: 840,
+    title: 'HitList',
+  });
+  win.loadURL(`http://127.0.0.1:${port}`);
+}
+
+app.whenReady().then(createWindow);
+
+app.on('window-all-closed', () => {
+  if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('activate', () => {
+  if (BrowserWindow.getAllWindows().length === 0) createWindow();
+});
+
+app.on('before-quit', async (event) => {
+  if (!backendProcess || backendProcess.exitCode !== null) return;
+  event.preventDefault();
+  await stopBackend();
+  app.quit();
+});
