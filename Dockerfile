@@ -1,22 +1,24 @@
-FROM node:24-bookworm-slim AS dependencies
-WORKDIR /app
+FROM node:24-bookworm-slim AS frontend
+WORKDIR /workspace
 COPY package.json package-lock.json ./
-RUN --mount=type=cache,target=/root/.npm \
-    npm ci --no-audit --no-fund
-
-FROM dependencies AS build
+RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
 COPY . .
-RUN npx vite build --mode appsail && \
-    npx esbuild server/notes-server.ts --bundle --platform=node --target=node20 --format=esm --packages=external --outfile=server.js && \
-    npm prune --omit=dev --no-audit --no-fund
+RUN npm run build
 
-FROM node:24-bookworm-slim AS runtime
+FROM maven:3.9-eclipse-temurin-25 AS backend
+WORKDIR /workspace
+COPY pom.xml ./
+RUN --mount=type=cache,target=/root/.m2 mvn -B -q dependency:go-offline
+COPY src/main/java src/main/java
+COPY src/main/resources src/main/resources
+COPY --from=frontend /workspace/dist src/main/resources/static
+RUN --mount=type=cache,target=/root/.m2 mvn -B -q package -DskipTests
+
+FROM eclipse-temurin:25-jre
 WORKDIR /app
-ENV NODE_ENV=production
-COPY --from=build /app/package.json ./package.json
-COPY --from=build /app/node_modules ./node_modules
-COPY --from=build /app/server.js ./server.js
-COPY --from=build /app/dist ./dist
-USER node
-EXPOSE 9000
-CMD ["node", "server.js"]
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75.0 -Djava.security.egd=file:/dev/./urandom"
+COPY --from=backend /workspace/target/hitlist.jar ./hitlist.jar
+RUN useradd --system --uid 10001 hitlist
+USER hitlist
+EXPOSE 8080
+ENTRYPOINT ["java", "-jar", "/app/hitlist.jar"]

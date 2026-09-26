@@ -377,10 +377,9 @@
  *      viewport and lets content push past it. The wrapper uses 100dvh with
  *      overflow hidden instead, and .login-locked pins <html>/<body> so the
  *      document itself cannot scroll behind it.
- *   2. The iframe's own document. Catalyst's sheet gives .signin_box
+ *   2. The iframe's own document. The legacy hosted-auth sheet gives .signin_box
  *      min-height:520px, padding:50px and overflow-y:auto, which is a second
- *      scrollbar inside a shorter iframe. Only the css_url sheet reaches it;
- *      see styles/catalyst-login.append.css.
+ *      scrollbar inside a shorter iframe. Only the injected auth sheet reaches it.
  *   3. The iframe element. Its height is whatever the SDK sets, so it is forced
  *      here with !important rather than left to a min-height that leaves the
  *      card's total height unknown.
@@ -408,8 +407,9 @@
   border: 0;
 }
 
-/* Pins the document while the sign-in screen is mounted. Applied to <html> by
-   CatalystLoginPage; removed on unmount so the app scrolls normally. */
+/* Pins the document while the legacy sign-in screen is mounted. Applied to
+   <html> by the screen component; removed on unmount so the app scrolls
+   normally. */
 html.login-locked,
 html.login-locked body {
   height: 100%;

@@ -3,7 +3,7 @@
  *
  * This repo carries both:
  *   pnpm-lock.yaml    — local development (packageManager is pinned to pnpm)
- *   package-lock.json — the Catalyst Slate deployer, which runs `npm install`
+ *   package-lock.json — npm-based CI and container builds
  *
  * Two lockfiles is a smell, and the failure mode is nasty: add a dependency
  * with pnpm alone and the deploy silently installs the old tree, so what ships
@@ -25,7 +25,7 @@ const problems = [];
 
 // ── package-lock.json ────────────────────────────────────────────────────────
 if (!fs.existsSync('package-lock.json')) {
-  problems.push('package-lock.json is missing — the Slate deploy runs `npm install` and needs it.');
+  problems.push('package-lock.json is missing — npm-based builds run `npm install` and need it.');
 } else {
   const lock = read('package-lock.json');
   const root = lock.packages?.[''] ?? {};

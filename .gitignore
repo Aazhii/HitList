@@ -44,12 +44,9 @@ backups/
 .agents/
 .claude/skills/
 
-# Catalyst CLI project link (contains project/org ids, machine-specific)
-.catalystrc
-
 # Scratch dir used by `pnpm run lock:npm`
 .lockgen/
 
 # Local build output
 build/
-catalyst-debug.log
+target/

@@ -3,12 +3,9 @@ services:
     build: .
     environment:
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL to the host PostgreSQL 9.5 service}
-      PORT: ${PORT:-3001}
-      ZOHO_CALENDAR_CLIENT_ID: ${ZOHO_CALENDAR_CLIENT_ID:-}
-      ZOHO_CALENDAR_CLIENT_SECRET: ${ZOHO_CALENDAR_CLIENT_SECRET:-}
-      ZOHO_CALENDAR_REDIRECT_URI: ${ZOHO_CALENDAR_REDIRECT_URI:-}
-      ZOHO_CALENDAR_ENCRYPTION_KEY: ${ZOHO_CALENDAR_ENCRYPTION_KEY:-}
+      SERVER_PORT: ${SERVER_PORT:-8080}
+      OWNER_COOKIE_SECRET: ${OWNER_COOKIE_SECRET:?Set a persistent 32-byte OWNER_COOKIE_SECRET}
     ports:
-      - "${HOST_PORT:-3001}:${PORT:-3001}"
+      - "${HOST_PORT:-8080}:${SERVER_PORT:-8080}"
     extra_hosts:
       - "host.docker.internal:host-gateway"
