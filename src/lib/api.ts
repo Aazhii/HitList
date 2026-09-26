@@ -102,7 +102,7 @@ export interface ApiError {
  *  2. Empty string → same-origin /api (works for both Vite dev proxy and
  *     production deployments where the frontend and API share an origin)
  *
- * Do NOT hardcode a port here. The Vite dev server proxies /api → localhost:8080
+ * Do NOT hardcode a port here. The Vite dev server proxies /api → localhost:3001
  * so relative paths work in dev. In production the server serves the built
  * frontend from the same origin, so /api is always correct.
  */

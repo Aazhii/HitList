@@ -20,5 +20,5 @@ ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=75.0 -Djava.security.egd=file:/dev/.
 COPY --from=backend /workspace/target/hitlist.jar ./hitlist.jar
 RUN useradd --system --uid 10001 hitlist
 USER hitlist
-EXPOSE 8080
+EXPOSE 3001
 ENTRYPOINT ["java", "-jar", "/app/hitlist.jar"]

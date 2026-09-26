@@ -20,20 +20,20 @@ pnpm install
 
 ### Frontend against the Java backend
 
-Run Spring Boot on `:8080`, then start Vite:
+Run Spring Boot on `:3001`, then start Vite:
 
 ```bash
 pnpm server
 pnpm dev:ui
 ```
 
-Vite proxies `/api/*` to `http://localhost:8080` by default.
+Vite proxies `/api/*` to `http://localhost:3001` by default.
 
 ## Docker
 
 The production image is a standard multi-stage container: Vite builds `dist/`,
 Maven packages the Spring Boot jar, and the Java runtime serves everything on
-port `8080`.
+port `3001`.
 
 ```bash
 DATABASE_URL='postgres://user:password@host.docker.internal:5432/hitlist' \
@@ -57,7 +57,7 @@ docker compose up --build
 ## Backend behavior
 
 - `DATABASE_URL` is required for the PostgreSQL runtime.
-- `SERVER_PORT` controls `server.port`; default is `8080`.
+- `SERVER_PORT` controls `server.port`; default is `3001`.
 - `/health` and `/api/health` remain available for health checks.
 - Tasks, lists, notes, views, fields, databases, and the unified task/database
   calendar stay supported on `/api`.
