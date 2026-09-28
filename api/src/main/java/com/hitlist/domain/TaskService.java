@@ -68,6 +68,8 @@ public class TaskService {
         task.put("UpdatedAt", now);
         task.put("SourceNoteId", optionalId(body, "sourceNoteId", ""));
         task.put("SourceBlockId", optionalId(body, "sourceBlockId", ""));
+        task.put("SourceRecordId", optionalId(body, "sourceRecordId", ""));
+        task.put("SourceFieldId", optionalId(body, "sourceFieldId", ""));
         repository.insert(StorageTables.TASKS, owner, task);
         return api(task);
     }
@@ -173,6 +175,8 @@ public class TaskService {
         task.put("ReminderMinutesBefore", 0);
         if (body.containsKey("sourceNoteId")) task.put("SourceNoteId", optionalId(body, "sourceNoteId", text(task, "SourceNoteId")));
         if (body.containsKey("sourceBlockId")) task.put("SourceBlockId", optionalId(body, "sourceBlockId", text(task, "SourceBlockId")));
+        if (body.containsKey("sourceRecordId")) task.put("SourceRecordId", optionalId(body, "sourceRecordId", text(task, "SourceRecordId")));
+        if (body.containsKey("sourceFieldId")) task.put("SourceFieldId", optionalId(body, "sourceFieldId", text(task, "SourceFieldId")));
     }
 
     private Predicate<Map<String, Object>> filter(Map<String, String> query) {
@@ -274,6 +278,8 @@ public class TaskService {
         output.put("updatedAt", Values.iso(Values.number(task.get("UpdatedAt"), 0)));
         output.put("sourceNoteId", nullable(task, "SourceNoteId"));
         output.put("sourceBlockId", nullable(task, "SourceBlockId"));
+        output.put("sourceRecordId", nullable(task, "SourceRecordId"));
+        output.put("sourceFieldId", nullable(task, "SourceFieldId"));
         return output;
     }
 

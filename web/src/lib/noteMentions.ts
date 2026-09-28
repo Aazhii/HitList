@@ -56,11 +56,11 @@ export function removeMentionTrigger(value: string, trigger: MentionTrigger): { 
 export const MAX_TASK_TITLE = 255;
 
 /**
- * The task title for a block's content: formatting delimiters removed,
- * whitespace collapsed, cut to what the API accepts. '' means there is
- * nothing to make a task from.
+ * The task title for a note block's or database cell's text: formatting
+ * delimiters removed, whitespace collapsed, cut to what the API accepts.
+ * '' means there is nothing to make a task from.
  */
-export function taskTitleFromBlock(content: string): string {
+export function taskTitleFromText(content: string): string {
   const plain = stripInline(content).replace(/\s+/g, ' ').trim();
   if (plain.length <= MAX_TASK_TITLE) return plain;
   return `${plain.slice(0, MAX_TASK_TITLE - 1).trimEnd()}…`;

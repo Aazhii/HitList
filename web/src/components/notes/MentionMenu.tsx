@@ -27,6 +27,8 @@ interface MentionMenuProps {
   pending: boolean;
   /** Shown in place of the rows, e.g. when the block is empty. */
   message?: string | null;
+  /** Column 1's header — what's being added to a quadrant (a note block, a column). */
+  contextLabel: string;
   onSelect: (listId: string, quadrant: Quadrant) => void;
   onClose: () => void;
 }
@@ -43,7 +45,7 @@ function ColumnHeader({ children }: { children: React.ReactNode }) {
 }
 
 export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(function MentionMenu(
-  { position, lists, preferredListId, query, pending, message, onSelect, onClose },
+  { position, lists, preferredListId, query, pending, message, contextLabel, onSelect, onClose },
   ref,
 ) {
   // Which column has focus: 0 action, 1 workspace, 2 quadrant.
@@ -121,7 +123,7 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
     >
       {/* Column 1: action */}
       <div className="p-1.5" style={{ width: COL_W }}>
-        <ColumnHeader>Note block</ColumnHeader>
+        <ColumnHeader>{contextLabel}</ColumnHeader>
         {message ? (
           <p className="px-2.5 pb-2 text-[13px] text-a-muted">{message}</p>
         ) : (

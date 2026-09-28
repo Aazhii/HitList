@@ -4,7 +4,7 @@ import {
   canMention,
   detectMentionTrigger,
   removeMentionTrigger,
-  taskTitleFromBlock,
+  taskTitleFromText,
 } from '@/lib/noteMentions';
 
 describe('detectMentionTrigger', () => {
@@ -46,17 +46,17 @@ describe('removeMentionTrigger', () => {
   });
 });
 
-describe('taskTitleFromBlock', () => {
+describe('taskTitleFromText', () => {
   it('strips formatting and collapses whitespace', () => {
-    expect(taskTitleFromBlock('  **Call**   the\n*bank*  ')).toBe('Call the bank');
+    expect(taskTitleFromText('  **Call**   the\n*bank*  ')).toBe('Call the bank');
   });
 
   it('is empty for an empty block', () => {
-    expect(taskTitleFromBlock('  ')).toBe('');
+    expect(taskTitleFromText('  ')).toBe('');
   });
 
   it('caps the title at what the API accepts', () => {
-    const title = taskTitleFromBlock('x'.repeat(400));
+    const title = taskTitleFromText('x'.repeat(400));
     expect(title.length).toBe(MAX_TASK_TITLE);
     expect(title.endsWith('…')).toBe(true);
   });

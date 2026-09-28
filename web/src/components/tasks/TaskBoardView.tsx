@@ -275,7 +275,13 @@ function BoardToolbar({ field, groupableFields, onGroupFieldChange, onManageFiel
             <ChevronDown className="size-3" strokeWidth={2.75} aria-hidden />
           </button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-56">
+        <DropdownMenuContent
+          align="start"
+          className="w-56"
+          // "Create a field…" opens another popover (FieldsManagerDialog);
+          // see RecordTable's FieldHeader for why this prevents it closing itself.
+          onCloseAutoFocus={(e) => e.preventDefault()}
+        >
           {groupableFields.map((f) => (
             <DropdownMenuItem key={f.id} onClick={() => onGroupFieldChange(f.id)}>
               <Check className={cn('size-3.5', f.id !== field.id && 'opacity-0')} aria-hidden />

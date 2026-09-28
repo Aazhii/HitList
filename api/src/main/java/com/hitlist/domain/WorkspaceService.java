@@ -62,9 +62,28 @@ public class WorkspaceService {
     public List<Map<String, Object>> fields(String owner, String databaseId) {
         return repository.list(StorageTables.FIELD_DEFS, owner).stream()
             .filter(row -> (databaseId == null ? "" : databaseId).equals(EntityRepository.text(row.get("DatabaseId"))))
+            .map(row -> repairOptionIds(owner, row))
             .sorted(Comparator.comparingLong(row -> Values.number(row.get("DefOrder"), 0)))
             .map(this::fieldApi)
             .toList();
+    }
+
+    /**
+     * Self-heals a field whose options were stored before every option was
+     * guaranteed an id (see normalizeOptions) — fixed in place on first read,
+     * so a field created before that fix recovers on its own rather than
+     * requiring the user to notice and re-save it.
+     */
+    private Map<String, Object> repairOptionIds(String owner, Map<String, Object> row) {
+        List<Object> options = Values.jsonList(objectMapper, row.get("OptionsJson"));
+        if (options.isEmpty()) return row;
+        boolean needsRepair = options.stream().anyMatch(option ->
+            option instanceof Map<?, ?> map && EntityRepository.text(mapOf(map).get("id")).isBlank());
+        if (!needsRepair) return row;
+        Map<String, Object> updated = new LinkedHashMap<>(row);
+        updated.put("OptionsJson", json(normalizeOptions(options)));
+        repository.replace(StorageTables.FIELD_DEFS, owner, EntityRepository.text(row.get("DefId")), updated);
+        return updated;
     }
 
     public Map<String, Object> createField(String owner, Map<String, Object> body) {
@@ -393,7 +412,7 @@ public class WorkspaceService {
         if (existing != null && !kind.equals(EntityRepository.text(existing.get("FieldKind")))) throw ApiException.invalid("kind cannot change after the field is created");
         row.put("Name", body.containsKey("name") ? Values.required(body, "name", 100) : EntityRepository.text(row.get("Name")));
         row.put("FieldKind", kind);
-        row.put("OptionsJson", body.containsKey("options") ? json(body.get("options")) : EntityRepository.text(row.getOrDefault("OptionsJson", "[]")));
+        row.put("OptionsJson", body.containsKey("options") ? json(normalizeOptions(body.get("options"))) : EntityRepository.text(row.getOrDefault("OptionsJson", "[]")));
         row.put("ShowOnCard", body.containsKey("showOnCard") ? Values.optionalBoolean(body, "showOnCard", false) : Values.bool(row.get("ShowOnCard")));
         return row;
     }
@@ -616,6 +635,29 @@ public class WorkspaceService {
         } catch (JsonProcessingException exception) {
             throw ApiException.invalid("Invalid JSON field");
         }
+    }
+
+    /**
+     * A select/multi field's options, each guaranteed a stable id.
+     *
+     * The client only sends an id for an option it already had (editing one
+     * keeps it, so tasks that reference it stay attached); a freshly typed
+     * option has none yet. Without this, a brand-new option was stored with
+     * no id at all — every option on a field ended up with the same "missing"
+     * identity, so picking any of them looked, to the value validator, like
+     * picking none of them, and the value never saved.
+     */
+    private List<Object> normalizeOptions(Object rawOptions) {
+        if (!(rawOptions instanceof List<?> list)) return List.of();
+        List<Object> normalized = new java.util.ArrayList<>();
+        for (Object item : list) {
+            if (!(item instanceof Map<?, ?> map)) continue;
+            Map<String, Object> option = mapOf(map);
+            String id = EntityRepository.text(option.get("id"));
+            option.put("id", id.isBlank() ? UUID.randomUUID().toString() : id);
+            normalized.add(option);
+        }
+        return normalized;
     }
 
     private Map<String, Object> mapOf(Map<?, ?> input) {

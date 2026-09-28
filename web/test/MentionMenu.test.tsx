@@ -21,6 +21,7 @@ function setup(props: Partial<React.ComponentProps<typeof MentionMenu>> = {}) {
       lists={lists}
       query=""
       pending={false}
+      contextLabel="Note block"
       onSelect={onSelect}
       onClose={onClose}
       {...props}
@@ -67,7 +68,7 @@ describe('MentionMenu', () => {
     key('Enter');
     rerender(
       <MentionMenu ref={ref} position={{ top: 10, left: 10 }} lists={lists} query="side"
-        pending={false} onSelect={onSelect} onClose={onClose} />,
+        pending={false} contextLabel="Note block" onSelect={onSelect} onClose={onClose} />,
     );
     const options = screen.getAllByRole('option');
     expect(options).toHaveLength(1);

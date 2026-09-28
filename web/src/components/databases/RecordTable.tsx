@@ -4,15 +4,27 @@
  * The same shape as the tasks table, minus what only a task has — no status,
  * quadrant or due date, and no reminders. Titles wrap and edit in place, every
  * field cell edits in place, and a column header carries the field's own menu,
- * so a column is changed from where it is used.
+ * so a column is changed from where it is used. Press and hold a column's
+ * name to drag it to a new position; the body rows follow automatically
+ * since they render the same `fields` array the drag reorders.
  *
  * Deliberately not a copy of TaskTableView: that one is built on Todo, with
- * built-in task columns and drag ordering. Sharing it would mean threading
- * "which built-in columns exist" through every row, for two screens that differ
- * in more than they share. The cells that do the real work — the field editors —
- * are shared.
+ * built-in task columns and a saved view's own column order. A database has
+ * no "views", so its columns reorder by writing straight to each field's own
+ * `fieldOrder` instead. Sharing it would mean threading "which built-in
+ * columns exist" through every row, for two screens that differ in more than
+ * they share. The cells that do the real work — the field editors — are
+ * shared.
  */
 import { useEffect, useRef, useState } from 'react';
+import {
+  DndContext, KeyboardSensor, PointerSensor, closestCenter, useSensor, useSensors, type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext, horizontalListSortingStrategy, sortableKeyboardCoordinates, useSortable, arrayMove,
+} from '@dnd-kit/sortable';
+import { restrictToHorizontalAxis } from '@dnd-kit/modifiers';
+import { CSS } from '@dnd-kit/utilities';
 import { ChevronDown, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -24,9 +36,11 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { FieldValueEditor } from '@/components/fields/FieldValueEditor';
+import { TextFieldCell } from '@/components/databases/TextFieldCell';
 import { OPTION_CHIP_CLASS, selectedOptions } from '@/lib/fieldValues';
 import type { ApiDatabaseRow } from '@/lib/api';
 import type { FieldDef, FieldValue } from '@/types/fields';
+import type { DatabaseTaskLinking } from '@/pages/DatabasesPage';
 
 export interface RecordTableProps {
   rows: ApiDatabaseRow[];
@@ -41,6 +55,10 @@ export interface RecordTableProps {
   onEditField: (fieldId: string) => void;
   onDeleteField: (fieldId: string) => void;
   onCreateField: () => void;
+  /** A column was dragged to a new position; `fieldIds` is the full new order. */
+  onReorderFields: (fieldIds: string[]) => void;
+  /** A text column's "@" → add to quadrant menu; absent turns it off. */
+  linking?: DatabaseTaskLinking;
 }
 
 const CELL = 'px-2 py-1 align-top';
@@ -53,74 +71,106 @@ const CONTROL_ROW = cn(CONTROL, 'h-8');
 
 export function RecordTable({
   rows, fields, values, loading,
-  onAdd, onRename, onDelete, onSetValue, onEditField, onDeleteField, onCreateField,
+  onAdd, onRename, onDelete, onSetValue, onEditField, onDeleteField, onCreateField, onReorderFields, linking,
 }: RecordTableProps) {
   const columnCount = 2 + fields.length;
 
+  const sensors = useSensors(
+    // The whole column name is the drag target (no separate grip icon), so it
+    // takes a deliberate press-and-hold rather than a small drag distance —
+    // otherwise every plain click would have to be read as "not quite a drag".
+    useSensor(PointerSensor, { activationConstraint: { delay: 120, tolerance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  const handleDragEnd = ({ active, over }: DragEndEvent) => {
+    if (!over || active.id === over.id) return;
+    const ids = fields.map((f) => f.id);
+    const from = ids.indexOf(String(active.id));
+    const to = ids.indexOf(String(over.id));
+    if (from === -1 || to === -1) return;
+    onReorderFields(arrayMove(ids, from, to));
+  };
+
   return (
     <div className="w-full overflow-x-auto animate-fade-in">
-      <table className="w-full min-w-max border-collapse text-[13.5px]">
-        <thead>
-          <tr className="border-b border-a-line-soft">
-            <th scope="col" className="sticky left-0 z-10 min-w-[280px] bg-a-bg px-2 py-2 text-left align-bottom font-normal">
-              <span className="px-2 py-1 text-[12.5px] font-semibold text-a-faint">Title</span>
-            </th>
-            {fields.map((field) => (
-              <FieldHeader
-                key={field.id}
-                field={field}
-                onEdit={() => onEditField(field.id)}
-                onDelete={() => onDeleteField(field.id)}
-              />
-            ))}
-            <th scope="col" className="px-2 py-2 text-left align-bottom font-normal">
-              <button
-                type="button"
-                onClick={onCreateField}
-                className="flex size-7 items-center justify-center rounded-[7px] text-a-faint transition-colors duration-150 hover:bg-a-row-hover hover:text-a-ink"
-                aria-label="Add a column"
-              >
-                <Plus className="size-3.5" strokeWidth={2.75} />
-              </button>
-            </th>
-          </tr>
-        </thead>
-
-        <tbody>
-          {rows.map((row) => (
-            <tr key={row.id} className="group border-b border-a-line-soft/60">
-              <td className={cn(CELL, 'sticky left-0 z-10 bg-a-bg')}>
-                <div className="flex items-start gap-1">
-                  <TitleCell
-                    title={row.title}
-                    onCommit={(title) => { if (title && title !== row.title) onRename(row.id, title); }}
+      {/* DndContext must wrap the table, not sit inside <thead>: it renders a
+          hidden accessibility <div>, which HTML forbids as a <thead> child —
+          the browser would otherwise silently relocate it, taking the table's
+          layout with it. React context reaches useSortable() either way. */}
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        modifiers={[restrictToHorizontalAxis]}
+        onDragEnd={handleDragEnd}
+      >
+        <table className="w-full min-w-max border-collapse text-[13.5px]">
+          <thead>
+            <tr className="border-b border-a-line-soft">
+              <th scope="col" className="sticky left-0 z-10 min-w-[280px] bg-a-bg px-2 py-2 text-left align-bottom font-normal">
+                <span className="px-2 py-1 text-[12.5px] font-semibold text-a-faint">Title</span>
+              </th>
+              <SortableContext items={fields.map((f) => f.id)} strategy={horizontalListSortingStrategy}>
+                {fields.map((field) => (
+                  <FieldHeader
+                    key={field.id}
+                    field={field}
+                    onEdit={() => onEditField(field.id)}
+                    onDelete={() => onDeleteField(field.id)}
                   />
-                  <RecordMenu title={row.title} onDelete={() => onDelete(row.id)} />
-                </div>
-              </td>
-
-              {fields.map((field) => (
-                <td key={field.id} className={cn(CELL, 'min-w-[150px]')}>
-                  <FieldCell
-                    def={field}
-                    value={values[row.id]?.[field.id]}
-                    recordName={row.title}
-                    onChange={(value) => onSetValue(row.id, field.id, value)}
-                  />
-                </td>
-              ))}
-
-              <td className={CELL} aria-hidden />
+                ))}
+              </SortableContext>
+              <th scope="col" className="px-2 py-2 text-left align-bottom font-normal">
+                <button
+                  type="button"
+                  onClick={onCreateField}
+                  className="flex size-7 items-center justify-center rounded-[7px] text-a-faint transition-colors duration-150 hover:bg-a-row-hover hover:text-a-ink"
+                  aria-label="Add a column"
+                >
+                  <Plus className="size-3.5" strokeWidth={2.75} />
+                </button>
+              </th>
             </tr>
-          ))}
+          </thead>
 
-          <tr>
-            <td colSpan={columnCount} className="px-2 py-0.5">
-              <NewRecordRow onAdd={onAdd} />
-            </td>
-          </tr>
-        </tbody>
-      </table>
+          <tbody>
+            {rows.map((row) => (
+              <tr key={row.id} className="group border-b border-a-line-soft/60">
+                <td className={cn(CELL, 'sticky left-0 z-10 bg-a-bg')}>
+                  <div className="flex items-start gap-1">
+                    <TitleCell
+                      title={row.title}
+                      onCommit={(title) => { if (title && title !== row.title) onRename(row.id, title); }}
+                    />
+                    <RecordMenu title={row.title} onDelete={() => onDelete(row.id)} />
+                  </div>
+                </td>
+
+                {fields.map((field) => (
+                  <td key={field.id} className={cn(CELL, 'min-w-[150px]')}>
+                    <FieldCell
+                      def={field}
+                      value={values[row.id]?.[field.id]}
+                      recordId={row.id}
+                      recordName={row.title}
+                      onChange={(value) => onSetValue(row.id, field.id, value)}
+                      linking={linking}
+                    />
+                  </td>
+                ))}
+
+                <td className={CELL} aria-hidden />
+              </tr>
+            ))}
+
+            <tr>
+              <td colSpan={columnCount} className="px-2 py-0.5">
+                <NewRecordRow onAdd={onAdd} />
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </DndContext>
 
       {rows.length === 0 && !loading && (
         <p className="px-4 py-8 text-center text-[13.5px] text-a-faint">
@@ -133,11 +183,33 @@ export function RecordTable({
 
 function FieldHeader({ field, onEdit, onDelete }: { field: FieldDef; onEdit: () => void; onDelete: () => void }) {
   const [confirm, setConfirm] = useState(false);
+  const {
+    attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging,
+  } = useSortable({ id: field.id });
 
   return (
-    <th scope="col" className="group/head px-2 py-2 text-left align-bottom font-normal">
+    <th
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      scope="col"
+      className={cn(
+        'group/head px-2 py-2 text-left align-bottom font-normal',
+        isDragging && 'z-10 bg-a-bg shadow-[var(--a-shadow-md)]',
+      )}
+    >
       <span className="flex items-center gap-0.5">
-        <span className="px-2 py-1 text-[12.5px] font-semibold whitespace-nowrap text-a-faint">{field.name}</span>
+        <span
+          ref={setActivatorNodeRef}
+          {...attributes}
+          {...listeners}
+          aria-label={`${field.name}. Press and hold, then drag to reorder this column.`}
+          // No visible grip icon: press-and-hold anywhere on the name itself
+          // starts the drag (see the PointerSensor's delay below), so nothing
+          // needs to be hovered first to find a handle.
+          className="cursor-grab touch-none px-2 py-1 text-[12.5px] font-semibold whitespace-nowrap text-a-faint select-none active:cursor-grabbing"
+        >
+          {field.name}
+        </span>
         <DropdownMenu onOpenChange={(open) => { if (!open) setConfirm(false); }}>
           <DropdownMenuTrigger asChild>
             <button
@@ -148,7 +220,16 @@ function FieldHeader({ field, onEdit, onDelete }: { field: FieldDef; onEdit: () 
               <ChevronDown className="size-3.5" strokeWidth={2.75} />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="start" className="w-52">
+          <DropdownMenuContent
+            align="start"
+            className="w-52"
+            // "Edit column…" opens another popover (FieldsManagerDialog).
+            // Without this, Radix returns focus to this trigger once the menu's
+            // own close animation finishes — after that popover has already
+            // opened and focused its own input — which reads as focus leaving
+            // the popover and closes it within a couple hundred ms.
+            onCloseAutoFocus={(e) => e.preventDefault()}
+          >
             <DropdownMenuItem onClick={onEdit}>
               <Pencil className="size-3.5" /> Edit column…
             </DropdownMenuItem>
@@ -213,7 +294,10 @@ function TitleCell({ title, onCommit }: { title: string; onCommit: (title: strin
       type="button"
       onClick={() => setEditing(true)}
       aria-label={`Edit title of ${title}`}
-      className={cn(CONTROL, 'min-w-0 flex-1 py-1.5 font-medium leading-snug')}
+      // Not flex-1: a flex-1 button stretches to the column's full width even
+      // for a short title, pushing RecordMenu's "…" far past the text instead
+      // of right after it.
+      className={cn(CONTROL, 'w-auto min-w-0 max-w-full py-1.5 font-medium leading-snug')}
     >
       <span className="line-clamp-3 whitespace-pre-wrap">{title}</span>
     </button>
@@ -281,11 +365,13 @@ function NewRecordRow({ onAdd }: { onAdd: (title: string) => void }) {
 interface FieldCellProps {
   def: FieldDef;
   value: FieldValue | undefined;
+  recordId: string;
   recordName: string;
   onChange: (value: FieldValue | null) => void;
+  linking?: DatabaseTaskLinking;
 }
 
-function FieldCell({ def, value, recordName, onChange }: FieldCellProps) {
+function FieldCell({ def, value, recordId, recordName, onChange, linking }: FieldCellProps) {
   const label = `${def.name} of ${recordName}`;
 
   switch (def.kind) {
@@ -318,6 +404,18 @@ function FieldCell({ def, value, recordName, onChange }: FieldCellProps) {
     }
 
     case 'text':
+      return (
+        <TextFieldCell
+          recordId={recordId}
+          fieldId={def.id}
+          value={value === undefined ? undefined : String(value)}
+          ariaLabel={label}
+          onChange={onChange}
+          linking={linking}
+          className={CONTROL_ROW}
+        />
+      );
+
     case 'number':
     case 'date':
       return (
@@ -334,8 +432,8 @@ function FieldCell({ def, value, recordName, onChange }: FieldCellProps) {
               if (n !== value) onChange(n);
               return String(n);
             }
-            if (raw !== value) onChange(def.kind === 'text' ? draft : raw);
-            return def.kind === 'text' ? draft : raw;
+            if (raw !== value) onChange(raw);
+            return raw;
           }}
         />
       );

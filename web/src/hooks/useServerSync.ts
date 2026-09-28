@@ -419,6 +419,8 @@ export function apiTaskToTodo(t: ApiTask) {
     reminderMinutesBefore: t.reminderMinutesBefore ?? undefined,
     sourceNoteId:          t.sourceNoteId || undefined,
     sourceBlockId:         t.sourceBlockId || undefined,
+    sourceRecordId:        t.sourceRecordId || undefined,
+    sourceFieldId:         t.sourceFieldId || undefined,
   };
 }
 

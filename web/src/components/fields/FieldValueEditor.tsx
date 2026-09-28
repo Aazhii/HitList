@@ -6,6 +6,7 @@
  * not three.
  */
 import { useEffect, useState } from 'react';
+import { Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
@@ -52,15 +53,16 @@ export function FieldValueEditor({ field, value, onChange, disabled }: FieldValu
         return <p className="text-[11px] text-muted-foreground">This field has no options yet.</p>;
       }
       return (
-        <div className="flex flex-wrap gap-1.5" role="group" aria-label={field.name}>
+        <div className="space-y-1" role="listbox" aria-label={field.name} aria-multiselectable="true">
           {field.options.map((o) => {
             const on = chosen.has(o.id);
             return (
               <button
                 key={o.id}
                 type="button"
+                role="option"
+                aria-selected={on}
                 disabled={disabled}
-                aria-pressed={on}
                 onClick={() => {
                   const next = new Set(chosen);
                   if (on) next.delete(o.id); else next.add(o.id);
@@ -69,10 +71,12 @@ export function FieldValueEditor({ field, value, onChange, disabled }: FieldValu
                   onChange(ordered.length ? ordered : null);
                 }}
                 className={cn(
-                  'rounded-full px-2.5 py-1 text-[11.5px] font-medium transition-colors duration-150',
-                  on ? OPTION_CHIP_CLASS[o.color] : 'text-muted-foreground shadow-[inset_0_0_0_1px_var(--a-line)] hover:text-foreground',
+                  'flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] font-medium transition-opacity duration-150',
+                  OPTION_CHIP_CLASS[o.color],
+                  on ? 'opacity-100' : 'opacity-50 hover:opacity-80',
                 )}
               >
+                <Check className={cn('size-3.5 flex-shrink-0', !on && 'opacity-0')} aria-hidden />
                 {o.label}
               </button>
             );

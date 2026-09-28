@@ -27,32 +27,22 @@ import { TableBlock } from '@/components/notes/TableBlock';
 import { computeNumberedOrdinals } from '@/lib/noteBlocks';
 import { InlineText, supportedMarks } from '@/components/notes/InlineText';
 import { activeMarks, hasInlineMarks, toggleMark, type Mark } from '@/lib/inlineMarkdown';
+import { getCaretCoordinates } from '@/lib/caretCoordinates';
 import {
   MARKER_BOX_CLASS, controlsTop, getBlockTextClass, markerTop,
 } from '@/components/notes/blockMetrics';
-import type { KaizenList, Quadrant, Todo } from '@/types/todo';
+import type { KaizenList, Quadrant, TaskLinking, Todo } from '@/types/todo';
 import { MentionMenu, type MentionMenuHandle } from '@/components/notes/MentionMenu';
 import { LinkedTaskChip } from '@/components/notes/LinkedTaskChip';
 import {
-  canMention, detectMentionTrigger, removeMentionTrigger, taskTitleFromBlock, type MentionTrigger,
+  canMention, detectMentionTrigger, removeMentionTrigger, taskTitleFromText, type MentionTrigger,
 } from '@/lib/noteMentions';
 
 /**
  * What the editor needs to add blocks to quadrants. Tasks live in App, so it
  * passes these down; without them the "@" menu is simply off.
  */
-export interface NoteTaskLinking {
-  lists: KaizenList[];
-  todos: Todo[];
-  /** False until tasks have loaded, so a linked chip doesn't flash "Task removed". */
-  tasksLoaded: boolean;
-  preferredListId?: string;
-  /** Resolves with the created task (real id), or null when it could not be saved. */
-  createTask: (args: { listId: string; quadrant: Quadrant; title: string; noteId: string; blockId: string }) => Promise<Todo | null>;
-  updateTaskTitle: (taskId: string, title: string) => void;
-  unlinkTask: (taskId: string) => void;
-  openTask: (taskId: string) => void;
-}
+export type NoteTaskLinking = TaskLinking<{ noteId: string; blockId: string }>;
 
 // ── Block type icon map ────────────────────────────────────────────────────────
 const ICON = 'size-3.5';
@@ -117,48 +107,6 @@ function getBlockPlaceholder(type: BlockType): string {
     case 'callout':  return 'Callout…';
     default:         return "Type '/' for commands";
   }
-}
-
-// ── Caret position helper ──────────────────────────────────────────────────────
-function getCaretCoordinates(el: HTMLTextAreaElement, position: number): { top: number; left: number } {
-  const mirror = document.createElement('div');
-  const style = window.getComputedStyle(el);
-
-  const props = [
-    'boxSizing', 'width', 'height', 'overflowX', 'overflowY',
-    'borderTopWidth', 'borderRightWidth', 'borderBottomWidth', 'borderLeftWidth',
-    'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
-    'fontStyle', 'fontVariant', 'fontWeight', 'fontStretch', 'fontSize',
-    'fontSizeAdjust', 'lineHeight', 'fontFamily', 'textAlign', 'textTransform',
-    'textIndent', 'textDecoration', 'letterSpacing', 'wordSpacing',
-    'tabSize', 'MozTabSize',
-  ] as const;
-
-  mirror.style.position = 'absolute';
-  mirror.style.visibility = 'hidden';
-  mirror.style.whiteSpace = 'pre-wrap';
-  mirror.style.overflowWrap = 'anywhere';
-
-  props.forEach((prop) => {
-    (mirror.style as unknown as Record<string, string>)[prop] = style[prop as keyof CSSStyleDeclaration] as string;
-  });
-
-  document.body.appendChild(mirror);
-  const textBefore = el.value.substring(0, position);
-  mirror.textContent = textBefore;
-  const span = document.createElement('span');
-  span.textContent = el.value.substring(position) || '.';
-  mirror.appendChild(span);
-
-  const elRect = el.getBoundingClientRect();
-  const spanRect = span.getBoundingClientRect();
-  const mirrorRect = mirror.getBoundingClientRect();
-  document.body.removeChild(mirror);
-
-  return {
-    top: elRect.top + (spanRect.top - mirrorRect.top),
-    left: elRect.left + (spanRect.left - mirrorRect.left),
-  };
 }
 
 // ── Inline formatting toolbar ──────────────────────────────────────────────────
@@ -755,7 +703,7 @@ export function NoteEditor({
     }
 
     // Nothing to make a task from yet: say so instead of offering the menu.
-    const message = taskTitleFromBlock(removeMentionTrigger(el.value, trigger).content)
+    const message = taskTitleFromText(removeMentionTrigger(el.value, trigger).content)
       ? null
       : 'Write the task in this block first, then type @';
 
@@ -782,7 +730,7 @@ export function NoteEditor({
 
     const original = textareaRefs.current.get(blockId)?.value ?? block.content;
     const { content, caret } = removeMentionTrigger(original, trigger);
-    const title = taskTitleFromBlock(content);
+    const title = taskTitleFromText(content);
     if (!title) {
       setMention((m) => (m ? { ...m, message: 'Write the task in this block first, then type @' } : m));
       return;
@@ -838,7 +786,7 @@ export function NoteEditor({
     // A linked block's text is its task's title. App debounces the write.
     const taskId = blocks.find((b) => b.id === blockId)?.taskId;
     if (taskId && linking) {
-      const title = taskTitleFromBlock(content);
+      const title = taskTitleFromText(content);
       // A cleared block keeps the task's last title rather than blanking it.
       if (title) linking.updateTaskTitle(taskId, title);
     }
@@ -1015,6 +963,7 @@ export function NoteEditor({
           query={mention.trigger.query}
           pending={false}
           message={mention.message}
+          contextLabel="Note block"
           onSelect={(listId, quadrant) => { void handleMentionSelect(listId, quadrant); }}
           onClose={() => setMention(null)}
         />

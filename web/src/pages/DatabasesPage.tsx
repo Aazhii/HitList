@@ -38,6 +38,14 @@ import { fieldApi, databaseApi, type ApiDatabase, type FieldInput } from '@/lib/
 import { LatestValueQueue } from '@/lib/latestValueQueue';
 import { FIELD_EMPTY, isGroupableField } from '@/lib/taskFilters';
 import type { FieldDef, FieldValue } from '@/types/fields';
+import type { TaskLinking } from '@/types/todo';
+
+/**
+ * What a database's text columns need to add a record's text to a quadrant
+ * via the "@" menu — the same idea as notes' NoteTaskLinking, just keyed by
+ * (recordId, fieldId) instead of (noteId, blockId).
+ */
+export type DatabaseTaskLinking = TaskLinking<{ recordId: string; fieldId: string }>;
 
 /**
  * The control that was just clicked, for a popover opened from a menu item —
@@ -57,9 +65,11 @@ export interface DatabasesPageProps {
   onOpenHandled?: () => void;
   /** Reports which database is on screen, so Back/refresh can return to it. */
   onOpenChange?: (databaseId: string | null) => void;
+  /** Tasks live in App, so it passes this down; without it the "@" menu is simply off. */
+  linking?: DatabaseTaskLinking;
 }
 
-export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange }: DatabasesPageProps = {}) {
+export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, linking }: DatabasesPageProps = {}) {
   const notify = useCallback((message: string) => toast.error(message, { duration: 3000 }), []);
   const [openId, setOpenId] = useState<string | null>(null);
   const {
@@ -182,6 +192,19 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange }: D
     }
   }, [notify]);
 
+  /** A column was dragged to a new position: reorder locally, then persist each moved field's fieldOrder. */
+  const handleReorderFields = useCallback((fieldIds: string[]) => {
+    const byId = new Map(fields.map((f) => [f.id, f]));
+    const next = fieldIds.map((id) => byId.get(id)).filter((f): f is FieldDef => !!f);
+    if (next.length !== fields.length) return;
+    setFields(next.map((f, i) => ({ ...f, fieldOrder: i })));
+    Promise.all(
+      next.map((f, i) => (f.fieldOrder === i ? null : fieldApi.updateField(f.id, {
+        name: f.name, kind: f.kind, options: f.options, showOnCard: f.showOnCard, fieldOrder: i,
+      }))),
+    ).catch(() => notify("Couldn't save the new column order"));
+  }, [fields, notify]);
+
   const handleDeleteField = useCallback(async (id: string) => {
     try {
       await fieldApi.deleteField(id);
@@ -289,6 +312,7 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange }: D
                 fields={fields}
                 values={values}
                 loading={rowsLoading}
+                linking={linking}
                 onAdd={(title) => { void createRow({ title }); }}
                 onRename={(recordId, title) => { void updateRow(recordId, { title }); }}
                 onDelete={(recordId) => { void deleteRow(recordId); }}
@@ -296,6 +320,7 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange }: D
                 onEditField={(fieldId) => { setFieldsAnchor(activeAnchor()); setFieldsTarget({ fieldId }); setFieldsOpen(true); }}
                 onDeleteField={(fieldId) => { void handleDeleteField(fieldId); }}
                 onCreateField={() => { setFieldsAnchor(activeAnchor()); setFieldsTarget({ startNew: true }); setFieldsOpen(true); }}
+                onReorderFields={handleReorderFields}
               />
               )}
 

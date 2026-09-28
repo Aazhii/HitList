@@ -79,7 +79,12 @@ export function FieldsManagerDialog({
     }
     setEditing(startNew || fields.length === 0 ? 'new' : null);
     setDraft(emptyDraft());
-  }, [open, initialFieldId, startNew]);
+    // `anchor` is a fresh object on every open request (anchorRectOf/activeAnchor
+    // always return a new literal) even when the popover was already open — e.g.
+    // clicking "New column" again right after creating one, without closing the
+    // popover in between. `open` alone only catches the closed→open transition,
+    // so without this a second click while still open silently did nothing.
+  }, [open, initialFieldId, startNew, anchor]);
 
   const current = editing && editing !== 'new' ? fields.find((f) => f.id === editing) : undefined;
   const removedOptions = current && hasOptions(current.kind)

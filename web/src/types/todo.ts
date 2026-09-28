@@ -123,6 +123,9 @@ export interface Todo {
   /** Set when added from a note block via the @ menu. Optional: stored state predates it. */
   sourceNoteId?: string;
   sourceBlockId?: string;
+  /** Set when added from a database's text column via the @ menu. */
+  sourceRecordId?: string;
+  sourceFieldId?: string;
 }
 
 export interface KaizenList {
@@ -136,6 +139,26 @@ export interface KaizenStats {
   streak: number;
   totalCompleted: number;
   todayCompleted: number;
+}
+
+/**
+ * What an editor needs to turn its own text into a task via the "@" menu —
+ * shared by the notes editor (source: a note block) and a database's text
+ * columns (source: a record's field). `Source` is whichever id pair identifies
+ * where the task came from, so it can be passed back to `unlinkTask`/stamped
+ * on the created task without this type knowing which caller it is.
+ */
+export interface TaskLinking<Source extends Record<string, string>> {
+  lists: KaizenList[];
+  todos: Todo[];
+  /** False until tasks have loaded, so a linked chip doesn't flash "Task removed". */
+  tasksLoaded: boolean;
+  preferredListId?: string;
+  /** Resolves with the created task (real id), or null when it could not be saved. */
+  createTask: (args: { listId: string; quadrant: Quadrant; title: string } & Source) => Promise<Todo | null>;
+  updateTaskTitle: (taskId: string, title: string) => void;
+  unlinkTask: (taskId: string) => void;
+  openTask: (taskId: string) => void;
 }
 
 export interface AppState {

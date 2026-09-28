@@ -34,6 +34,7 @@ function setup(over: Partial<RecordTableProps> = {}) {
     onEditField: vi.fn(),
     onDeleteField: vi.fn(),
     onCreateField: vi.fn(),
+    onReorderFields: vi.fn(),
     ...over,
   };
   render(<RecordTable {...props} />);

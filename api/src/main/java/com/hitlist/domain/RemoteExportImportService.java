@@ -36,7 +36,8 @@ public class RemoteExportImportService {
     private static final Set<String> LIST_KEYS = Set.of("id", "name", "color", "listOrder", "createdAt", "updatedAt");
     private static final Set<String> TASK_KEYS = Set.of(
         "id", "title", "status", "quadrant", "priority", "note", "dueDate", "dueTime", "category", "listId", "taskOrder",
-        "reminderEnabled", "reminderMinutesBefore", "completedAt", "createdAt", "updatedAt", "sourceNoteId", "sourceBlockId"
+        "reminderEnabled", "reminderMinutesBefore", "completedAt", "createdAt", "updatedAt", "sourceNoteId", "sourceBlockId",
+        "sourceRecordId", "sourceFieldId"
     );
     private static final Set<String> NOTE_KEYS = Set.of("id", "title", "blocksJson", "emoji", "pinned", "createdAt", "updatedAt");
     private static final Set<String> VIEW_KEYS = Set.of(
@@ -313,6 +314,17 @@ public class RemoteExportImportService {
             if (!sourceBlockId.isBlank() && sourceNoteId.isBlank()) {
                 throw ApiException.invalid(path + ".sourceBlockId requires sourceNoteId");
             }
+            String sourceRecordId = optionalId(item, "sourceRecordId", "", path);
+            if (!sourceRecordId.isBlank() && !recordIds.contains(sourceRecordId)) {
+                throw ApiException.invalid(path + ".sourceRecordId must reference an imported database row");
+            }
+            String sourceFieldId = optionalId(item, "sourceFieldId", "", path);
+            if (!sourceFieldId.isBlank() && sourceRecordId.isBlank()) {
+                throw ApiException.invalid(path + ".sourceFieldId requires sourceRecordId");
+            }
+            if (!sourceFieldId.isBlank() && !fieldIds.contains(sourceFieldId)) {
+                throw ApiException.invalid(path + ".sourceFieldId must reference an imported field");
+            }
             boolean reminderEnabled = optionalBoolean(item, "reminderEnabled", false, path);
             long reminderMinutesBefore = optionalLong(item, "reminderMinutesBefore", 0, 0, path);
             if (reminderEnabled || reminderMinutesBefore > 0) {
@@ -347,6 +359,8 @@ public class RemoteExportImportService {
             row.put("UpdatedAt", Math.max(updatedAt, createdAt));
             row.put("SourceNoteId", sourceNoteId);
             row.put("SourceBlockId", sourceBlockId);
+            row.put("SourceRecordId", sourceRecordId);
+            row.put("SourceFieldId", sourceFieldId);
             tasks.add(row);
             taskById.put(id, row);
         }

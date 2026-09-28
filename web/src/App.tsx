@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { NotesWorkspace } from '@/components/NotesWorkspace';
 import type { NoteTaskLinking } from '@/components/NoteEditor';
-import { DatabasesPage } from '@/pages/DatabasesPage';
+import { DatabasesPage, type DatabaseTaskLinking } from '@/pages/DatabasesPage';
 import { CalendarPage } from '@/pages/CalendarPage';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { useHistoryState, readInitialScreen } from '@/hooks/useHistoryState';
@@ -1137,8 +1137,17 @@ function UserScopedApp() {
     return () => { timers.forEach(clearTimeout); };
   }, []);
 
-  const handleCreateLinkedTask = useCallback<NoteTaskLinking['createTask']>(
-    async ({ listId, quadrant, title, noteId, blockId }) => {
+  /**
+   * The "@" menu's create-task step: shared by the notes editor and a
+   * database's text columns, which differ only in which pair of source ids
+   * they stamp onto the created task (so each can later find its own linked
+   * task, and "unlink" can tell which source to clear).
+   */
+  const createLinkedTask = useCallback(
+    async (
+      { listId, quadrant, title }: { listId: string; quadrant: Quadrant; title: string },
+      source: { sourceNoteId?: string; sourceBlockId?: string; sourceRecordId?: string; sourceFieldId?: string },
+    ) => {
       const maxOrder = todosRef.current
         .filter((t) => t.listId === listId)
         .reduce((m, t) => Math.max(m, t.order), -1);
@@ -1146,7 +1155,7 @@ function UserScopedApp() {
         do: 'DO', schedule: 'SCHEDULE', delegate: 'DELEGATE', eliminate: 'ELIMINATE',
       };
       // The server only stores ids of this shape; anything else is linked from
-      // the note side only rather than failing the whole create.
+      // the source side only rather than failing the whole create.
       const safeId = (v: string) => (/^[A-Za-z0-9_-]{1,64}$/.test(v) ? v : undefined);
 
       const created = await server.createTask({
@@ -1155,11 +1164,13 @@ function UserScopedApp() {
         quadrant: quadrantMap[quadrant],
         listId,
         taskOrder: maxOrder + 1,
-        sourceNoteId: safeId(noteId),
-        sourceBlockId: safeId(blockId),
+        sourceNoteId: source.sourceNoteId && safeId(source.sourceNoteId),
+        sourceBlockId: source.sourceBlockId && safeId(source.sourceBlockId),
+        sourceRecordId: source.sourceRecordId && safeId(source.sourceRecordId),
+        sourceFieldId: source.sourceFieldId && safeId(source.sourceFieldId),
       });
       if (!created) {
-        toast.error("Couldn't add it to the quadrant", { description: 'The note is unchanged.', duration: 3000 });
+        toast.error("Couldn't add it to the quadrant", { description: 'Nothing here changed.', duration: 3000 });
         return null;
       }
       const todo = apiTaskToTodo(created);
@@ -1172,6 +1183,18 @@ function UserScopedApp() {
       return todo;
     },
     [lists, server, setTodos],
+  );
+
+  const handleCreateLinkedTask = useCallback<NoteTaskLinking['createTask']>(
+    ({ listId, quadrant, title, noteId, blockId }) =>
+      createLinkedTask({ listId, quadrant, title }, { sourceNoteId: noteId, sourceBlockId: blockId }),
+    [createLinkedTask],
+  );
+
+  const handleCreateLinkedTaskFromRecord = useCallback<DatabaseTaskLinking['createTask']>(
+    ({ listId, quadrant, title, recordId, fieldId }) =>
+      createLinkedTask({ listId, quadrant, title }, { sourceRecordId: recordId, sourceFieldId: fieldId }),
+    [createLinkedTask],
   );
 
   /** A linked block was edited: its text becomes the task title, debounced per task. */
@@ -1187,14 +1210,16 @@ function UserScopedApp() {
     }, 800));
   }, [server, setTodos]);
 
-  /** Unlink from the note: clears the task's source, keeps the task. */
+  /** Unlink from its note or database source: clears the task's source, keeps the task. */
   const handleUnlinkTask = useCallback((taskId: string) => {
     const current = todosRef.current.find((t) => t.id === taskId);
-    if (!current?.sourceNoteId && !current?.sourceBlockId) return;
+    if (!current?.sourceNoteId && !current?.sourceBlockId && !current?.sourceRecordId && !current?.sourceFieldId) return;
     setTodos((prev) => prev.map((t) => (
-      t.id === taskId ? { ...t, sourceNoteId: undefined, sourceBlockId: undefined } : t
+      t.id === taskId
+        ? { ...t, sourceNoteId: undefined, sourceBlockId: undefined, sourceRecordId: undefined, sourceFieldId: undefined }
+        : t
     )));
-    void server.updateTask(taskId, { sourceNoteId: '', sourceBlockId: '' });
+    void server.updateTask(taskId, { sourceNoteId: '', sourceBlockId: '', sourceRecordId: '', sourceFieldId: '' });
   }, [server, setTodos]);
 
   const handleOpenLinkedTask = useCallback((taskId: string) => {
@@ -1221,6 +1246,17 @@ function UserScopedApp() {
     unlinkTask: handleUnlinkTask,
     openTask: handleOpenLinkedTask,
   }), [lists, todos, server.loading, activeListId, handleCreateLinkedTask, handleUpdateLinkedTaskTitle, handleUnlinkTask, handleOpenLinkedTask]);
+
+  const databaseLinking = useMemo<DatabaseTaskLinking>(() => ({
+    lists,
+    todos,
+    tasksLoaded: !server.loading,
+    preferredListId: activeListId,
+    createTask: handleCreateLinkedTaskFromRecord,
+    updateTaskTitle: handleUpdateLinkedTaskTitle,
+    unlinkTask: handleUnlinkTask,
+    openTask: handleOpenLinkedTask,
+  }), [lists, todos, server.loading, activeListId, handleCreateLinkedTaskFromRecord, handleUpdateLinkedTaskTitle, handleUnlinkTask, handleOpenLinkedTask]);
 
   const handleOpenNoteHandled = useCallback(() => setPendingNoteId(null), []);
 
@@ -1341,6 +1377,7 @@ function UserScopedApp() {
             openDatabaseId={pendingDatabaseId}
             onOpenHandled={() => setPendingDatabaseId(null)}
             onOpenChange={setActiveDatabaseId}
+            linking={databaseLinking}
           />
         ) : activeView === 'calendar' ? (
           <CalendarPage

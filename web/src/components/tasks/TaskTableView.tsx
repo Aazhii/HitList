@@ -291,7 +291,13 @@ function ColumnHeader({ label, sort, onSort, className, onHide, onEditField, onD
                 <ChevronDown className="size-3.5" strokeWidth={2.75} />
               </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" className="w-52">
+            <DropdownMenuContent
+              align="start"
+              className="w-52"
+              // "Edit field…" opens another popover (FieldsManagerDialog);
+              // see RecordTable's FieldHeader for why this prevents it closing itself.
+              onCloseAutoFocus={(e) => e.preventDefault()}
+            >
               {onEditField && (
                 <DropdownMenuItem onClick={onEditField}>
                   <Pencil className="size-3.5" /> Edit field…
