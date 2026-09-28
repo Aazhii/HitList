@@ -45,6 +45,9 @@ import type { DatabaseTaskLinking } from '@/pages/DatabasesPage';
 export interface RecordTableProps {
   rows: ApiDatabaseRow[];
   fields: FieldDef[];
+  /** The Title column's own header label — renamable, defaults to "Title". */
+  titleLabel: string;
+  onRenameTitleLabel: (label: string) => void;
   /** recordId → fieldId → value. */
   values: Record<string, Record<string, FieldValue>>;
   loading: boolean;
@@ -70,7 +73,7 @@ const CONTROL = cn(
 const CONTROL_ROW = cn(CONTROL, 'h-8');
 
 export function RecordTable({
-  rows, fields, values, loading,
+  rows, fields, titleLabel, onRenameTitleLabel, values, loading,
   onAdd, onRename, onDelete, onSetValue, onEditField, onDeleteField, onCreateField, onReorderFields, linking,
 }: RecordTableProps) {
   const columnCount = 2 + fields.length;
@@ -107,8 +110,8 @@ export function RecordTable({
         <table className="w-full min-w-max border-collapse text-[13.5px]">
           <thead>
             <tr className="border-b border-a-line-soft">
-              <th scope="col" className="sticky left-0 z-10 min-w-[280px] bg-a-bg px-2 py-2 text-left align-bottom font-normal">
-                <span className="px-2 py-1 text-[12.5px] font-semibold text-a-faint">Title</span>
+              <th scope="col" className="min-w-[280px] px-2 py-2 text-left align-bottom font-normal">
+                <TitleHeaderCell label={titleLabel} onCommit={onRenameTitleLabel} />
               </th>
               <SortableContext items={fields.map((f) => f.id)} strategy={horizontalListSortingStrategy}>
                 {fields.map((field) => (
@@ -136,7 +139,7 @@ export function RecordTable({
           <tbody>
             {rows.map((row) => (
               <tr key={row.id} className="group border-b border-a-line-soft/60">
-                <td className={cn(CELL, 'sticky left-0 z-10 bg-a-bg')}>
+                <td className={cn(CELL, 'min-w-[280px]')}>
                   <div className="flex items-start gap-1">
                     <TitleCell
                       title={row.title}
@@ -247,6 +250,50 @@ function FieldHeader({ field, onEdit, onDelete }: { field: FieldDef; onEdit: () 
         </DropdownMenu>
       </span>
     </th>
+  );
+}
+
+/** The Title column's own header — click to rename it, same as any field. */
+function TitleHeaderCell({ label, onCommit }: { label: string; onCommit: (label: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(label);
+
+  useEffect(() => { setDraft(label); }, [label]);
+
+  const commit = () => {
+    setEditing(false);
+    const trimmed = draft.trim();
+    if (!trimmed || trimmed === label) { setDraft(label); return; }
+    onCommit(trimmed);
+  };
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        value={draft}
+        maxLength={100}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); commit(); }
+          if (e.key === 'Escape') { setDraft(label); setEditing(false); }
+        }}
+        aria-label="Rename the Title column"
+        className="w-full rounded-[7px] border-0 bg-[color-mix(in_srgb,var(--a-ink)_6%,transparent)] px-2 py-1 text-[12.5px] font-semibold text-a-faint outline-none focus-visible:ring-1 focus-visible:ring-a-accent"
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => setEditing(true)}
+      aria-label={`Rename the ${label} column`}
+      className="rounded-[7px] px-2 py-1 text-[12.5px] font-semibold text-a-faint transition-colors duration-150 hover:bg-[color-mix(in_srgb,var(--a-ink)_6%,transparent)]"
+    >
+      {label}
+    </button>
   );
 }
 

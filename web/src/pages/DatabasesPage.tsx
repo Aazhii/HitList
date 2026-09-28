@@ -310,6 +310,8 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
               <RecordTable
                 rows={rows}
                 fields={fields}
+                titleLabel={open.titleLabel}
+                onRenameTitleLabel={(label) => { void updateDatabase(open.id, { titleLabel: label }); }}
                 values={values}
                 loading={rowsLoading}
                 linking={linking}

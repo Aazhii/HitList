@@ -611,6 +611,8 @@ export interface ApiDatabase {
   icon: string;
   /** The date field this database's calendar reads; '' = none chosen yet. */
   dateFieldId: string;
+  /** The Title column's own header label — renamable, defaults to "Title". */
+  titleLabel: string;
   dbOrder: number;
   createdAt: number;
   updatedAt: number;
@@ -626,7 +628,8 @@ export interface ApiDatabaseRow {
   updatedAt: number;
 }
 
-export interface DatabaseInput { name: string; icon?: string; dateFieldId?: string; dbOrder?: number }
+/** `name` is required to create a database; every field here is optional on an update — the server keeps whatever isn't sent. */
+export interface DatabaseInput { name?: string; icon?: string; dateFieldId?: string; titleLabel?: string; dbOrder?: number }
 export interface DatabaseRowInput { title: string; rowOrder?: number }
 
 export const databaseApi = {

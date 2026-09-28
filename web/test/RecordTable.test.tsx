@@ -25,6 +25,8 @@ function setup(over: Partial<RecordTableProps> = {}) {
   const props: RecordTableProps = {
     rows: [record(), record({ id: 'r2', title: 'Ubik', rowOrder: 1 })],
     fields: [status, owned, pages],
+    titleLabel: 'Title',
+    onRenameTitleLabel: vi.fn(),
     values: { r1: { status: 'read', owned: true, pages: 412 } },
     loading: false,
     onAdd: vi.fn(),

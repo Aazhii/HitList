@@ -424,6 +424,7 @@ public class WorkspaceService {
         String dateField = body.containsKey("dateFieldId") ? Values.optional(body, "dateFieldId", 64, "") : EntityRepository.text(row.getOrDefault("DateFieldId", ""));
         if (!dateField.isBlank()) Values.id(dateField);
         row.put("DateFieldId", dateField);
+        row.put("TitleLabel", body.containsKey("titleLabel") ? Values.optional(body, "titleLabel", 100, "Title") : EntityRepository.text(row.getOrDefault("TitleLabel", "Title")));
         return row;
     }
 
@@ -488,6 +489,7 @@ public class WorkspaceService {
             "name", EntityRepository.text(row.get("Name")),
             "icon", EntityRepository.text(row.get("Icon")),
             "dateFieldId", EntityRepository.text(row.get("DateFieldId")),
+            "titleLabel", EntityRepository.text(row.getOrDefault("TitleLabel", "Title")),
             "dbOrder", Values.number(row.get("DbOrder"), 0),
             "createdAt", Values.number(row.get("CreatedAt"), 0),
             "updatedAt", Values.number(row.get("UpdatedAt"), 0)
