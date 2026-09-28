@@ -637,6 +637,8 @@ interface FieldCellProps {
 
 function FieldCell({ def, value, taskName, onChange }: FieldCellProps) {
   const label = `${def.name} of ${taskName}`;
+  // Only select/multi (a popover) need this; harmless elsewhere since unused.
+  const [popoverOpen, setPopoverOpen] = useState(false);
 
   switch (def.kind) {
     case 'checkbox': {
@@ -694,7 +696,7 @@ function FieldCell({ def, value, taskName, onChange }: FieldCellProps) {
     case 'multi': {
       const chosen = selectedOptions(def, value);
       return (
-        <Popover>
+        <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
           <PopoverTrigger asChild>
             <button type="button" className={cn(CONTROL, 'flex min-h-8 flex-wrap items-center gap-1 py-1')} aria-label={label}>
               {chosen.length === 0 && <span className="text-a-faint/60">Empty</span>}
@@ -707,7 +709,12 @@ function FieldCell({ def, value, taskName, onChange }: FieldCellProps) {
           </PopoverTrigger>
           <PopoverContent align="start" className="w-64 p-3">
             <p className="mb-2 text-[12px] font-semibold text-a-muted">{def.name}</p>
-            <FieldValueEditor field={def} value={value} onChange={onChange} />
+            <FieldValueEditor
+              field={def}
+              value={value}
+              onChange={onChange}
+              onSelectOption={def.kind === 'multi' ? () => setPopoverOpen(false) : undefined}
+            />
           </PopoverContent>
         </Popover>
       );

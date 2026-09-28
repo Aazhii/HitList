@@ -19,11 +19,15 @@ interface FieldValueEditorProps {
   value: FieldValue | undefined;
   onChange: (value: FieldValue | null) => void;
   disabled?: boolean;
+  /** Called after picking a multi-select option, so a caller showing this in
+   * a popover can close it — multi has no built-in "closed" moment the way
+   * a native select does, since picking one option doesn't mean you're done. */
+  onSelectOption?: () => void;
 }
 
 const INPUT = 'h-9 w-full rounded-xl border-0 bg-muted/30 text-xs focus-visible:ring-1 focus-visible:ring-primary/40';
 
-export function FieldValueEditor({ field, value, onChange, disabled }: FieldValueEditorProps) {
+export function FieldValueEditor({ field, value, onChange, disabled, onSelectOption }: FieldValueEditorProps) {
   switch (field.kind) {
     case 'select':
       return (
@@ -69,6 +73,7 @@ export function FieldValueEditor({ field, value, onChange, disabled }: FieldValu
                   // In the field's option order, so the stored list is stable.
                   const ordered = field.options.map((x) => x.id).filter((id) => next.has(id));
                   onChange(ordered.length ? ordered : null);
+                  onSelectOption?.();
                 }}
                 className={cn(
                   'flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] font-medium transition-opacity duration-150',
