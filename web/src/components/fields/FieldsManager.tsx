@@ -55,7 +55,7 @@ interface DraftOption { id?: string; label: string; color: OptionColor }
 interface Draft { name: string; kind: FieldKind; options: DraftOption[]; showOnCard: boolean }
 
 const KINDS: FieldKind[] = ['select', 'multi', 'number', 'date', 'checkbox', 'text'];
-const emptyDraft = (): Draft => ({ name: '', kind: 'select', options: [{ label: '', color: 'accent' }], showOnCard: true });
+const emptyDraft = (): Draft => ({ name: '', kind: 'select', options: [{ label: '', color: OPTION_COLORS[0] }], showOnCard: true });
 const hasOptions = (k: FieldKind) => k === 'select' || k === 'multi';
 
 export function FieldsManagerDialog({

@@ -1,7 +1,15 @@
 /** Custom task fields, as the client sees them. */
 
 export type FieldKind = 'select' | 'multi' | 'number' | 'date' | 'checkbox' | 'text';
-export type OptionColor = 'accent' | 'sage' | 'do' | 'schedule' | 'delegate' | 'eliminate';
+/**
+ * `accent`/`sage`/`do`/`schedule`/`delegate`/`eliminate` are legacy: options
+ * created before the dedicated tag palette below. Kept so those options keep
+ * rendering — `OPTION_COLORS` (what a new option offers) no longer includes
+ * them.
+ */
+export type OptionColor =
+  | 'accent' | 'sage' | 'do' | 'schedule' | 'delegate' | 'eliminate'
+  | 'gray' | 'brown' | 'orange' | 'yellow' | 'green' | 'blue' | 'purple' | 'pink' | 'red';
 
 export interface FieldOption { id: string; label: string; color: OptionColor }
 
@@ -30,4 +38,6 @@ export const FIELD_KIND_LABELS: Record<FieldKind, string> = {
   text: 'Text',
 };
 
-export const OPTION_COLORS: OptionColor[] = ['accent', 'sage', 'do', 'schedule', 'delegate', 'eliminate'];
+export const OPTION_COLORS: OptionColor[] = [
+  'gray', 'brown', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'red',
+];

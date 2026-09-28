@@ -72,6 +72,24 @@
     --color-q-delegate-bg: var(--a-q-delegate-bg);
     --color-q-eliminate: var(--a-q-eliminate);
     --color-q-eliminate-bg: var(--a-q-eliminate-bg);
+    --color-tag-gray: var(--a-tag-gray);
+    --color-tag-gray-bg: var(--a-tag-gray-bg);
+    --color-tag-brown: var(--a-tag-brown);
+    --color-tag-brown-bg: var(--a-tag-brown-bg);
+    --color-tag-orange: var(--a-tag-orange);
+    --color-tag-orange-bg: var(--a-tag-orange-bg);
+    --color-tag-yellow: var(--a-tag-yellow);
+    --color-tag-yellow-bg: var(--a-tag-yellow-bg);
+    --color-tag-green: var(--a-tag-green);
+    --color-tag-green-bg: var(--a-tag-green-bg);
+    --color-tag-blue: var(--a-tag-blue);
+    --color-tag-blue-bg: var(--a-tag-blue-bg);
+    --color-tag-purple: var(--a-tag-purple);
+    --color-tag-purple-bg: var(--a-tag-purple-bg);
+    --color-tag-pink: var(--a-tag-pink);
+    --color-tag-pink-bg: var(--a-tag-pink-bg);
+    --color-tag-red: var(--a-tag-red);
+    --color-tag-red-bg: var(--a-tag-red-bg);
     --color-sidebar-ring: var(--sidebar-ring);
     --color-sidebar-border: var(--sidebar-border);
     --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
@@ -468,6 +486,20 @@ html.login-locked body {
   --a-q-delegate: #75570f;  --a-q-delegate-bg: #f2e7cd;
   --a-q-eliminate: #57524b; --a-q-eliminate-bg: #e7e1d6;
 
+  /* Tag colors for select/multi options — a dedicated palette (Notion's 9
+     names, re-toned to this app's palette), same solid-hex recipe as the
+     quadrant colors above rather than a low-alpha tint, so a chip actually
+     reads as colored instead of washed out. */
+  --a-tag-gray: #57524b;   --a-tag-gray-bg: #e7e1d6;
+  --a-tag-brown: #6b4a2f;  --a-tag-brown-bg: #ecdcc8;
+  --a-tag-orange: #a3501a; --a-tag-orange-bg: #f7ddc2;
+  --a-tag-yellow: #8a6d0f; --a-tag-yellow-bg: #f7eec2;
+  --a-tag-green: #3f6b3f;  --a-tag-green-bg: #dbe8d2;
+  --a-tag-blue: #2f5f8a;   --a-tag-blue-bg: #d7e5f0;
+  --a-tag-purple: #6b4a8a; --a-tag-purple-bg: #e8ddf0;
+  --a-tag-pink: #9c3f6b;   --a-tag-pink-bg: #f5dde8;
+  --a-tag-red: #a3271f;    --a-tag-red-bg: #f5d6d0;
+
   /* Fontsource registers Figtree as 'Figtree Variable'; 'Figtree' is kept so the
      Google Fonts copy the login page loads also satisfies it. */
   --a-font-heading: 'Caprasimo', ui-serif, system-ui, sans-serif;
@@ -557,6 +589,16 @@ html.login-locked body {
   --a-q-schedule: #9cc3dd;  --a-q-schedule-bg: #1f2c35;
   --a-q-delegate: #e2c078;  --a-q-delegate-bg: #33291a;
   --a-q-eliminate: #cbc3b8; --a-q-eliminate-bg: #2e2a26;
+
+  --a-tag-gray: #cbc3b8;   --a-tag-gray-bg: #2e2a26;
+  --a-tag-brown: #d9b48f;  --a-tag-brown-bg: #332619;
+  --a-tag-orange: #eba977; --a-tag-orange-bg: #3a2415;
+  --a-tag-yellow: #e0c978; --a-tag-yellow-bg: #332c15;
+  --a-tag-green: #a8c9a0;  --a-tag-green-bg: #1f2e1f;
+  --a-tag-blue: #a0c8e0;   --a-tag-blue-bg: #1e2c38;
+  --a-tag-purple: #c9b3dd; --a-tag-purple-bg: #2a2035;
+  --a-tag-pink: #e0a8c0;   --a-tag-pink-bg: #361f2b;
+  --a-tag-red: #e0938a;    --a-tag-red-bg: #3a201c;
 
   --a-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.45);
   --a-shadow-md: 0 3px 10px rgba(0, 0, 0, 0.4);
