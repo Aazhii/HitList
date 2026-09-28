@@ -13,8 +13,8 @@
  * Renaming an option keeps every task that uses it; removing one clears it
  * from those tasks, and the dialog says so before saving.
  */
-import { useEffect, useState } from 'react';
-import { Plus, Trash2, X, SlidersHorizontal } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Check, Plus, Trash2, X, SlidersHorizontal } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -66,6 +66,20 @@ export function FieldsManagerDialog({
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  /** Index of the option whose color swatches are expanded, or null. */
+  const [colorPickerFor, setColorPickerFor] = useState<number | null>(null);
+  const optionsRef = useRef<HTMLDivElement>(null);
+
+  // Close the color picker on a click outside the options list — it's plain
+  // content inside this popover, not a nested overlay with its own dismiss.
+  useEffect(() => {
+    if (colorPickerFor === null) return;
+    const handler = (e: MouseEvent) => {
+      if (!optionsRef.current?.contains(e.target as Node)) setColorPickerFor(null);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [colorPickerFor]);
 
   useEffect(() => {
     if (!open) return;
@@ -212,33 +226,54 @@ export function FieldsManagerDialog({
             </div>
 
             {hasOptions(draft.kind) && (
-              <div className="space-y-1.5">
+              <div ref={optionsRef} className="space-y-1.5">
                 <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Options</p>
                 {draft.options.map((option, i) => (
-                  <div key={option.id ?? `new-${i}`} className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      aria-label={`Colour for ${option.label || 'option'}`}
-                      title="Change colour"
-                      onClick={() => setOption(i, { color: OPTION_COLORS[(OPTION_COLORS.indexOf(option.color) + 1) % OPTION_COLORS.length] })}
-                      className="flex size-8 flex-shrink-0 items-center justify-center rounded-lg hover:bg-muted"
-                    >
-                      <span className={cn('size-3 rounded-full', OPTION_DOT_CLASS[option.color])} />
-                    </button>
-                    <Input
-                      value={option.label} maxLength={60}
-                      onChange={(e) => setOption(i, { label: e.target.value })}
-                      placeholder={`Option ${i + 1}`}
-                      className="h-8 rounded-xl text-xs"
-                    />
-                    <button
-                      type="button"
-                      aria-label={`Remove ${option.label || 'option'}`}
-                      onClick={() => setDraft((d) => ({ ...d, options: d.options.filter((_, j) => j !== i) }))}
-                      className="flex size-8 flex-shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
-                    >
-                      <X className="size-3.5" />
-                    </button>
+                  <div key={option.id ?? `new-${i}`}>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        aria-label={`Colour for ${option.label || 'option'}`}
+                        aria-expanded={colorPickerFor === i}
+                        title="Change colour"
+                        onClick={() => setColorPickerFor((cur) => (cur === i ? null : i))}
+                        className="flex size-8 flex-shrink-0 items-center justify-center rounded-lg hover:bg-muted"
+                      >
+                        <span className={cn('size-3 rounded-full', OPTION_DOT_CLASS[option.color])} />
+                      </button>
+                      <Input
+                        value={option.label} maxLength={60}
+                        onChange={(e) => setOption(i, { label: e.target.value })}
+                        placeholder={`Option ${i + 1}`}
+                        className="h-8 rounded-xl text-xs"
+                      />
+                      <button
+                        type="button"
+                        aria-label={`Remove ${option.label || 'option'}`}
+                        onClick={() => setDraft((d) => ({ ...d, options: d.options.filter((_, j) => j !== i) }))}
+                        className="flex size-8 flex-shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                    </div>
+                    {colorPickerFor === i && (
+                      <div className="ml-1 mt-1 mb-0.5 flex flex-wrap gap-1.5 rounded-xl bg-muted/30 p-2" role="group" aria-label="Colour">
+                        {OPTION_COLORS.map((color) => (
+                          <button
+                            key={color}
+                            type="button"
+                            aria-label={color}
+                            aria-pressed={option.color === color}
+                            onClick={() => { setOption(i, { color }); setColorPickerFor(null); }}
+                            className="flex size-7 items-center justify-center rounded-lg hover:bg-muted"
+                          >
+                            <span className={cn('flex size-5 items-center justify-center rounded-full', OPTION_DOT_CLASS[color])}>
+                              {option.color === color && <Check className="size-3 text-white" strokeWidth={3} />}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ))}
                 {draft.options.length < 50 && (
