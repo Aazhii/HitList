@@ -14,13 +14,14 @@
  * from those tasks, and the dialog says so before saving.
  */
 import { useEffect, useRef, useState } from 'react';
-import { Check, Plus, Trash2, X, SlidersHorizontal } from 'lucide-react';
+import {
+  Calendar, Check, CircleDot, Hash, ListChecks, Plus, SquareCheck, Trash2, Type, X, SlidersHorizontal,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { OPTION_DOT_CLASS } from '@/lib/fieldValues';
 import type { FieldInput } from '@/lib/api';
 import {
@@ -55,6 +56,14 @@ interface DraftOption { id?: string; label: string; color: OptionColor }
 interface Draft { name: string; kind: FieldKind; options: DraftOption[]; showOnCard: boolean }
 
 const KINDS: FieldKind[] = ['select', 'multi', 'number', 'date', 'checkbox', 'text'];
+const KIND_ICON: Record<FieldKind, typeof Type> = {
+  select: CircleDot,
+  multi: ListChecks,
+  number: Hash,
+  date: Calendar,
+  checkbox: SquareCheck,
+  text: Type,
+};
 const emptyDraft = (): Draft => ({ name: '', kind: 'select', options: [{ label: '', color: OPTION_COLORS[0] }], showOnCard: true });
 const hasOptions = (k: FieldKind) => k === 'select' || k === 'multi';
 
@@ -212,12 +221,28 @@ export function FieldsManagerDialog({
             <div className="space-y-1.5">
               <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Type</p>
               {editing === 'new' ? (
-                <Select value={draft.kind} onValueChange={(v) => setDraft((d) => ({ ...d, kind: v as FieldKind }))}>
-                  <SelectTrigger className="h-9 w-full rounded-xl text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    {KINDS.map((k) => <SelectItem key={k} value={k}>{FIELD_KIND_LABELS[k]}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+                <div className="grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="Type">
+                  {KINDS.map((k) => {
+                    const Icon = KIND_ICON[k];
+                    const active = draft.kind === k;
+                    return (
+                      <button
+                        key={k}
+                        type="button"
+                        role="radio"
+                        aria-checked={active}
+                        onClick={() => setDraft((d) => ({ ...d, kind: k }))}
+                        className={cn(
+                          'flex items-center gap-2 rounded-xl px-2.5 py-2 text-left text-xs font-medium transition-colors duration-150',
+                          active ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                        )}
+                      >
+                        <Icon className="size-3.5 flex-shrink-0" />
+                        {FIELD_KIND_LABELS[k]}
+                      </button>
+                    );
+                  })}
+                </div>
               ) : (
                 <p className="text-xs text-muted-foreground">
                   {FIELD_KIND_LABELS[draft.kind]} — a field's type can't change after it's created.
