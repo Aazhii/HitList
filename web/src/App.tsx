@@ -593,6 +593,7 @@ function UserScopedApp() {
     name: view.name,
     layout: tasksMode,
     scopeListId: view.scopeListId,
+    scopeDatabaseId: null,
     filters: filterState,
     showDone,
     display: displayByList[activeListId] ?? EMPTY_DISPLAY,
@@ -601,7 +602,7 @@ function UserScopedApp() {
 
   const handleSaveView = useCallback(async (name: string, scopeToList: boolean) => {
     const created = await savedViews.createView({
-      name, layout: tasksMode, scopeListId: scopeToList ? activeListId : null, filters: filterState, showDone,
+      name, layout: tasksMode, scopeListId: scopeToList ? activeListId : null, scopeDatabaseId: null, filters: filterState, showDone,
     });
     if (created) toast.success(`Saved view "${created.name}"`, { duration: 2000 });
     return !!created;
@@ -695,6 +696,7 @@ function UserScopedApp() {
       name: input.name,
       layout: input.layout,
       scopeListId: input.scopeToList ? activeListId : null,
+      scopeDatabaseId: null,
       filters: { ...filterState, groupBy },
       showDone,
       display: displayByList[activeListId] ?? EMPTY_DISPLAY,
@@ -710,6 +712,7 @@ function UserScopedApp() {
       name: `${view.name} copy`.slice(0, 100),
       layout: view.layout,
       scopeListId: view.scopeListId,
+      scopeDatabaseId: view.scopeDatabaseId,
       filters: view.filters,
       showDone: view.showDone,
     });

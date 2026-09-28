@@ -279,17 +279,18 @@ export function AdvancedFilterBar({ filters, onChange, className, fieldDefs = []
   );
 }
 
-interface FieldFilterMenuProps {
+export interface FieldFilterMenuProps {
   field: FieldDef;
   chosen: string[];
   onChange: (choices: string[]) => void;
 }
 
 /**
- * The choices for one custom field. A task matches when it matches any ticked
- * choice; the menu stays open while ticking, so several can be picked at once.
+ * The choices for one custom field. A task (or database record — this is
+ * also used by DatabasesPage) matches when it matches any ticked choice;
+ * the menu stays open while ticking, so several can be picked at once.
  */
-function FieldFilterMenu({ field, chosen, onChange }: FieldFilterMenuProps) {
+export function FieldFilterMenu({ field, chosen, onChange }: FieldFilterMenuProps) {
   const picked = new Set(chosen);
   const toggle = (choice: string) => {
     const next = new Set(picked);

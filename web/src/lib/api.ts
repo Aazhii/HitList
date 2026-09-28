@@ -527,6 +527,8 @@ export interface ApiSavedView {
   layout: TaskLayout;
   /** A list the view opens; null = whichever list is open. */
   scopeListId: string | null;
+  /** A database the view opens; null for a Task view, or a Task view with no list scope. */
+  scopeDatabaseId: string | null;
   filters: import('./taskFilters').FilterState;
   showDone: boolean;
   display: ViewDisplay;
@@ -535,7 +537,7 @@ export interface ApiSavedView {
   updatedAt: number;
 }
 
-export type SavedViewInput = Pick<ApiSavedView, 'name' | 'layout' | 'scopeListId' | 'filters' | 'showDone'> & {
+export type SavedViewInput = Pick<ApiSavedView, 'name' | 'layout' | 'scopeListId' | 'scopeDatabaseId' | 'filters' | 'showDone'> & {
   viewOrder?: number;
   /** Left out when a screen has no column choices to keep. */
   display?: ViewDisplay;
@@ -546,10 +548,10 @@ export const viewApi = {
     return get<ApiSavedView[]>('/views');
   },
   create(view: SavedViewInput): Promise<ApiSavedView> {
-    return post<ApiSavedView>('/views', { ...view, scopeListId: view.scopeListId ?? '' });
+    return post<ApiSavedView>('/views', { ...view, scopeListId: view.scopeListId ?? '', scopeDatabaseId: view.scopeDatabaseId ?? '' });
   },
   update(id: string, view: SavedViewInput): Promise<ApiSavedView> {
-    return put<ApiSavedView>(`/views/${id}`, { ...view, scopeListId: view.scopeListId ?? '' });
+    return put<ApiSavedView>(`/views/${id}`, { ...view, scopeListId: view.scopeListId ?? '', scopeDatabaseId: view.scopeDatabaseId ?? '' });
   },
   delete(id: string): Promise<void> {
     return del<void>(`/views/${id}`);

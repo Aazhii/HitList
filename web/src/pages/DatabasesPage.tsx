@@ -10,7 +10,7 @@
  * offering something that would quietly never fire.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { MoreHorizontal, Pencil, Plus, Table2, Trash2 } from 'lucide-react';
+import { Check, MoreHorizontal, Pencil, Plus, Table2, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
@@ -32,11 +32,13 @@ import { TopBar, TopBarToggle, topBarPrimary } from '@/components/shell/TopBar';
 import { FieldsManagerDialog, anchorRectOf, type AnchorRect } from '@/components/fields/FieldsManager';
 import { RecordTable } from '@/components/databases/RecordTable';
 import { RecordBoard } from '@/components/databases/RecordBoard';
+import { FieldFilterMenu } from '@/components/AdvancedFilterBar';
 import { useDatabases } from '@/hooks/useDatabases';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
-import { fieldApi, databaseApi, type ApiDatabase, type FieldInput } from '@/lib/api';
+import { useSavedViews } from '@/hooks/useSavedViews';
+import { fieldApi, databaseApi, type ApiDatabase, type ApiSavedView, type FieldInput } from '@/lib/api';
 import { LatestValueQueue } from '@/lib/latestValueQueue';
-import { FIELD_EMPTY, isGroupableField } from '@/lib/taskFilters';
+import { DEFAULT_FILTERS, FIELD_EMPTY, applyRecordFilters, isGroupableField } from '@/lib/taskFilters';
 import type { FieldDef, FieldValue } from '@/types/fields';
 import type { TaskLinking } from '@/types/todo';
 
@@ -98,11 +100,28 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
   /** Where the fields popover hangs from — the control that opened it. */
   const [fieldsAnchor, setFieldsAnchor] = useState<AnchorRect | null>(null);
 
+  // Saved views: tabs like "Needs Revisit" that apply a stored field filter.
+  // Shares the same /views the Tasks side uses (Tasks' own views are simply
+  // the ones with no scopeDatabaseId), filtered here to this database.
+  const savedViews = useSavedViews(notify);
+  const viewsForThisDb = useMemo(
+    () => savedViews.views.filter((v) => v.scopeDatabaseId === openId).sort((a, b) => a.viewOrder - b.viewOrder),
+    [savedViews.views, openId],
+  );
+  const [activeViewId, setActiveViewId] = useState<string | null>(null);
+  const [fieldFilters, setFieldFilters] = useState<Record<string, string[]>>({});
+  // A different database, or a filter tweaked by hand: no tab is "the" view anymore.
+  useEffect(() => { setActiveViewId(null); setFieldFilters({}); }, [openId]);
+
   const open = databases.find((d) => d.id === openId) ?? null;
   const view = (openId && viewByDatabase[openId]) || 'table';
   const boardField = openId
     ? fields.find((f) => f.id === boardFieldByDatabase[openId] && isGroupableField(f)) ?? null
     : null;
+  const visibleRows = useMemo(
+    () => applyRecordFilters(rows, fieldFilters, fields, values),
+    [rows, fieldFilters, fields, values],
+  );
 
 
   // Open the first database once they arrive, so the page is never blank when
@@ -222,6 +241,43 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
     }
   }, [notify, updateValues]);
 
+  const handleApplyView = useCallback((v: ApiSavedView) => {
+    setActiveViewId(v.id);
+    setFieldFilters(v.filters.fields ?? {});
+  }, []);
+
+  const handleClearView = useCallback(() => {
+    setActiveViewId(null);
+    setFieldFilters({});
+  }, []);
+
+  const handleChangeFieldFilter = useCallback((fieldId: string, choices: string[]) => {
+    setActiveViewId(null);
+    setFieldFilters((prev) => ({ ...prev, [fieldId]: choices }));
+  }, []);
+
+  const handleCreateView = useCallback(async (name: string) => {
+    if (!openId) return;
+    const created = await savedViews.createView({
+      name,
+      layout: 'table',
+      scopeListId: null,
+      scopeDatabaseId: openId,
+      filters: { ...DEFAULT_FILTERS, fields: fieldFilters },
+      showDone: false,
+    });
+    if (!created) return;
+    setActiveViewId(created.id);
+    toast.success(`Created "${created.name}"`, { duration: 2000 });
+  }, [openId, savedViews, fieldFilters]);
+
+  const handleDeleteView = useCallback(async (v: ApiSavedView) => {
+    const ok = await savedViews.deleteView(v.id);
+    if (!ok) return;
+    if (activeViewId === v.id) handleClearView();
+    toast(`Deleted view "${v.name}"`, { duration: 2000 });
+  }, [savedViews, activeViewId, handleClearView]);
+
   const subtitle = useMemo(() => {
     if (!open) return 'Records that are not tasks';
     const count = rows.length;
@@ -283,6 +339,31 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
             />
           ) : !open ? null : (
             <>
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <DatabaseViewTabs
+                  views={viewsForThisDb}
+                  activeViewId={activeViewId}
+                  online={savedViews.online}
+                  onApply={handleApplyView}
+                  onClear={handleClearView}
+                  onCreate={handleCreateView}
+                  onDelete={handleDeleteView}
+                />
+              </div>
+
+              {fields.some((f) => f.kind === 'select' || f.kind === 'multi' || f.kind === 'checkbox') && (
+                <div className="mb-3 flex flex-wrap items-center gap-1.5">
+                  {fields.filter((f) => f.kind === 'select' || f.kind === 'multi' || f.kind === 'checkbox').map((f) => (
+                    <FieldFilterMenu
+                      key={f.id}
+                      field={f}
+                      chosen={fieldFilters[f.id] ?? []}
+                      onChange={(choices) => handleChangeFieldFilter(f.id, choices)}
+                    />
+                  ))}
+                </div>
+              )}
+
               <div className="mb-4 flex">
                 <TopBarToggle
                   label="Table or board"
@@ -297,7 +378,7 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
 
               {view === 'board' ? (
                 <RecordBoard
-                  rows={rows}
+                  rows={visibleRows}
                   fields={fields}
                   values={values}
                   groupField={boardField}
@@ -308,7 +389,7 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
                 />
               ) : (
               <RecordTable
-                rows={rows}
+                rows={visibleRows}
                 fields={fields}
                 titleLabel={open.titleLabel}
                 onRenameTitleLabel={(label) => { void updateDatabase(open.id, { titleLabel: label }); }}
@@ -347,6 +428,133 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
         onDelete={handleDeleteField}
       />
     </div>
+  );
+}
+
+interface DatabaseViewTabsProps {
+  views: ApiSavedView[];
+  activeViewId: string | null;
+  online: boolean;
+  onApply: (view: ApiSavedView) => void;
+  onClear: () => void;
+  onCreate: (name: string) => Promise<void>;
+  onDelete: (view: ApiSavedView) => void;
+}
+
+const TAB = cn(
+  'flex h-7 flex-shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-medium whitespace-nowrap transition-colors duration-150',
+);
+
+/**
+ * "Default" + one pill per saved view — Notion's "Default view / Needs
+ * Revisit / By Status Board" row. A tab applies its stored field filter;
+ * "+" saves whatever the filter row below is currently set to as a new one.
+ */
+function DatabaseViewTabs({ views, activeViewId, online, onApply, onClear, onCreate, onDelete }: DatabaseViewTabsProps) {
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      <button
+        type="button"
+        onClick={onClear}
+        aria-current={activeViewId === null ? 'true' : undefined}
+        className={cn(TAB, activeViewId === null ? 'bg-a-accent-tint text-a-accent-700' : 'text-a-muted hover:bg-a-row-hover hover:text-a-ink')}
+      >
+        Default view
+      </button>
+      {views.map((v) => {
+        const active = v.id === activeViewId;
+        return (
+          <div key={v.id} className="group relative">
+            <button
+              type="button"
+              onClick={() => onApply(v)}
+              aria-current={active ? 'true' : undefined}
+              className={cn(TAB, 'pr-6', active ? 'bg-a-accent-tint text-a-accent-700' : 'text-a-muted hover:bg-a-row-hover hover:text-a-ink')}
+            >
+              {v.name}
+            </button>
+            <DropdownMenu onOpenChange={(isOpen) => { if (!isOpen) setConfirmDeleteId(null); }}>
+              <DropdownMenuTrigger asChild>
+                <button
+                  type="button"
+                  aria-label={`Options for view ${v.name}`}
+                  className="absolute top-1/2 right-1 flex size-5 -translate-y-1/2 items-center justify-center rounded-full text-a-faint opacity-0 transition-opacity duration-150 group-hover:opacity-100 hover:text-a-ink"
+                >
+                  <X className="size-3" strokeWidth={2.75} />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-48">
+                {confirmDeleteId === v.id ? (
+                  <DropdownMenuItem variant="destructive" onClick={() => onDelete(v)}>
+                    <Trash2 className="size-3.5" /> Delete for good
+                  </DropdownMenuItem>
+                ) : (
+                  <DropdownMenuItem variant="destructive" onSelect={(e) => { e.preventDefault(); setConfirmDeleteId(v.id); }}>
+                    <Trash2 className="size-3.5" /> Delete view…
+                  </DropdownMenuItem>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        );
+      })}
+      {online && <NewViewButton onCreate={onCreate} />}
+    </div>
+  );
+}
+
+function NewViewButton({ onCreate }: { onCreate: (name: string) => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const submit = async () => {
+    const trimmed = name.trim();
+    if (!trimmed || saving) return;
+    setSaving(true);
+    await onCreate(trimmed);
+    setSaving(false);
+    setName('');
+    setOpen(false);
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label="Save the current filter as a new view"
+          className="flex size-7 flex-shrink-0 items-center justify-center rounded-full text-a-faint transition-colors duration-150 hover:bg-a-row-hover hover:text-a-ink"
+        >
+          <Plus className="size-3.5" strokeWidth={2.75} />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-[260px] p-3">
+        <div className="space-y-2.5">
+          <p className="text-[11px] text-a-muted">Saves the filters below as a new tab.</p>
+          <Input
+            autoFocus
+            value={name}
+            maxLength={100}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') void submit(); }}
+            placeholder="e.g. Needs Revisit"
+            aria-label="View name"
+            className="h-8 rounded-full text-[14px]"
+          />
+          <button
+            type="button"
+            onClick={() => void submit()}
+            disabled={!name.trim() || saving}
+            className="h-8 w-full rounded-full bg-a-accent text-[13.5px] font-semibold text-a-bg transition-colors duration-150 hover:bg-a-accent-600 disabled:opacity-50"
+          >
+            {saving ? <Check className="mx-auto size-3.5 animate-pulse" /> : 'Save as view'}
+          </button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 

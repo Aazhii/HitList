@@ -107,7 +107,11 @@ export function countActiveFilters(f: FilterState): number {
 
 
 const FIELD_ID = /^[A-Za-z0-9_-]{1,64}$/;
-const FIELD_CHOICE = /^(?:__set__|__empty__|[A-Za-z0-9_-]{1,16})$/;
+// An option's own id is a server-generated UUID (36 chars) — this used to cap
+// at 16, so a select/multi filter's choice never survived normalisation: it
+// looked valid when set, then silently vanished the moment the view (or its
+// echoed response right after saving) was normalised, wiping the filter.
+const FIELD_CHOICE = /^(?:__set__|__empty__|[A-Za-z0-9_-]{1,64})$/;
 
 /** Per-field filter choices: valid ids only, no empty entries, capped. */
 function normaliseFieldFilters(raw: unknown): Record<string, string[]> {
@@ -193,8 +197,7 @@ export function applyTaskFilters(
 ): Todo[] {
   // Only fields that still exist: a saved view whose field was deleted must
   // not quietly hide every task.
-  const known = new Set((custom?.defs ?? []).map((d) => d.id));
-  const fieldFilters = Object.entries(f.fields ?? {}).filter(([id, choices]) => known.has(id) && choices.length > 0);
+  const fieldFilters = knownFieldFilters(f.fields, custom?.defs ?? []);
 
   const needle = f.search.trim().toLowerCase();
   const status = STATUS[f.status];
@@ -231,17 +234,53 @@ export function applyTaskFilters(
         break;
     }
 
-    for (const [fieldId, choices] of fieldFilters) {
-      const value = custom?.values[t.id]?.[fieldId];
-      const matches = choices.some((choice) => {
-        if (choice === FIELD_SET) return value !== undefined;
-        if (choice === FIELD_EMPTY) return value === undefined;
-        return Array.isArray(value) ? value.includes(choice) : value === choice;
-      });
-      if (!matches) return false;
-    }
-    return true;
+    return matchesFieldFilters(custom?.values[t.id], fieldFilters);
   });
+}
+
+/**
+ * Whether one subject's field values satisfy a set of field filters — the
+ * generic part of applyTaskFilters (a task or a database record has no
+ * status/quadrant/due/search to check, only field values, so this is the
+ * whole of what a database record needs to be filtered by).
+ */
+export function matchesFieldFilters(
+  values: Record<string, FieldValue> | undefined,
+  fieldFilters: ReadonlyArray<readonly [string, string[]]>,
+): boolean {
+  for (const [fieldId, choices] of fieldFilters) {
+    const value = values?.[fieldId];
+    const matches = choices.some((choice) => {
+      if (choice === FIELD_SET) return value !== undefined;
+      if (choice === FIELD_EMPTY) return value === undefined;
+      return Array.isArray(value) ? value.includes(choice) : value === choice;
+    });
+    if (!matches) return false;
+  }
+  return true;
+}
+
+/** A saved view's field filters, narrowed to fields that still exist on this database/task. */
+function knownFieldFilters(fields: Record<string, string[]> | undefined, defs: FieldDef[]): Array<[string, string[]]> {
+  const known = new Set(defs.map((d) => d.id));
+  return Object.entries(fields ?? {}).filter(([id, choices]) => known.has(id) && choices.length > 0);
+}
+
+/**
+ * A database's records, filtered by a saved view's field filters — the same
+ * choices/FIELD_SET/FIELD_EMPTY matching applyTaskFilters uses for a task's
+ * custom fields, since a record has nothing else (no status, quadrant, due
+ * date) to filter by.
+ */
+export function applyRecordFilters<T extends { id: string }>(
+  rows: readonly T[],
+  fields: Record<string, string[]> | undefined,
+  defs: FieldDef[],
+  values: Record<string, Record<string, FieldValue>>,
+): T[] {
+  const fieldFilters = knownFieldFilters(fields, defs);
+  if (fieldFilters.length === 0) return rows as T[];
+  return rows.filter((r) => matchesFieldFilters(values[r.id], fieldFilters));
 }
 
 const STATUS_RANK: Record<string, number> = { 'in-progress': 0, todo: 1, done: 2 };

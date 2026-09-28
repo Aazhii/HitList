@@ -399,6 +399,7 @@ public class WorkspaceService {
         row.put("Name", body.containsKey("name") ? Values.required(body, "name", 100) : EntityRepository.text(row.get("Name")));
         row.put("ViewLayout", body.containsKey("layout") ? validLayout(Values.optional(body, "layout", 16, "list")) : EntityRepository.text(row.getOrDefault("ViewLayout", "list")));
         row.put("ScopeListId", body.containsKey("scopeListId") ? Values.optional(body, "scopeListId", 64, "") : EntityRepository.text(row.getOrDefault("ScopeListId", "")));
+        row.put("ScopeDatabaseId", body.containsKey("scopeDatabaseId") ? Values.optional(body, "scopeDatabaseId", 64, "") : EntityRepository.text(row.getOrDefault("ScopeDatabaseId", "")));
         row.put("FilterJson", body.containsKey("filters") ? json(body.get("filters")) : EntityRepository.text(row.getOrDefault("FilterJson", "{}")));
         row.put("DisplayJson", body.containsKey("display") ? json(body.get("display")) : EntityRepository.text(row.getOrDefault("DisplayJson", "{\"hidden\":[],\"order\":[],\"widths\":{}}")));
         row.put("ShowDone", body.containsKey("showDone") ? Values.optionalBoolean(body, "showDone", false) : Values.bool(row.get("ShowDone")));
@@ -460,6 +461,7 @@ public class WorkspaceService {
         output.put("name", EntityRepository.text(row.get("Name")));
         output.put("layout", EntityRepository.text(row.get("ViewLayout")));
         output.put("scopeListId", emptyToNull(EntityRepository.text(row.get("ScopeListId"))));
+        output.put("scopeDatabaseId", emptyToNull(EntityRepository.text(row.get("ScopeDatabaseId"))));
         output.put("filters", Values.jsonMap(objectMapper, row.get("FilterJson"), Map.of()));
         output.put("showDone", Values.bool(row.get("ShowDone")));
         output.put("display", Values.jsonMap(objectMapper, row.get("DisplayJson"), Map.of("hidden", List.of(), "order", List.of(), "widths", Map.of())));

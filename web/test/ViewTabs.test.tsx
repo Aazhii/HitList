@@ -16,7 +16,7 @@ const stage: FieldDef = {
 };
 
 const view = (over: Partial<ApiSavedView> = {}): ApiSavedView => ({
-  id: 'v1', name: 'Stages', layout: 'board', scopeListId: null,
+  id: 'v1', name: 'Stages', layout: 'board', scopeListId: null, scopeDatabaseId: null,
   filters: { search: '', status: '', quadrant: '', due: '', dueAfter: '', dueBefore: '', sortBy: 'order', sortDir: 'asc', fields: {}, groupBy: 'stage' },
   showDone: false, display: { hidden: [], order: [], widths: {} },
   viewOrder: 0, createdAt: 1, updatedAt: 1, ...over,
