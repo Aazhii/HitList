@@ -339,7 +339,7 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
             />
           ) : !open ? null : (
             <>
-              <div className="mb-3 flex flex-wrap items-center gap-2">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
                 <DatabaseViewTabs
                   views={viewsForThisDb}
                   activeViewId={activeViewId}
@@ -352,7 +352,7 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
               </div>
 
               {fields.some((f) => f.kind === 'select' || f.kind === 'multi' || f.kind === 'checkbox') && (
-                <div className="mb-3 flex flex-wrap items-center gap-1.5">
+                <div className="mb-2 flex flex-wrap items-center gap-1.5">
                   {fields.filter((f) => f.kind === 'select' || f.kind === 'multi' || f.kind === 'checkbox').map((f) => (
                     <FieldFilterMenu
                       key={f.id}
@@ -364,7 +364,7 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
                 </div>
               )}
 
-              <div className="mb-4 flex">
+              <div className="mb-3 flex">
                 <TopBarToggle
                   label="Table or board"
                   value={view}
@@ -407,9 +407,8 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
               />
               )}
 
-              <p className="mt-6 text-[12.5px] leading-relaxed text-a-faint">
-                Records have no reminders, escalation or automations — those are built on tasks.
-                Keep anything that needs chasing as a task.
+              <p className="mt-3 text-[11.5px] text-a-faint/80">
+                No reminders or automations here — those live on tasks.
               </p>
             </>
           )}
