@@ -1,24 +1,24 @@
 import { useState, useCallback, useRef, useEffect, type ReactNode } from 'react';
 import {
   Plus, Search, Pin, PinOff, Trash2, FileText, MoreHorizontal,
-  StickyNote, Loader2, CheckCircle2, AlertCircle, WifiOff,
+  Loader2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Note } from '@/types/notes';
-import { NOTE_EMOJIS, NOTE_SYNC_LIMIT, NOTE_SYNC_WARN, formatNoteDate, getNotePreview } from '@/types/notes';
+import { NOTE_EMOJIS, NOTE_SYNC_LIMIT, NOTE_SYNC_WARN, formatNoteEdited, getNotePreview } from '@/types/notes';
 import type { BlockType } from '@/types/notes';
 import { useNotes } from '@/hooks/useNotes';
 import type { SaveStatus } from '@/hooks/useNotes';
 import { useSyncStatus } from '@/hooks/useSyncStatus';
 import type { SyncStatus } from '@/hooks/useSyncStatus';
 import { NoteEditor, type NoteTaskLinking } from '@/components/NoteEditor';
-import { ILL } from '@/components/EmptyState';
+import { EmptyState, ILL } from '@/components/EmptyState';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ViewLayoutContext, ContextSectionHeader, contextIconButton, contextRowClass, useViewLayout } from '@/components/shell/ViewLayout';
-import { TopBar, topBarPill, topBarPrimary } from '@/components/shell/TopBar';
+import { BTN_MD, TopBar, topBarPill, topBarPrimary } from '@/components/shell/TopBar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -96,17 +96,20 @@ function NoteListItem({
 
 // ── Empty state (no notes at all) ──────────────────────────────────────────────
 function NotesEmptyState({ onCreate }: { onCreate: () => void }) {
+  // Showcase 304–309: the DS EmptyState (template.png), then a primary "New note".
   return (
-    <div className="flex h-full flex-col items-center justify-center px-8 py-20 text-center animate-fade-in">
-      <img src={`/ill/${ILL.sampleData}`} alt="" aria-hidden className="mb-4 h-[132px] w-auto select-none" draggable={false} />
-      <h3 className="mb-1.5 text-[16px] font-semibold text-a-ink">No notes yet</h3>
-      <p className="mb-6 max-w-xs text-[14px] leading-relaxed text-a-muted">
-        Capture ideas, meeting notes, or anything on your mind. Notes live alongside your tasks.
-      </p>
-      <Button onClick={onCreate} className="h-9 gap-2 rounded-[6px] px-4">
-        <Plus className="size-4" />
-        New note
-      </Button>
+    <div className="pt-4">
+    <EmptyState
+      image={ILL.template}
+      title="No notes yet"
+      description="Capture ideas, meeting notes, or anything on your mind. Notes live alongside your tasks — type @ on a line to send it to a quadrant."
+      action={
+        <button type="button" onClick={onCreate} className={cn(topBarPrimary, BTN_MD)}>
+          <Plus className="size-[15px]" strokeWidth={1.75} aria-hidden />
+          New note
+        </button>
+      }
+    />
     </div>
   );
 }
@@ -137,7 +140,9 @@ function EmojiPicker({ emoji, onSelect }: { emoji: string; onSelect: (emoji: str
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="mb-[14px] block cursor-pointer text-[32px] leading-none transition-transform duration-[120ms] hover:scale-105"
+          // Showcase 312: a 56px white tile, 12px radius, 1px border. The prototype's emoji is 30px,
+          // between the scale's 24 and 32.
+          className="mb-4 grid size-14 cursor-pointer place-items-center rounded-[12px] border border-a-line bg-a-surface text-[32px] leading-none transition-colors duration-[120ms] hover:bg-a-line-soft"
           aria-label="Change note emoji"
         >
           {emoji}
@@ -197,6 +202,7 @@ function NoteDetail({
   // Exactly what is sent to the server (useNotes.noteToPayload), so the count
   // shown is the count the 10,000-character limit applies to.
   const syncSize = JSON.stringify(note.blocks).length;
+  const linkedCount = note.blocks.filter((b) => b.taskId).length;
 
   // Track first block id for Enter-from-title focus
   useEffect(() => {
@@ -207,7 +213,7 @@ function NoteDetail({
     // The one scroller for the note pane. The header lives inside it, so the
     // title scrolls away with the content rather than pinning above it.
     <ScrollArea className="h-full">
-      <div className="animate-fade-in px-4 pb-24 pt-[46px] md:px-8">
+      <div className="animate-fade-in px-4 pb-24 pt-8 md:px-8">
         {/* One reading column: a 720px measure plus the 44px margin that block
             controls hang into. The padding is applied once, here, so the title,
             metadata, every block, tables and panels share one left edge. */}
@@ -226,8 +232,9 @@ function NoteDetail({
               rows={1}
               className={cn(
                 'w-full resize-none border-none bg-transparent p-0 outline-none field-sizing-content',
-                'font-display text-[32px] leading-[1.08] tracking-[-0.015em] text-a-ink',
-                'placeholder:text-a-faint/40',
+                // Showcase 313: 34px/1.15, 700, -0.02em; 32 here, the top of the type scale.
+                'block text-[32px] leading-[1.22] font-bold tracking-[-0.02em] text-a-ink',
+                'placeholder:text-a-line-strong',
               )}
               aria-label="Note title"
               onKeyDown={(e) => {
@@ -244,10 +251,16 @@ function NoteDetail({
               }}
             />
 
-            <p className="mt-[14px] flex flex-wrap items-center gap-x-2 gap-y-1 text-[14px] text-a-faint">
-              <span>Edited {formatNoteDate(note.updatedAt)}</span>
+            <p className="mt-[10px] mb-7 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-a-faint">
+              <span>Edited {formatNoteEdited(note.updatedAt)}</span>
               <span aria-hidden>·</span>
-              <span>{note.blocks.length} block{note.blocks.length !== 1 ? 's' : ''}</span>
+              <span>{`${note.blocks.length} block${note.blocks.length !== 1 ? 's' : ''}`}</span>
+              {linkedCount > 0 && (
+                <>
+                  <span aria-hidden>·</span>
+                  <span>{`${linkedCount} linked task${linkedCount !== 1 ? 's' : ''}`}</span>
+                </>
+              )}
               {syncSize > NOTE_SYNC_WARN && (
                 <>
                   <span aria-hidden>·</span>
@@ -262,19 +275,6 @@ function NoteDetail({
                 </>
               )}
             </p>
-
-            <div className="mt-[22px] mb-2 h-px bg-a-line" />
-
-            {/* Keyboard hints — restyled, not removed: this is where "/" is taught
-                now that the per-row "/cmd" badge is gone. */}
-            <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pb-3 text-[12px] text-a-faint">
-              {([['/', 'commands'], ['↵', 'new block'], ['Tab', 'table cells']] as const).map(([key, label]) => (
-                <span key={key} className="flex items-center gap-1.5">
-                  <kbd className="rounded-[6px] bg-a-surface px-1.5 font-mono text-[11px] text-a-muted">{key}</kbd>
-                  {label}
-                </span>
-              ))}
-            </div>
           </div>
 
           <NoteEditor
@@ -309,40 +309,33 @@ function SyncIndicator({ saveStatus, syncStatus }: { saveStatus: SaveStatus; syn
     : isSyncing           ? 'Syncing…'
     : isOffline           ? 'Offline'
     : isError             ? 'Sync error'
-    : isSaved && isOffline ? 'Saved locally'
-    : isSaved             ? 'Synced'
-    : '';
+    : 'Saved';
 
   const ariaLabel = isSaving  ? 'Saving note…'
     : isSyncing             ? 'Syncing to server…'
     : isOffline             ? 'Working offline — changes saved locally'
     : isError               ? 'Sync failed — changes saved locally'
-    : isSaved               ? 'Synced to server'
+    : isSaved || isIdle     ? 'Synced to server'
     : undefined;
 
   const showSpinner  = isSaving || isSyncing;
-  const showCheck    = isSaved && !isOffline && !isError;
-  const showWifi     = isOffline;
-  const showAlert    = isError && !isOffline;
 
+  // The DS Badge (showcase 111): a tint, its ink, and a dot in the ink; a spinner while working.
   return (
     <span
       className={cn(
-        'flex select-none items-center gap-1.5 text-[13px] font-medium transition-opacity duration-[260ms] ease-in-out',
-        isIdle                    && 'pointer-events-none opacity-0',
-        (isSaving || isSyncing)   && 'text-a-faint',
-        isSaved && !isOffline     && 'text-a-sage-ink',
-        isOffline                 && 'text-q-delegate',
-        isError && !isOffline     && 'text-q-do',
+        // design-check-ignore: pill — the DS Badge is a pill.
+        'flex flex-shrink-0 select-none items-center gap-1 rounded-full border border-transparent px-2 py-[3px] text-[11px] font-semibold leading-none',
+        showSpinner              ? 'bg-a-line-soft text-a-faint'
+          : isOffline            ? 'bg-a-amber-tint text-a-amber'
+          : isError              ? 'bg-a-red-tint text-a-red-ink'
+          : 'bg-a-green-tint text-a-green-ink',
       )}
       aria-live="polite"
       aria-label={ariaLabel}
       title={ariaLabel}
     >
-      {showSpinner && <Loader2 className="size-3.5 animate-spin" aria-hidden />}
-      {showCheck   && <CheckCircle2 className="size-3.5" aria-hidden />}
-      {showWifi    && <WifiOff className="size-3.5" aria-hidden />}
-      {showAlert   && <AlertCircle className="size-3.5" aria-hidden />}
+      {showSpinner ? <Loader2 className="size-3 animate-spin" aria-hidden /> : <span className="size-[6px] rounded-full bg-current" aria-hidden />}
       <span className="hidden sm:inline">{label}</span>
     </span>
   );
@@ -481,6 +474,13 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
 
   const notesList = (
     <>
+      {pinned.length > 0 && (
+        <>
+          <ContextSectionHeader label="Pinned" />
+          <ul className="space-y-0.5">{pinned.map(renderRow)}</ul>
+        </>
+      )}
+
       <ContextSectionHeader
         label="Notes"
         action={
@@ -490,7 +490,7 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
         }
       />
 
-      <div className="relative mb-3 px-1">
+      {notes.length > 0 && <div className="relative mb-3 px-1">
         <Search className="pointer-events-none absolute top-1/2 left-4 size-3.5 -translate-y-1/2 text-a-faint" strokeWidth={1.75} aria-hidden />
         <input
           type="search"
@@ -504,30 +504,12 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
             'focus-visible:shadow-[inset_0_0_0_1.5px_var(--a-accent)]',
           )}
         />
-      </div>
+      </div>}
 
-      {notes.length === 0 && (
-        <div className="px-3 py-8 text-center">
-          <StickyNote className="mx-auto mb-2 size-6 text-a-faint/60" strokeWidth={1.75} aria-hidden />
-          <p className="mb-2 text-[13px] text-a-faint">No notes yet</p>
-          <button type="button" onClick={handleCreate} className="text-[13px] font-medium text-a-accent-700 hover:underline">
-            Create your first note
-          </button>
-        </div>
-      )}
-
-      {pinned.length > 0 && (
-        <>
-          <p className="px-3 pt-1 pb-1.5 text-[11px] font-bold uppercase tracking-[0.1em] text-a-faint">Pinned</p>
-          <ul className="space-y-0.5">{pinned.map(renderRow)}</ul>
-        </>
-      )}
+      {notes.length === 0 && <p className="px-2.5 py-1 text-[12px] text-a-faint">No notes yet.</p>}
 
       {unpinned.length > 0 && (
         <>
-          {pinned.length > 0 && (
-            <p className="px-3 pt-3 pb-1.5 text-[11px] font-bold uppercase tracking-[0.1em] text-a-faint">All notes</p>
-          )}
           <ul className="space-y-0.5">{unpinned.map(renderRow)}</ul>
         </>
       )}
@@ -571,7 +553,7 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
       subtitle={`${notes.length} note${notes.length !== 1 ? 's' : ''}`}
       actions={
         <>
-          {activeNote && <SyncIndicatorWrapper saveStatus={saveStatus} />}
+          {(activeNote || notes.length > 0) && <SyncIndicatorWrapper saveStatus={saveStatus} />}
 
           {/* Pin and delete for the open note, in the one quiet pill. */}
           {activeNote && (
@@ -594,12 +576,10 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
             </DropdownMenu>
           )}
 
-          {(activeNote || notes.length > 0) && (
             <button type="button" onClick={handleCreate} className={topBarPrimary} aria-label="New note">
               <Plus className="size-[15px]" strokeWidth={1.75} aria-hidden />
-              <span className="hidden sm:inline">New note</span>
+              <span className="hidden sm:inline">New</span>
             </button>
-          )}
         </>
       }
     />

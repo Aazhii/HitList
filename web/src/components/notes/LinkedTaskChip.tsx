@@ -7,6 +7,7 @@
  */
 import { Check, ExternalLink, Loader2, Unlink } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { getDueInfo } from '@/lib/dueInfo';
 import { getQuadrantConfig, type KaizenList, type Todo } from '@/types/todo';
 import {
   DropdownMenu,
@@ -25,8 +26,9 @@ interface LinkedTaskChipProps {
   onUnlink: () => void;
 }
 
+// Showcase 327: 22px, 6px radius, 12px / 500, a 6px dot; "Schedule · Work · Oct 2".
 const CHIP = cn(
-  'inline-flex max-w-[260px] items-center gap-1.5 rounded-[3px] px-2.5 py-[3px] text-[12px] leading-none whitespace-nowrap',
+  'inline-flex h-[22px] max-w-[260px] items-center gap-1.5 rounded-[6px] px-2 text-[12px] font-medium leading-none whitespace-nowrap',
   'transition-colors duration-[120ms]',
 );
 
@@ -42,6 +44,7 @@ export function LinkedTaskChip({ task, lists, pending, onOpen, onUnlink }: Linke
   const quad = task ? getQuadrantConfig(task.quadrant) : null;
   const list = task ? lists.find((l) => l.id === task.listId) : undefined;
   const done = task?.status === 'done';
+  const due = task && !done ? getDueInfo(task.dueDate, task.dueTime)?.label : undefined;
 
   return (
     <DropdownMenu>
@@ -62,8 +65,10 @@ export function LinkedTaskChip({ task, lists, pending, onOpen, onUnlink }: Linke
               {done
                 ? <Check className="size-3 flex-shrink-0" strokeWidth={1.75} aria-hidden />
                 : <span className={cn('size-1.5 flex-shrink-0 rounded-full', quad.dotClass)} aria-hidden />}
-              <span className={cn('font-semibold', done && 'line-through decoration-[1.5px]')}>{quad.label}</span>
-              {list && <span className="min-w-0 truncate opacity-80">· {list.name}</span>}
+              {/* One run of text, "Schedule · Work · Oct 2", as in the prototype. */}
+              <span className={cn('min-w-0 truncate', done && 'line-through decoration-[1.5px]')}>
+                {[quad.label, list?.name, due].filter(Boolean).join(' · ')}
+              </span>
             </>
           ) : (
             <span>Task removed</span>

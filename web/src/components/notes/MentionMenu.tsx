@@ -1,15 +1,16 @@
 /**
- * The "@" menu: Add to quadrant → workspace → quadrant.
+ * The "@" card (showcase 570–584): "Add this line to a quadrant" — the four quadrants as a 2×2
+ * grid, a List select, Cancel and Add task. One panel, not a cascade: the quadrant defaults to
+ * Schedule and the list to the one open in Tasks, so ↵ adds straight away.
  *
- * Three cascading columns in one floating panel. Each column opens when the row
- * before it is hovered, or entered with → / ↵, so the whole path can be walked
- * by pointer or keyboard. The editor keeps focus in its textarea throughout and
- * forwards navigation keys here through the imperative handle.
+ * The editor keeps focus in its textarea throughout and forwards navigation keys here through
+ * the imperative handle: arrows move the quadrant, ↵ / Tab adds, Esc closes.
  */
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from 'react';
-import { ChevronRight, KanbanSquare, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { QUADRANTS, getListColorDot, type KaizenList, type Quadrant } from '@/types/todo';
+import { QUADRANTS, type KaizenList, type Quadrant } from '@/types/todo';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export interface MentionMenuHandle {
   /** Handles a navigation key. Returns true when the key was used. */
@@ -19,96 +20,73 @@ export interface MentionMenuHandle {
 interface MentionMenuProps {
   position: { top: number; left: number };
   lists: KaizenList[];
-  /** Listed first: usually the list open in Tasks. */
+  /** Selected first: usually the list open in Tasks. */
   preferredListId?: string;
-  /** Filters the column that has focus. */
+  /** What was typed after the "@": a quadrant or list name it starts is picked for you. */
   query: string;
-  /** A task is being created; rows are inert. */
+  /** A task is being created; the card is inert. */
   pending: boolean;
-  /** Shown in place of the rows, e.g. when the block is empty. */
+  /** Shown in place of the form, e.g. when the block is empty. */
   message?: string | null;
-  /** Column 1's header — what's being added to a quadrant (a note block, a column). */
+  /** What is being added to a quadrant (a note block, a column); kept for callers, the card's title is fixed. */
   contextLabel: string;
   onSelect: (listId: string, quadrant: Quadrant) => void;
   onClose: () => void;
 }
 
-const COL_W = 212;
-
-const itemClass = (active: boolean) => cn(
-  'flex w-full items-center gap-2.5 rounded-[8px] px-2 py-1.5 text-left text-[14px] text-a-ink transition-colors duration-[120ms]',
-  active ? 'bg-a-accent-tint' : 'hover:bg-a-row-hover',
-);
-
-function ColumnHeader({ children }: { children: React.ReactNode }) {
-  return <p className="px-2.5 pt-2.5 pb-1.5 text-[11px] font-bold uppercase tracking-[0.1em] text-a-faint">{children}</p>;
-}
+const CARD_W = 340;
+const DEFAULT_QUADRANT: Quadrant = 'schedule';
 
 export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(function MentionMenu(
-  { position, lists, preferredListId, query, pending, message, contextLabel, onSelect, onClose },
+  { position, lists, preferredListId, query, pending, message, onSelect, onClose },
   ref,
 ) {
-  // Which column has focus: 0 action, 1 workspace, 2 quadrant.
-  const [level, setLevel] = useState(0);
-  const [listIdx, setListIdx] = useState(0);
-  const [quadIdx, setQuadIdx] = useState(0);
+  const [quadrant, setQuadrant] = useState<Quadrant>(DEFAULT_QUADRANT);
+  const [listId, setListId] = useState<string | undefined>(preferredListId ?? lists[0]?.id);
 
   const orderedLists = useMemo(() => {
     const pref = lists.find((l) => l.id === preferredListId);
     return pref ? [pref, ...lists.filter((l) => l.id !== pref.id)] : lists;
   }, [lists, preferredListId]);
+  const activeListId = orderedLists.some((l) => l.id === listId) ? listId : orderedLists[0]?.id;
 
+  // "@do", "@side": what is typed after the "@" picks the first quadrant or list it starts.
   const q = query.trim().toLowerCase();
-  const shownLists = level === 1 && q ? orderedLists.filter((l) => l.name.toLowerCase().includes(q)) : orderedLists;
-  const shownQuads = level === 2 && q ? QUADRANTS.filter((x) => x.label.toLowerCase().includes(q)) : QUADRANTS;
-
-  // A new query starts from the first match. Keyed on the query alone, so
-  // stepping back a column with ← keeps the workspace that was chosen.
   useEffect(() => {
-    setListIdx(0);
-    setQuadIdx(0);
-  }, [q]);
+    if (!q) return;
+    const quad = QUADRANTS.find((x) => x.label.toLowerCase().startsWith(q) || x.id.startsWith(q));
+    if (quad) { setQuadrant(quad.id); return; }
+    const list = orderedLists.find((l) => l.name.toLowerCase().includes(q));
+    if (list) setListId(list.id);
+  }, [q, orderedLists]);
 
-  const activeList = shownLists[Math.min(listIdx, shownLists.length - 1)];
-
-  const choose = (quadrant: Quadrant) => {
-    if (pending || !activeList) return;
-    onSelect(activeList.id, quadrant);
+  const add = () => {
+    if (pending || !activeListId) return;
+    onSelect(activeListId, quadrant);
   };
 
   useImperativeHandle(ref, () => ({
     handleKey(key) {
       if (key === 'Escape') { onClose(); return true; }
+      if (message) return false;
       if (pending) return ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter', 'Tab'].includes(key);
-      const count = level === 1 ? shownLists.length : level === 2 ? shownQuads.length : 1;
-      const move = (d: number) => {
-        if (level === 1) setListIdx((i) => (i + d + count) % Math.max(count, 1));
-        if (level === 2) setQuadIdx((i) => (i + d + count) % Math.max(count, 1));
-      };
+      // The grid reads left to right, then down: do, schedule / delegate, eliminate.
+      const i = QUADRANTS.findIndex((x) => x.id === quadrant);
+      const go = (n: number) => { setQuadrant(QUADRANTS[(n + QUADRANTS.length) % QUADRANTS.length].id); return true; };
       switch (key) {
-        case 'ArrowDown': move(1); return true;
-        case 'ArrowUp': move(-1); return true;
-        case 'ArrowLeft':
-          if (level === 0) return false;
-          setLevel((l) => l - 1);
-          return true;
-        case 'ArrowRight':
+        case 'ArrowRight': return go(i + 1);
+        case 'ArrowLeft': return go(i - 1);
+        case 'ArrowDown': return go(i + 2);
+        case 'ArrowUp': return go(i - 2);
         case 'Enter':
-        case 'Tab':
-          if (level === 0) { setLevel(1); return true; }
-          if (level === 1) { if (activeList) setLevel(2); return true; }
-          if (shownQuads[quadIdx]) choose(shownQuads[quadIdx].id);
-          return true;
-        default:
-          return false;
+        case 'Tab': add(); return true;
+        default: return false;
       }
     },
-  }), [level, shownLists, shownQuads, quadIdx, activeList, pending, onClose]);
+  }), [quadrant, message, pending, activeListId, onClose]);
 
-  const columns = 1 + (level >= 1 ? 1 : 0) + (level >= 2 ? 1 : 0);
-  const width = columns * COL_W;
-  const left = Math.max(8, Math.min(position.left, window.innerWidth - width - 8));
-  const estHeight = 64 + Math.max(1, level >= 1 ? orderedLists.length : 1, level >= 2 ? 4 : 1) * 38;
+  const left = Math.max(8, Math.min(position.left, window.innerWidth - CARD_W - 8));
+  const estHeight = message ? 96 : 272;
   const top = position.top + estHeight > window.innerHeight - 8 ? Math.max(8, position.top - estHeight - 30) : position.top;
 
   return (
@@ -116,82 +94,73 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
       data-mention-menu
       role="dialog"
       aria-label="Add to quadrant"
-      className="fixed z-50 flex overflow-hidden rounded-[12px] border border-a-line bg-a-bg text-a-ink shadow-[var(--a-shadow-md)] animate-fade-in"
-      style={{ top, left }}
-      // Keep the caret in the block while the menu is used.
-      onMouseDown={(e) => e.preventDefault()}
+      className="fixed z-50 flex flex-col gap-3 rounded-[8px] border border-a-line bg-a-surface p-3 text-[13px] text-a-ink shadow-[var(--a-shadow-lg)] animate-fade-in"
+      style={{ top, left, width: CARD_W }}
+      // Keep the caret in the block while the card is used.
+      onMouseDown={(e) => { if (!(e.target as HTMLElement).closest('[data-slot="select-trigger"]')) e.preventDefault(); }}
     >
-      {/* Column 1: action */}
-      <div className="p-1.5" style={{ width: COL_W }}>
-        <ColumnHeader>{contextLabel}</ColumnHeader>
-        {message ? (
-          <p className="px-2.5 pb-2 text-[13px] text-a-muted">{message}</p>
-        ) : (
-          <button
-            type="button"
-            className={itemClass(level === 0 || level >= 1)}
-            onMouseEnter={() => { if (!pending) setLevel((l) => Math.max(l, 1)); }}
-            onClick={() => setLevel((l) => Math.max(l, 1))}
-            aria-expanded={level >= 1}
-          >
-            <KanbanSquare className="size-3.5 text-a-accent-700" strokeWidth={1.75} aria-hidden />
-            <span className="flex-1">Add to quadrant</span>
-            <ChevronRight className="size-3.5 text-a-faint" strokeWidth={1.75} aria-hidden />
-          </button>
-        )}
-      </div>
+      <p className="font-semibold">Add this line to a quadrant</p>
 
-      {/* Column 2: workspace */}
-      {level >= 1 && !message && (
-        <div className="border-l border-a-line-soft p-1.5" style={{ width: COL_W }} role="listbox" aria-label="Workspace">
-          <ColumnHeader>Workspace</ColumnHeader>
-          <div className="max-h-[264px] overflow-y-auto">
-            {shownLists.length === 0 && <p className="px-2.5 pb-2 text-[13px] text-a-faint">No workspace matches</p>}
-            {shownLists.map((l, i) => (
-              <button
-                key={l.id}
-                type="button"
-                role="option"
-                aria-selected={i === listIdx}
-                className={itemClass(i === listIdx)}
-                onMouseEnter={() => { if (pending) return; setListIdx(i); setLevel(2); }}
-                onClick={() => { setListIdx(i); setLevel(2); }}
-              >
-                <span className={cn('size-2 flex-shrink-0 rounded-full', getListColorDot(l.color))} aria-hidden />
-                <span className="min-w-0 flex-1 truncate">{l.name}</span>
-                <ChevronRight className="size-3.5 text-a-faint" strokeWidth={1.75} aria-hidden />
-              </button>
-            ))}
+      {message ? (
+        <p className="text-a-muted">{message}</p>
+      ) : (
+        <>
+          <div role="radiogroup" aria-label="Quadrant" className="grid grid-cols-2 gap-2">
+            {QUADRANTS.map((quad) => {
+              const on = quad.id === quadrant;
+              return (
+                <button
+                  key={quad.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={on}
+                  disabled={pending}
+                  onClick={() => setQuadrant(quad.id)}
+                  className={cn(
+                    'rounded-[6px] px-2.5 py-2 text-left transition-shadow duration-[120ms]',
+                    quad.tintClass, quad.inkClass,
+                    on ? 'border-[1.5px] border-current' : 'border border-transparent',
+                  )}
+                >
+                  <div className="text-[13px] font-semibold">{quad.label}</div>
+                  <div className="text-[11px]">{quad.subtitle}</div>
+                </button>
+              );
+            })}
           </div>
-        </div>
-      )}
 
-      {/* Column 3: quadrant */}
-      {level >= 2 && activeList && !message && (
-        <div className="border-l border-a-line-soft p-1.5" style={{ width: COL_W }} role="listbox" aria-label={`Quadrant in ${activeList.name}`}>
-          <ColumnHeader>Quadrant</ColumnHeader>
-          {shownQuads.map((quad, i) => (
+          <div className="flex flex-col gap-1">
+            <span id="mention-list-label">List</span>
+            <Select value={activeListId} onValueChange={setListId} disabled={pending || orderedLists.length === 0}>
+              <SelectTrigger size="sm" aria-labelledby="mention-list-label" className="h-7 w-full text-[11px]">
+                <SelectValue placeholder="No list" />
+              </SelectTrigger>
+              {/* Portalled outside the card: tagged so a click in it is not "outside" the menu. */}
+              <SelectContent data-mention-menu>
+                {orderedLists.map((l) => <SelectItem key={l.id} value={l.id}>{l.name}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="flex justify-end gap-2">
             <button
-              key={quad.id}
               type="button"
-              role="option"
-              aria-selected={level === 2 && i === quadIdx}
-              disabled={pending}
-              className={itemClass(level === 2 && i === quadIdx)}
-              onMouseEnter={() => setQuadIdx(i)}
-              onClick={() => choose(quad.id)}
+              onClick={onClose}
+              className="h-7 rounded-[3px] px-3 text-[11px] font-semibold text-a-muted transition-colors duration-[120ms] hover:bg-a-line-soft"
             >
-              <span className={cn('size-2 flex-shrink-0 rounded-full', quad.dotClass)} aria-hidden />
-              <span className="min-w-0 flex-1">
-                <span className="block leading-tight">{quad.label}</span>
-                <span className="block text-[12px] leading-tight text-a-faint">{quad.subtitle}</span>
-              </span>
-              {pending && level === 2 && i === quadIdx && (
-                <Loader2 className="size-3.5 animate-spin text-a-faint" aria-hidden />
-              )}
+              Cancel
             </button>
-          ))}
-        </div>
+            <button
+              type="button"
+              onClick={add}
+              disabled={pending || !activeListId}
+              className="flex h-7 items-center gap-1.5 rounded-[3px] bg-a-accent px-3 text-[11px] font-semibold text-white transition-colors duration-[120ms] hover:bg-a-accent-600 disabled:opacity-50"
+            >
+              {pending && <Loader2 className="size-3 animate-spin" aria-hidden />}
+              Add task
+            </button>
+          </div>
+        </>
       )}
     </div>
   );

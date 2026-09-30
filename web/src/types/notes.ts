@@ -120,6 +120,17 @@ export function createNewNote(title = ''): Note {
   };
 }
 
+/** "today, 9:42 AM" — the note header's edited line (showcase 314). */
+export function formatNoteEdited(ts: number, now = new Date()): string {
+  const d = new Date(ts);
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+  const startOf = (x: Date) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const days = Math.round((startOf(now) - startOf(d)) / 86400000);
+  if (days === 0) return `today, ${time}`;
+  if (days === 1) return `yesterday, ${time}`;
+  return `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${time}`;
+}
+
 export function formatNoteDate(ts: number): string {
   const now = Date.now();
   const diff = now - ts;

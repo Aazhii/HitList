@@ -206,7 +206,7 @@ export function TableBlock({ block, isFocused, onUpdateTable, onFocus }: TableBl
       colIdx,
       startX: e.clientX,
       // What the user sees, so a stored width under the floor doesn't jump.
-      startWidth: displayWidths[colIdx],
+      startWidth: (e.currentTarget as HTMLElement).closest('td')?.getBoundingClientRect().width ?? displayWidths[colIdx],
     };
 
     const onMouseMove = (ev: MouseEvent) => {
@@ -296,13 +296,13 @@ export function TableBlock({ block, isFocused, onUpdateTable, onFocus }: TableBl
     // No reserved padding: the add rails overlay the space outside the grid, so
     // the grid's left and right edges line up with the text column.
     <div
-      className="relative w-fit max-w-full"
+      className="relative w-full max-w-full"
       onClick={() => onFocus(block.id)}
       onMouseEnter={() => setTableHovered(true)}
       onMouseLeave={() => setTableHovered(false)}
     >
-      <div className="overflow-x-auto rounded-[8px] border border-a-line">
-        <table className="border-collapse" style={{ tableLayout: 'fixed', width: tableWidth }}>
+      <div className="overflow-x-auto rounded-[6px] border border-a-line">
+        <table className="border-collapse" style={{ tableLayout: 'fixed', width: '100%', minWidth: tableWidth }}>
           <colgroup>
             {displayWidths.map((w, i) => <col key={i} style={{ width: w }} />)}
           </colgroup>
@@ -325,6 +325,8 @@ export function TableBlock({ block, isFocused, onUpdateTable, onFocus }: TableBl
                         key={colIdx}
                         className={cn(
                           'group/cell relative p-0 align-top border-a-line-soft',
+                          // DS Table: a header band with a firmer rule under it (showcase 355).
+                          isHeader && 'border-b-a-line bg-a-bg',
                           // Internal rules only — none on the last row or last column.
                           colIdx < numCols - 1 && 'border-r',
                           !isLastRow && 'border-b',
@@ -467,11 +469,11 @@ export function TableBlock({ block, isFocused, onUpdateTable, onFocus }: TableBl
                           onBlur={() => setSelectedCell(null)}
                           rows={1}
                           className={cn(
-                            'block w-full resize-none overflow-hidden border-none bg-transparent px-4 py-[11px] outline-none [overflow-wrap:anywhere]',
+                            'block w-full resize-none overflow-hidden border-none bg-transparent px-3 py-2 outline-none [overflow-wrap:anywhere]',
                             'placeholder:text-a-faint/60',
                             // Header and body share one size and line height; weight
                             // alone marks the header, with no band behind it.
-                            'text-[14px] leading-[1.45] text-a-ink',
+                            'text-[13px] leading-[1.5] text-a-ink',
                             isHeader && 'font-semibold',
                             // Leave room for the column menu on first-row cells.
                             isFirstRow && 'pr-8',

@@ -60,3 +60,30 @@ call('POST', '/views', {'name': 'Needs revisit', 'layout': 'table', 'scopeListId
                         'filters': {**base_filters, 'fields': {status['id']: [opt(status, 'To read'), opt(status, 'Abandoned')]}}, 'showDone': False,
                         'display': {'hidden': [], 'order': [], 'widths': {}}})
 print(f'seeded database "Reading list" ({len(rows)} rows) plus Clients and Recipes')
+
+# --- Notes: the prototype's sidebar (7 notes) with "Onboarding plan" written out (showcase 310-354). ---
+import uuid
+tasks = call('GET', '/tasks') or []
+task_id = lambda title: next((t['id'] for t in tasks if t.get('title', t.get('text')) == title), None)
+import datetime
+# "Edited today, 9:42 AM" in the prototype.
+edited = int(datetime.datetime.now().replace(hour=9, minute=42, second=0, microsecond=0).timestamp() * 1000)
+b = lambda type, content='', **kw: {'id': str(uuid.uuid4()), 'type': type, 'content': content, **kw}
+onboarding = [
+    b('heading2', 'Goals for the first week'),
+    b('paragraph', 'Every new teammate should know who to ask, where things live, and what "done" looks like by Friday. Keep the list short — three outcomes, not thirty tasks.'),
+    b('todo', 'Draft onboarding checklist', checked=False, taskId=task_id('Draft onboarding checklist')),
+    b('todo', 'Set up laptop and accounts', checked=True),
+    b('todo', 'Schedule 1:1s with the team', checked=False, taskId=task_id('Prepare Q4 roadmap review')),
+    b('callout', 'Buddy assignment happens on day one. Introduce them in the team channel before the first standup.', emoji='💡', tone='accent'),
+    b('heading3', 'Access to request'),
+    b('bullet', 'Source control and CI'), b('bullet', 'Design files'), b('bullet', 'Analytics dashboards'),
+    b('quote', 'People remember how the first week felt, not the documents they read.'),
+    b('table', '', tableData={'rows': [['Week', 'Focus', 'Owner'], ['Week 1', 'Setup and introductions', 'Buddy'], ['Week 2', 'First shipped change', 'Manager'], ['Week 4', 'Retro and goals', 'Team']], 'hasHeader': True, 'colWidths': [210, 297, 210], 'colAligns': ['left', 'left', 'left']}),
+    b('code', 'make bootstrap   # installs toolchain\nmake dev         # runs API on :3001, UI on :5173'),
+    b('paragraph', ''),
+]
+for emoji, title, blocks, pinned in [('🧭', 'Onboarding plan', onboarding, True), ('📚', 'Reading queue', [], True), ('📝', 'Weekly review', [], False),
+                             ('🤝', 'Meeting: vendor demo', [], False), ('💡', 'Ideas', [], False), ('🗺️', 'Q4 roadmap draft', [], False), ('🎒', 'Trip packing', [], False)]:
+    call('POST', '/notes', {'id': str(uuid.uuid4()), 'title': title, 'emoji': emoji, 'pinned': pinned,
+                            'blocksJson': json.dumps(blocks or [b('paragraph', '')]), 'createdAt': edited, 'updatedAt': edited})

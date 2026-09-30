@@ -146,7 +146,7 @@ that one is fine where it is.
 | Visual | `node web/scripts/shoot.mjs <screen-id>` → a `.ref.png` / `.app.png` pair | every Phase 3 task |
 | Real build | `sh desktop/scripts/prepare-jar.sh` → copy to `api/target/hitlist.jar` → restart Electron → re-check its own port | every **phase** exit, not every task |
 
-Test baseline: **381 tests across 43 files.** This must not regress.
+Test baseline: **385 tests across 44 files.** This must not regress.
 
 ---
 
@@ -156,10 +156,10 @@ Test baseline: **381 tests across 43 files.** This must not regress.
 Phase 0  █████   5 / 5      done
 Phase 1  █████  11 / 11      foundations — the broken UI
 Phase 2  █████   5 / 5       shell exactness
-Phase 3  ███░░  32 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
+Phase 3  ███░░  36 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
 Phase 4  ░░░░░   1 / 12      missing features
 Phase 5  ░░░░░   0 / 7       proposals, unreviewed
-                54 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
+                58 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
 ```
 
 ### A note on "partially built"
@@ -269,10 +269,10 @@ on a description. Execution order is the section order below.
 
 | ID | Screen | State | Verified by |
 |---|---|---|---|
-| T3.33 | `notes-editor` | todo | |
-| T3.34 | `notes-slash` | todo | |
-| T3.35 | `notes-mention` | todo | |
-| T3.36 | `notes-empty` | todo | |
+| T3.33 | `notes-editor` | **done** | shots/notes-editor.{ref,app}.png — 56px icon tile, 32/700 title, "Edited today, 9:42 AM · N blocks · N linked tasks", 14px body scale, headings 24/20/16 at 600, DS checkbox to-dos with the linked-task chip beside the text, grey callout, list/quote/code/table to the measured values |
+| T3.34 | `notes-slash` | **done** | shots/notes-slash.{ref,app}.png — 300px panel, "Basic blocks" caption, 28px icon tiles, blue-tint selected row, hint line; Database group left out until T4.8 |
+| T3.35 | `notes-mention` | **done** | shots/notes-mention.{ref,app}.png — the prototype's single card (quadrant grid, List select, Cancel / Add task) replaces the three-column cascade |
+| T3.36 | `notes-empty` | **done** | shots/notes-empty.{ref,app}.png — DS EmptyState with template.png, prototype copy, "New note" button; sidebar shows "No notes yet." |
 
 ### 3E · Calendar
 

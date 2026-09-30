@@ -612,7 +612,7 @@ Shared primitives now follow the DS, so every dialog inherits them:
 1. **Verify before you change.** Every task quotes the current code. If what you find does not match the quote, **stop and report** — do not adapt silently. The file may have moved on.
 2. **Never invent a value.** If a task does not give you a number and this file does not either, ask. Guessing is what produced the current state.
 3. **One task, one commit.** Commit message: `design(T1.4): set every icon stroke to 1.75`.
-4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 381 tests.
+4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 385 tests.
 5. **Update `00-INDEX.md`** — set State and fill in "Verified by" with the actual command output or screenshot pair. A task with an empty "Verified by" is not done.
 6. **Do not delete the Automations or Reminders code.** It is being revived in Phase 4, not removed.
 
@@ -636,3 +636,16 @@ Shared primitives now follow the DS, so every dialog inherits them:
 - Left out on purpose: the prototype's "Write something, or press “/” for blocks…" line. A record has no body to store, so it would be a dead field. Revisit with a stored record body (needs an additive migration).
 - Title is 32px, not the prototype's 34px (outside the closed type scale). The trash button asks a second time ("Delete for good"); the prototype deletes at once.
 - Board cards do not open the peek yet; the prototype only opens it from the table.
+
+### Notes: editor, slash menu, mention card, empty state (T3.33–T3.36)
+
+- Type scale is the prototype's: body 14px, headings 24 / 20 / 16 at weight 600 (the display face is gone from notes), quote 15, code 12 on an ink panel, table cells 13. The quote's 15px is outside the closed scale and carries a `design-check-ignore`. Title is 32px, not the prototype's 34; the note icon is 32px, not 30.
+- Lists have no space between items, a to-do's text starts 26px in (16px box + 10), a list item's 22px, a callout's icon is a line lightbulb when it is the default 💡 (a chosen emoji still shows as the emoji).
+- A callout's default tone is the prototype's grey; the sage tone stays as the one alternative.
+- The linked-task chip reads "Schedule · Work · Oct 2" (quadrant · list · due) and follows the text, which is sized to its content with `field-sizing: content` — a browser without it (Firefox, older Safari) puts the chip at the row's far edge.
+- Tables fill the column (stored column widths act as proportions once they add up to less than it). The prototype's per-column type icon and "text" caption are left out: a note table has no column types, so they would be decoration.
+- The sidebar keeps its Search notes box (the global Search row is still a placeholder); it sits under the "Notes" header, and is hidden when there are no notes. "Pinned" comes first, as in the prototype.
+- The note toolbar shows the sync state as a DS Badge ("Saved" when idle) and "New", always.
+- The mention card is one panel (quadrant grid, List select, Cancel, Add task) with Schedule and the open list preselected; arrows move the quadrant, ↵ adds, Esc closes. What was typed after "@" preselects a quadrant or list it starts. This replaces the three-column cascade the docs described — the docs described the app, not the prototype.
+- The slash menu's Database group (Create database / board / linked view) is not rendered: it belongs to T4.8.
+- The prototype's blocks-count reads 12 for the sample note because it counts a list as one block; the app counts every item.

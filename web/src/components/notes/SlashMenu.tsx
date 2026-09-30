@@ -14,8 +14,8 @@ interface SlashCommand {
   icon: React.ReactNode;
 }
 
-const ICON = 'size-3.5';
-const STROKE = 2.75;
+const ICON = 'size-[15px]';
+const STROKE = 1.75;
 
 export const SLASH_COMMANDS: SlashCommand[] = [
   { trigger: 'text',     label: 'Text',          description: 'Plain paragraph',       type: 'paragraph', icon: <Type className={ICON} strokeWidth={STROKE} /> },
@@ -26,7 +26,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { trigger: 'numbered', label: 'Numbered list', description: 'Ordered list',          type: 'numbered',  icon: <ListOrdered className={ICON} strokeWidth={STROKE} /> },
   { trigger: 'todo',     label: 'To-do',         description: 'Checkbox list',         type: 'todo',      icon: <CheckSquare className={ICON} strokeWidth={STROKE} /> },
   { trigger: 'quote',    label: 'Quote',         description: 'Highlighted quote',     type: 'quote',     icon: <Quote className={ICON} strokeWidth={STROKE} /> },
-  { trigger: 'callout',  label: 'Callout',       description: 'Tinted note with an emoji', type: 'callout', icon: <Lightbulb className={ICON} strokeWidth={STROKE} /> },
+  { trigger: 'callout',  label: 'Callout',       description: 'Tinted note with an icon', type: 'callout', icon: <Lightbulb className={ICON} strokeWidth={STROKE} /> },
   { trigger: 'divider',  label: 'Divider',       description: 'Horizontal rule',       type: 'divider',   icon: <Minus className={ICON} strokeWidth={STROKE} /> },
   { trigger: 'code',     label: 'Code',          description: 'Code block',            type: 'code',      icon: <Code2 className={ICON} strokeWidth={STROKE} /> },
   { trigger: 'table',    label: 'Table',         description: 'Insert a table',        type: 'table',     icon: <Table2 className={ICON} strokeWidth={STROKE} /> },
@@ -59,59 +59,53 @@ interface SlashMenuProps {
 
 /** Approximate row height, for deciding whether to flip the menu above the caret. */
 const ROW_PX = 50;
-const LIST_MAX_PX = 264;
-const CHROME_PX = 72;
+/** The panel's own ceiling (showcase 551): it scrolls past this. */
+const PANEL_MAX_PX = 420;
+/** The group caption above the rows plus the hint below them. */
+const CHROME_PX = 28 + 38;
 
 export function SlashMenu({ query, position, onSelect, selectedIndex }: SlashMenuProps) {
   const filtered = filterSlashCommands(query);
 
-  // On the scrolling list itself, not the menu wrapper. The ref used to sit on
-  // the wrapper, whose children are the header, the list and the footer — so
-  // children[selectedIndex] picked those, and keyboard navigation never scrolled
-  // the list at all.
+  // The panel is the scroller (showcase 551), the rows sit in a listbox inside it.
+  const panelRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    const panel = panelRef.current;
     const list = listRef.current;
     const item = list?.children[selectedIndex] as HTMLElement | undefined;
-    if (!list || !item) return;
+    if (!panel || !list || !item) return;
 
-    // Explicit arithmetic on the list's own scrollTop. scrollIntoView() also
+    // Explicit arithmetic on the panel's own scrollTop. scrollIntoView() also
     // scrolls every scrollable ancestor, which moved the whole editor pane.
-    // offsetTop is relative to the list because the list is `relative`.
-    const top = item.offsetTop;
+    // offsetTop is relative to the panel because the panel is positioned.
+    const top = list.offsetTop + item.offsetTop;
     const bottom = top + item.offsetHeight;
-    if (top < list.scrollTop) {
-      list.scrollTop = top;
-    } else if (bottom > list.scrollTop + list.clientHeight) {
-      list.scrollTop = bottom - list.clientHeight;
+    if (top < panel.scrollTop) {
+      panel.scrollTop = top;
+    } else if (bottom > panel.scrollTop + panel.clientHeight) {
+      panel.scrollTop = bottom - panel.clientHeight;
     }
   }, [selectedIndex]);
 
   if (filtered.length === 0) return null;
 
   const viewportH = window.innerHeight;
-  const menuH = Math.min(filtered.length * ROW_PX, LIST_MAX_PX) + CHROME_PX;
+  const menuH = Math.min(filtered.length * ROW_PX + CHROME_PX, PANEL_MAX_PX);
   const top = position.top + menuH > viewportH - 8 ? position.top - menuH - 4 : position.top;
 
   return (
     <div
+      ref={panelRef}
       data-slash-menu
-      className="fixed z-50 w-60 overflow-hidden rounded-[12px] border border-a-line bg-a-bg text-a-ink shadow-[var(--a-shadow-md)] animate-fade-in"
+      className="fixed z-50 max-h-[420px] w-[300px] overflow-auto rounded-[8px] border border-a-line bg-a-surface p-1.5 text-[14px] text-a-ink shadow-[var(--a-shadow-lg)] animate-fade-in"
       style={{ top, left: Math.max(8, position.left) }}
       onMouseDown={(e) => e.preventDefault()}
     >
-      <div className="px-3.5 pt-2.5 pb-1.5">
-        <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-a-faint">Block type</p>
-      </div>
+      <p className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-a-faint">Basic blocks</p>
 
-      <div
-        ref={listRef}
-        role="listbox"
-        aria-label="Block types"
-        className="relative overflow-y-auto px-1.5 pb-1.5"
-        style={{ maxHeight: LIST_MAX_PX }}
-      >
+      <div ref={listRef} role="listbox" aria-label="Block types">
         {filtered.map((cmd, i) => (
           <button
             key={cmd.type}
@@ -120,34 +114,22 @@ export function SlashMenu({ query, position, onSelect, selectedIndex }: SlashMen
             aria-selected={i === selectedIndex}
             onMouseDown={(e) => { e.preventDefault(); onSelect(cmd.type); }}
             className={cn(
-              'flex w-full items-center gap-2.5 rounded-[8px] px-2 py-1.5 text-left transition-colors duration-[120ms]',
-              i === selectedIndex ? 'bg-a-accent-tint' : 'hover:bg-a-row-hover',
+              'flex w-full items-center gap-2.5 rounded-[6px] px-2 py-1.5 text-left transition-colors duration-[120ms]',
+              i === selectedIndex ? 'bg-a-blue-tint' : 'hover:bg-a-line-soft',
             )}
           >
-            <span
-              className={cn(
-                'flex size-6 flex-shrink-0 items-center justify-center rounded-[8px]',
-                i === selectedIndex ? 'bg-a-bg text-a-accent-700' : 'bg-a-surface text-a-muted',
-              )}
-            >
+            <span className="flex size-7 flex-shrink-0 items-center justify-center rounded-[6px] border border-a-line bg-a-surface text-a-muted">
               {cmd.icon}
             </span>
-            <span className="min-w-0">
-              <span className="block text-[14px] leading-tight text-a-ink">{cmd.label}</span>
-              <span className="block text-[12px] leading-tight text-a-faint">{cmd.description}</span>
+            <span className="flex min-w-0 flex-col">
+              <span className="text-[13px] font-medium">{cmd.label}</span>
+              <span className="text-[12px] text-a-faint">{cmd.description}</span>
             </span>
           </button>
         ))}
       </div>
 
-      <div className="flex items-center gap-2 border-t border-a-line-soft px-3.5 py-2 text-[12px] text-a-faint">
-        <kbd className="font-mono">↑↓</kbd>
-        <span>navigate</span>
-        <kbd className="ml-1 font-mono">↵</kbd>
-        <span>select</span>
-        <kbd className="ml-1 font-mono">Esc</kbd>
-        <span>close</span>
-      </div>
+      <p className="mt-1 border-t border-a-line-soft p-2 text-[11px] text-a-faint">↑↓ to move · ↵ to select · esc to close</p>
     </div>
   );
 }

@@ -6,7 +6,7 @@ import {
   Plus, GripVertical, Trash2, ArrowUp, ArrowDown,
   Type, Heading1, Heading2, Heading3, List, ListOrdered,
   CheckSquare, Quote, Minus, Code2, Table2, Lightbulb,
-  Bold, Italic, Underline, Strikethrough,
+  Bold, Italic, Underline, Strikethrough, Check,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { NoteBlock, BlockType, TableData, CalloutTone } from '@/types/notes';
@@ -21,7 +21,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { StatusBox } from '@/components/ui/status-box';
 import { SlashMenu, filterSlashCommands } from '@/components/notes/SlashMenu';
 import { TableBlock } from '@/components/notes/TableBlock';
 import { computeNumberedOrdinals } from '@/lib/noteBlocks';
@@ -29,7 +28,7 @@ import { InlineText, supportedMarks } from '@/components/notes/InlineText';
 import { activeMarks, hasInlineMarks, toggleMark, type Mark } from '@/lib/inlineMarkdown';
 import { getCaretCoordinates } from '@/lib/caretCoordinates';
 import {
-  MARKER_BOX_CLASS, controlsTop, getBlockTextClass, markerTop,
+  controlsTop, getBlockTextClass, markerBoxClass, markerTop,
 } from '@/components/notes/blockMetrics';
 import type { KaizenList, Quadrant, TaskLinking, Todo } from '@/types/todo';
 import { MentionMenu, type MentionMenuHandle } from '@/components/notes/MentionMenu';
@@ -73,23 +72,28 @@ const BLOCK_TYPES: BlockType[] = [
 // padding, so the space above a heading doesn't depend on the block before it.
 // The type scale and every offset derived from it live in notes/blockMetrics.
 const ROW_SPACING: Partial<Record<BlockType, string>> = {
-  heading1: 'mt-[30px]',
-  heading2: 'mt-[26px]',
-  heading3: 'mt-[20px]',
-  code:     'my-[6px]',
-  callout:  'my-[2px]',
+  // Showcase 316, 335: a heading has 14px above and 4px below, on top of the 6px gap.
+  heading1: 'mt-[14px] mb-[4px]',
+  heading2: 'mt-[14px] mb-[4px]',
+  heading3: 'mt-[14px] mb-[4px]',
+  // A to-do is a py-1 row (showcase 321).
+  todo:     'py-[4px]',
+  quote:    'my-[12px]',
+  code:     'my-[10px]',
+  callout:  'my-[10px]',
   // With the gap and the 24px box, 26px of space either side of the rule.
   divider:  'my-[8px]',
   // With the gap, 24px below the table: room for its add-row rail (4px + 20px).
-  table:    'mt-[6px] mb-[18px]',
+  table:    'my-[8px]',
 };
 
 /** The quote rule, the code panel and the callout tint wrap the text itself. */
 function getContentWrapperClass(block: NoteBlock): string {
   switch (block.type) {
-    case 'quote':   return 'border-l-[3px] border-a-accent pl-5';
-    case 'code':    return 'rounded-[12px] bg-a-surface-2 px-5 py-4';
-    case 'callout': return cn('rounded-[12px] px-5 py-4', block.tone === 'sage' ? 'bg-a-sage-tint' : 'bg-a-accent-tint');
+    case 'quote':   return 'border-l-[3px] border-a-line-strong py-[2px] pl-4';
+    case 'code':    return 'rounded-[8px] bg-a-ink px-4 py-[14px]';
+    // The prototype's callout is grey; the sage tone stays as the one alternative.
+    case 'callout': return cn('rounded-[8px] px-4 py-3', block.tone === 'sage' ? 'bg-a-sage-tint' : 'bg-a-line-soft');
     default:        return '';
   }
 }
@@ -105,7 +109,7 @@ function getBlockPlaceholder(type: BlockType): string {
     case 'numbered': return 'List item';
     case 'todo':     return 'To-do';
     case 'callout':  return 'Callout…';
-    default:         return "Type '/' for commands";
+    default:         return 'Type "/" for blocks, "@" to add a line to a quadrant';
   }
 }
 
@@ -193,7 +197,7 @@ interface BlockControlsProps {
 }
 
 const GUTTER_BUTTON = cn(
-  'flex size-[22px] items-center justify-center rounded-[6px] text-a-faint transition-colors duration-[120ms]',
+  'flex size-7 items-center justify-center rounded-[4px] text-a-faint transition-colors duration-[120ms]',
   'hover:bg-[color-mix(in_srgb,var(--a-ink)_9%,transparent)] hover:text-a-ink',
   'data-[state=open]:bg-[color-mix(in_srgb,var(--a-ink)_9%,transparent)] data-[state=open]:text-a-ink',
 );
@@ -208,7 +212,7 @@ function BlockControls({ block, index, total, onAddAfter, onDelete, onChangeType
         aria-label="Add block below"
         title="Add block below"
       >
-        <Plus className="size-3.5" strokeWidth={STROKE} />
+        <Plus className="size-4" strokeWidth={STROKE} />
       </button>
 
       <DropdownMenu>
@@ -220,7 +224,7 @@ function BlockControls({ block, index, total, onAddAfter, onDelete, onChangeType
             // Not "drag to reorder": there is no drag, and the old title said there was.
             title="Move, turn into, or delete"
           >
-            <GripVertical className="size-3.5" strokeWidth={STROKE} />
+            <GripVertical className="size-4" strokeWidth={STROKE} />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-48">
@@ -259,6 +263,8 @@ interface BlockRowProps {
   index: number;
   /** For numbered blocks: its position within its own list run. */
   ordinal?: number;
+  /** The block above is the same kind of list item: a list has no space between its items (showcase 344). */
+  joinPrev?: boolean;
   total: number;
   focusedId: string | null;
   onFocus: (id: string) => void;
@@ -295,7 +301,7 @@ interface BlockRowProps {
  * Below `md` there is no margin, so the controls are hidden.
  */
 function BlockRow({
-  block, index, ordinal, total, focusedId,
+  block, index, ordinal, joinPrev, total, focusedId,
   onFocus, onChange, onToggleCheck, onKeyDown,
   onAddAfter, onDelete, onChangeType, onMoveUp, onMoveDown,
   onUpdateTable, textareaRef, onSlashOpen, onSelectionChange, onUpdateMeta,
@@ -318,7 +324,7 @@ function BlockRow({
   const gutter = (
     <div
       className={cn(
-        'absolute right-full z-10 hidden gap-[2px] pr-1.5 select-none transition-opacity duration-[120ms] md:flex',
+        'absolute right-full z-10 hidden gap-[2px] pr-3.5 select-none transition-opacity duration-[120ms] md:flex',
         // Also kept visible while a control has keyboard focus or its menu is open.
         showControls ? 'opacity-100' : 'opacity-0 focus-within:opacity-100 has-[[data-state=open]]:opacity-100',
       )}
@@ -334,11 +340,12 @@ function BlockRow({
 
   const rowProps = {
     className: cn(
-      'relative flex first:mt-0',
+      'relative flex',
       // An invisible hover zone over the margin beside the row, so pointing at
       // the empty margin reveals the controls as it does in Notion.
       "md:before:absolute md:before:inset-y-0 md:before:right-full md:before:w-[var(--a-gutter)] md:before:content-['']",
       ROW_SPACING[block.type],
+      joinPrev && '-mt-[6px]',
     ),
     onMouseEnter: () => setHovered(true),
     onMouseLeave: () => setHovered(false),
@@ -348,7 +355,7 @@ function BlockRow({
     getBlockTextClass(block.type),
     block.type === 'todo' && block.checked && 'text-a-faint line-through decoration-[1.5px]',
     // Callout text on its tint: accent-700 and sage-ink both clear 4.5:1.
-    block.type === 'callout' && (block.tone === 'sage' ? 'text-a-sage-ink' : 'text-a-accent-700'),
+    block.type === 'callout' && (block.tone === 'sage' ? 'text-a-sage-ink' : 'text-a-ink'),
   );
 
   // ── Divider ──────────────────────────────────────────────────────────────────
@@ -387,15 +394,16 @@ function BlockRow({
 
       <div className={cn('flex min-w-0 flex-1 items-start', getContentWrapperClass(block))}>
         {block.type === 'callout' && (
-          <span className={MARKER_BOX_CLASS} style={{ paddingTop: markerTop('callout', 22) }}>
+          <span className={markerBoxClass('callout')} style={{ paddingTop: markerTop('callout', 18) }}>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="flex size-[22px] items-center justify-center rounded-[6px] text-[18px] leading-none transition-transform duration-[120ms] hover:scale-110"
+                className="flex size-[18px] items-center justify-center rounded-[4px] text-[18px] leading-none transition-transform duration-[120ms] hover:scale-110"
                 aria-label="Change callout emoji and colour"
               >
-                {block.emoji ?? '💡'}
+                {/* The default 💡 is the prototype's line lightbulb (showcase 349); any other emoji shows as chosen. */}
+                {(block.emoji ?? '💡') === '💡' ? <Lightbulb className="size-[18px]" strokeWidth={1.75} aria-hidden /> : block.emoji}
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="w-56">
@@ -430,33 +438,41 @@ function BlockRow({
         )}
 
         {block.type === 'bullet' && (
-          <span aria-hidden className={MARKER_BOX_CLASS} style={{ paddingTop: markerTop('bullet', 6) }}>
-            <span className="size-1.5 rounded-full bg-[color-mix(in_srgb,var(--a-ink)_45%,transparent)]" />
+          <span aria-hidden className={markerBoxClass('bullet')} style={{ paddingTop: markerTop('bullet', 5) }}>
+            <span className="size-[5px] rounded-full bg-a-muted" />
           </span>
         )}
 
         {block.type === 'numbered' && (
           <span
             aria-hidden
-            className={cn(MARKER_BOX_CLASS, 'text-[16px] leading-[1.68] tabular-nums text-a-muted')}
+            className={cn(markerBoxClass('numbered'), 'text-[14px] leading-[1.8] tabular-nums text-a-muted')}
           >
             {ordinal ?? 1}.
           </span>
         )}
 
         {block.type === 'todo' && (
-          // The wrapper takes the 19px box's layout size; StatusBox's own padding
-          // gives it a 44px hit area without pushing the text sideways.
-          <span className={MARKER_BOX_CLASS} style={{ paddingTop: markerTop('todo', 19) }}>
-            <StatusBox
-              state={block.checked ? 'done' : 'todo'}
-              label={block.content.trim() || 'To-do'}
+          // The DS Checkbox (showcase 323): a 16px box in an 18px column.
+          <span className={markerBoxClass('todo')} style={{ paddingTop: markerTop('todo', 16) }}>
+            <button
+              type="button"
+              role="checkbox"
+              aria-checked={!!block.checked}
+              aria-label={block.content.trim() || 'To-do'}
               onClick={() => onToggleCheck(block.id)}
-            />
+              className={cn(
+                'flex size-4 items-center justify-center rounded-[3px] border-[1.5px] text-white transition-colors duration-[120ms]',
+                block.checked ? 'border-a-accent bg-a-accent' : 'border-a-line-strong bg-a-surface',
+              )}
+            >
+              {block.checked && <Check className="size-3" strokeWidth={1.75} aria-hidden />}
+            </button>
           </span>
         )}
 
-        <div className="relative min-w-0 flex-1">
+        {/* With a chip, the text is only as wide as it is, so the chip follows it (showcase 327). */}
+        <div className={cn('relative min-w-0', chip ? 'flex-initial' : 'flex-1')}>
         {/* The textarea stays mounted underneath the rendered copy the whole
             time, so it keeps its place in the tab order; focusing it — by Tab
             or by clicking the rendered text — swaps back to raw editing. */}
@@ -520,8 +536,9 @@ function BlockRow({
           }
           rows={1}
           className={cn(
-            'block w-full resize-none overflow-hidden border-none bg-transparent p-0 outline-none [overflow-wrap:anywhere]',
-            'placeholder:text-a-faint/55',
+            'block resize-none overflow-hidden border-none bg-transparent p-0 outline-none [overflow-wrap:anywhere]',
+            chip ? 'field-sizing-content max-w-full' : 'w-full',
+            'placeholder:text-a-line-strong',
             textClass,
             rendered && 'pointer-events-none absolute inset-0 opacity-0',
           )}
@@ -532,8 +549,8 @@ function BlockRow({
         </div>
 
         {chip && (
-          // 18px chip, centred on the first line like the markers.
-          <span className="ml-2 flex flex-shrink-0" style={{ paddingTop: markerTop(block.type, 18) }}>
+          // 22px chip, centred on the first line like the markers.
+          <span className="ml-[10px] flex flex-shrink-0" style={{ paddingTop: markerTop(block.type, 22) }}>
             {chip}
           </span>
         )}
@@ -977,6 +994,7 @@ export function NoteEditor({
             block={block}
             index={index}
             ordinal={numberedOrdinals.get(block.id)}
+            joinPrev={index > 0 && (block.type === 'bullet' || block.type === 'numbered') && blocks[index - 1].type === block.type}
             total={blocks.length}
             focusedId={focusedId}
             onFocus={setFocusedId}
@@ -1027,11 +1045,9 @@ export function NoteEditor({
             }
           }
         }}
-        className="mt-2 w-full cursor-text py-6 text-left text-[14px] text-a-faint/60 transition-colors duration-[180ms] hover:text-a-faint"
+        className="mt-2 block h-16 w-full cursor-text"
         aria-label="Add new block"
-      >
-        Click to add more…
-      </button>
+      />
     </div>
   );
 }

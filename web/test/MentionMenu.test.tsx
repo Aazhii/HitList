@@ -36,55 +36,49 @@ function setup(props: Partial<React.ComponentProps<typeof MentionMenu>> = {}) {
 }
 
 describe('MentionMenu', () => {
-  it('walks Add to quadrant → workspace → quadrant by keyboard', () => {
+  it('adds with the defaults on ↵: Schedule, in the preferred list', () => {
     const { key, onSelect } = setup({ preferredListId: 'work' });
+    expect(screen.getByText('Add this line to a quadrant')).toBeTruthy();
+    expect(key('Enter')).toBe(true);
+    expect(onSelect).toHaveBeenCalledWith('work', 'schedule');
+  });
 
-    expect(screen.queryByRole('listbox', { name: 'Workspace' })).toBeNull();
-    expect(key('Enter')).toBe(true);                       // open workspaces
-    expect(screen.getByRole('listbox', { name: 'Workspace' })).toBeTruthy();
+  it('walks the quadrant grid with the arrow keys', () => {
+    const { key, onSelect } = setup({ preferredListId: 'work' });
+    key('ArrowLeft');                                   // Do first
+    expect(screen.getByRole('radio', { name: /do first/i })).toHaveAttribute('aria-checked', 'true');
+    key('ArrowDown');                                   // Delegate, below it
+    expect(screen.getByRole('radio', { name: /delegate/i })).toHaveAttribute('aria-checked', 'true');
+    key('ArrowRight');                                  // Eliminate
+    key('Tab');
+    expect(onSelect).toHaveBeenCalledWith('work', 'eliminate');
+  });
 
-    // The preferred list comes first; move to the second (Daily Growth).
-    const options = screen.getAllByRole('option');
-    expect(options[0].textContent).toContain('Work Focus');
-    key('ArrowDown');
-    key('ArrowRight');                                     // open quadrants for Daily Growth
-    expect(screen.getByRole('listbox', { name: 'Quadrant in Daily Growth' })).toBeTruthy();
+  it('picks a quadrant by click, and adds from the button', () => {
+    const { onSelect } = setup({ preferredListId: 'side' });
+    fireEvent.click(screen.getByRole('radio', { name: /delegate/i }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add task' }));
+    expect(onSelect).toHaveBeenCalledWith('side', 'delegate');
+  });
 
-    key('ArrowDown');                                      // Schedule
+  it('starts on what was typed after the @', () => {
+    const { key, onSelect } = setup({ preferredListId: 'work', query: 'del' });
     key('Enter');
-    expect(onSelect).toHaveBeenCalledWith('growth', 'schedule');
+    expect(onSelect).toHaveBeenCalledWith('work', 'delegate');
   });
 
-  it('opens the next column on hover and selects on click', () => {
-    const { onSelect } = setup();
-    fireEvent.mouseEnter(screen.getByRole('button', { name: /add to quadrant/i }));
-    fireEvent.mouseEnter(screen.getByRole('option', { name: /work focus/i }));
-    fireEvent.click(screen.getByRole('option', { name: /do first/i }));
-    expect(onSelect).toHaveBeenCalledWith('work', 'do');
-  });
-
-  it('filters the focused column by the typed query', () => {
-    const { key, rerender, ref, onSelect, onClose } = setup();
-    key('Enter');
-    rerender(
-      <MentionMenu ref={ref} position={{ top: 10, left: 10 }} lists={lists} query="side"
-        pending={false} contextLabel="Note block" onSelect={onSelect} onClose={onClose} />,
-    );
-    const options = screen.getAllByRole('option');
-    expect(options).toHaveLength(1);
-    expect(options[0].textContent).toContain('Side project');
-  });
-
-  it('closes on Escape and lets ← through at the first column', () => {
+  it('closes from Cancel and on Escape', () => {
     const { key, onClose } = setup();
-    expect(key('ArrowLeft')).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     key('Escape');
-    expect(onClose).toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalledTimes(2);
   });
 
-  it('shows a message instead of rows when there is nothing to add', () => {
-    setup({ message: 'Write the task in this block first, then type @' });
+  it('shows a message instead of the form when there is nothing to add', () => {
+    const { key, onSelect } = setup({ message: 'Write the task in this block first, then type @' });
     expect(screen.getByText(/write the task in this block first/i)).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /add to quadrant/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add task' })).toBeNull();
+    expect(key('Enter')).toBe(false);
+    expect(onSelect).not.toHaveBeenCalled();
   });
 });

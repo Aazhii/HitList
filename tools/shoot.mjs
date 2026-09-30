@@ -56,7 +56,9 @@ const APP_ROUTE = {
   'ov-fielddelete': { nav: 'Tasks', tab: 'Board', then: ['~Stage', '~Manage fields', '~Delete field'] },
   'ov-history': { nav: 'Tasks', tab: 'Matrix', then: ['Today'] },
   'ov-progress': { nav: 'Tasks', tab: 'Matrix', then: ['Weekly progress'] },
-  'notes-editor': { nav: 'Notes' },
+  'notes-editor': { nav: 'Notes', notes: true },
+  'notes-slash':  { nav: 'Notes', notes: true, focusLast: 'textarea[aria-label^="Block"]', keys: '/' },
+  'notes-mention': { nav: 'Notes', notes: true, focusLast: 'textarea[aria-label^="Block"]', keys: 'Confirm laptop shipping address with IT @' },
   'notes-empty':  { nav: 'Notes' },
   'db-table':     { nav: 'Databases', then: ['~Reading list'] },
   'db-empty':     { nav: 'Databases' },
@@ -180,6 +182,13 @@ async function shootRef(browser, screenId) {
   if (!(await realClick(page, first))) throw new Error(`could not click "${label}"`);
   await new Promise((r) => setTimeout(r, 1200));
 
+  if (['notes-slash', 'notes-mention'].includes(screenId)) {
+    // These menus hang off the note's last line, below the fold: scroll every scroller to its end.
+    await page.evaluate(() => document.querySelectorAll('*').forEach((el) => {
+      if (el.scrollHeight > el.clientHeight + 50 && getComputedStyle(el).overflowY !== 'visible') el.scrollTop = el.scrollHeight;
+    }));
+    await new Promise((r) => setTimeout(r, 400));
+  }
   const out = join(SHOTS, `${screenId}.ref.png`);
   await page.screenshot({ path: out });
   if (args.includes('--dump')) writeFileSync(`/tmp/hitlist-dump-${screenId}.ref.json`, JSON.stringify(await dumpDom(page)));
@@ -214,6 +223,15 @@ async function shootApp(browser, screenId, url) {
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text().slice(0, 160)); });
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   await new Promise((r) => setTimeout(r, 1400));
+  if (route.notes) {
+    // Notes read from localStorage first (useNotes), so copy the seeded server notes into it and reload.
+    await page.evaluate(async () => {
+      const notes = await (await fetch('/api/notes', { credentials: 'include' })).json();
+      localStorage.setItem('kaizen-notes-v1', JSON.stringify(notes.map((n) => ({ ...n, blocks: JSON.parse(n.blocksJson || '[]') }))));
+    });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await new Promise((r) => setTimeout(r, 1400));
+  }
 
   const clickText = async (text) => {
     const h = await page.evaluateHandle((t) => Array.from(document.querySelectorAll('button, [role="button"], [role="menuitem"], [role="option"]'))
@@ -228,6 +246,13 @@ async function shootApp(browser, screenId, url) {
   if (route.nav) { await clickText(route.nav); await new Promise((r) => setTimeout(r, 900)); }
   if (route.tab) { await clickText(route.tab); await new Promise((r) => setTimeout(r, 800)); }
   for (const t of route.then ?? []) { await clickText(t); await new Promise((r) => setTimeout(r, 800)); }
+  if (route.focusLast) {
+    // Focus the last note block (an empty paragraph) and type into it, leaving any menu it opens showing.
+    await page.evaluate((sel) => { const all = document.querySelectorAll(sel); all[all.length - 1]?.focus(); }, route.focusLast);
+    await new Promise((r) => setTimeout(r, 300));
+    if (route.keys) await page.keyboard.type(route.keys, { delay: 60 });
+    await new Promise((r) => setTimeout(r, 700));
+  }
   if (route.type) {
     const [label, text] = route.type;
     await page.type(`[aria-label="${label}"]`, text);
