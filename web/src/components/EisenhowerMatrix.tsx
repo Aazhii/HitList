@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Plus } from 'lucide-react';
 import { StatusIcon } from '@/components/ui/status-icon';
+import { QUADRANT_EMPTY } from '@/lib/emptyStates';
 import { cn } from '@/lib/utils';
 import { getCategoryConfig, QUADRANTS } from '@/types/todo';
 import type { Todo, TodoStatus, Quadrant } from '@/types/todo';
@@ -99,7 +100,7 @@ export function EisenhowerMatrix({
             <div className="flex flex-1 flex-col">
               {quadrantTodos.length === 0 ? (
                 <div className="mx-4 my-3 rounded-[8px] border border-dashed border-a-line py-3.5 text-center text-[13px] text-a-faint">
-                  Nothing here. Add a task to {q.label}.
+                  {QUADRANT_EMPTY[q.id]}
                 </div>
               ) : (
                 quadrantTodos.map((todo, i) => (

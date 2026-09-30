@@ -146,7 +146,7 @@ that one is fine where it is.
 | Visual | `node web/scripts/shoot.mjs <screen-id>` → a `.ref.png` / `.app.png` pair | every Phase 3 task |
 | Real build | `sh desktop/scripts/prepare-jar.sh` → copy to `api/target/hitlist.jar` → restart Electron → re-check its own port | every **phase** exit, not every task |
 
-Test baseline: **416 tests across 51 files.** This must not regress.
+Test baseline: **416 tests across 50 files.** This must not regress.
 
 ---
 
@@ -315,17 +315,17 @@ on a description. Execution order is the section order below.
 
 ## Phase 5 — Improvements → `05-IMPROVEMENTS.md`
 
-None approved. Review with the user, then mark each accepted / rejected / later.
+All seven accepted by the user on 2026-09-30; each is planned, built and recorded (with what it spends of the design's fidelity) in `CONVENTIONS.md`.
 
 | ID | Proposal | Decision |
 |---|---|---|
-| P5.1 | Make the daily decision the front door | unreviewed |
-| P5.2 | Promote momentum from sidebar furniture to a reason to return | unreviewed |
-| P5.3 | Data quality, applied to tasks | unreviewed |
-| P5.4 | Keyboard-first table and board | unreviewed |
-| P5.5 | Density preference | unreviewed |
-| P5.6 | Bidirectional note↔task links | unreviewed |
-| P5.7 | Empty states that say the right thing | unreviewed |
+| P5.1 | Make the daily decision the front door | **accepted** (2026-09-30) |
+| P5.2 | Promote momentum from sidebar furniture to a reason to return | **accepted** (2026-09-30) |
+| P5.3 | Data quality, applied to tasks | **accepted** (2026-09-30) |
+| P5.4 | Keyboard-first table and board | **accepted** (2026-09-30) |
+| P5.5 | Density preference | **accepted** (2026-09-30) |
+| P5.6 | Bidirectional note↔task links | **accepted** (2026-09-30) |
+| P5.7 | Empty states that say the right thing | **built** — `lib/emptyStates.ts`: first-run / filtered / all-done for a task list, a line per quadrant; `emptyStates.test.ts` |
 
 ---
 

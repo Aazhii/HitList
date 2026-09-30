@@ -706,3 +706,11 @@ Shared primitives now follow the DS, so every dialog inherits them:
 - The block is the Databases page's own workspace (`DatabaseWorkspace`, extracted from the page for this): the same tabs (the database's saved views), toolbar, column menus and peek. In a note the table stays in the note's column instead of running edge to edge.
 - Records made with Create database are titled "Untitled" (the server refuses an empty title); the prototype greys an empty title as a placeholder.
 - The tabs the prototype shows ("Needs revisit", "All books") are its sample views; the block shows the database's own.
+
+## Phase 5 — what each accepted improvement spends
+
+Everything below deliberately stops matching the prototype. Each entry says where.
+
+### P5.7 Empty states
+- A task list that is empty now says why: never had a task ("Start with one task", or "Nothing in X yet" when other lists have some); tasks hidden by filters (the prototype's "No tasks match these filters"); everything finished ("Everything in X is done", the happy mascot, Add task and Show completed). Before, finishing every task showed the filter message, which was wrong.
+- Each matrix quadrant has its own empty line instead of "Nothing here. Add a task to …". Spends: `tasks-matrix` empty quadrants, `tasks-empty`.

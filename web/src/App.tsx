@@ -75,6 +75,7 @@ import {
 } from '@/components/AdvancedFilterBar';
 import type { FilterState } from '@/components/AdvancedFilterBar';
 import { EmptyState, ILL } from '@/components/EmptyState';
+import { allDoneCopy, firstRunCopy, tasksEmptyKind } from '@/lib/emptyStates';
 import { FilterPanel } from '@/components/tasks/FilterPanel';
 import type {
   Todo,
@@ -1700,12 +1701,11 @@ function UserScopedApp() {
                   <LoadingSkeleton layout={tasksMode} />
                   <p className="mt-4 text-center text-[13px] text-a-faint" role="status">Loading tasks from the server…</p>
                 </div>
-              ) : listTodos.length === 0 ? (
-                <EmptyState
-                  image={ILL.noData}
-                  title={`No tasks in ${activeList?.name ?? 'this list'} yet`}
-                  description="Add your first task, or turn a line in a note into one with @. Tasks land in the Eisenhower quadrant you pick."
-                  action={
+              ) : visibleTodos.length === 0 ? (
+                // Why it is empty decides what it says: never had a task, filtered to nothing, or all done.
+                (() => {
+                  const kind = tasksEmptyKind({ total: listTodos.length, done: doneCount, filtersActive: narrowingFilterCount > 0 });
+                  const addTask = (
                     <button
                       type="button"
                       onClick={() => { setDefaultQuadrant('do'); setDialogOpen(true); }}
@@ -1714,14 +1714,35 @@ function UserScopedApp() {
                       <Plus className="size-[15px]" strokeWidth={1.75} aria-hidden />
                       Add task
                     </button>
+                  );
+                  if (kind === 'first-run') {
+                    const copy = firstRunCopy(activeList?.name ?? 'this list', todos.some((t) => t.listId !== activeList?.id));
+                    return <EmptyState image={ILL.noData} title={copy.title} description={copy.description} action={addTask} />;
                   }
-                />
-              ) : visibleTodos.length === 0 ? (
-                <NoMatchingTasks
-                  hidden={listTodos.length}
-                  clauses={describeActiveFilters(filterState, taskFields.fields)}
-                  onClear={() => setFilterState(DEFAULT_FILTERS)}
-                />
+                  if (kind === 'all-done') {
+                    const copy = allDoneCopy(activeList?.name ?? 'this list', doneCount);
+                    return (
+                      <EmptyState
+                        image={ILL.happyMascot}
+                        title={copy.title}
+                        description={copy.description}
+                        action={(
+                          <div className="flex items-center gap-2">
+                            {addTask}
+                            <button type="button" onClick={() => setShowDone(true)} className={cn(topBarSecondary, BTN_MD)}>Show completed</button>
+                          </div>
+                        )}
+                      />
+                    );
+                  }
+                  return (
+                    <NoMatchingTasks
+                      hidden={listTodos.length}
+                      clauses={describeActiveFilters(filterState, taskFields.fields)}
+                      onClear={() => setFilterState(DEFAULT_FILTERS)}
+                    />
+                  );
+                })()
               ) : tasksMode === 'list' ? (
                 <TaskListView
                   todos={visibleTodos}
