@@ -20,6 +20,7 @@ import {
   ArrowDown, ArrowUp, Calendar, CheckSquare, ChevronDown, CircleDot, EyeOff, Hash, List, MoreHorizontal,
   PanelRightOpen, Pencil, Plus, Trash2, Type, type LucideIcon,
 } from 'lucide-react';
+import { useTableKeyboard } from '@/hooks/useTaskKeyboard';
 import { dueFill, fieldFill, fillRatio } from '@/lib/taskQuality';
 import { cn } from '@/lib/utils';
 import { topBarPill } from '@/components/shell/TopBar';
@@ -98,6 +99,9 @@ const STATUS_OPTIONS: Array<{ value: TodoStatus; label: string }> = [
 
 // DS Table (Table.jsx): 13px cells, 8px 12px padding (here 4px cell + 8px control), a
 // hairline under each row. Controls look like plain text until hovered or focused.
+/** The keyboard cursor's cell: a 2px inset ring in the brand colour. */
+const CURSOR = 'data-[active]:shadow-[inset_0_0_0_2px_var(--a-accent)]';
+
 const CELL = 'border-b border-a-line-soft px-1 py-[calc(2px+var(--a-density))] align-middle group-hover:bg-a-row-alt';
 const CONTROL = cn(
   'w-full rounded-[4px] border-0 bg-transparent px-2 text-left text-[13px] text-a-ink',
@@ -174,6 +178,25 @@ export function TaskTableView({
     const f = column.field ? fieldFill(column.field, openTodos, fieldValues) : column.id === 'due' ? dueFill(openTodos) : null;
     return f ? { ratio: fillRatio(f), filled: f.filled, total: f.total } : undefined;
   };
+
+  // P5.4: j/k or the arrows move a cursor over the rows, h/l or the arrows across the cells; Enter edits the
+  // cell, o opens the task, x toggles done, [ and ] move it a quadrant.
+  const rowIds = useMemo(() => groups.flatMap((g) => g.tasks.map((t) => t.id)), [groups]);
+  const byId = useMemo(() => new Map(groups.flatMap((g) => g.tasks).map((t) => [t.id, t])), [groups]);
+  const lookup = useMemo(() => ({ statusOf: (id: string) => byId.get(id)?.status, quadrantOf: (id: string) => byId.get(id)?.quadrant }), [byId]);
+  const keyHandlers = useMemo(() => ({
+    onEdit: (id: string, col: number) => {
+      const cell = document.querySelector<HTMLElement>(`[data-cell="${CSS.escape(id)}:${col}"]`);
+      cell?.querySelector<HTMLElement>('button, input, [role="combobox"], [role="checkbox"]')?.click();
+    },
+    onOpen: (id: string) => { const t = byId.get(id); if (t) onOpen(t); },
+    onStatus: onStatusChange,
+    onQuadrant: (id: string, quadrant: Quadrant) => onUpdate(id, { quadrant }),
+  }), [byId, onOpen, onStatusChange, onUpdate]);
+  const kb = useTableKeyboard(rowIds, columns.length + 1, lookup, keyHandlers);
+  useEffect(() => {
+    if (kb.activeId) document.querySelector(`[data-row="${CSS.escape(kb.activeId)}"]`)?.scrollIntoView({ block: 'nearest' });
+  }, [kb.activeId]);
 
   const columnCount = columns.length + 3;
   const rowCount = groups.reduce((n, g) => n + g.tasks.length, 0);
@@ -253,6 +276,7 @@ export function TaskTableView({
                 rowNumber={++rowNumber}
                 todo={todo}
                 columns={columns}
+                activeCol={kb.activeId === todo.id ? kb.activeCol : null}
                 values={fieldValues[todo.id]}
                 onStatusChange={onStatusChange}
                 onUpdate={onUpdate}
@@ -415,6 +439,8 @@ interface TaskTableRowProps {
   rowNumber: number;
   todo: Todo;
   columns: TableColumn[];
+  /** The cell the keyboard cursor is on in this row (0 is the title), or null when the cursor is elsewhere. */
+  activeCol: number | null;
   values: Record<string, FieldValue> | undefined;
   onStatusChange: TaskTableViewProps['onStatusChange'];
   onUpdate: TaskTableViewProps['onUpdate'];
@@ -423,14 +449,17 @@ interface TaskTableRowProps {
   onDelete: TaskTableViewProps['onDelete'];
 }
 
-function TaskTableRow({ rowNumber, todo, columns, values, onStatusChange, onUpdate, onSetFieldValue, onOpen, onDelete }: TaskTableRowProps) {
+function TaskTableRow({ rowNumber, todo, columns, activeCol, values, onStatusChange, onUpdate, onSetFieldValue, onOpen, onDelete }: TaskTableRowProps) {
   const isDone = todo.status === 'done';
   const quadrant = QUADRANTS.find((q) => q.id === todo.quadrant) ?? QUADRANTS[0];
 
+  // Each cell is findable by the keyboard layer, and the one under its cursor is ringed.
+  const cell = (i: number) => ({ 'data-cell': `${todo.id}:${i}`, 'data-active': activeCol === i ? '' : undefined });
+
   return (
-    <tr className="group">
+    <tr className="group" data-row={todo.id}>
       <td className="sticky left-0 z-[1] w-11 border-b border-a-line-soft bg-a-row-alt px-3 text-right text-[13px] tabular-nums text-a-ink">{rowNumber}</td>
-      <td className={cn(CELL, 'sticky left-11 z-[1] bg-a-surface')}>
+      <td {...cell(0)} className={cn(CELL, 'sticky left-11 z-[1] bg-a-surface', CURSOR)}>
         <div className="flex items-start gap-1">
           <TitleCell
             todo={todo}
@@ -448,10 +477,10 @@ function TaskTableRow({ rowNumber, todo, columns, values, onStatusChange, onUpda
         </div>
       </td>
 
-      {columns.map((column) => {
+      {columns.map((column, ci) => {
         if (column.field) {
           return (
-            <td key={column.id} className={cn(CELL, 'min-w-[150px]')}>
+            <td key={column.id} {...cell(ci + 1)} className={cn(CELL, 'min-w-[150px]', CURSOR)}>
               <FieldCell
                 def={column.field}
                 value={values?.[column.id]}
@@ -464,7 +493,7 @@ function TaskTableRow({ rowNumber, todo, columns, values, onStatusChange, onUpda
 
         if (column.id === 'status') {
           return (
-            <td key={column.id} className={cn(CELL, 'min-w-[130px]')}>
+            <td key={column.id} {...cell(ci + 1)} className={cn(CELL, 'min-w-[130px]', CURSOR)}>
               <Select value={todo.status} onValueChange={(v) => onStatusChange(todo.id, v as TodoStatus)}>
                 <SelectTrigger size="sm" className={cn(CONTROL_ROW, 'shadow-none')} aria-label={`Status of ${todo.text}`}>
                   <SelectValue />
@@ -479,7 +508,7 @@ function TaskTableRow({ rowNumber, todo, columns, values, onStatusChange, onUpda
 
         if (column.id === 'quadrant') {
           return (
-            <td key={column.id} className={cn(CELL, 'min-w-[140px]')}>
+            <td key={column.id} {...cell(ci + 1)} className={cn(CELL, 'min-w-[140px]', CURSOR)}>
               <Select value={quadrant.id} onValueChange={(v) => onUpdate(todo.id, { quadrant: v as Quadrant })}>
                 <SelectTrigger size="sm" className={cn(CONTROL_ROW, 'shadow-none')} aria-label={`Quadrant of ${todo.text}`}>
                   <SelectValue />
@@ -502,8 +531,9 @@ function TaskTableRow({ rowNumber, todo, columns, values, onStatusChange, onUpda
         return (
           <td
             key={column.id}
+            {...cell(ci + 1)}
             className={cn(
-              CELL, 'min-w-[130px]',
+              CELL, 'min-w-[130px]', CURSOR,
               !isDone && todo.dueDate && tableDueLabel(todo.dueDate, todo.dueTime).overdue
                 && 'bg-a-red-tint text-a-red-ink shadow-[inset_2px_0_0_var(--a-red-line)]',
             )}

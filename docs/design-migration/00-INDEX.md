@@ -146,7 +146,7 @@ that one is fine where it is.
 | Visual | `node web/scripts/shoot.mjs <screen-id>` → a `.ref.png` / `.app.png` pair | every Phase 3 task |
 | Real build | `sh desktop/scripts/prepare-jar.sh` → copy to `api/target/hitlist.jar` → restart Electron → re-check its own port | every **phase** exit, not every task |
 
-Test baseline: **416 tests across 50 files.** This must not regress.
+Test baseline: **441 tests across 56 files.** This must not regress.
 
 ---
 
@@ -322,7 +322,7 @@ All seven accepted by the user on 2026-09-30; each is planned, built and recorde
 | P5.1 | Make the daily decision the front door | **accepted** (2026-09-30) |
 | P5.2 | Promote momentum from sidebar furniture to a reason to return | **accepted** (2026-09-30) |
 | P5.3 | Data quality, applied to tasks | **built** — `lib/taskQuality.ts`; fill bars under the Due and custom-field headers of the task table; a "N tasks have no due date" chip in the top bar that sets the No date filter; `taskQuality.test.ts`, table test |
-| P5.4 | Keyboard-first table and board | **accepted** (2026-09-30) |
+| P5.4 | Keyboard-first table and board | **built** — `lib/taskKeyboard.ts`, `hooks/useTaskKeyboard.ts`; j/k/h/l or arrows move a cursor, ↵ edits, o opens, x toggles done, [ ] shift quadrant; listed in Keyboard shortcuts |
 | P5.5 | Density preference | **built** — `hooks/useDensity.ts`, one `--a-density` variable on `<html>`; Account menu → Density (Compact / Standard / Roomy); measured: task row 40 / 44 / 52px |
 | P5.6 | Bidirectional note↔task links | **built** — `lib/noteTaskRollup.ts`; the note's meta line reads "3 of 7 linked tasks done" live; a line whose task is done reads struck and faint; `noteTaskRollup.test.ts` |
 | P5.7 | Empty states that say the right thing | **built** — `lib/emptyStates.ts`: first-run / filtered / all-done for a task list, a line per quadrant; `emptyStates.test.ts` |

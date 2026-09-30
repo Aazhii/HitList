@@ -1797,6 +1797,12 @@ function UserScopedApp() {
                       () => { void taskFields.setValue(taskId, fieldId, before); });
                   }}
                   onAddTask={(title, columnKey) => { void handleAddTaskInColumn(title, columnKey); }}
+                  onQuadrantChange={(id, quadrant) => {
+                    const before = todos.find((t) => t.id === id)?.quadrant;
+                    if (!before) return;
+                    undoable('Task updated', () => { void handleUpdate(id, { quadrant }, { quiet: true }); },
+                      () => { void handleUpdate(id, { quadrant: before }, { quiet: true }); });
+                  }}
                   onStatusChange={handleStatusChange}
                   onDelete={handleDelete}
                   onOpen={handleOpenDetail}

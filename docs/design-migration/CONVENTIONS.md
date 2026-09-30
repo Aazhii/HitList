@@ -612,7 +612,7 @@ Shared primitives now follow the DS, so every dialog inherits them:
 1. **Verify before you change.** Every task quotes the current code. If what you find does not match the quote, **stop and report** — do not adapt silently. The file may have moved on.
 2. **Never invent a value.** If a task does not give you a number and this file does not either, ask. Guessing is what produced the current state.
 3. **One task, one commit.** Commit message: `design(T1.4): set every icon stroke to 1.75`.
-4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 416 tests.
+4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 441 tests.
 5. **Update `00-INDEX.md`** — set State and fill in "Verified by" with the actual command output or screenshot pair. A task with an empty "Verified by" is not done.
 6. **Do not delete the Automations or Reminders code.** It is being revived in Phase 4, not removed.
 
@@ -724,3 +724,12 @@ Everything below deliberately stops matching the prototype. Each entry says wher
 
 ### P5.5 Density
 - Account menu → Density: Compact, Standard (the prototype, and the default), Roomy. One variable, `--a-density` on `<html>` (−2px / 0 / +4px), is added to the padding of the row-shaped content surfaces — task list rows (min height 40 / 44 / 52), matrix rows, board cards, the task table's and the database table's cells. Type size does not change, and the shell (sidebar, top bar, menus) stays at the prototype's size. The density mock-ups in the design bundle also changed type size; that is not done here because sizes are not all token-driven yet. Spends: every content row at Compact and Roomy; Standard is unchanged.
+
+### P5.4 Keyboard-first table and board
+
+- Keys: `j`/`k`/↑/↓ move between tasks, `h`/`l`/←/→ across cells (table) or columns (board), ↵ edits the cell (clicks its first control) or opens the card, `o` opens, `x` toggles done, `[` `]` move the task one quadrant (Do → Eliminate), Esc clears the cursor.
+- Spends: one new visual state, a 2px brand-colour ring on the cursor cell or card (`--a-accent`). No new tokens, sizes or motion.
+- Scope: the task table and board only. Keys are ignored while typing, in a menu/listbox/dialog, with any modifier, and for ↵ on a focused button. The notes editor is untouched.
+- `[` `]` on the board needs `onQuadrantChange` (App passes it, undoable); drag still works unchanged.
+- Not shot-paired: the prototype has no cursor state; verified by unit tests (`taskKeyboard`, `useTaskKeyboard`).
+

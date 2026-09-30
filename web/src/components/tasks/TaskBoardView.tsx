@@ -15,7 +15,7 @@
  * Cards are the matrix's own, so a task looks the same on the board. Within a
  * column, cards keep the filter's sort; a board column has no manual order.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -37,7 +37,8 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 import { MatrixTaskCard } from '@/components/MatrixTaskCard';
-import type { Todo, TodoStatus } from '@/types/todo';
+import type { Quadrant, Todo, TodoStatus } from '@/types/todo';
+import { useBoardKeyboard } from '@/hooks/useTaskKeyboard';
 import type { TaskCompare } from '@/lib/quadrantBuckets';
 import { FIELD_EMPTY, FIELD_SET, groupByField, isGroupableField, type TaskGroup } from '@/lib/taskFilters';
 import { FIELD_KIND_LABELS } from '@/types/fields';
@@ -135,11 +136,13 @@ export interface TaskBoardViewProps extends CardHandlers {
   onSetFieldValue: (taskId: string, fieldId: string, value: FieldValue | null) => void;
   /** Creates a task already in that column. Without it, columns have no "+ Add". */
   onAddTask?: (title: string, columnKey: string) => void;
+  /** Lets [ and ] move the task under the keyboard cursor a quadrant. Without it those keys do nothing. */
+  onQuadrantChange?: (id: string, quadrant: Quadrant) => void;
 }
 
 export function TaskBoardView({
   todos, showDone, compare, groupField, fieldDefs, fieldValues, fieldsOnline, fieldsLoading,
-  onGroupFieldChange, onManageFields, onSetFieldValue, onAddTask, ...cardHandlers
+  onGroupFieldChange, onManageFields, onSetFieldValue, onAddTask, onQuadrantChange, ...cardHandlers
 }: TaskBoardViewProps) {
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
 
@@ -147,6 +150,21 @@ export function TaskBoardView({
     () => (groupField ? groupByField(todos, showDone, compare, groupField, fieldValues, { includeEmpty: true }) : []),
     [todos, showDone, compare, groupField, fieldValues],
   );
+
+  // P5.4: j/k move down and up a column, h/l across; Enter or o opens, x toggles done, [ and ] shift the quadrant.
+  const columnIds = useMemo(() => columns.map((c) => c.tasks.map((t) => t.id)), [columns]);
+  const byId = useMemo(() => new Map(todos.map((t) => [t.id, t])), [todos]);
+  const lookup = useMemo(() => ({ statusOf: (id: string) => byId.get(id)?.status, quadrantOf: (id: string) => byId.get(id)?.quadrant }), [byId]);
+  const { onOpen, onStatusChange } = cardHandlers;
+  const keyHandlers = useMemo(() => ({
+    onOpen: (id: string) => { const t = byId.get(id); if (t) onOpen(t); },
+    onStatus: onStatusChange,
+    onQuadrant: onQuadrantChange,
+  }), [byId, onOpen, onStatusChange, onQuadrantChange]);
+  const kb = useBoardKeyboard(columnIds, lookup, keyHandlers);
+  useEffect(() => {
+    if (kb.activeId) document.querySelector(`[data-card="${CSS.escape(kb.activeId)}"]`)?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [kb.activeId]);
 
   const sensors = useSensors(
     // A small distance, so a click on a card is not mistaken for a drag.
@@ -201,6 +219,7 @@ export function TaskBoardView({
                   column={column}
                   fieldDefs={fieldDefs}
                   fieldValues={fieldValues}
+                  activeId={kb.activeId}
                   onAddTask={onAddTask}
                   {...cardHandlers}
                 />
@@ -304,10 +323,12 @@ interface BoardColumnProps extends CardHandlers {
   column: TaskGroup;
   fieldDefs: FieldDef[];
   fieldValues: TaskFieldValues;
+  /** The card the keyboard cursor is on. */
+  activeId?: string;
   onAddTask?: (title: string, columnKey: string) => void;
 }
 
-function BoardColumn({ fieldId, column, fieldDefs, fieldValues, onAddTask, ...handlers }: BoardColumnProps) {
+function BoardColumn({ fieldId, column, fieldDefs, fieldValues, activeId, onAddTask, ...handlers }: BoardColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: `${BOARD_COLUMN_PREFIX}${column.key}` });
   const [composing, setComposing] = useState(false);
   const headingId = `board-${fieldId}-${column.key}`;
@@ -358,6 +379,7 @@ function BoardColumn({ fieldId, column, fieldDefs, fieldValues, onAddTask, ...ha
             index={i}
             fieldDefs={fieldDefs}
             fieldValues={fieldValues}
+            active={todo.id === activeId}
             {...handlers}
           />
         ))}
@@ -410,9 +432,10 @@ interface DraggableCardProps extends CardHandlers {
   index: number;
   fieldDefs: FieldDef[];
   fieldValues: TaskFieldValues;
+  active: boolean;
 }
 
-function DraggableCard({ columnKey, todo, index, fieldDefs, fieldValues, ...handlers }: DraggableCardProps) {
+function DraggableCard({ columnKey, todo, index, fieldDefs, fieldValues, active, ...handlers }: DraggableCardProps) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: boardCardId(columnKey, todo.id) });
 
   return (
@@ -421,7 +444,12 @@ function DraggableCard({ columnKey, todo, index, fieldDefs, fieldValues, ...hand
       {...attributes}
       {...listeners}
       aria-roledescription="Draggable task"
-      className={cn('cursor-grab touch-none rounded-[8px] outline-none focus-visible:ring-2 focus-visible:ring-a-accent', isDragging && 'opacity-40')}
+      data-card={todo.id}
+      className={cn(
+        'cursor-grab touch-none rounded-[8px] outline-none focus-visible:ring-2 focus-visible:ring-a-accent',
+        active && 'shadow-[0_0_0_2px_var(--a-accent)]',
+        isDragging && 'opacity-40',
+      )}
     >
       <MatrixTaskCard
         variant="board"
