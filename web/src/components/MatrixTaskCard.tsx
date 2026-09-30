@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { AlertCircle, FileText, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { StatusBox } from '@/components/ui/status-box';
-import { getCategoryConfig } from '@/types/todo';
+import { getCategoryConfig, getQuadrantConfig } from '@/types/todo';
 import type { Todo, TodoStatus } from '@/types/todo';
 import { DUE_TONE_CLASS, dueTone, getDueInfo } from '@/lib/dueInfo';
 import { NEXT_STATUS } from '@/lib/taskStatus';
@@ -28,6 +28,13 @@ interface MatrixTaskCardProps {
   /** Custom fields, and this task's values; fields marked "Show on card" become chips. */
   fieldDefs?: FieldDef[];
   fieldValues?: Record<string, FieldValue>;
+  /**
+   * 'board' is the Board lane card (showcase 282–293): white with a 1px border,
+   * a quadrant dot ahead of the 12px meta row. The status box and delete stay —
+   * the prototype's card has neither, but dropping them would take away the only
+   * way to complete a task from the board (CONVENTIONS §12a).
+   */
+  variant?: 'matrix' | 'board';
 }
 
 const CHIP = 'inline-flex items-center gap-1 rounded-[3px] px-2.5 py-[3px] text-[12px] leading-none whitespace-nowrap';
@@ -54,7 +61,9 @@ export function MatrixTaskCard({
   onOpenNote,
   fieldDefs,
   fieldValues,
+  variant = 'matrix',
 }: MatrixTaskCardProps) {
+  const board = variant === 'board';
   const [deleting, setDeleting] = useState(false);
   const isDone = todo.status === 'done';
   const next = NEXT_STATUS[todo.status];
@@ -86,7 +95,8 @@ export function MatrixTaskCard({
       }}
       style={{ animationDelay: `${index * 50}ms`, animationFillMode: 'both' }}
       className={cn(
-        'group relative flex cursor-pointer flex-col gap-1.5 rounded-[8px] bg-a-bg px-3.5 py-2.5 animate-slide-up',
+        'group relative flex cursor-pointer flex-col gap-1.5 rounded-[8px] px-3.5 py-2.5 animate-slide-up',
+        board ? 'border border-a-line bg-a-surface' : 'bg-a-bg',
         'transition-[box-shadow,opacity,scale] duration-[260ms] hover:shadow-[var(--a-shadow-sm)]',
         isDone && 'opacity-60',
         !isDone && dueInfo?.isOverdue
@@ -134,7 +144,8 @@ export function MatrixTaskCard({
 
       {hasMeta && (
         // Indented to sit under the text, past the 19px status box and its gap.
-        <div className="flex flex-wrap items-center gap-1.5 pl-[30px]">
+        <div className={cn('flex flex-wrap items-center gap-1.5 pl-[30px]', board && 'text-[12px]')}>
+          {board && <span className={cn('size-2 flex-shrink-0 rounded-full', getQuadrantConfig(todo.quadrant).dotClass)} aria-hidden />}
           {categoryConfig && (
             <span className={cn(CHIP, 'text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)]')}>
               {categoryConfig.label}
@@ -156,7 +167,7 @@ export function MatrixTaskCard({
           )}
 
           {dueInfo && (
-            <span className={cn("whitespace-nowrap", DUE_TONE_CLASS[dueTone(dueInfo)])}>
+            <span className={cn("inline-flex items-center gap-1 whitespace-nowrap", DUE_TONE_CLASS[dueTone(dueInfo)])}>
               {dueInfo.isOverdue && <AlertCircle className="size-3" strokeWidth={1.75} aria-hidden />}
               {dueInfo.label}
             </span>

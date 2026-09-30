@@ -30,7 +30,8 @@ const VIEWPORT = { width: 1440, height: 900 };
 
 /**
  * id -> how to drive the app to the equivalent state. `nav` is the sidebar row;
- * `tab` is the layout tab inside the page header. Screens with no entry are
+ * `tab` is the layout tab inside the page header; `then` is further button
+ * clicks (text; a leading `~` means starts-with) — e.g. picking a board's field. Screens with no entry are
  * prototype-only for now (a dialog or a feature that does not exist yet) and
  * shoot the reference side alone.
  */
@@ -38,7 +39,7 @@ const APP_ROUTE = {
   'tasks-matrix': { nav: 'Tasks', tab: 'Matrix' },
   'tasks-list':   { nav: 'Tasks', tab: 'List' },
   'tasks-table':  { nav: 'Tasks', tab: 'Table' },
-  'tasks-board':  { nav: 'Tasks', tab: 'Board' },
+  'tasks-board':  { nav: 'Tasks', tab: 'Board', then: ['~Stage'] },
   'tasks-empty':  { nav: 'Tasks', tab: 'Matrix' },
   'notes-editor': { nav: 'Notes' },
   'notes-empty':  { nav: 'Notes' },
@@ -137,11 +138,12 @@ async function shootApp(browser, screenId, url) {
 
   const clickText = async (text) => {
     const h = await page.evaluateHandle((t) => Array.from(document.querySelectorAll('button'))
-      .find((n) => n.textContent?.trim() === t) ?? null, text);
+      .find((n) => { const x = n.textContent?.trim() ?? ''; return t.startsWith('~') ? x.startsWith(t.slice(1)) : x === t; }) ?? null, text);
     return realClick(page, h);
   };
   if (route.nav) { await clickText(route.nav); await new Promise((r) => setTimeout(r, 900)); }
   if (route.tab) { await clickText(route.tab); await new Promise((r) => setTimeout(r, 800)); }
+  for (const t of route.then ?? []) { await clickText(t); await new Promise((r) => setTimeout(r, 800)); }
 
   const out = join(SHOTS, `${screenId}.app.png`);
   await page.screenshot({ path: out });

@@ -15,7 +15,7 @@
  * Cards are the matrix's own, so a task looks the same on the board. Within a
  * column, cards keep the filter's sort; a board column has no manual order.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -27,7 +27,7 @@ import {
   useSensors,
   type DragEndEvent,
 } from '@dnd-kit/core';
-import { Check, ChevronDown, Columns3, Plus } from 'lucide-react';
+import { Check, ChevronDown, Columns3, Plus, SlidersHorizontal } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -142,26 +142,11 @@ export function TaskBoardView({
   onGroupFieldChange, onManageFields, onSetFieldValue, onAddTask, ...cardHandlers
 }: TaskBoardViewProps) {
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [canScrollRight, setCanScrollRight] = useState(false);
 
   const columns = useMemo(
     () => (groupField ? groupByField(todos, showDone, compare, groupField, fieldValues, { includeEmpty: true }) : []),
     [todos, showDone, compare, groupField, fieldValues],
   );
-
-  // The right-edge fade is a "there's more" hint, not decoration — it must
-  // disappear once scrolled to the actual end, or it lies about the last column.
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) { setCanScrollRight(false); return; }
-    const update = () => setCanScrollRight(el.scrollWidth - el.clientWidth - el.scrollLeft > 1);
-    update();
-    el.addEventListener('scroll', update);
-    const observer = new ResizeObserver(update);
-    observer.observe(el);
-    return () => { el.removeEventListener('scroll', update); observer.disconnect(); };
-  }, [columns]);
 
   const sensors = useSensors(
     // A small distance, so a click on a card is not mistaken for a drag.
@@ -206,9 +191,8 @@ export function TaskBoardView({
           onManageFields={onManageFields}
         />
 
-        {/* The fade shows there is more board to the right; the columns scroll under it. */}
         <div className="relative">
-          <div ref={scrollRef} className="w-full overflow-x-auto pb-3">
+          <div className="w-full overflow-x-auto pb-3">
             <div className="flex min-w-max items-start gap-4">
               {columns.map((column) => (
                 <BoardColumn
@@ -221,14 +205,15 @@ export function TaskBoardView({
                   {...cardHandlers}
                 />
               ))}
+              <button
+                type="button"
+                onClick={onManageFields}
+                className="w-[200px] flex-shrink-0 rounded-[8px] border border-dashed border-a-line-strong bg-transparent p-3 text-left text-[14px] text-a-muted transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
+              >
+                + Add a {groupField.name} option
+              </button>
             </div>
           </div>
-          {canScrollRight && (
-            <div
-              className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-a-bg to-transparent"
-              aria-hidden
-            />
-          )}
         </div>
       </div>
 
@@ -236,6 +221,7 @@ export function TaskBoardView({
         {active && (
           <div className="w-[272px] rotate-[1.5deg] cursor-grabbing shadow-lg">
             <MatrixTaskCard
+              variant="board"
               todo={active}
               index={0}
               isNext={active.id === cardHandlers.nextId}
@@ -259,20 +245,20 @@ interface BoardToolbarProps {
   onManageFields: () => void;
 }
 
-/** Which field the columns come from, and the way back to choosing another. */
+/** Group-by bar — showcase 265–271: label, field picker, Manage fields, helper text. */
 function BoardToolbar({ field, groupableFields, onGroupFieldChange, onManageFields }: BoardToolbarProps) {
   return (
-    <div className="mb-3 flex items-center gap-2">
+    <div className="mb-3.5 flex flex-wrap items-center gap-2.5">
+      <span className="text-[14px] text-a-muted">Group by</span>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="flex h-8 items-center gap-1.5 rounded-[6px] px-3 text-[14px] text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)] transition-colors duration-[120ms] hover:text-a-ink"
+            className="flex h-7 w-40 items-center justify-between gap-1.5 rounded-[4px] px-2 text-[12px] text-a-ink shadow-[inset_0_0_0_1px_var(--a-line)] transition-colors duration-[120ms] hover:bg-a-row-hover"
             aria-label={`Columns from ${field.name}`}
           >
-            <Columns3 className="size-3.5" strokeWidth={1.75} aria-hidden />
-            Columns: <span className="font-semibold text-a-ink">{field.name}</span>
-            <ChevronDown className="size-3" strokeWidth={1.75} aria-hidden />
+            <span className="truncate">{field.name}</span>
+            <ChevronDown className="size-3.5 flex-shrink-0 text-a-faint" strokeWidth={1.75} aria-hidden />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
@@ -297,6 +283,18 @@ function BoardToolbar({ field, groupableFields, onGroupFieldChange, onManageFiel
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      <button
+        type="button"
+        onClick={onManageFields}
+        className="flex h-7 items-center gap-1.5 rounded-[6px] px-2.5 text-[12px] text-a-muted transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
+      >
+        <SlidersHorizontal className="size-3.5" strokeWidth={1.75} aria-hidden />
+        Manage fields
+      </button>
+      <div className="flex-1" />
+      <span className="text-[12px] text-a-faint">
+        Drag a card to another column to change its {field.name}. Undo is offered for 5 seconds.
+      </span>
     </div>
   );
 }
@@ -311,30 +309,44 @@ interface BoardColumnProps extends CardHandlers {
 
 function BoardColumn({ fieldId, column, fieldDefs, fieldValues, onAddTask, ...handlers }: BoardColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: `${BOARD_COLUMN_PREFIX}${column.key}` });
+  const [composing, setComposing] = useState(false);
   const headingId = `board-${fieldId}-${column.key}`;
   const taskCount = column.tasks.length;
 
+  // Showcase 272–296: a --gray-100 lane, 8px radius, 8px padding and gap; header
+  // dot + name + mono count + "+"; the empty lane is a dashed drop target.
   return (
     <section
       aria-labelledby={headingId}
-      className="flex w-[292px] flex-shrink-0 flex-col rounded-[12px] bg-[color-mix(in_srgb,var(--a-ink)_4%,transparent)] p-2.5"
+      className="flex w-[292px] flex-shrink-0 flex-col gap-2 rounded-[8px] bg-a-line-soft p-2"
     >
-      <header className="mb-2 flex items-center gap-2 px-1.5 pt-0.5">
+      <header className="flex items-center gap-2 px-1.5 py-1">
         <span
-          className={cn('size-[9px] flex-shrink-0 rounded-full', column.color ? OPTION_DOT_CLASS[column.color] : 'shadow-[inset_0_0_0_1.5px_var(--a-line)]')}
+          className={cn('size-2 flex-shrink-0 rounded-full', column.color ? OPTION_DOT_CLASS[column.color] : 'shadow-[inset_0_0_0_1.5px_var(--a-line-strong)]')}
           aria-hidden
         />
-        <h2 id={headingId} className="min-w-0 truncate font-display text-[16px] leading-tight text-a-ink">{column.label}</h2>
-        <span className="text-[12px] font-bold tabular-nums text-a-muted">
+        <h2 id={headingId} className="min-w-0 truncate text-[14px] font-semibold leading-tight text-a-ink">{column.label}</h2>
+        <span className="font-mono text-[11px] tabular-nums text-a-faint">
           {taskCount}
           <span className="sr-only"> tasks</span>
         </span>
+        <div className="flex-1" />
+        {onAddTask && (
+          <button
+            type="button"
+            onClick={() => setComposing(true)}
+            aria-label={`Add task to ${column.label}`}
+            className="flex size-7 items-center justify-center rounded-[4px] text-a-muted transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
+          >
+            <Plus className="size-4" strokeWidth={1.75} aria-hidden />
+          </button>
+        )}
       </header>
 
       <div
         ref={setNodeRef}
         className={cn(
-          'flex min-h-[96px] flex-col gap-2 rounded-[8px] p-0.5 transition-[background-color,box-shadow] duration-[120ms]',
+          'flex flex-col gap-2 rounded-[8px] transition-[background-color,box-shadow] duration-[120ms]',
           isOver && 'bg-a-row-hover shadow-[inset_0_0_0_1.5px_var(--a-accent)]',
         )}
       >
@@ -350,42 +362,29 @@ function BoardColumn({ fieldId, column, fieldDefs, fieldValues, onAddTask, ...ha
           />
         ))}
         {column.tasks.length === 0 && (
-          <p className="flex flex-1 items-center justify-center px-3 py-6 text-center text-[13px] text-a-faint">
-            Drop a task here
-          </p>
+          <div className="rounded-[8px] border border-dashed border-a-line-strong px-3 py-5 text-center text-[12px] leading-normal text-a-faint">
+            Drop a task here.<br />Empty columns stay, so you can move work into them.
+          </div>
         )}
       </div>
 
-      {onAddTask && <ColumnComposer columnLabel={column.label} onAdd={(title) => onAddTask(title, column.key)} />}
+      {onAddTask && composing && (
+        <ColumnComposer columnLabel={column.label} onDone={() => setComposing(false)} onAdd={(title) => onAddTask(title, column.key)} />
+      )}
     </section>
   );
 }
 
-/** "+ Add" at the foot of a column: type a title, Enter creates it in that column. */
-function ColumnComposer({ columnLabel, onAdd }: { columnLabel: string; onAdd: (title: string) => void }) {
-  const [open, setOpen] = useState(false);
+/** The header "+" opens this: type a title, Enter creates it in that column. */
+function ColumnComposer({ columnLabel, onAdd, onDone }: { columnLabel: string; onAdd: (title: string) => void; onDone: () => void }) {
   const [title, setTitle] = useState('');
 
   const commit = () => {
     const trimmed = title.trim();
     if (trimmed) onAdd(trimmed);
     setTitle('');
-    setOpen(false);
+    onDone();
   };
-
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="mt-1.5 flex items-center gap-1.5 rounded-[8px] px-2 py-1.5 text-left text-[13px] text-a-faint transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
-        aria-label={`Add task to ${columnLabel}`}
-      >
-        <Plus className="size-3.5" strokeWidth={1.75} aria-hidden />
-        Add
-      </button>
-    );
-  }
 
   return (
     <input
@@ -396,11 +395,11 @@ function ColumnComposer({ columnLabel, onAdd }: { columnLabel: string; onAdd: (t
       onBlur={commit}
       onKeyDown={(e) => {
         if (e.key === 'Enter') { e.preventDefault(); commit(); }
-        if (e.key === 'Escape') { setTitle(''); setOpen(false); }
+        if (e.key === 'Escape') { setTitle(''); onDone(); }
       }}
       placeholder="What needs to be done?"
       aria-label={`New task in ${columnLabel}`}
-      className="mt-1.5 h-9 w-full rounded-[12px] bg-a-bg px-2.5 text-[14px] text-a-ink shadow-[inset_0_0_0_1px_var(--a-line)] outline-none focus-visible:shadow-[inset_0_0_0_1.5px_var(--a-accent)]"
+      className="h-9 w-full rounded-[8px] bg-a-surface px-2.5 text-[14px] text-a-ink shadow-[inset_0_0_0_1px_var(--a-line)] outline-none focus-visible:shadow-[inset_0_0_0_1.5px_var(--a-accent)]"
     />
   );
 }
@@ -425,6 +424,7 @@ function DraggableCard({ columnKey, todo, index, fieldDefs, fieldValues, ...hand
       className={cn('cursor-grab touch-none rounded-[8px] outline-none focus-visible:ring-2 focus-visible:ring-a-accent', isDragging && 'opacity-40')}
     >
       <MatrixTaskCard
+        variant="board"
         todo={todo}
         index={index}
         isNext={todo.id === handlers.nextId}
@@ -437,6 +437,22 @@ function DraggableCard({ columnKey, todo, index, fieldDefs, fieldValues, ...hand
         fieldDefs={fieldDefs}
         fieldValues={fieldValues[todo.id]}
       />
+    </div>
+  );
+}
+
+/** Three placeholder columns while the fields that define them load (showcase 161–173's shape). */
+function BoardSkeleton() {
+  return (
+    <div className="flex items-start gap-4 overflow-hidden" role="status" aria-label="Loading board">
+      {[2, 3, 1].map((cards, i) => (
+        <div key={i} className="flex w-[292px] flex-shrink-0 flex-col gap-2 rounded-[8px] bg-a-line-soft p-2">
+          <div className="h-7 px-1.5 py-1"><div className="h-full w-24 animate-pulse rounded-[4px] bg-a-line" /></div>
+          {Array.from({ length: cards }).map((_, j) => (
+            <div key={j} className="h-[72px] animate-pulse rounded-[8px] border border-a-line bg-a-surface" />
+          ))}
+        </div>
+      ))}
     </div>
   );
 }
@@ -454,7 +470,7 @@ interface BoardSetupProps {
 
 /** Shown until the board has a field to make columns from. */
 function BoardSetup({ groupableFields, otherFields, fieldsOnline, fieldsLoading, onGroupFieldChange, onManageFields }: BoardSetupProps) {
-  if (fieldsLoading) return null;
+  if (fieldsLoading) return <BoardSkeleton />;
 
   return (
     <div className="mx-auto flex max-w-[480px] flex-col items-center py-16 text-center animate-fade-in">

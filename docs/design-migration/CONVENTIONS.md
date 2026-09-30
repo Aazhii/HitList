@@ -369,11 +369,27 @@ been declared in `ViewDisplay` and left unused since it was written.
 
 ---
 
+### Board (T3.4)
+
+- **Status box and delete stay on board cards.** The prototype's card (showcase
+  282–293) is click-to-open only. Ours keeps the status checkbox and hover delete, since
+  a board column is a custom field, not status — removing them would leave no way to
+  complete a task from the board. `MatrixTaskCard` gains `variant="board"` for the
+  white/bordered surface and 12px meta row.
+- **The saved-view chip row stays above the board.** The prototype's board screen has
+  none, but named boards (`+ New` → a saved view with its own group-by field) live in
+  that row; hiding it would orphan them.
+- **No right-edge fade.** The old scroll hint was a gradient (forbidden, §2) and now
+  fades to the wrong colour on a white page. Lanes are simply cut off at the edge, as
+  in the prototype.
+- **New token `--a-line-strong: #d3d1cb`** (= `--border-strong`, §2) for dashed drop
+  targets; `design:check` bans hex outside `index.css`, so it had to live there.
+
 ## 13. Standing rules for whoever executes a task
 
 1. **Verify before you change.** Every task quotes the current code. If what you find does not match the quote, **stop and report** — do not adapt silently. The file may have moved on.
 2. **Never invent a value.** If a task does not give you a number and this file does not either, ask. Guessing is what produced the current state.
 3. **One task, one commit.** Commit message: `design(T1.4): set every icon stroke to 1.75`.
-4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 339 tests.
+4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 341 tests.
 5. **Update `00-INDEX.md`** — set State and fill in "Verified by" with the actual command output or screenshot pair. A task with an empty "Verified by" is not done.
 6. **Do not delete the Automations or Reminders code.** It is being revived in Phase 4, not removed.

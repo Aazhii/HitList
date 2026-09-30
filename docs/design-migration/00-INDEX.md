@@ -69,9 +69,7 @@ S=<scratchpad>
 STORAGE_MODE=sqlite SQLITE_PATH=$S/scratch.db SERVER_PORT=3001 \
   OWNER_COOKIE_SECRET=<any 32+ chars> nohup java -jar api/target/hitlist.jar &
 cd web && nohup pnpm exec vite --port 9000 &          # proxies /api -> :3001 by default
-J=/tmp/hitlist-seed-jar.txt; curl -s -c $J -b $J localhost:3001/api/health
-curl -s -c $J -b $J -X POST localhost:3001/api/tasks -H 'Content-Type: application/json' \
-  -d '{"title":"Prepare Q4 roadmap review","quadrant":"do"}'     # title, not text
+tools/seed.sh 3001     # a Stage select field + 8 tasks with due dates; writes the cookie jar
 node tools/shoot.mjs tasks-table --app
 ```
 
@@ -85,7 +83,8 @@ against the prototype's 12 sample rows is approximate.
 ## Tooling note
 
 `tools/` is a separate npm package from `web/` **on purpose** — it holds
-`shoot.mjs` (Puppeteer, for prototype-vs-app screenshots) and
+`shoot.mjs` (Puppeteer, for prototype-vs-app screenshots), `seed.sh`
+(seeds a *scratch* backend so shots aren't empty — never point it at real data) and
 `probe-longtext.sh`. Puppeteer must never be a `web/` dependency: it was, once,
 briefly, and it broke the Docker frontend stage (`npm ci` inside the image
 tried to satisfy/download it). If a future task wants a new dev-only tool with
@@ -113,7 +112,7 @@ that one is fine where it is.
 | Visual | `node web/scripts/shoot.mjs <screen-id>` → a `.ref.png` / `.app.png` pair | every Phase 3 task |
 | Real build | `sh desktop/scripts/prepare-jar.sh` → copy to `api/target/hitlist.jar` → restart Electron → re-check its own port | every **phase** exit, not every task |
 
-Test baseline: **339 tests across 39 files.** This must not regress.
+Test baseline: **341 tests across 39 files.** This must not regress.
 
 ---
 
@@ -123,10 +122,10 @@ Test baseline: **339 tests across 39 files.** This must not regress.
 Phase 0  █████   5 / 5      done
 Phase 1  █████  11 / 11      foundations — the broken UI
 Phase 2  █████   5 / 5       shell exactness
-Phase 3  █░░░░   3 / 42      per-screen fidelity (T3.1 due tones, T3.2 list rows, T3.3 table chrome)
-Phase 4  ░░░░░   0 / 12      missing features
+Phase 3  █░░░░   4 / 42      per-screen fidelity (T3.1–T3.4 done)
+Phase 4  ░░░░░   1 / 12      missing features
 Phase 5  ░░░░░   0 / 7       proposals, unreviewed
-                24 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
+                26 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
 ```
 
 ### A note on "partially built"
@@ -190,7 +189,7 @@ on a description. Execution order is the section order below.
 | T3.1 | `tasks-matrix` | **done** | shots/tasks-matrix.{ref,app}.png; due labels now plain coloured text with the prototype's own wording |
 | T3.2 | `tasks-list` | **done** | design:check PASS, tsc/vitest/lint clean; shots/tasks-list.{ref,app}.png — shell/tabs/header confirmed live; row-level pixel proof blocked by a hung dev backend (infra, not this change) — re-shoot once it's back |
 | T3.3 | `tasks-table` (+ retire `ViewTabs`' duplicate layout chips) | **done** | design:check PASS, tsc clean, vitest 339/339; shots/tasks-table.{ref,app}.png — saved-view chip row matches showcase 251–258 (Default table chip, `+ New`, Columns + Fields); built-in Table/Board chips gone. Table grid itself deliberately not reshaped (see note below) |
-| T3.4 | `tasks-board` (+ fix the blank-on-load) | todo | |
+| T3.4 | `tasks-board` (+ fix the blank-on-load) | **done** | design:check PASS, tsc/lint clean, vitest 341/341 (+2 new); shots/tasks-board.{ref,app}.png — group-by bar, grey lanes, white bordered cards, dashed empty lane, `+ Add a Stage option`; blank-on-load now a skeleton. Deviations in CONVENTIONS §12a |
 | T3.5 | `tasks-empty` | todo | |
 | T3.6 | `tasks-nomatch` | todo | |
 | T3.7 | `tasks-loading` | todo | |
@@ -269,7 +268,7 @@ on a description. Execution order is the section order below.
 | T4.4e | Automations — fidelity to `auto-list` / `auto-form` | blocked on T4.4d | |
 | T4.5 | Remaining dead controls: Help, workspace chevron | todo | |
 | T4.6 | Finish the half-wired view persistence | todo | |
-| T4.7 | Fix the blank Board (may be closed by T3.4) | todo | |
+| T4.7 | Fix the blank Board (may be closed by T3.4) | **done** | closed by T3.4: `BoardSetup` renders `BoardSkeleton` while fields load; test 'shows a loading skeleton, not a blank page' |
 | T4.8 | Databases inside notes — the five `notes-db-*` screens | blocked on T3.9–T3.24 | |
 
 > **T4.4 is a backend build, not a re-enable.** There is no automations controller, no

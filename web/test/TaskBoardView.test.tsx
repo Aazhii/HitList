@@ -152,6 +152,19 @@ describe('TaskBoardView', () => {
     setup({ groupField: null, fieldDefs: [], fieldsOnline: false });
     expect(screen.getByText(/unreachable right now/)).toBeInTheDocument();
   });
+
+  it('shows a loading skeleton, not a blank page, while the fields load', () => {
+    setup({ groupField: null, fieldDefs: [], fieldsLoading: true });
+    expect(screen.getByRole('status', { name: 'Loading board' })).toBeInTheDocument();
+    expect(screen.queryByText('Choose the columns')).not.toBeInTheDocument();
+  });
+
+  it('keeps empty columns visible with the drop hint, and offers to add an option', () => {
+    const props = setup();
+    expect(screen.getByRole('region', { name: /Doing/ })).toHaveTextContent('Empty columns stay');
+    fireEvent.click(screen.getByRole('button', { name: '+ Add a Stage option' }));
+    expect(props.onManageFields).toHaveBeenCalled();
+  });
 });
 
 describe('TaskBoardView — toolbar and adding', () => {
