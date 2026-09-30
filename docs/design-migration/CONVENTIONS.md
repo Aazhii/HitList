@@ -612,7 +612,7 @@ Shared primitives now follow the DS, so every dialog inherits them:
 1. **Verify before you change.** Every task quotes the current code. If what you find does not match the quote, **stop and report** — do not adapt silently. The file may have moved on.
 2. **Never invent a value.** If a task does not give you a number and this file does not either, ask. Guessing is what produced the current state.
 3. **One task, one commit.** Commit message: `design(T1.4): set every icon stroke to 1.75`.
-4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 386 tests.
+4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 392 tests.
 5. **Update `00-INDEX.md`** — set State and fill in "Verified by" with the actual command output or screenshot pair. A task with an empty "Verified by" is not done.
 6. **Do not delete the Automations or Reminders code.** It is being revived in Phase 4, not removed.
 
@@ -665,3 +665,9 @@ Shared primitives now follow the DS, so every dialog inherits them:
 - Notifications is a Popover (role dialog): "Notifications", "Mark all read" (it dismisses every reminder), one row per reminder — missed first — with a red or orange dot and "Missed · 2h ago" / "Upcoming · due in 25 minutes". The prototype's "was due Sun, 5:00 PM" needs the due time, which a reminder record does not keep. The unread count badge on the bell stays; per-row go-to-task and dismiss show on hover.
 - Account menu: no "Sign out" (there is no sign-in; data belongs to the browser). "Keyboard shortcuts" opens a dialog listing only shortcuts that exist.
 - Row menus (`shell/RowMenu.tsx`): notes and saved views use it. The prototype's Add to Favorites, Duplicate, Copy link, Rename-by-shortcut, Open in new tab and its keyboard hints are not offered — they depend on Phase 4 features or do not exist. Lists keep their inline rename/delete icons.
+
+### Phase 4: palette and dead controls (T4.2, T4.5)
+
+- ⌘K searches lists, databases, notes and tasks by title (every word must appear; a title starting with the query ranks first; six per group). Notes are read from local storage, databases from the API when it opens. It is a Dialog, 560px, 12px radius, 28px rows.
+- The header Help button opens a menu with Keyboard shortcuts; the shortcuts list now includes ⌘K. The sidebar's workspace chevron is gone until there is more than one workspace.
+- `design:check` rule `dead-control`: a `<button aria-label>` with no `onClick`/`type="submit"`/prop spread fails, except as a Radix `Trigger` child or a menu's `trigger` prop.

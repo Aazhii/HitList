@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
-import { CircleHelp, Menu } from 'lucide-react';
+import { Menu } from 'lucide-react';
+import { HelpMenu } from '@/components/shell/HelpMenu';
 import { cn } from '@/lib/utils';
 
 interface AppHeaderProps {
@@ -66,13 +67,7 @@ export function AppHeader({ crumb1, crumb2, sync, bell, account, onOpenSidebar }
 
       {bell}
 
-      <button
-        type="button"
-        aria-label="Help"
-        className="flex size-7 flex-shrink-0 items-center justify-center rounded-[4px] text-a-muted transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
-      >
-        <CircleHelp className="size-4" strokeWidth={1.75} />
-      </button>
+      <HelpMenu />
 
       {account}
     </header>

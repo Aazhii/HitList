@@ -86,6 +86,10 @@ const RULES = {
     why: 'the wrong blue — #2383e2 is Notion, the design is #006EB9',
     scan: (line) => (WRONG_ACCENT.test(line) ? ['#2383e2'] : []),
   },
+  'dead-control': {
+    why: 'a named <button> with no onClick (see deadControls)',
+    scan: () => [],   // whole-file; handled in the walk below
+  },
   colour: {
     why: 'hex literal outside index.css — colours belong to a token',
     scan: (line, file) => {
@@ -95,6 +99,29 @@ const RULES = {
     },
   },
 };
+
+/**
+ * dead-control: a <button> that names itself (aria-label) but does nothing — no onClick, no
+ * type="submit", no spread of props, and not the child of a Radix trigger (which supplies the click).
+ * The Sidebar's Search row shipped like this: focusable, advertised, inert.
+ */
+function deadControls(text) {
+  const out = [];
+  for (const m of text.matchAll(/<button\b[^>]*?>/gs)) {
+    const tag = m[0];
+    if (!/aria-label=/.test(tag)) continue;
+    if (/onClick=|type="submit"|\{\.\.\.|onPointerDown=|onMouseDown=/.test(tag)) continue;
+    // Handed to a menu as its `trigger` prop: the menu supplies the click.
+    if (/trigger=\{\s*$/.test(text.slice(Math.max(0, m.index - 20), m.index))) continue;
+    // Inside an open <XTrigger asChild> the trigger supplies the click.
+    const before = text.slice(0, m.index);
+    const opens = [...before.matchAll(/<\w*Trigger\b/g)];
+    const last = opens.at(-1);
+    if (last && !/<\/\w*Trigger>/.test(before.slice(last.index))) continue;
+    out.push({ line: text.slice(0, m.index).split('\n').length, hit: '<button aria-label> with no action' });
+  }
+  return out;
+}
 
 // ── walk ────────────────────────────────────────────────────────────────────
 function* files(dir) {
@@ -124,7 +151,14 @@ const IGNORE = /design-check-ignore:\s*([a-z-]+)\s*[—-]\s*\S/;
 const found = Object.fromEntries(Object.keys(active).map((k) => [k, []]));
 for (const file of files(SRC)) {
   const rel = relative(ROOT, file);
-  const lines = readFileSync(file, 'utf8').split('\n');
+  const source = readFileSync(file, 'utf8');
+  const lines = source.split('\n');
+  if (active['dead-control']) {
+    for (const d of deadControls(source)) {
+      const waiver = IGNORE.exec(lines[d.line - 1] ?? '') ?? IGNORE.exec(lines[d.line - 2] ?? '');
+      if (!(waiver && waiver[1] === 'dead-control')) found['dead-control'].push({ where: `${rel}:${d.line}`, hit: d.hit });
+    }
+  }
   lines.forEach((line, i) => {
     // an ignore may sit on the line itself or on the line above it
     const waiver = IGNORE.exec(line) ?? IGNORE.exec(lines[i - 1] ?? '');

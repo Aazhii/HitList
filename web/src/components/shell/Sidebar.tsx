@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { CalendarDays, ChevronsUpDown, Leaf, ListChecks, Search, StickyNote, Table2 } from 'lucide-react';
+import { CalendarDays, Leaf, ListChecks, Search, StickyNote, Table2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { useIsDesktop } from '@/components/shell/ViewLayout';
@@ -23,6 +23,8 @@ export interface SidebarProps {
   context: ReactNode;
   /** Pinned to the foot of the sidebar, e.g. Tasks' momentum card. */
   contextFoot?: ReactNode;
+  /** Opens the ⌘K palette. */
+  onSearch?: () => void;
   /** Whether the sidebar's mobile sheet is open, and how to change that. */
   mobileOpen: boolean;
   onMobileOpenChange: (open: boolean) => void;
@@ -47,6 +49,7 @@ export function Sidebar({
   counts,
   context,
   contextFoot,
+  onSearch,
   mobileOpen,
   onMobileOpenChange,
 }: SidebarProps) {
@@ -57,7 +60,7 @@ export function Sidebar({
     if (isDesktop) onMobileOpenChange(false);
   }, [isDesktop, onMobileOpenChange]);
 
-  const body = <SidebarBody activeView={activeView} onViewChange={onViewChange} counts={counts} context={context} contextFoot={contextFoot} />;
+  const body = <SidebarBody activeView={activeView} onViewChange={onViewChange} counts={counts} context={context} contextFoot={contextFoot} onSearch={onSearch} />;
 
   if (isDesktop) {
     return (
@@ -78,7 +81,7 @@ export function Sidebar({
   );
 }
 
-function SidebarBody({ activeView, onViewChange, counts, context, contextFoot }: Omit<SidebarProps, 'mobileOpen' | 'onMobileOpenChange'>) {
+function SidebarBody({ activeView, onViewChange, counts, context, contextFoot, onSearch }: Omit<SidebarProps, 'mobileOpen' | 'onMobileOpenChange'>) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Logo / workspace row */}
@@ -87,13 +90,13 @@ function SidebarBody({ activeView, onViewChange, counts, context, contextFoot }:
           <Leaf className="size-[13px] text-white" strokeWidth={1.75} />
         </span>
         <span className="text-[14px] font-semibold text-a-ink">HitList</span>
-        <ChevronsUpDown className="size-3.5 text-a-faint" strokeWidth={1.75} />
       </div>
 
-      {/* Search row — static "Ctrl K" hint; a real command palette is future work. */}
+      {/* Search row: opens the ⌘K palette. */}
       <div className="flex-shrink-0 px-2">
         <button
           type="button"
+          onClick={onSearch}
           className="flex min-h-[28px] w-full items-center gap-2 rounded-[4px] px-2 text-left text-[14px] text-a-muted transition-colors duration-[120ms] hover:bg-a-row-hover"
         >
           <Search className="size-4" strokeWidth={1.75} />

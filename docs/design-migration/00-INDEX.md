@@ -146,7 +146,7 @@ that one is fine where it is.
 | Visual | `node web/scripts/shoot.mjs <screen-id>` → a `.ref.png` / `.app.png` pair | every Phase 3 task |
 | Real build | `sh desktop/scripts/prepare-jar.sh` → copy to `api/target/hitlist.jar` → restart Electron → re-check its own port | every **phase** exit, not every task |
 
-Test baseline: **386 tests across 44 files.** This must not regress.
+Test baseline: **392 tests across 45 files.** This must not regress.
 
 ---
 
@@ -159,7 +159,7 @@ Phase 2  █████   5 / 5       shell exactness
 Phase 3  ███░░  42 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
 Phase 4  ░░░░░   1 / 12      missing features
 Phase 5  ░░░░░   0 / 7       proposals, unreviewed
-                64 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
+                66 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
 ```
 
 ### A note on "partially built"
@@ -295,14 +295,14 @@ on a description. Execution order is the section order below.
 | ID | Title | State | Verified by |
 |---|---|---|---|
 | T4.1 | Library, Favorites and Recents — **net-new**, frontend + backend | todo | |
-| T4.2 | ⌘K command palette — **net-new** | todo | |
+| T4.2 | ⌘K command palette — **net-new** | **done** | `CommandPalette.tsx`, `lib/paletteSearch.ts`; ⌘K / Ctrl-K and the sidebar Search row open it; `test/CommandPalette.test.tsx` (6) |
 | T4.3 | Notifications, made real — two hardcoded `false`s, one per side of the wire | todo | |
 | T4.4a | Automations — feasibility write-up, **no code** | todo | |
 | T4.4b | Automations — backend persistence + CRUD | blocked on T4.4a | |
 | T4.4c | Automations — backend execution | blocked on T4.4a | |
 | T4.4d | Automations — frontend un-stub and mount | blocked on T4.4b | |
 | T4.4e | Automations — fidelity to `auto-list` / `auto-form` | blocked on T4.4d | |
-| T4.5 | Remaining dead controls: Help, workspace chevron | todo | |
+| T4.5 | Remaining dead controls: Help, workspace chevron | **done** | Help opens a menu → shortcuts dialog; the workspace chevron is removed; `design:check` gains `dead-control` (0 violations) |
 | T4.6 | Finish the half-wired view persistence | todo | |
 | T4.7 | Fix the blank Board (may be closed by T3.4) | **done** | closed by T3.4: `BoardSetup` renders `BoardSkeleton` while fields load; test 'shows a loading skeleton, not a blank page' |
 | T4.8 | Databases inside notes — the five `notes-db-*` screens | blocked on T3.9–T3.24 | |

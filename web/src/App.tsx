@@ -39,6 +39,10 @@ import { BTN_MD, TopBar, TopBarToggle, topBarPill, topBarPrimary, topBarSecondar
 import { UserMenu } from '@/components/shell/UserMenu';
 import { NotificationBell } from '@/components/NotificationBell';
 import { NotificationToast } from '@/components/NotificationToast';
+import { CommandPalette } from '@/components/CommandPalette';
+import type { PaletteItem } from '@/lib/paletteSearch';
+import { notesStorageKey } from '@/lib/notesStorage';
+import { databaseApi } from '@/lib/api';
 import { useInAppNotifications } from '@/hooks/useInAppNotifications';
 import { loadAppState, saveAppState, setActiveUserId, getActiveUserId } from '@/lib/storage';
 import {
@@ -1215,6 +1219,37 @@ function UserScopedApp() {
     handleOpenDetail(t);
   }, [activeListId, handleSelectList, handleOpenDetail]);
 
+  // ── ⌘K palette ─────────────────────────────────────────────────────────────
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); setPaletteOpen((o) => !o); }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
+
+  /** Everything the palette can open, read fresh each time it opens. */
+  const getPaletteItems = useCallback(async (): Promise<PaletteItem[]> => {
+    const listName = new Map(lists.map((l) => [l.id, l.name]));
+    let notes: Array<{ id: string; title: string; emoji?: string }> = [];
+    try { notes = JSON.parse(localStorage.getItem(notesStorageKey(getActiveUserId())) ?? '[]'); } catch { /* unreadable: no notes */ }
+    const databases = await databaseApi.list().catch(() => []);
+    return [
+      ...lists.map((l) => ({ kind: 'list' as const, id: l.id, title: l.name })),
+      ...databases.map((d) => ({ kind: 'database' as const, id: d.id, title: d.name, emoji: d.icon || undefined })),
+      ...notes.map((n) => ({ kind: 'note' as const, id: n.id, title: n.title || 'Untitled', emoji: n.emoji })),
+      ...todosRef.current.map((t) => ({ kind: 'task' as const, id: t.id, title: t.text, hint: listName.get(t.listId) })),
+    ];
+  }, [lists]);
+
+  const handleOpenPaletteItem = useCallback((item: PaletteItem) => {
+    if (item.kind === 'task') handleOpenLinkedTask(item.id);
+    else if (item.kind === 'note') { setPendingNoteId(item.id); setActiveView('notes'); }
+    else if (item.kind === 'database') { setPendingDatabaseId(item.id); setActiveView('databases'); }
+    else { setActiveView('tasks'); handleSelectList(item.id); }
+  }, [handleOpenLinkedTask, handleSelectList, setActiveView]);
+
   const handleOpenSourceNote = useCallback((noteId: string) => {
     setDetailOpen(false);
     setPendingNoteId(noteId);
@@ -1344,11 +1379,14 @@ function UserScopedApp() {
         onMarkSeen={inAppNotifications.markToastSeen}
       />
 
+      <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} getItems={getPaletteItems} onOpenItem={handleOpenPaletteItem} />
+
       <AppShell
         rail={
           <Sidebar
             activeView={shellView}
             onViewChange={setActiveView}
+            onSearch={() => setPaletteOpen(true)}
             counts={{ tasks: totalCount, notes: notesCount, databases: dbCount }}
             mobileOpen={sidebarOpen}
             onMobileOpenChange={setSidebarOpen}

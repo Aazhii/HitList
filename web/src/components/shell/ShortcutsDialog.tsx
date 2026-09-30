@@ -1,0 +1,34 @@
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+
+/** The shortcuts the app actually has, so the list can be trusted. */
+const SHORTCUTS: Array<{ keys: string; does: string }> = [
+  { keys: '/', does: 'In a note or on an empty line: choose a block type' },
+  { keys: '@', does: 'In a note or a text cell: add the line to a quadrant' },
+  { keys: '↵', does: 'In a note: start a new block' },
+  { keys: 'Tab', does: 'In a note table: move to the next cell' },
+  { keys: '⌘ / Ctrl + B, I, U', does: 'Bold, italic, underline the selection' },
+  { keys: '⌘ / Ctrl + ⇧ + X', does: 'Strike the selection through' },
+  { keys: '⌘ / Ctrl + K', does: 'Search tasks, notes, databases and lists' },
+  { keys: '↑ ↓ ← →', does: 'In a menu: move; ↵ chooses, Esc closes' },
+];
+
+export function ShortcutsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[440px]">
+        <DialogHeader>
+          <DialogTitle>Keyboard shortcuts</DialogTitle>
+          <DialogDescription>What you can type or press in HitList.</DialogDescription>
+        </DialogHeader>
+        <dl className="flex flex-col">
+          {SHORTCUTS.map(({ keys, does }) => (
+            <div key={keys} className="flex items-baseline gap-3 border-b border-a-line-soft py-2 last:border-b-0">
+              <dt className="w-[140px] flex-shrink-0 font-mono text-[12px] text-a-ink">{keys}</dt>
+              <dd className="flex-1 text-a-muted">{does}</dd>
+            </div>
+          ))}
+        </dl>
+      </DialogContent>
+    </Dialog>
+  );
+}

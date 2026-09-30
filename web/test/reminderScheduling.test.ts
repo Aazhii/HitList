@@ -144,7 +144,8 @@ describe('reminder reconciliation', () => {
     // a unchanged, b retimed, c added.
     scheduleAllReminders([
       { ...a },
-      { ...b, dueTime: '22:15' },
+      // Any time but b's own: the fixture's default depends on the clock, and can be 22:15 itself.
+      { ...b, dueTime: b.dueTime === '22:15' ? '22:45' : '22:15' },
       reminderTodo({ id: 'c' }),
     ]);
 
