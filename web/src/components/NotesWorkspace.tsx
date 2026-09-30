@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, type ReactNode } from 'react';
 import {
   Plus, Search, Pin, PinOff, Trash2, FileText, MoreHorizontal,
   StickyNote, Loader2, CheckCircle2, AlertCircle, WifiOff,
@@ -12,11 +12,12 @@ import type { SaveStatus } from '@/hooks/useNotes';
 import { useSyncStatus } from '@/hooks/useSyncStatus';
 import type { SyncStatus } from '@/hooks/useSyncStatus';
 import { NoteEditor, type NoteTaskLinking } from '@/components/NoteEditor';
+import { ILL } from '@/components/EmptyState';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
-import { ViewLayout, ContextSectionHeader, contextIconButton, contextRowClass, useViewLayout } from '@/components/shell/ViewLayout';
+import { ViewLayoutContext, ContextSectionHeader, contextIconButton, contextRowClass, useViewLayout } from '@/components/shell/ViewLayout';
 import { TopBar, topBarPill, topBarPrimary } from '@/components/shell/TopBar';
 import {
   DropdownMenu,
@@ -63,18 +64,18 @@ function NoteListItem({
         title={preview ? `${note.title || 'Untitled'} — ${preview}` : undefined}
         className={cn(contextRowClass(isActive), 'pr-9')}
       >
-        <span className="flex-shrink-0 text-[15px] leading-none" aria-hidden>{note.emoji ?? '📝'}</span>
-        <span className={cn('min-w-0 flex-1 truncate text-[14.5px]', isActive ? 'font-semibold text-a-ink' : 'text-a-muted')}>
+        <span className="flex-shrink-0 text-[14px] leading-none" aria-hidden>{note.emoji ?? '📝'}</span>
+        <span className={cn('min-w-0 flex-1 truncate text-[14px]', isActive ? 'font-semibold text-a-ink' : 'text-a-muted')}>
           {note.title || 'Untitled'}
         </span>
       </button>
 
       {/* A sibling of the row button, so there are no nested interactive elements. */}
-      <div className="absolute top-1/2 right-2 -translate-y-1/2 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 has-[[data-state=open]]:opacity-100">
+      <div className="absolute top-1/2 right-2 -translate-y-1/2 opacity-0 transition-opacity duration-[120ms] group-hover:opacity-100 group-focus-within:opacity-100 has-[[data-state=open]]:opacity-100">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button type="button" className={contextIconButton} aria-label={`Options for ${note.title || 'Untitled'}`}>
-              <MoreHorizontal className="size-3.5" strokeWidth={2.75} />
+              <MoreHorizontal className="size-3.5" strokeWidth={1.75} />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-40">
@@ -97,14 +98,12 @@ function NoteListItem({
 function NotesEmptyState({ onCreate }: { onCreate: () => void }) {
   return (
     <div className="flex h-full flex-col items-center justify-center px-8 py-20 text-center animate-fade-in">
-      <div className="mb-6 flex size-20 items-center justify-center rounded-[24px] bg-a-accent-tint">
-        <StickyNote className="size-9 text-a-accent-700" strokeWidth={2.25} />
-      </div>
-      <h3 className="mb-2 font-display text-[26px] text-a-ink">No notes yet</h3>
-      <p className="mb-8 max-w-xs text-[14.5px] leading-relaxed text-a-muted">
+      <img src={`/ill/${ILL.sampleData}`} alt="" aria-hidden className="mb-4 h-[132px] w-auto select-none" draggable={false} />
+      <h3 className="mb-1.5 text-[16px] font-semibold text-a-ink">No notes yet</h3>
+      <p className="mb-6 max-w-xs text-[14px] leading-relaxed text-a-muted">
         Capture ideas, meeting notes, or anything on your mind. Notes live alongside your tasks.
       </p>
-      <Button onClick={onCreate} className="h-9 gap-2 rounded-full px-4">
+      <Button onClick={onCreate} className="h-9 gap-2 rounded-[6px] px-4">
         <Plus className="size-4" />
         New note
       </Button>
@@ -116,14 +115,14 @@ function NotesEmptyState({ onCreate }: { onCreate: () => void }) {
 function SelectNotePrompt({ onCreate }: { onCreate: () => void }) {
   return (
     <div className="flex h-full flex-col items-center justify-center px-8 py-20 text-center animate-fade-in">
-      <div className="mb-5 flex size-16 items-center justify-center rounded-[20px] bg-a-surface">
-        <FileText className="size-7 text-a-faint" strokeWidth={2.25} />
+      <div className="mb-5 flex size-16 items-center justify-center rounded-[12px] bg-a-surface">
+        <FileText className="size-7 text-a-faint" strokeWidth={1.75} />
       </div>
-      <h3 className="mb-1.5 font-display text-[22px] text-a-ink">Select a note</h3>
-      <p className="mb-6 max-w-xs text-[14.5px] leading-relaxed text-a-muted">
+      <h3 className="mb-1.5 font-display text-[20px] text-a-ink">Select a note</h3>
+      <p className="mb-6 max-w-xs text-[14px] leading-relaxed text-a-muted">
         Choose a note from the list, or create a new one.
       </p>
-      <Button onClick={onCreate} variant="outline" className="h-8 gap-2 rounded-full px-3 text-xs">
+      <Button onClick={onCreate} variant="outline" className="h-8 gap-2 rounded-[6px] px-3 text-xs">
         <Plus className="size-3.5" />
         New note
       </Button>
@@ -138,7 +137,7 @@ function EmojiPicker({ emoji, onSelect }: { emoji: string; onSelect: (emoji: str
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="mb-[14px] block cursor-pointer text-[46px] leading-none transition-transform duration-150 hover:scale-105"
+          className="mb-[14px] block cursor-pointer text-[32px] leading-none transition-transform duration-[120ms] hover:scale-105"
           aria-label="Change note emoji"
         >
           {emoji}
@@ -151,7 +150,7 @@ function EmojiPicker({ emoji, onSelect }: { emoji: string; onSelect: (emoji: str
               key={e}
               type="button"
               onClick={() => onSelect(e)}
-              className="rounded-lg p-1.5 text-center text-xl transition-colors duration-100 hover:bg-accent"
+              className="rounded-lg p-1.5 text-center text-xl transition-colors duration-[120ms] hover:bg-accent"
             >
               {e}
             </button>
@@ -227,7 +226,7 @@ function NoteDetail({
               rows={1}
               className={cn(
                 'w-full resize-none border-none bg-transparent p-0 outline-none field-sizing-content',
-                'font-display text-[42px] leading-[1.08] tracking-[-0.015em] text-a-ink',
+                'font-display text-[32px] leading-[1.08] tracking-[-0.015em] text-a-ink',
                 'placeholder:text-a-faint/40',
               )}
               aria-label="Note title"
@@ -245,7 +244,7 @@ function NoteDetail({
               }}
             />
 
-            <p className="mt-[14px] flex flex-wrap items-center gap-x-2 gap-y-1 text-[13.5px] text-a-faint">
+            <p className="mt-[14px] flex flex-wrap items-center gap-x-2 gap-y-1 text-[14px] text-a-faint">
               <span>Edited {formatNoteDate(note.updatedAt)}</span>
               <span aria-hidden>·</span>
               <span>{note.blocks.length} block{note.blocks.length !== 1 ? 's' : ''}</span>
@@ -271,7 +270,7 @@ function NoteDetail({
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1 pb-3 text-[12px] text-a-faint">
               {([['/', 'commands'], ['↵', 'new block'], ['Tab', 'table cells']] as const).map(([key, label]) => (
                 <span key={key} className="flex items-center gap-1.5">
-                  <kbd className="rounded-[5px] bg-a-surface px-1.5 font-mono text-[11px] text-a-muted">{key}</kbd>
+                  <kbd className="rounded-[6px] bg-a-surface px-1.5 font-mono text-[11px] text-a-muted">{key}</kbd>
                   {label}
                 </span>
               ))}
@@ -329,7 +328,7 @@ function SyncIndicator({ saveStatus, syncStatus }: { saveStatus: SaveStatus; syn
   return (
     <span
       className={cn(
-        'flex select-none items-center gap-1.5 text-[13px] font-medium transition-opacity duration-300 ease-in-out',
+        'flex select-none items-center gap-1.5 text-[13px] font-medium transition-opacity duration-[260ms] ease-in-out',
         isIdle                    && 'pointer-events-none opacity-0',
         (isSaving || isSyncing)   && 'text-a-faint',
         isSaved && !isOffline     && 'text-a-sage-ink',
@@ -356,31 +355,35 @@ function SyncIndicatorWrapper({ saveStatus }: { saveStatus: SaveStatus }) {
 }
 
 // ── Loading skeleton ───────────────────────────────────────────────────────────
-function NotesLoadingSkeleton() {
+function NotesLoadingSkeleton({ onSidebarContentChange }: { onSidebarContentChange?: (context: ReactNode) => void }) {
+  useEffect(() => {
+    onSidebarContentChange?.(
+      <div className="space-y-1.5 px-1 pt-1" aria-hidden>
+        <Skeleton className="mb-3 h-9 w-full rounded-[4px] bg-a-bg" />
+        {[0, 1, 2, 3].map((i) => (
+          <Skeleton key={i} className="h-9 w-full rounded-[4px] bg-a-bg/70" />
+        ))}
+      </div>,
+    );
+    return () => onSidebarContentChange?.(null);
+  }, [onSidebarContentChange]);
+
   return (
-    <ViewLayout
-      contextLabel="Notes"
-      context={
-        <div className="space-y-1.5 px-1 pt-1" aria-hidden>
-          <Skeleton className="mb-3 h-9 w-full rounded-full bg-a-bg" />
-          {[0, 1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-9 w-full rounded-full bg-a-bg/70" />
-          ))}
-        </div>
-      }
-      topBar={<TopBar title="Notes" />}
-    >
-      <div className="mx-auto w-full max-w-[720px] space-y-5 px-4 pt-[46px] md:px-8" aria-hidden>
-        <Skeleton className="size-12 rounded-[14px]" />
-        <Skeleton className="h-10 w-80" />
-        <Skeleton className="h-3.5 w-44" />
-        <div className="mt-4 space-y-2.5">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <Skeleton key={i} className={cn('h-4', i % 3 === 0 ? 'w-3/4' : 'w-full')} />
-          ))}
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <TopBar title="Notes" />
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+        <div className="mx-auto w-full max-w-[720px] space-y-5 px-4 pt-[46px] md:px-8" aria-hidden>
+          <Skeleton className="size-12 rounded-[8px]" />
+          <Skeleton className="h-10 w-80" />
+          <Skeleton className="h-3.5 w-44" />
+          <div className="mt-4 space-y-2.5">
+            {[1, 2, 3, 4, 5].map((i) => (
+              <Skeleton key={i} className={cn('h-4', i % 3 === 0 ? 'w-3/4' : 'w-full')} />
+            ))}
+          </div>
         </div>
       </div>
-    </ViewLayout>
+    </div>
   );
 }
 
@@ -393,9 +396,16 @@ interface NotesWorkspaceProps {
   onOpenNoteHandled?: () => void;
   /** Reports which note is on screen, so Back/refresh can return to it. */
   onActiveNoteChange?: (noteId: string | null) => void;
+  /** The sidebar (rendered by App) now owns the notes list — reports it up
+   * instead of rendering its own context column. */
+  onSidebarContentChange?: (context: ReactNode) => void;
+  /** Opens the app-level sidebar's mobile sheet. */
+  onOpenSidebar?: () => void;
+  /** The nav row's count badge — how many notes exist. */
+  onCountChange?: (count: number) => void;
 }
 
-export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiveNoteChange }: NotesWorkspaceProps = {}) {
+export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiveNoteChange, onSidebarContentChange, onOpenSidebar, onCountChange }: NotesWorkspaceProps = {}) {
   const {
     notes,
     activeNote,
@@ -458,8 +468,6 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
     }
   }, [deleteTarget, deleteNote]);
 
-  if (isLoading) return <NotesLoadingSkeleton />;
-
   const renderRow = (note: Note) => (
     <NoteListItem
       key={note.id}
@@ -477,13 +485,13 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
         label="Notes"
         action={
           <button type="button" onClick={handleCreate} className={contextIconButton} aria-label="New note" title="New note">
-            <Plus className="size-3.5" strokeWidth={2.75} />
+            <Plus className="size-3.5" strokeWidth={1.75} />
           </button>
         }
       />
 
       <div className="relative mb-3 px-1">
-        <Search className="pointer-events-none absolute top-1/2 left-4 size-3.5 -translate-y-1/2 text-a-faint" strokeWidth={2.5} aria-hidden />
+        <Search className="pointer-events-none absolute top-1/2 left-4 size-3.5 -translate-y-1/2 text-a-faint" strokeWidth={1.75} aria-hidden />
         <input
           type="search"
           value={search}
@@ -491,7 +499,7 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
           placeholder="Search notes"
           aria-label="Search notes"
           className={cn(
-            'h-9 w-full rounded-full bg-a-bg pr-3 pl-8 text-[13.5px] text-a-ink outline-none',
+            'h-9 w-full rounded-[4px] bg-a-bg pr-3 pl-8 text-[14px] text-a-ink outline-none',
             'shadow-[inset_0_0_0_1px_var(--a-line)] placeholder:text-a-faint',
             'focus-visible:shadow-[inset_0_0_0_1.5px_var(--a-accent)]',
           )}
@@ -500,7 +508,7 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
 
       {notes.length === 0 && (
         <div className="px-3 py-8 text-center">
-          <StickyNote className="mx-auto mb-2 size-6 text-a-faint/60" strokeWidth={2.25} aria-hidden />
+          <StickyNote className="mx-auto mb-2 size-6 text-a-faint/60" strokeWidth={1.75} aria-hidden />
           <p className="mb-2 text-[13px] text-a-faint">No notes yet</p>
           <button type="button" onClick={handleCreate} className="text-[13px] font-medium text-a-accent-700 hover:underline">
             Create your first note
@@ -535,6 +543,28 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
     </>
   );
 
+  // The sidebar (rendered by App) now owns the notes list — report it up
+  // instead of rendering our own context column. Depends on a primitive
+  // signature, not `notes`/`notesList` themselves: useNotes() re-sorts into a
+  // fresh array every render, and a fresh element every render, so depending
+  // on either object reference would re-run this effect every render and
+  // loop (setState in the effect triggers the next render).
+  const notesSignature = notes.map((n) => `${n.id}:${n.title}:${n.pinned}`).join('|');
+  useEffect(() => {
+    if (isLoading) return;
+    onSidebarContentChange?.(notesList);
+    return () => onSidebarContentChange?.(null);
+     
+  }, [isLoading, notesSignature, search, activeNoteId]);
+
+  useEffect(() => {
+    if (isLoading) return;
+    onCountChange?.(notes.length);
+     
+  }, [isLoading, notes.length]);
+
+  if (isLoading) return <NotesLoadingSkeleton onSidebarContentChange={onSidebarContentChange} />;
+
   const topBar = (
     <TopBar
       title="Notes"
@@ -548,7 +578,7 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button type="button" className={topBarPill} aria-label="Note options">
-                  <MoreHorizontal className="size-4" strokeWidth={2.75} />
+                  <MoreHorizontal className="size-4" strokeWidth={1.75} />
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-44">
@@ -566,7 +596,7 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
 
           {(activeNote || notes.length > 0) && (
             <button type="button" onClick={handleCreate} className={topBarPrimary} aria-label="New note">
-              <Plus className="size-[15px]" strokeWidth={2.75} aria-hidden />
+              <Plus className="size-[15px]" strokeWidth={1.75} aria-hidden />
               <span className="hidden sm:inline">New note</span>
             </button>
           )}
@@ -577,15 +607,17 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
 
   return (
     <>
-      <ViewLayout
-        contextLabel="Notes"
-        context={notesList}
-        topBar={topBar}
-        // The note pane scrolls itself, inside NoteDetail.
-        scrollMain={false}
-        // The old workspace let the notes list be hidden for a wider editor.
-        collapsible
-      >
+      <ViewLayoutContext.Provider value={{
+        openContext: () => onOpenSidebar?.(),
+        closeContext: () => {},
+        toggleCollapsed: () => {},
+        collapsible: false,
+        collapsed: false,
+      }}>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        {topBar}
+        {/* The note pane scrolls itself, inside NoteDetail — no overflow wrapper here. */}
+        <div className="min-h-0 flex-1 overflow-hidden">
         {activeNote ? (
           <NoteDetail
             note={activeNote}
@@ -603,7 +635,9 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
         ) : (
           <SelectNotePrompt onCreate={handleCreate} />
         )}
-      </ViewLayout>
+        </div>
+      </div>
+      </ViewLayoutContext.Provider>
 
       {/* Delete confirmation */}
       <AlertDialog open={!!deleteTarget} onOpenChange={(open) => !open && setDeleteTarget(null)}>
@@ -618,7 +652,7 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteConfirm}
-              className="bg-destructive text-a-bg hover:bg-destructive/90"
+              className="bg-destructive text-a-surface hover:bg-destructive/90"
             >
               Delete
             </AlertDialogAction>

@@ -21,10 +21,15 @@ beforeEach(() => {
 // ── MomentumBar ───────────────────────────────────────────────────────────────
 
 describe('MomentumBar', () => {
-  it('renders today and all-time completed counts', () => {
+  // The design's card (showcase 89-104) carries four rows: label + streak, the
+  // track, "N of M tasks done" + percent, then the two buttons. The raw
+  // today/all-time counters and the "All done!" badge it used to show are not
+  // in that card — both numbers are one click away behind the buttons below
+  // (Today opens the history panel, Weekly progress the streak panel).
+  it('renders how many of this list are done', () => {
     render(<MomentumBar stats={defaultStats} total={10} done={5} />);
-    expect(screen.getByText('5')).toBeInTheDocument(); // todayCompleted
-    expect(screen.getByText('42')).toBeInTheDocument(); // totalCompleted
+    expect(screen.getByText('5 of 10 tasks done')).toBeInTheDocument();
+    expect(screen.getByText('50%')).toBeInTheDocument();
   });
 
   it('renders streak count', () => {
@@ -37,10 +42,9 @@ describe('MomentumBar', () => {
     expect(screen.getByText('0%')).toBeInTheDocument();
   });
 
-  it('renders 100% progress and "All done!" badge when all tasks complete', () => {
+  it('renders 100% progress when all tasks complete', () => {
     render(<MomentumBar stats={defaultStats} total={5} done={5} />);
     expect(screen.getByText('100%')).toBeInTheDocument();
-    expect(screen.getByText(/all done/i)).toBeInTheDocument();
   });
 
   it('calls onViewHistory when clicked', () => {

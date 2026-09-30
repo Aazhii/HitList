@@ -52,26 +52,26 @@ function isTaskDriven(rule: AutomationRule): boolean {
 
 // ── Run status helpers ────────────────────────────────────────────────────────
 
-const RUN_CHIP = 'inline-flex items-center gap-1 rounded-full px-2.5 py-[3px] text-[12px] font-semibold leading-none';
+const RUN_CHIP = 'inline-flex items-center gap-1 rounded-[3px] px-2.5 py-[3px] text-[12px] font-semibold leading-none';
 
 function RunStatusBadge({ status }: { status: string }) {
   if (status === 'SUCCESS') {
     return (
       <span className={cn(RUN_CHIP, 'bg-a-sage-tint text-a-sage-ink')}>
-        <CheckCircle2 className="size-3" strokeWidth={2.75} aria-hidden /> success
+        <CheckCircle2 className="size-3" strokeWidth={1.75} aria-hidden /> success
       </span>
     );
   }
   if (status === 'SKIPPED') {
     return (
       <span className={cn(RUN_CHIP, 'bg-q-delegate-bg text-q-delegate')}>
-        <SkipForward className="size-3" strokeWidth={2.75} aria-hidden /> skipped
+        <SkipForward className="size-3" strokeWidth={1.75} aria-hidden /> skipped
       </span>
     );
   }
   return (
     <span className={cn(RUN_CHIP, 'bg-q-do-bg text-q-do')}>
-      <XCircle className="size-3" strokeWidth={2.75} aria-hidden /> error
+      <XCircle className="size-3" strokeWidth={1.75} aria-hidden /> error
     </span>
   );
 }
@@ -98,10 +98,10 @@ interface RecentRunsPanelProps {
 
 function RecentRunsPanel({ runs, isLoading, error, lastChecked, onRefresh }: RecentRunsPanelProps) {
   return (
-    <section aria-labelledby="recent-runs-heading" className="overflow-hidden rounded-[16px] border border-a-line bg-a-bg">
+    <section aria-labelledby="recent-runs-heading" className="overflow-hidden rounded-[12px] border border-a-line bg-a-bg">
       <header className="flex items-center justify-between gap-3 border-b border-a-line-soft px-4 py-3">
         <div className="flex items-center gap-2">
-          <h2 id="recent-runs-heading" className="font-display text-[19px] leading-tight text-a-ink">Recent runs</h2>
+          <h2 id="recent-runs-heading" className="font-display text-[20px] leading-tight text-a-ink">Recent runs</h2>
           {runs.length > 0 && <span className="text-[13px] tabular-nums text-a-faint">{runs.length}</span>}
         </div>
         <div className="flex items-center gap-2">
@@ -115,25 +115,25 @@ function RecentRunsPanel({ runs, isLoading, error, lastChecked, onRefresh }: Rec
             onClick={onRefresh}
             disabled={isLoading}
             aria-label="Refresh runs"
-            className="flex size-7 items-center justify-center rounded-[9px] text-a-faint transition-colors duration-150 hover:bg-a-row-hover hover:text-a-ink disabled:opacity-50"
+            className="flex size-7 items-center justify-center rounded-[8px] text-a-faint transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink disabled:opacity-50"
           >
-            <RefreshCw className={cn('size-3.5', isLoading && 'animate-spin')} strokeWidth={2.5} />
+            <RefreshCw className={cn('size-3.5', isLoading && 'animate-spin')} strokeWidth={1.75} />
           </button>
         </div>
       </header>
 
       {error && (
-        <div className="flex items-center gap-2 bg-q-do-bg px-4 py-3 text-[13.5px] text-q-do" role="alert">
-          <ServerCrash className="size-4 flex-shrink-0" strokeWidth={2.5} aria-hidden />
+        <div className="flex items-center gap-2 bg-q-do-bg px-4 py-3 text-[14px] text-q-do" role="alert">
+          <ServerCrash className="size-4 flex-shrink-0" strokeWidth={1.75} aria-hidden />
           <span>Backend unavailable — {error}</span>
         </div>
       )}
 
       {!error && runs.length === 0 && !isLoading && (
         <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
-          <History className="size-7 text-a-faint/50" strokeWidth={2.25} aria-hidden />
-          <p className="text-[14.5px] text-a-muted">No runs yet</p>
-          <p className="text-[12.5px] text-a-faint">
+          <History className="size-7 text-a-faint/50" strokeWidth={1.75} aria-hidden />
+          <p className="text-[14px] text-a-muted">No runs yet</p>
+          <p className="text-[12px] text-a-faint">
             Activate a rule and press <strong className="font-semibold">Run now</strong>, or wait for the scheduler.
           </p>
         </div>
@@ -142,7 +142,7 @@ function RecentRunsPanel({ runs, isLoading, error, lastChecked, onRefresh }: Rec
       {isLoading && runs.length === 0 && (
         <div className="flex items-center justify-center gap-2 py-10 text-a-faint">
           <Loader2 className="size-4 animate-spin" aria-hidden />
-          <span className="text-[13.5px]">Loading…</span>
+          <span className="text-[14px]">Loading…</span>
         </div>
       )}
 
@@ -151,16 +151,16 @@ function RecentRunsPanel({ runs, isLoading, error, lastChecked, onRefresh }: Rec
           {runs.map((run) => (
             <li
               key={run.id}
-              className="flex items-start gap-3 border-b border-a-line-soft px-4 py-3 transition-colors duration-150 last:border-0 hover:bg-a-row-hover"
+              className="flex items-start gap-3 border-b border-a-line-soft px-4 py-3 transition-colors duration-[120ms] last:border-0 hover:bg-a-row-hover"
             >
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="truncate text-[14.5px] font-medium text-a-ink">{run.ruleName}</span>
-                  <span className="flex-shrink-0 rounded-full px-2 py-[2px] text-[11.5px] capitalize text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)]">
+                  <span className="truncate text-[14px] font-medium text-a-ink">{run.ruleName}</span>
+                  <span className="flex-shrink-0 rounded-[3px] px-2 py-[2px] text-[11px] capitalize text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)]">
                     {run.source}
                   </span>
                 </div>
-                {run.detail && <p className="mt-0.5 truncate text-[12.5px] text-a-faint">{run.detail}</p>}
+                {run.detail && <p className="mt-0.5 truncate text-[12px] text-a-faint">{run.detail}</p>}
               </div>
               <div className="flex flex-shrink-0 flex-col items-end gap-1">
                 <RunStatusBadge status={run.status} />
@@ -354,10 +354,10 @@ export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationH
           // The "Next trigger" stat card, now at the foot of the column.
           <div className="px-3 pt-3 pb-1">
             <p className="text-[13px] text-a-muted">Next trigger</p>
-            <p className="mt-0.5 font-display text-[19px] leading-tight text-a-ink">
+            <p className="mt-0.5 font-display text-[20px] leading-tight text-a-ink">
               {nextTrigger ? nextTrigger.when : '—'}
             </p>
-            <p className="mt-0.5 truncate text-[12.5px] text-a-faint">
+            <p className="mt-0.5 truncate text-[12px] text-a-faint">
               {nextTrigger ? nextTrigger.name : 'No active rule is scheduled'}
             </p>
           </div>
@@ -374,33 +374,33 @@ export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationH
                 aria-label="New rule"
                 disabled={automationsPaused}
               >
-                <Plus className="size-[15px]" strokeWidth={2.75} aria-hidden />
+                <Plus className="size-[15px]" strokeWidth={1.75} aria-hidden />
                 <span className="hidden sm:inline">New rule</span>
               </button>
             }
           />
         }
       >
-        <div className="mx-auto max-w-[880px] space-y-7 px-4 py-[22px] md:px-[26px]">
+        <div className="mx-auto max-w-[880px] space-y-7 px-4 pt-4 pb-12 md:px-12">
           {/* Rules cannot fire while the server is unreachable, and a page that
               stays silent about that is how this feature came to look like it
               worked. Say so plainly. */}
           {!rulesOnline && (
-            <div className="rounded-[14px] bg-q-delegate-bg px-4 py-3 text-[13.5px] text-q-delegate" role="status">
+            <div className="rounded-[8px] bg-q-delegate-bg px-4 py-3 text-[14px] text-q-delegate" role="status">
               Working offline — rules are saved on this device and will not fire until
               the server is reachable again.
             </div>
           )}
 
           {automationsPaused && (
-            <div className="rounded-[14px] bg-q-delegate-bg px-4 py-3 text-[13.5px] text-q-delegate" role="status">
+            <div className="rounded-[8px] bg-q-delegate-bg px-4 py-3 text-[14px] text-q-delegate" role="status">
               <strong>Automations are unavailable.</strong> Rules and reminders cannot run in the
               PostgreSQL-only migration, so creating, editing, and triggering rules is disabled.
             </div>
           )}
 
           {rulesError && (
-            <div className="rounded-[14px] bg-q-do-bg px-4 py-3 text-[13.5px] text-q-do" role="alert">
+            <div className="rounded-[8px] bg-q-do-bg px-4 py-3 text-[14px] text-q-do" role="alert">
               {rulesError}
             </div>
           )}
@@ -452,7 +452,7 @@ export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationH
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteConfirm}
-              className="bg-destructive text-a-bg hover:bg-destructive/90"
+              className="bg-destructive text-a-surface hover:bg-destructive/90"
             >
               Delete rule
             </AlertDialogAction>

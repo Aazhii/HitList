@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { useState, useCallback, useMemo, useEffect, useRef, type ReactNode } from 'react';
 import {
   Plus,
   Grid2x2,
@@ -32,11 +32,15 @@ import { ColumnsMenu } from '@/components/tasks/ColumnsMenu';
 import { sortByColumnOrder } from '@/components/tasks/TaskTableView';
 import { TaskDetailPanel } from '@/components/TaskDetailPanel';
 import { AppShell } from '@/components/shell/AppShell';
-import { IconRail, type AppView } from '@/components/shell/IconRail';
-import { ViewLayout } from '@/components/shell/ViewLayout';
+import { Sidebar, type AppView } from '@/components/shell/Sidebar';
+import { AppHeader } from '@/components/shell/AppHeader';
+import { ViewLayoutContext } from '@/components/shell/ViewLayout';
 import { TopBar, TopBarToggle, topBarPill, topBarPrimary } from '@/components/shell/TopBar';
 import { UserMenu } from '@/components/shell/UserMenu';
-import { loadAppState, saveAppState, setActiveUserId } from '@/lib/storage';
+import { NotificationBell } from '@/components/NotificationBell';
+import { NotificationToast } from '@/components/NotificationToast';
+import { useInAppNotifications } from '@/hooks/useInAppNotifications';
+import { loadAppState, saveAppState, setActiveUserId, getActiveUserId } from '@/lib/storage';
 import {
   applyTaskFilters, compareAcrossQuadrants, compareForFilters, countNarrowingFilters, FIELD_EMPTY,
   groupFieldFor, isGroupableField, normaliseFilters, sameFilters,
@@ -58,7 +62,7 @@ import {
   countActiveFilters,
 } from '@/components/AdvancedFilterBar';
 import type { FilterState } from '@/components/AdvancedFilterBar';
-import { EmptyState } from '@/components/EmptyState';
+import { EmptyState, ILL } from '@/components/EmptyState';
 import type {
   Todo,
   TodoStatus,
@@ -130,8 +134,8 @@ function AddTaskDialog({ open, defaultQuadrant, defaultDueDate, onOpenChange, on
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 font-display text-[22px] font-normal">
-            <Grid2x2 className="size-4 text-a-accent" strokeWidth={2.75} />
+          <DialogTitle className="flex items-center gap-2 font-display text-[20px] font-normal">
+            <Grid2x2 className="size-4 text-a-accent" strokeWidth={1.75} />
             Add task
           </DialogTitle>
         </DialogHeader>
@@ -144,7 +148,7 @@ function AddTaskDialog({ open, defaultQuadrant, defaultDueDate, onOpenChange, on
               value={text}
               onChange={(e) => { setText(e.target.value); setError(''); }}
               placeholder="What needs to be done?"
-              className={cn('rounded-xl text-[15px]', error && 'border-destructive')}
+              className={cn('rounded-xl text-[14px]', error && 'border-destructive')}
               maxLength={200}
             />
             {error && <p className="text-xs text-destructive animate-fade-in">{error}</p>}
@@ -164,14 +168,14 @@ function AddTaskDialog({ open, defaultQuadrant, defaultDueDate, onOpenChange, on
                     aria-checked={selected}
                     onClick={() => setQuadrant(q.id)}
                     className={cn(
-                      'flex flex-col items-start rounded-[14px] px-3 py-2.5 text-left transition-colors duration-150',
+                      'flex flex-col items-start rounded-[8px] px-3 py-2.5 text-left transition-colors duration-[120ms]',
                       selected
                         ? cn(q.tintClass, q.inkClass, 'shadow-[inset_0_0_0_1.5px_currentColor]')
                         : 'bg-a-bg text-a-ink shadow-[inset_0_0_0_1px_var(--a-line)] hover:bg-a-row-hover',
                     )}
                   >
                     <span className="text-[13px] font-semibold">{q.label}</span>
-                    <span className="mt-0.5 text-[11.5px] opacity-75">{q.subtitle}</span>
+                    <span className="mt-0.5 text-[11px] opacity-75">{q.subtitle}</span>
                   </button>
                 );
               })}
@@ -192,7 +196,7 @@ function AddTaskDialog({ open, defaultQuadrant, defaultDueDate, onOpenChange, on
                   </SelectItem>
                   {CATEGORIES.map((cat) => (
                     <SelectItem key={cat.id} value={cat.id}>
-                      <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', cat.color)}>
+                      <span className={cn('rounded-[3px] px-2 py-0.5 text-xs font-medium', cat.color)}>
                         {cat.label}
                       </span>
                     </SelectItem>
@@ -227,10 +231,10 @@ function AddTaskDialog({ open, defaultQuadrant, defaultDueDate, onOpenChange, on
           )}
 
           <DialogFooter className="gap-2 pt-1">
-            <Button type="button" variant="ghost" className="rounded-full" onClick={() => onOpenChange(false)}>
+            <Button type="button" variant="ghost" className="rounded-[6px]" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" className="flex-1 rounded-full">
+            <Button type="submit" className="flex-1 rounded-[6px]">
               Add task
             </Button>
           </DialogFooter>
@@ -283,15 +287,16 @@ function getTodayKeyFor(ts: number) {
 
 function NoMatchingTasks({ onClear }: { onClear: () => void }) {
   return (
-    <div className="flex flex-col items-center py-16 text-center animate-fade-in">
-      <p className="font-display text-[20px] text-a-ink">No tasks match these filters</p>
-      <p className="mt-1.5 max-w-xs text-[14px] leading-relaxed text-a-muted">
-        Nothing in this list fits. Loosen a filter, or clear them all.
-      </p>
-      <button type="button" onClick={onClear} className={`${topBarPill} mt-5`}>
-        Clear filters
-      </button>
-    </div>
+    <EmptyState
+      image={ILL.noFilteredData}
+      title="No tasks match these filters"
+      description="Nothing in this list fits. Loosen a filter, or clear them all."
+      action={
+        <button type="button" onClick={onClear} className={topBarPill}>
+          Clear filters
+        </button>
+      }
+    />
   );
 }
 
@@ -303,9 +308,9 @@ function LoadingSkeleton({ layout }: { layout: TaskLayout }) {
     return (
       <div className="flex gap-4 animate-fade-in" aria-hidden>
         {[0, 1, 2].map((i) => (
-          <div key={i} className="w-[292px] flex-shrink-0 space-y-2 rounded-[18px] bg-a-surface p-2.5">
+          <div key={i} className="w-[292px] flex-shrink-0 space-y-2 rounded-[12px] bg-a-surface p-2.5">
             <Skeleton className="h-4 w-24 bg-a-bg" />
-            {[0, 1].map((j) => <Skeleton key={j} className="h-16 w-full rounded-[14px] bg-a-bg" />)}
+            {[0, 1].map((j) => <Skeleton key={j} className="h-16 w-full rounded-[8px] bg-a-bg" />)}
           </div>
         ))}
       </div>
@@ -327,7 +332,7 @@ function LoadingSkeleton({ layout }: { layout: TaskLayout }) {
     return (
       <div className="space-y-2 animate-fade-in" aria-hidden>
         <Skeleton className="h-6 w-full bg-a-surface" />
-        {[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-10 w-full rounded-[10px] bg-a-surface" />)}
+        {[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-10 w-full rounded-[8px] bg-a-surface" />)}
       </div>
     );
   }
@@ -338,7 +343,7 @@ function LoadingSkeleton({ layout }: { layout: TaskLayout }) {
         {[0, 1].map((i) => (
           <div key={i} className="space-y-2">
             <Skeleton className="h-5 w-32 bg-a-surface" />
-            {[0, 1, 2].map((j) => <Skeleton key={j} className="h-11 w-full rounded-[14px] bg-a-surface" />)}
+            {[0, 1, 2].map((j) => <Skeleton key={j} className="h-11 w-full rounded-[8px] bg-a-surface" />)}
           </div>
         ))}
       </div>
@@ -348,10 +353,10 @@ function LoadingSkeleton({ layout }: { layout: TaskLayout }) {
   return (
     <div className="mx-auto grid max-w-6xl grid-cols-1 gap-4 md:grid-cols-2 animate-fade-in" aria-hidden>
       {[0, 1, 2, 3].map((i) => (
-        <div key={i} className="space-y-2.5 rounded-[24px] bg-a-surface px-5 py-[18px]">
+        <div key={i} className="space-y-2.5 rounded-[12px] bg-a-surface px-5 py-[18px]">
           <Skeleton className="h-5 w-28 bg-a-bg" />
           {[0, 1].map((j) => (
-            <Skeleton key={j} className="h-11 w-full rounded-[14px] bg-a-bg" />
+            <Skeleton key={j} className="h-11 w-full rounded-[8px] bg-a-bg" />
           ))}
         </div>
       ))}
@@ -465,6 +470,8 @@ function UserScopedApp() {
 
   const { lists, activeListId, todos, stats } = appState;
 
+  const inAppNotifications = useInAppNotifications(todos, getActiveUserId());
+
   // UI state
   const [dialogOpen, setDialogOpen] = useState(false);
   const [defaultQuadrant, setDefaultQuadrant] = useState<Quadrant>('do');
@@ -479,6 +486,17 @@ function UserScopedApp() {
   // Remembered across reloads, same as tasksMode — a refresh must not always
   // dump you back on Tasks.
   const [activeView, setActiveView] = useLocalStorage<AppView>('hitlist-active-view', 'tasks');
+  /** The sidebar's mobile sheet — desktop always shows it inline. */
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  /** Databases' own list, reported up since its state lives in DatabasesPage. */
+  const [dbSidebarContext, setDbSidebarContext] = useState<ReactNode>(null);
+  /** Calendar's "What's on it" section, reported up the same way. */
+  const [calSidebarContext, setCalSidebarContext] = useState<ReactNode>(null);
+  /** Notes' own list, reported up the same way. */
+  const [notesSidebarContext, setNotesSidebarContext] = useState<ReactNode>(null);
+  /** Nav count badges — showcase hides a view's own count while it's active. */
+  const [notesCount, setNotesCount] = useState(0);
+  const [dbCount, setDbCount] = useState(0);
   /** A note to open once Notes mounts — set from a task's "Note" chip, or restored. */
   const [pendingNoteId, setPendingNoteId] = useState<string | null>(() => initialScreen?.noteId ?? null);
   /** The note NotesWorkspace currently has open — unlike pendingNoteId, this
@@ -1280,36 +1298,32 @@ function UserScopedApp() {
     <TopBar
       dotClass={activeList ? getListColorDot(activeList.color) : undefined}
       title={activeList?.name ?? 'Tasks'}
-      subtitle={
-        <>
-          {totalCount} task{totalCount !== 1 ? 's' : ''} · {stats.todayCompleted} done today
-          {alertCount > 0 && (
-            <span className="ml-2 font-semibold text-q-do">
-              {alertCount} need{alertCount === 1 ? 's' : ''} attention
-            </span>
-          )}
-        </>
+      subtitle={`${totalCount} task${totalCount !== 1 ? 's' : ''} · ${stats.todayCompleted} done today`}
+      attention={alertCount > 0 ? `${alertCount} need${alertCount === 1 ? 's' : ''} attention` : undefined}
+      tabs={
+        <TopBarToggle
+          label="Task view"
+          value={tasksMode}
+          onChange={changeLayout}
+          options={[
+            { value: 'list', label: 'List' },
+            { value: 'matrix', label: 'Matrix' },
+            { value: 'table', label: 'Table' },
+            { value: 'board', label: 'Board' },
+          ]}
+        />
       }
       actions={
         <>
-          {/* Board lives inside Table: it is a table grouped into columns, and
-              only the table has a use for it. */}
-          <TopBarToggle
-            label="Task view"
-            value={tasksMode === 'board' ? 'table' : tasksMode}
-            onChange={changeLayout}
-            options={[{ value: 'list', label: 'List' }, { value: 'matrix', label: 'Matrix' }, { value: 'table', label: 'Table' }]}
-          />
-
           {/* One quiet pill for everything that narrows or tidies the view. It
               was a filter bar in the scroll column, which scrolled away. */}
           <Popover>
             <PopoverTrigger asChild>
               <button type="button" className={topBarPill} aria-label={`Filter${narrowingFilterCount ? ` (${narrowingFilterCount} active)` : ''}`}>
-                <SlidersHorizontal className="size-3.5" strokeWidth={2.75} aria-hidden />
+                <SlidersHorizontal className="size-3.5" strokeWidth={1.75} aria-hidden />
                 <span className="hidden sm:inline">Filter</span>
                 {narrowingFilterCount > 0 && (
-                  <span className="flex min-w-[18px] items-center justify-center rounded-full bg-a-accent px-1 text-[11px] font-bold leading-[18px] text-a-bg">
+                  <span className="flex min-w-[18px] items-center justify-center rounded-[3px] bg-a-accent px-1 text-[11px] font-bold leading-[18px] text-a-surface">
                     {narrowingFilterCount}
                   </span>
                 )}
@@ -1318,7 +1332,7 @@ function UserScopedApp() {
             <PopoverContent align="end" className="w-[min(92vw,560px)] p-3">
               <AdvancedFilterBar filters={filterState} onChange={setFilterState} fieldDefs={taskFields.fields} layout={tasksMode} />
               <div className="mt-3 flex items-center justify-between gap-3 border-t border-a-line-soft pt-3">
-                <label className="flex cursor-pointer items-center gap-2.5 text-[13.5px] text-a-ink">
+                <label className="flex cursor-pointer items-center gap-2.5 text-[14px] text-a-ink">
                   <Switch checked={showDone} onCheckedChange={setShowDone} />
                   Show completed
                 </label>
@@ -1326,7 +1340,7 @@ function UserScopedApp() {
                   <button
                     type="button"
                     onClick={handleClearDone}
-                    className="text-[13px] text-a-faint transition-colors duration-150 hover:text-a-ink"
+                    className="text-[13px] text-a-faint transition-colors duration-[120ms] hover:text-a-ink"
                   >
                     Clear done ({doneCount})
                   </button>
@@ -1343,95 +1357,83 @@ function UserScopedApp() {
             type="button"
             onClick={() => { setDefaultQuadrant('do'); setDialogOpen(true); }}
             className={topBarPrimary}
-            aria-label="Add new task"
+            aria-label="New task"
           >
-            <Plus className="size-[15px]" strokeWidth={2.75} aria-hidden />
-            <span className="hidden sm:inline">Add task</span>
+            <Plus className="size-[15px]" strokeWidth={1.75} aria-hidden />
+            <span className="hidden sm:inline">New</span>
           </button>
         </>
       }
     />
   );
 
+  const shellView = activeView === 'notes' || activeView === 'databases' || activeView === 'calendar' ? activeView : 'tasks';
+  const crumb1 = shellView === 'notes' ? 'Notes' : shellView === 'databases' ? 'Databases' : shellView === 'calendar' ? 'Calendar' : 'Tasks';
+  const crumb2 = shellView === 'tasks' ? activeList?.name : undefined;
+  const syncStatus: { tone: 'success' | 'warning' | 'danger'; label: string } = server.error
+    ? { tone: 'danger', label: 'Error' }
+    : !server.serverOnline
+    ? { tone: 'warning', label: 'Offline' }
+    : server.saving
+    ? { tone: 'warning', label: 'Syncing' }
+    : { tone: 'success', label: 'Saved' };
+
   return (
     <>
       <Toaster position="top-center" richColors />
 
+      <NotificationToast
+        freshRecords={inAppNotifications.freshToastRecords}
+        onDismiss={inAppNotifications.dismiss}
+        onMarkSeen={inAppNotifications.markToastSeen}
+      />
+
       <AppShell
         rail={
-          <IconRail
-            activeView={activeView === 'notes' || activeView === 'databases' || activeView === 'calendar' ? activeView : 'tasks'}
+          <Sidebar
+            activeView={shellView}
             onViewChange={setActiveView}
-            account={<UserMenu />}
-          />
-        }
-      >
-        {activeView === 'notes' ? (
-          <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-            <NotesWorkspace
-              linking={noteLinking}
-              openNoteId={pendingNoteId}
-              onOpenNoteHandled={handleOpenNoteHandled}
-              onActiveNoteChange={setActiveNoteId}
-            />
-          </div>
-        ) : activeView === 'databases' ? (
-          <DatabasesPage
-            openDatabaseId={pendingDatabaseId}
-            onOpenHandled={() => setPendingDatabaseId(null)}
-            onOpenChange={setActiveDatabaseId}
-            linking={databaseLinking}
-          />
-        ) : activeView === 'calendar' ? (
-          <CalendarPage
-            lists={lists}
-            onOpenTask={(taskId) => {
-              const t = todos.find((x) => x.id === taskId);
-              if (t) { setActiveView('tasks'); handleOpenDetail(t); }
-            }}
-            onOpenDatabase={(databaseId) => { setPendingDatabaseId(databaseId); setActiveView('databases'); }}
-          />
-        ) : (
-          <ViewLayout
-            contextLabel="Lists"
-            context={
+            counts={{ tasks: totalCount, notes: notesCount, databases: dbCount }}
+            mobileOpen={sidebarOpen}
+            onMobileOpenChange={setSidebarOpen}
+            context={shellView === 'tasks' ? (
               <>
-              <SavedViewsSection
-                views={savedViews.views}
-                lists={lists}
-                activeViewId={activeViewId}
-                online={savedViews.online}
-                onApply={handleApplyView}
-                onRename={(view, name) => { void savedViews.updateView(view.id, { ...view, name }); }}
-                onUpdateToCurrent={(view) => {
-                  // A scoped view stays scoped, to whichever list is open now.
-                  void savedViews.updateView(view.id, currentViewInput({
-                    ...view, scopeListId: view.scopeListId ? activeListId : null,
-                  })).then((saved) => { if (saved) toast.success(`Updated "${saved.name}"`, { duration: 2000 }); });
-                }}
-                onDelete={(view) => {
-                  void savedViews.deleteView(view.id).then((ok) => {
-                    if (ok) toast(`Deleted view "${view.name}"`, { duration: 2000 });
-                  });
-                }}
-              />
-              <ListSidebar
-                lists={lists}
-                activeListId={activeListId}
-                todoCounts={todoCounts}
-                onSelectList={handleSelectList}
-                onCreateList={handleCreateList}
-                onRenameList={handleRenameList}
-                onDeleteList={handleDeleteList}
-                loading={server.loading}
-              />
+                <SavedViewsSection
+                  views={savedViews.views}
+                  lists={lists}
+                  activeViewId={activeViewId}
+                  online={savedViews.online}
+                  onApply={handleApplyView}
+                  onRename={(view, name) => { void savedViews.updateView(view.id, { ...view, name }); }}
+                  onUpdateToCurrent={(view) => {
+                    // A scoped view stays scoped, to whichever list is open now.
+                    void savedViews.updateView(view.id, currentViewInput({
+                      ...view, scopeListId: view.scopeListId ? activeListId : null,
+                    })).then((saved) => { if (saved) toast.success(`Updated "${saved.name}"`, { duration: 2000 }); });
+                  }}
+                  onDelete={(view) => {
+                    void savedViews.deleteView(view.id).then((ok) => {
+                      if (ok) toast(`Deleted view "${view.name}"`, { duration: 2000 });
+                    });
+                  }}
+                />
+                <ListSidebar
+                  lists={lists}
+                  activeListId={activeListId}
+                  todoCounts={todoCounts}
+                  onSelectList={handleSelectList}
+                  onCreateList={handleCreateList}
+                  onRenameList={handleRenameList}
+                  onDeleteList={handleDeleteList}
+                  loading={server.loading}
+                />
               </>
-            }
-            contextFoot={
+            ) : shellView === 'databases' ? dbSidebarContext : shellView === 'calendar' ? calSidebarContext : shellView === 'notes' ? notesSidebarContext : null}
+            contextFoot={shellView === 'tasks' ? (
               <>
                 {!server.loading && !server.serverOnline && (
-                  <p className="flex items-center gap-1.5 px-3 pt-2 text-[12.5px] text-q-delegate" role="status">
-                    <WifiOff className="size-3.5" strokeWidth={2.75} aria-hidden />
+                  <p className="flex items-center gap-1.5 px-3 pt-2 text-[12px] text-q-delegate" role="status">
+                    <WifiOff className="size-3.5" strokeWidth={1.75} aria-hidden />
                     Offline — using local data
                   </p>
                 )}
@@ -1444,9 +1446,78 @@ function UserScopedApp() {
                   onViewProgress={() => setShowStreak(true)}
                 />
               </>
-            }
-            topBar={tasksTopBar}
-          >
+            ) : undefined}
+          />
+        }
+      >
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <AppHeader
+          crumb1={crumb1}
+          crumb2={crumb2}
+          sync={syncStatus}
+          bell={
+            <NotificationBell
+              notifications={inAppNotifications.notifications}
+              unreadCount={inAppNotifications.unreadCount}
+              onDismiss={inAppNotifications.dismiss}
+              onDismissAll={inAppNotifications.dismissAll}
+              onNavigateToTask={(taskId) => {
+                const t = todos.find((x) => x.id === taskId);
+                if (t) { setActiveView('tasks'); handleOpenDetail(t); }
+              }}
+            />
+          }
+          account={<UserMenu />}
+          onOpenSidebar={() => setSidebarOpen(true)}
+        />
+        {activeView === 'notes' ? (
+          <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+            <NotesWorkspace
+              linking={noteLinking}
+              openNoteId={pendingNoteId}
+              onOpenNoteHandled={handleOpenNoteHandled}
+              onActiveNoteChange={setActiveNoteId}
+              onSidebarContentChange={setNotesSidebarContext}
+              onOpenSidebar={() => setSidebarOpen(true)}
+              onCountChange={setNotesCount}
+            />
+          </div>
+        ) : activeView === 'databases' ? (
+          <DatabasesPage
+            openDatabaseId={pendingDatabaseId}
+            onOpenHandled={() => setPendingDatabaseId(null)}
+            onOpenChange={setActiveDatabaseId}
+            linking={databaseLinking}
+            onSidebarContentChange={setDbSidebarContext}
+            onOpenSidebar={() => setSidebarOpen(true)}
+            onCountChange={setDbCount}
+          />
+        ) : activeView === 'calendar' ? (
+          <CalendarPage
+            lists={lists}
+            onOpenTask={(taskId) => {
+              const t = todos.find((x) => x.id === taskId);
+              if (t) { setActiveView('tasks'); handleOpenDetail(t); }
+            }}
+            onOpenDatabase={(databaseId) => { setPendingDatabaseId(databaseId); setActiveView('databases'); }}
+            onSidebarContentChange={setCalSidebarContext}
+            onOpenSidebar={() => setSidebarOpen(true)}
+          />
+        ) : (
+          // The sidebar (rail, above) now owns the context column; this just
+          // needs the page header + a scrolling content pane. `openContext`
+          // redirects to the sidebar's own mobile sheet so TopBar's existing
+          // mobile menu button keeps working without TopBar itself changing.
+          <ViewLayoutContext.Provider value={{
+            openContext: () => setSidebarOpen(true),
+            closeContext: () => setSidebarOpen(false),
+            toggleCollapsed: () => {},
+            collapsible: false,
+            collapsed: false,
+          }}>
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+            {tasksTopBar}
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
             {/* Sync status: shows only while saving, offline, or erroring — with Retry. */}
             <SyncStatusBar
               loading={server.loading}
@@ -1458,7 +1529,7 @@ function UserScopedApp() {
               onDismissError={server.clearError}
             />
 
-            <div className="px-4 py-[22px] md:px-[26px]">
+            <div className="px-4 pt-4 pb-12 md:px-12">
               {!server.loading && listTodos.length > 0 && (tasksMode === 'table' || tasksMode === 'board') && (
                 <ViewTabs
                   layout={tasksMode}
@@ -1499,7 +1570,21 @@ function UserScopedApp() {
               {server.loading ? (
                 <LoadingSkeleton layout={tasksMode} />
               ) : listTodos.length === 0 ? (
-                <EmptyState onAdd={() => { setDefaultQuadrant('do'); setDialogOpen(true); }} />
+                <EmptyState
+                  image={ILL.noData}
+                  title={`No tasks in ${activeList?.name ?? 'this list'} yet`}
+                  description="Add your first task, or turn a line in a note into one with @. Tasks land in the Eisenhower quadrant you pick."
+                  action={
+                    <button
+                      type="button"
+                      onClick={() => { setDefaultQuadrant('do'); setDialogOpen(true); }}
+                      className={topBarPrimary}
+                    >
+                      <Plus className="size-[15px]" strokeWidth={1.75} aria-hidden />
+                      Add task
+                    </button>
+                  }
+                />
               ) : visibleTodos.length === 0 ? (
                 <NoMatchingTasks onClear={() => setFilterState(DEFAULT_FILTERS)} />
               ) : tasksMode === 'list' ? (
@@ -1597,8 +1682,11 @@ function UserScopedApp() {
                 />
               )}
             </div>
-          </ViewLayout>
+            </div>
+          </div>
+          </ViewLayoutContext.Provider>
         )}
+      </div>
       </AppShell>
 
       {/* Add task dialog */}
@@ -1623,7 +1711,7 @@ function UserScopedApp() {
       <Dialog open={showStreak} onOpenChange={setShowStreak}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle className="font-display text-[22px] font-normal">Progress</DialogTitle>
+            <DialogTitle className="font-display text-[20px] font-normal">Progress</DialogTitle>
           </DialogHeader>
           <StreakPanel todos={listTodos} listName={activeList?.name ?? 'this list'} />
         </DialogContent>

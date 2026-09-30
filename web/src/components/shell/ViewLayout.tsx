@@ -14,7 +14,7 @@ interface ViewLayoutContextValue {
   collapsed: boolean;
 }
 
-const ViewLayoutContext = createContext<ViewLayoutContextValue>({
+export const ViewLayoutContext = createContext<ViewLayoutContextValue>({
   openContext: () => {},
   closeContext: () => {},
   toggleCollapsed: () => {},
@@ -29,7 +29,7 @@ export function useViewLayout() {
 const DESKTOP_QUERY = '(min-width: 768px)';
 
 /** True at the `md` breakpoint and above, tracked live. */
-function useIsDesktop(): boolean {
+export function useIsDesktop(): boolean {
   const [isDesktop, setIsDesktop] = useState(() =>
     typeof window !== 'undefined' && typeof window.matchMedia === 'function'
       ? window.matchMedia(DESKTOP_QUERY).matches
@@ -152,23 +152,23 @@ export function ViewLayout({
 
 /** A small icon button for the column, such as "New list". */
 export const contextIconButton = cn(
-  'flex size-[22px] items-center justify-center rounded-[8px] text-a-faint transition-colors duration-150',
-  'hover:bg-[color-mix(in_srgb,var(--a-ink)_9%,transparent)] hover:text-a-ink',
+  'flex size-[22px] items-center justify-center rounded-[4px] text-a-faint transition-colors duration-[120ms]',
+  'hover:bg-a-row-hover hover:text-a-ink',
 );
 
-/** A 36px pill row. The active row is cream with a hairline. */
+/** A 28px row, 4px radius — the showcase's literal sidebar-row metrics, not a pill. */
 export function contextRowClass(active: boolean): string {
   return cn(
-    'flex h-9 w-full items-center gap-2.5 rounded-full px-3 text-left transition-colors duration-150',
-    active ? 'bg-a-bg shadow-[inset_0_0_0_1px_var(--a-line)]' : 'hover:bg-a-row-hover',
+    'flex min-h-[28px] w-full items-center gap-2.5 rounded-[4px] px-2 text-left text-[14px] transition-colors duration-[120ms]',
+    active ? 'bg-a-row-hover font-semibold text-a-ink' : 'text-a-muted hover:bg-a-row-hover hover:text-a-ink',
   );
 }
 
 /** The column's small uppercase section label, with an optional action beside it. */
 export function ContextSectionHeader({ label, action }: { label: string; action?: ReactNode }) {
   return (
-    <div className="flex items-center justify-between px-3 pt-1 pb-2.5">
-      <p className="text-[11px] font-bold uppercase tracking-[0.1em] text-a-faint">{label}</p>
+    <div className="flex items-center justify-between px-2.5 py-1.5">
+      <p className="text-[12px] font-medium text-a-faint">{label}</p>
       {action}
     </div>
   );

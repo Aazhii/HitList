@@ -117,32 +117,10 @@ export function SyncStatusBar({
     );
   }
 
-  // Saving state — subtle inline indicator in header area
-  if (saving) {
-    return (
-      <div
-        className={cn(
-          'flex items-center justify-end gap-1.5 px-4 md:px-6 py-1 animate-fade-in'
-        )}
-      >
-        <span className="relative flex size-1.5">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
-          <span className="relative inline-flex rounded-full size-1.5 bg-primary" />
-        </span>
-        <span className="text-[10px] text-muted-foreground font-medium">Syncing…</span>
-      </div>
-    );
-  }
-
-  // Saved confirmation — brief flash
-  if (showSaved) {
-    return (
-      <div className="flex items-center justify-end gap-1.5 px-4 md:px-6 py-1 animate-fade-in">
-        <CheckCircle2 className="size-3 text-primary" />
-        <span className="text-[10px] text-primary font-medium">Saved</span>
-      </div>
-    );
-  }
-
+  // Steady state — saving and saved are reported by AppHeader's always-on sync
+  // Badge (showcase 111). Rendering them here too put "Saved" on screen twice,
+  // in two places, with two independent pieces of logic. This bar now owns only
+  // the states that need an explanation and an action: error and offline, both
+  // handled above.
   return null;
 }

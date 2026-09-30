@@ -63,7 +63,7 @@ function ToastItem({ record, onDismiss, index }: ToastItemProps) {
         opacity: index >= MAX_VISIBLE ? 0 : undefined,
       }}
       className={cn(
-        'relative w-80 rounded-2xl border shadow-lg transition-all duration-300 ease-out',
+        'relative w-80 rounded-[8px] border shadow-lg transition-all duration-[260ms] ease-out',
         // Entry/exit animation
         visible && !exiting
           ? 'translate-y-0 opacity-100'
@@ -79,7 +79,7 @@ function ToastItem({ record, onDismiss, index }: ToastItemProps) {
       {/* Progress bar */}
       <div
         className={cn(
-          'absolute top-0 left-0 h-0.5 rounded-t-2xl animate-shrink-width',
+          'absolute top-0 left-0 h-0.5 rounded-t-[8px] animate-shrink-width',
           isMissed ? 'bg-destructive/60' : 'bg-amber-500/60'
         )}
         style={{ animationDuration: `${AUTO_DISMISS_MS}ms` }}
@@ -128,7 +128,7 @@ function ToastItem({ record, onDismiss, index }: ToastItemProps) {
         {/* Dismiss */}
         <button
           onClick={handleDismiss}
-          className="flex size-6 flex-shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-150"
+          className="flex size-6 flex-shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-muted transition-colors duration-[120ms]"
           aria-label="Dismiss"
         >
           <X className="size-3.5" />

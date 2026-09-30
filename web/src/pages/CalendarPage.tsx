@@ -9,10 +9,10 @@
  * Everything is loaded in one request (`GET /api/calendar`) rather than a fetch
  * per database.
  */
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { CalendarDays, Plus } from 'lucide-react';
 import { toast } from 'sonner';
-import { ViewLayout, ContextSectionHeader } from '@/components/shell/ViewLayout';
+import { ViewLayoutContext, ContextSectionHeader } from '@/components/shell/ViewLayout';
 import { TopBar } from '@/components/shell/TopBar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Input } from '@/components/ui/input';
@@ -32,9 +32,14 @@ export interface CalendarPageProps {
   onOpenTask: (taskId: string) => void;
   /** Opens the database a record belongs to. */
   onOpenDatabase: (databaseId: string) => void;
+  /** The sidebar (rendered by App) now owns "What's on it" — reports it up
+   * instead of rendering its own context column. */
+  onSidebarContentChange?: (context: ReactNode) => void;
+  /** Opens the app-level sidebar's mobile sheet. */
+  onOpenSidebar?: () => void;
 }
 
-export function CalendarPage({ lists, onOpenTask, onOpenDatabase }: CalendarPageProps) {
+export function CalendarPage({ lists, onOpenTask, onOpenDatabase, onSidebarContentChange, onOpenSidebar }: CalendarPageProps) {
   const [tasks, setTasks] = useState<CalendarTask[]>([]);
   const [records, setRecords] = useState<CalendarRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -150,47 +155,58 @@ export function CalendarPage({ lists, onOpenTask, onOpenDatabase }: CalendarPage
   const count = items.length;
   const dated = items.filter((i) => i.date).length;
 
+  // The sidebar (rendered by App) now owns "What's on it" — report it up
+  // instead of rendering our own context column.
+  useEffect(() => {
+    onSidebarContentChange?.(
+      <div className="mb-5">
+        <ContextSectionHeader label="What's on it" />
+        <p className="px-3 pb-2 text-[12px] leading-relaxed text-a-faint">
+          Tasks with a due date, and records from every database that has chosen a date column.
+          Drag anything to another day.
+        </p>
+        <p className="px-3 pb-3 text-[12px] leading-relaxed text-a-faint">
+          {ZOHO_CALENDAR_UNAVAILABLE_REASON}
+        </p>
+        <ul className="space-y-0.5 px-3">
+          {sources.map((source) => (
+            <li key={source.id} className="flex items-center gap-2 py-1 text-[14px] text-a-muted">
+              <span className={`size-2 flex-shrink-0 rounded-full ${source.dotClass}`} aria-hidden />
+              <span className="min-w-0 truncate">{source.name}</span>
+              <span className="ml-auto text-[12px] tabular-nums text-a-faint">
+                {items.filter((i) => i.sourceId === source.id).length}
+              </span>
+            </li>
+          ))}
+          {sources.length === 0 && !loading && (
+            <li className="py-1 text-[12px] text-a-faint">Nothing has a date yet.</li>
+          )}
+        </ul>
+      </div>,
+    );
+    return () => onSidebarContentChange?.(null);
+     
+  }, [sources, items, loading]);
+
   return (
     <div className="flex min-h-0 min-w-0 flex-1">
-      <ViewLayout
-        contextLabel="Calendar"
-        context={
-          <div className="mb-5">
-            <ContextSectionHeader label="What's on it" />
-            <p className="px-3 pb-2 text-[12.5px] leading-relaxed text-a-faint">
-              Tasks with a due date, and records from every database that has chosen a date column.
-              Drag anything to another day.
-            </p>
-            <p className="px-3 pb-3 text-[12px] leading-relaxed text-a-faint">
-              {ZOHO_CALENDAR_UNAVAILABLE_REASON}
-            </p>
-            <ul className="space-y-0.5 px-3">
-              {sources.map((source) => (
-                <li key={source.id} className="flex items-center gap-2 py-1 text-[13.5px] text-a-muted">
-                  <span className={`size-2 flex-shrink-0 rounded-full ${source.dotClass}`} aria-hidden />
-                  <span className="min-w-0 truncate">{source.name}</span>
-                  <span className="ml-auto text-[12px] tabular-nums text-a-faint">
-                    {items.filter((i) => i.sourceId === source.id).length}
-                  </span>
-                </li>
-              ))}
-              {sources.length === 0 && !loading && (
-                <li className="py-1 text-[12.5px] text-a-faint">Nothing has a date yet.</li>
-              )}
-            </ul>
-          </div>
-        }
-        topBar={
-          <TopBar
-            title="Calendar"
-            subtitle={loading ? 'Loading…' : `${dated} of ${count} on a date`}
-          />
-        }
-      >
-        <div className="px-4 py-[22px] md:px-[26px]">
+      <ViewLayoutContext.Provider value={{
+        openContext: () => onOpenSidebar?.(),
+        closeContext: () => {},
+        toggleCollapsed: () => {},
+        collapsible: false,
+        collapsed: false,
+      }}>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+        <TopBar
+          title="Calendar"
+          subtitle={loading ? 'Loading…' : `${dated} of ${count} on a date`}
+        />
+        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+        <div className="px-4 pt-4 pb-12 md:px-12">
           {!online ? (
             <div className="mx-auto flex max-w-[460px] flex-col items-center py-16 text-center animate-fade-in">
-              <CalendarDays className="mb-3 size-6 text-a-faint" strokeWidth={2.25} aria-hidden />
+              <CalendarDays className="mb-3 size-6 text-a-faint" strokeWidth={1.75} aria-hidden />
               <p className="font-display text-[20px] text-a-ink">The calendar needs the server</p>
               <p className="mt-2 text-[14px] leading-relaxed text-a-muted">
                 It reads your tasks and every database at once, so there is no offline copy.
@@ -212,7 +228,9 @@ export function CalendarPage({ lists, onOpenTask, onOpenDatabase }: CalendarPage
             />
           )}
         </div>
-      </ViewLayout>
+        </div>
+      </div>
+      </ViewLayoutContext.Provider>
 
       {addOn && (
         <AddOnDayDialog
@@ -286,7 +304,7 @@ function AddOnDayDialog({
           onKeyDown={(e) => { if (e.key === 'Enter') void submit(); }}
           placeholder="What is it?"
           aria-label="Title"
-          className="h-8 rounded-full text-[14px]"
+          className="h-8 rounded-[4px] text-[14px]"
         />
 
         <div className="mt-2.5 space-y-0.5" role="radiogroup" aria-label="Where it goes">
@@ -305,7 +323,7 @@ function AddOnDayDialog({
           type="button"
           onClick={() => void submit()}
           disabled={!title.trim() || saving}
-          className="mt-3 h-8 w-full rounded-full bg-a-accent text-[13.5px] font-semibold text-a-bg transition-colors duration-150 hover:bg-a-accent-600 disabled:opacity-50"
+          className="mt-3 h-8 w-full rounded-[6px] bg-a-accent text-[14px] font-semibold text-a-surface transition-colors duration-[120ms] hover:bg-a-accent-600 disabled:opacity-50"
         >
           {saving ? 'Adding…' : 'Add'}
         </button>
@@ -321,7 +339,7 @@ function TargetRow({ label, active, onClick }: { label: string; active: boolean;
       role="radio"
       aria-checked={active}
       onClick={onClick}
-      className={`flex w-full items-center gap-2 rounded-[10px] px-2 py-1.5 text-left text-[13.5px] transition-colors duration-150 ${
+      className={`flex w-full items-center gap-2 rounded-[8px] px-2 py-1.5 text-left text-[14px] transition-colors duration-[120ms] ${
         active ? 'bg-a-accent-tint font-semibold text-a-ink' : 'text-a-muted hover:bg-a-row-hover hover:text-a-ink'
       }`}
     >

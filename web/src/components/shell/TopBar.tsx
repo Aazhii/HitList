@@ -9,71 +9,93 @@ interface TopBarProps {
   title: ReactNode;
   /** One line of counts. Hidden on narrow screens. */
   subtitle?: ReactNode;
-  /** Right-aligned: a mode toggle, one quiet pill, one accent button. Never more. */
+  /** Red text beside the subtitle, e.g. "2 need attention". */
+  attention?: ReactNode;
+  /** The layout tabs. They sit on their own row under the title, left-aligned. */
+  tabs?: ReactNode;
+  /** Right-aligned on the tabs row: one quiet pill, one accent button. Never more. */
   actions?: ReactNode;
 }
 
 /**
- * The 56px bar above every view.
+ * The page header above every view — `HitList Notion x Zoho.dc.html` 117-144.
  *
- * Below `md` it also carries the button that opens the context column's sheet.
+ * Two rows inside one padded block, not a fixed-height bar: the title row
+ * (dot, 32px title, subtitle, attention), then a controls row with the layout
+ * tabs on the left and the actions on the right. Deliberately **no bottom
+ * border** — the design separates the header from the content with whitespace,
+ * and a hairline here reads as a toolbar it is not.
+ *
+ * Below `md` it also carries the button that opens the sidebar's sheet.
  */
-export function TopBar({ dotClass, title, subtitle, actions }: TopBarProps) {
+export function TopBar({ dotClass, title, subtitle, attention, tabs, actions }: TopBarProps) {
   const { openContext, toggleCollapsed, collapsible, collapsed } = useViewLayout();
 
   return (
-    <header className="flex h-14 flex-shrink-0 items-center gap-3 border-b border-a-line px-3 md:px-[26px]">
-      <button
-        type="button"
-        onClick={openContext}
-        className="-ml-1 flex size-9 flex-shrink-0 items-center justify-center rounded-full text-a-muted transition-colors duration-150 hover:bg-a-row-hover hover:text-a-ink md:hidden"
-        aria-label="Open sidebar"
-      >
-        <Menu className="size-[18px]" strokeWidth={2.75} />
-      </button>
-
-      {/* Desktop only, and only for views that allow it — Notes, which used to
-          let its list be hidden for a wider editor. */}
-      {collapsible && (
+    <header className="flex-shrink-0 bg-a-surface px-4 pt-2 md:px-12">
+      <div className="flex flex-wrap items-center gap-3 pb-1.5">
         <button
           type="button"
-          onClick={toggleCollapsed}
-          aria-expanded={!collapsed}
-          aria-label={collapsed ? 'Show sidebar' : 'Hide sidebar'}
-          title={collapsed ? 'Show sidebar' : 'Hide sidebar'}
-          className="-ml-2 hidden size-9 flex-shrink-0 items-center justify-center rounded-full text-a-muted transition-colors duration-150 hover:bg-a-row-hover hover:text-a-ink md:flex"
+          onClick={openContext}
+          className="-ml-1 flex size-8 flex-shrink-0 items-center justify-center rounded-[4px] text-a-muted transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink md:hidden"
+          aria-label="Open sidebar"
         >
-          {collapsed
-            ? <PanelLeftOpen className="size-[18px]" strokeWidth={2.5} />
-            : <PanelLeftClose className="size-[18px]" strokeWidth={2.5} />}
+          <Menu className="size-[18px]" strokeWidth={1.75} />
         </button>
-      )}
 
-      {dotClass && <span className={cn('size-[9px] flex-shrink-0 rounded-full', dotClass)} aria-hidden />}
+        {/* Desktop only, and only for views that allow it — Notes, which used to
+            let its list be hidden for a wider editor. */}
+        {collapsible && (
+          <button
+            type="button"
+            onClick={toggleCollapsed}
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? 'Show sidebar' : 'Hide sidebar'}
+            title={collapsed ? 'Show sidebar' : 'Hide sidebar'}
+            className="-ml-2 hidden size-8 flex-shrink-0 items-center justify-center rounded-[4px] text-a-muted transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink md:flex"
+          >
+            {collapsed
+              ? <PanelLeftOpen className="size-[18px]" strokeWidth={1.75} />
+              : <PanelLeftClose className="size-[18px]" strokeWidth={1.75} />}
+          </button>
+        )}
 
-      <h1 className="min-w-0 truncate font-display text-[22px] leading-none text-a-ink">{title}</h1>
+        {/* A rounded square, not a circle — showcase 120 is 14px at radius 3. */}
+        {dotClass && <span className={cn('size-[14px] flex-shrink-0 rounded-[3px]', dotClass)} aria-hidden />}
 
-      {subtitle && (
-        <p className="hidden min-w-0 truncate text-[13.5px] text-a-faint lg:block">{subtitle}</p>
-      )}
+        <h1 className="min-w-0 truncate font-display text-[32px] leading-[1.2] font-bold tracking-[-0.02em] text-a-ink">
+          {title}
+        </h1>
 
-      {actions && (
-        <div className="ml-auto flex flex-shrink-0 items-center gap-2 md:gap-2.5">{actions}</div>
+        {subtitle && (
+          <p className="hidden min-w-0 truncate text-[14px] text-a-muted lg:block">{subtitle}</p>
+        )}
+
+        {attention && (
+          <span className="hidden flex-shrink-0 text-[14px] font-medium text-a-attention lg:block">{attention}</span>
+        )}
+      </div>
+
+      {(tabs || actions) && (
+        <div className="flex items-center gap-2">
+          <div className="min-w-0 flex-1">{tabs}</div>
+          {actions && <div className="flex flex-shrink-0 items-center gap-1 pb-1">{actions}</div>}
+        </div>
       )}
     </header>
   );
 }
 
-/** The one quiet pill in a top bar, such as Filter. */
+/** The one quiet button in a page header, such as Filter. DS `sm`: 28px, 6px. */
 export const topBarPill = cn(
-  'flex h-8 items-center gap-2 rounded-full px-3.5 text-[13.5px] text-a-muted transition-colors duration-150',
-  'shadow-[inset_0_0_0_1px_var(--a-line)] hover:text-a-ink data-[state=open]:text-a-ink',
+  'flex h-7 items-center gap-1.5 rounded-[6px] px-2.5 text-[13px] text-a-muted transition-colors duration-[120ms]',
+  'hover:bg-a-row-hover hover:text-a-ink data-[state=open]:bg-a-row-hover data-[state=open]:text-a-ink',
 );
 
-/** The one accent button in a top bar, such as Add task. */
+/** The one accent button in a page header, such as New. DS `sm`: 28px, 6px. */
 export const topBarPrimary = cn(
-  'flex h-[34px] items-center gap-[7px] rounded-full bg-a-accent px-3 font-display text-[15px] text-a-bg sm:px-4',
-  'transition-colors duration-150 hover:bg-a-accent-600',
+  'flex h-7 items-center gap-1.5 rounded-[6px] bg-a-accent px-2.5 text-[13px] font-semibold text-a-surface',
+  'transition-colors duration-[120ms] hover:bg-a-accent-600 active:bg-a-accent-700',
 );
 
 interface TopBarToggleProps<T extends string> {
@@ -83,13 +105,19 @@ interface TopBarToggleProps<T extends string> {
   onChange: (value: T) => void;
 }
 
-/** A segmented control for a mode within a view, such as List / Matrix. */
+/**
+ * The layout tabs — showcase 127, the DS `Tabs` in its line variant.
+ *
+ * An underline bar, not a segmented pill: plain labels on the page, the active
+ * one in brand blue over a 2px blue rule, with a hairline running the width of
+ * the row beneath them all.
+ */
 export function TopBarToggle<T extends string>({ label, value, options, onChange }: TopBarToggleProps<T>) {
   return (
     <div
       role="radiogroup"
       aria-label={label}
-      className="flex items-center gap-0.5 rounded-full bg-[color-mix(in_srgb,var(--a-ink)_7%,transparent)] p-[3px]"
+      className="flex items-center gap-1 border-b border-a-line"
     >
       {options.map((opt) => {
         const active = opt.value === value;
@@ -101,10 +129,10 @@ export function TopBarToggle<T extends string>({ label, value, options, onChange
             aria-checked={active}
             onClick={() => onChange(opt.value)}
             className={cn(
-              'flex h-7 items-center rounded-full px-3 text-[13.5px] transition-colors duration-150 sm:px-3.5',
+              'relative -mb-px flex h-9 items-center border-b-2 px-3 text-[14px] transition-colors duration-[120ms]',
               active
-                ? 'bg-a-bg font-semibold text-a-ink shadow-[0_1px_2px_rgba(46,43,37,0.14)]'
-                : 'text-a-muted hover:text-a-ink',
+                ? 'border-a-accent font-semibold text-a-accent'
+                : 'border-transparent text-a-muted hover:text-a-ink',
             )}
           >
             {opt.label}
