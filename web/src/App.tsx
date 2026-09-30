@@ -63,6 +63,7 @@ import {
 } from '@/components/AdvancedFilterBar';
 import type { FilterState } from '@/components/AdvancedFilterBar';
 import { EmptyState, ILL } from '@/components/EmptyState';
+import { FilterPanel } from '@/components/tasks/FilterPanel';
 import type {
   Todo,
   TodoStatus,
@@ -1292,27 +1293,19 @@ function UserScopedApp() {
                 )}
               </button>
             </PopoverTrigger>
-            <PopoverContent align="end" className="w-[min(92vw,560px)] p-3">
-              <AdvancedFilterBar filters={filterState} onChange={setFilterState} fieldDefs={taskFields.fields} layout={tasksMode} />
-              <div className="mt-3 flex items-center justify-between gap-3 border-t border-a-line-soft pt-3">
-                <label className="flex cursor-pointer items-center gap-2.5 text-[14px] text-a-ink">
-                  <Switch checked={showDone} onCheckedChange={setShowDone} />
-                  Show completed
-                </label>
-                {doneCount > 0 && showDone && (
-                  <button
-                    type="button"
-                    onClick={handleClearDone}
-                    className="text-[13px] text-a-faint transition-colors duration-[120ms] hover:text-a-ink"
-                  >
-                    Clear done ({doneCount})
-                  </button>
-                )}
-              </div>
-              {activeFilterCount > 0 && tasksMode === 'list' && (
-                <p className="mt-2 text-[12px] text-a-faint">Drag to reorder is off while filters are active.</p>
-              )}
-              <SaveViewForm listName={activeList?.name ?? 'this list'} onSave={handleSaveView} />
+            <PopoverContent align="end" sideOffset={-36} alignOffset={-4} className="w-[min(92vw,560px)] rounded-[12px] border border-a-line p-4 shadow-[var(--a-shadow-xl)]">
+              <FilterPanel
+                filters={filterState}
+                onChange={setFilterState}
+                fieldDefs={taskFields.fields}
+                layout={tasksMode}
+                showDone={showDone}
+                onShowDoneChange={setShowDone}
+                doneCount={doneCount}
+                onClearDone={handleClearDone}
+                listName={activeList?.name ?? 'this list'}
+                onSaveView={handleSaveView}
+              />
             </PopoverContent>
           </Popover>
 

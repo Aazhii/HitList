@@ -516,11 +516,32 @@ Shared primitives now follow the DS, so every dialog inherits them:
   **Removed** because the design has neither: Best streak and Recent completions.
 - `topBarSubtle` (DS subtle `sm`) is shared by the momentum card's buttons and Undo.
 
+### Filter popover (T3.12)
+
+- Contents are `tasks/FilterPanel.tsx` (the popover, its anchor and width stay in the page
+  header): "Filter and sort" + a brand Badge "N active" (only filters that hide tasks count) +
+  ghost "Clear all"; a 3-column grid of `sm` selects (Status, Quadrant, **Category**, Due,
+  Sort by, Group by) labelled 13px/500; **Show completed** (DS `sm` Switch) with a ghost
+  "Clear done (n)"; "Save as a view" (sm input, primary "Save view", DS Checkbox "Only show in
+  <list>"). Radius 12px (hand-written popover), `shadow-xl`, padding 16, rows 14px apart, placed
+  100px from the top so it overlaps the tab row.
+- **New filter: Category** (`FilterState.category`). Stored inside the saved view's opaque
+  `FilterJson`, so this is additive: a view saved earlier has no key and reads as "Any".
+- **Removed from the panel because the design has none:** the search box, the sort
+  direction toggle, the due from/to date range, the "drag to reorder is off" note and the
+  explanatory copy under "Save as view". Their state still exists (saved views keep
+  `search`, `sortDir`, `dueAfter`/`dueBefore`); a table column header still sorts both ways.
+  Task search returns as ⌘K (T4.2).
+- **Kept, in the same grid:** one select per custom field (Any / each option / Has a value /
+  Empty), so filtering by Stage still works. `FieldFilterMenu` (multi-choice) remains for
+  Databases until T3.25.
+- New DS primitives: `ui/switch` (34×20 track, sm 28×16) and `ui/checkbox` (16px, 1.5px border).
+
 ## 13. Standing rules for whoever executes a task
 
 1. **Verify before you change.** Every task quotes the current code. If what you find does not match the quote, **stop and report** — do not adapt silently. The file may have moved on.
 2. **Never invent a value.** If a task does not give you a number and this file does not either, ask. Guessing is what produced the current state.
 3. **One task, one commit.** Commit message: `design(T1.4): set every icon stroke to 1.75`.
-4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 351 tests.
+4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 361 tests.
 5. **Update `00-INDEX.md`** — set State and fill in "Verified by" with the actual command output or screenshot pair. A task with an empty "Verified by" is not done.
 6. **Do not delete the Automations or Reminders code.** It is being revived in Phase 4, not removed.

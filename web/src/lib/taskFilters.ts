@@ -37,6 +37,8 @@ export interface FilterState {
   status: string;
   /** '' | 'DO' | 'SCHEDULE' | 'DELEGATE' | 'ELIMINATE' */
   quadrant: string;
+  /** A category id, or '' for any. Added after the first saved views: absent there, so it reads as ''. */
+  category: string;
   due: DuePreset;
   /** YYYY-MM-DD or '' — inclusive. */
   dueAfter: string;
@@ -62,6 +64,7 @@ export const DEFAULT_FILTERS: FilterState = {
   search: '',
   status: '',
   quadrant: '',
+  category: '',
   due: '',
   dueAfter: '',
   dueBefore: '',
@@ -84,6 +87,9 @@ export function describeActiveFilters(filters: FilterState, fieldDefs: FieldDef[
   const clauses: string[] = [];
   if (filters.search.trim()) clauses.push(`Search is “${filters.search.trim()}”`);
   if (filters.status) clauses.push(`Status is ${STATUS_FILTER_LABELS[filters.status] ?? filters.status}`);
+  if (filters.category) {
+    clauses.push(`Category is ${getCategoryConfig(filters.category)?.label ?? filters.category}`);
+  }
   if (filters.quadrant) {
     clauses.push(`Quadrant is ${QUADRANTS.find((q) => q.id.toUpperCase() === filters.quadrant)?.label ?? filters.quadrant}`);
   }
@@ -114,6 +120,7 @@ export function countNarrowingFilters(f: FilterState): number {
   if (f.search) n++;
   if (f.status) n++;
   if (f.quadrant) n++;
+  if (f.category) n++;
   if (f.due) n++;
   if (f.dueAfter) n++;
   if (f.dueBefore) n++;
@@ -127,6 +134,7 @@ export function countActiveFilters(f: FilterState): number {
   if (f.search) n++;
   if (f.status) n++;
   if (f.quadrant) n++;
+  if (f.category) n++;
   if (f.due) n++;
   if (f.dueAfter) n++;
   if (f.dueBefore) n++;
@@ -176,6 +184,7 @@ export function normaliseFilters(raw: unknown): FilterState {
     search: text(o.search).slice(0, 200),
     status: oneOf(o.status, ['', 'TODO', 'IN_PROGRESS', 'DONE'], ''),
     quadrant: oneOf(o.quadrant, ['', 'DO', 'SCHEDULE', 'DELEGATE', 'ELIMINATE'], ''),
+    category: /^[a-z0-9_-]{1,40}$/i.test(text(o.category)) ? text(o.category) : '',
     due: oneOf(o.due, DUE_PRESETS, ''),
     dueAfter: DATE_KEY.test(text(o.dueAfter)) ? text(o.dueAfter) : '',
     dueBefore: DATE_KEY.test(text(o.dueBefore)) ? text(o.dueBefore) : '',
@@ -240,6 +249,7 @@ export function applyTaskFilters(
   return todos.filter((t) => {
     if (status && t.status !== status) return false;
     if (quadrant && t.quadrant !== quadrant) return false;
+    if (f.category && t.category !== f.category) return false;
 
     if (needle) {
       const category = getCategoryConfig(t.category)?.label ?? t.category ?? '';

@@ -146,7 +146,7 @@ that one is fine where it is.
 | Visual | `node web/scripts/shoot.mjs <screen-id>` → a `.ref.png` / `.app.png` pair | every Phase 3 task |
 | Real build | `sh desktop/scripts/prepare-jar.sh` → copy to `api/target/hitlist.jar` → restart Electron → re-check its own port | every **phase** exit, not every task |
 
-Test baseline: **351 tests across 40 files.** This must not regress.
+Test baseline: **361 tests across 41 files.** This must not regress.
 
 ---
 
@@ -156,10 +156,10 @@ Test baseline: **351 tests across 40 files.** This must not regress.
 Phase 0  █████   5 / 5      done
 Phase 1  █████  11 / 11      foundations — the broken UI
 Phase 2  █████   5 / 5       shell exactness
-Phase 3  ██░░░  13 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
+Phase 3  ██░░░  14 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
 Phase 4  ░░░░░   1 / 12      missing features
 Phase 5  ░░░░░   0 / 7       proposals, unreviewed
-                35 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
+                36 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
 ```
 
 ### A note on "partially built"
@@ -238,7 +238,7 @@ on a description. Execution order is the section order below.
 | T3.9 | `ov-add` | **done** | design:check PASS, tsc/lint clean, vitest 343/343; shots/ov-add.{ref,app}.png; `cmp.mjs ov-add`: dialog box 520×519.6 both, every label/tile/control within 1.5px |
 | T3.10 | `ov-detail` | **done** | design:check PASS, tsc/lint clean, vitest 345/345; shots/ov-detail.{ref,app}.png — 440px peek panel, no scrim, every label/control within 2px in `cmp.mjs` |
 | T3.11 | `ov-delete` | **done** | shots/ov-delete.{ref,app}.png — danger confirm dialog replaces the inline "Yes, delete"; panel hides behind it like the prototype |
-| T3.12 | `ov-filter` | todo | |
+| T3.12 | `ov-filter` | **done** | design:check PASS, tsc/lint clean, vitest 361/361 (+7 FilterPanel, +3 category); shots/ov-filter.{ref,app}.png — panel position/type match in `cmp.mjs`; added a Category filter the design requires |
 | T3.13 | `ov-fields` | todo — don't reintroduce a Dialog here | |
 | T3.14 | `ov-fielddelete` | todo | |
 | T3.15 | `ov-history` | **done** | design:check PASS, tsc/lint clean, vitest 351/351; shots/ov-history.{ref,app}.png — 400px peek panel, no scrim, green count badge, subtle Undo, footer line |

@@ -28,6 +28,13 @@ Object.defineProperty(window, 'matchMedia', {
   })),
 });
 
+// Radix Select / Popover call these on open; jsdom has none of them.
+const elementProto = Element.prototype as unknown as Record<string, unknown>;
+elementProto.hasPointerCapture ??= () => false;
+elementProto.setPointerCapture ??= () => {};
+elementProto.releasePointerCapture ??= () => {};
+elementProto.scrollIntoView ??= () => {};
+
 // Mock ResizeObserver
 (globalThis as unknown as { ResizeObserver: unknown }).ResizeObserver = class ResizeObserver {
   observe = vi.fn();

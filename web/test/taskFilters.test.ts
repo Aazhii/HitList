@@ -406,3 +406,29 @@ describe('describeActiveFilters', () => {
     ]);
   });
 });
+
+describe('category filter', () => {
+  const t = (id: string, category?: string): Todo => ({
+    id, text: id, status: 'todo', createdAt: 1, listId: 'l', order: 0, quadrant: 'do', category,
+  });
+  const todos = [t('a', 'work'), t('b', 'health'), t('c')];
+
+  it('keeps only tasks of that category', () => {
+    expect(applyTaskFilters(todos, { ...DEFAULT_FILTERS, category: 'health' }).map((x) => x.id)).toEqual(['b']);
+    expect(applyTaskFilters(todos, DEFAULT_FILTERS)).toHaveLength(3);
+  });
+
+  it('counts as a narrowing filter and is described by its label', () => {
+    const f = { ...DEFAULT_FILTERS, category: 'health' };
+    expect(countNarrowingFilters(f)).toBe(1);
+    expect(describeActiveFilters(f)).toEqual(['Category is Health']);
+  });
+
+  it('reads as "any" from a view saved before the filter existed, and rejects junk', () => {
+    const old = { search: '', status: '', quadrant: '', due: '', dueAfter: '', dueBefore: '', sortBy: 'order', sortDir: 'asc', fields: {}, groupBy: '' };
+    expect(normaliseFilters(old).category).toBe('');
+    expect(normaliseFilters({ ...old, category: '<script>' }).category).toBe('');
+    expect(normaliseFilters({ ...old, category: 'health' }).category).toBe('health');
+    expect(sameFilters(old, { ...old, category: '' })).toBe(true);
+  });
+});
