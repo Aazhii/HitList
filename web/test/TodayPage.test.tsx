@@ -1,0 +1,50 @@
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import { TodayPage } from '@/pages/TodayPage';
+import type { Todo } from '@/types/todo';
+
+let n = 0;
+const task = (over: Partial<Todo>): Todo => ({
+  id: `t${++n}`, text: `Task ${n}`, status: 'todo', createdAt: 0, listId: 'w', order: n, quadrant: 'do', ...over,
+});
+const lists = [{ id: 'w', name: 'Work', color: 'violet', createdAt: 1 }];
+const props = () => ({ lists, onStatusChange: vi.fn(), onOpenTask: vi.fn(), onOpenTasks: vi.fn() });
+
+describe('TodayPage', () => {
+  it('shows the one next task large and the two after it', () => {
+    const tasks = [task({ text: 'Write the brief', quadrant: 'do' }), task({ text: 'Plan Q4', quadrant: 'schedule' }),
+      task({ text: 'Reply to Sam', quadrant: 'delegate' }), task({ text: 'Tidy desk', quadrant: 'eliminate' })];
+    render(<TodayPage todos={tasks} {...props()} />);
+    expect(screen.getByRole('heading', { name: 'Write the brief' })).toBeInTheDocument();
+    expect(screen.getByText('Plan Q4')).toBeInTheDocument();
+    expect(screen.getByText('Reply to Sam')).toBeInTheDocument();
+    expect(screen.queryByText('Tidy desk')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /1 more open/ })).toBeInTheDocument();
+  });
+
+  it('starts, finishes and opens the next task', () => {
+    const t = task({ text: 'Ship it' });
+    const p = props();
+    render(<TodayPage todos={[t]} {...p} />);
+    fireEvent.click(screen.getByRole('button', { name: /Start/ }));
+    expect(p.onStatusChange).toHaveBeenCalledWith(t.id, 'in-progress');
+    fireEvent.click(screen.getByRole('button', { name: /Mark done/ }));
+    expect(p.onStatusChange).toHaveBeenCalledWith(t.id, 'done');
+    fireEvent.click(screen.getByRole('button', { name: 'Open' }));
+    expect(p.onOpenTask).toHaveBeenCalledWith(t);
+  });
+
+  it('counts overdue tasks and lists them on one click', () => {
+    const late = task({ text: 'Pay invoice', dueDate: '2020-01-01' });
+    render(<TodayPage todos={[late, task({})]} {...props()} />);
+    const chip = screen.getByRole('button', { name: /1 overdue/ });
+    expect(screen.queryByRole('list', { name: 'Overdue tasks' })).not.toBeInTheDocument();
+    fireEvent.click(chip);
+    expect(screen.getByRole('list', { name: 'Overdue tasks' })).toHaveTextContent('Pay invoice');
+  });
+
+  it('says so when nothing is open', () => {
+    render(<TodayPage todos={[task({ status: 'done' })]} {...props()} />);
+    expect(screen.getByText('Nothing left for today')).toBeInTheDocument();
+  });
+});

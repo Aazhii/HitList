@@ -1,12 +1,14 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { CalendarDays, Leaf, ListChecks, Search, StickyNote, Table2, Zap } from 'lucide-react';
+import { CalendarDays, Leaf, Sun, ListChecks, Search, StickyNote, Table2, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { useIsDesktop } from '@/components/shell/ViewLayout';
 
-export type AppView = 'tasks' | 'notes' | 'databases' | 'calendar' | 'automations' | 'library';
+export type AppView = 'tasks' | 'notes' | 'databases' | 'calendar' | 'automations' | 'library' | 'today';
 
 const VIEWS: ReadonlyArray<{ id: AppView; label: string; icon: typeof ListChecks }> = [
+  // The front door: the one task to do next.
+  { id: 'today', label: 'Today', icon: Sun },
   { id: 'tasks', label: 'Tasks', icon: ListChecks },
   { id: 'notes', label: 'Notes', icon: StickyNote },
   { id: 'databases', label: 'Databases', icon: Table2 },

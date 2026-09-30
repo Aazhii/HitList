@@ -612,7 +612,7 @@ Shared primitives now follow the DS, so every dialog inherits them:
 1. **Verify before you change.** Every task quotes the current code. If what you find does not match the quote, **stop and report** — do not adapt silently. The file may have moved on.
 2. **Never invent a value.** If a task does not give you a number and this file does not either, ask. Guessing is what produced the current state.
 3. **One task, one commit.** Commit message: `design(T1.4): set every icon stroke to 1.75`.
-4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 441 tests.
+4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 453 tests.
 5. **Update `00-INDEX.md`** — set State and fill in "Verified by" with the actual command output or screenshot pair. A task with an empty "Verified by" is not done.
 6. **Do not delete the Automations or Reminders code.** It is being revived in Phase 4, not removed.
 
@@ -732,4 +732,11 @@ Everything below deliberately stops matching the prototype. Each entry says wher
 - Scope: the task table and board only. Keys are ignored while typing, in a menu/listbox/dialog, with any modifier, and for ↵ on a focused button. The notes editor is untouched.
 - `[` `]` on the board needs `onQuadrantChange` (App passes it, undoable); drag still works unchanged.
 - Not shot-paired: the prototype has no cursor state; verified by unit tests (`taskKeyboard`, `useTaskKeyboard`).
+
+### P5.1 Today
+- A new first row in the sidebar nav, "Today" (Sun icon), and the landing view on a fresh open. A refresh or Back carries a history entry and keeps the screen. The matrix and the other layouts stay under Tasks; Today's top-bar button "Plan in the matrix" goes there.
+- Ranking (`lib/today.ts`, across all lists): overdue, then in progress, then quadrant (Do first → Eliminate), then soonest due, then hand order. Nothing new is asked of the user.
+- Layout: greeting line; the next task in a 12px-radius card (quadrant badge, list, due text, title 24px display; Start / Mark done / Open); "After that" lists the next two; "N overdue" expands the overdue tasks inline; "N more open" goes to Tasks. Nothing open → the happy-mascot empty state.
+- Spends: one new view and nav row. All tokens, sizes and motion are existing ones. No prototype counterpart, so not shot-paired; covered by `today.test.ts` and `TodayPage.test.tsx`.
+- Stored shape: nothing new. `hitlist-active-view` may now hold `today`; older values still load.
 

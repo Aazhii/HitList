@@ -42,6 +42,7 @@ import { NotificationBell } from '@/components/NotificationBell';
 import { NotificationToast } from '@/components/NotificationToast';
 import { CommandPalette } from '@/components/CommandPalette';
 import { PageSections } from '@/components/shell/PageSections';
+import { TodayPage } from '@/pages/TodayPage';
 import { LibraryPage } from '@/pages/LibraryPage';
 import { AutomationsPage } from '@/pages/AutomationsPage';
 import { usePageMarks } from '@/hooks/usePageMarks';
@@ -464,7 +465,12 @@ function UserScopedApp() {
   const [initialScreen] = useState(() => readInitialScreen());
   // Remembered across reloads, same as tasksMode — a refresh must not always
   // dump you back on Tasks.
-  const [activeView, setActiveView] = useLocalStorage<AppView>('hitlist-active-view', 'tasks');
+  const [activeView, setActiveView] = useLocalStorage<AppView>('hitlist-active-view', 'today');
+  // P5.1: a fresh open lands on Today. A refresh or Back carries a history entry (`initialScreen`) and
+  // keeps the screen it was on.
+  useEffect(() => {
+    if (initialScreen === null) setActiveView('today');
+  }, [initialScreen, setActiveView]);
   /** The sidebar's mobile sheet — desktop always shows it inline. */
   const [sidebarOpen, setSidebarOpen] = useState(false);
   /** Databases' own list, reported up since its state lives in DatabasesPage. */
@@ -645,7 +651,7 @@ function UserScopedApp() {
     ),
     useCallback((screen) => {
       setActiveView(
-        screen.view === 'notes' || screen.view === 'databases' || screen.view === 'calendar'
+        screen.view === 'notes' || screen.view === 'databases' || screen.view === 'calendar' || screen.view === 'today'
           ? screen.view
           : 'tasks'
       );
@@ -666,7 +672,7 @@ function UserScopedApp() {
   );
 
   useEffect(() => {
-    if (activeView === 'tasks' || activeView === 'notes' || activeView === 'databases' || activeView === 'calendar' || activeView === 'automations' || activeView === 'library') {
+    if (activeView === 'today' || activeView === 'tasks' || activeView === 'notes' || activeView === 'databases' || activeView === 'calendar' || activeView === 'automations' || activeView === 'library') {
       return;
     }
     setActiveView('tasks');
@@ -1453,8 +1459,8 @@ function UserScopedApp() {
     />
   );
 
-  const shellView = activeView === 'notes' || activeView === 'databases' || activeView === 'calendar' || activeView === 'automations' || activeView === 'library' ? activeView : 'tasks';
-  const crumb1 = shellView === 'notes' ? 'Notes' : shellView === 'databases' ? 'Databases' : shellView === 'calendar' ? 'Calendar' : shellView === 'automations' ? 'Automations' : shellView === 'library' ? 'Home' : 'Tasks';
+  const shellView = activeView === 'today' || activeView === 'notes' || activeView === 'databases' || activeView === 'calendar' || activeView === 'automations' || activeView === 'library' ? activeView : 'tasks';
+  const crumb1 = shellView === 'today' ? 'Today' : shellView === 'notes' ? 'Notes' : shellView === 'databases' ? 'Databases' : shellView === 'calendar' ? 'Calendar' : shellView === 'automations' ? 'Automations' : shellView === 'library' ? 'Home' : 'Tasks';
   const crumb2 = shellView === 'tasks' ? activeList?.name : shellView === 'library' ? 'Library' : undefined;
   const syncStatus: { tone: 'success' | 'warning' | 'danger'; label: string } = server.error
     ? { tone: 'danger', label: 'Error' }
@@ -1584,7 +1590,16 @@ function UserScopedApp() {
           account={<UserMenu onOpenReminders={openReminders} />}
           onOpenSidebar={() => setSidebarOpen(true)}
         />
-        {activeView === 'library' ? (
+        {activeView === 'today' ? (
+          <TodayPage
+            todos={todos}
+            lists={lists}
+            onStatusChange={handleStatusChange}
+            onOpenTask={(t) => { setActiveView('tasks'); handleOpenDetail(t); }}
+            onOpenTasks={() => setActiveView('tasks')}
+            onOpenSidebar={() => setSidebarOpen(true)}
+          />
+        ) : activeView === 'library' ? (
           <LibraryPage
             directory={pageDirectory}
             favorites={marks.favorites}
