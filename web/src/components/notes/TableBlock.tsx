@@ -287,7 +287,7 @@ export function TableBlock({ block, isFocused, onUpdateTable, onFocus }: TableBl
   // Idle icon buttons inside the grid: faint, tinted on hover, revealed on hover
   // or keyboard focus, and kept visible while their menu is open.
   const gridButton = cn(
-    'flex items-center justify-center rounded-[7px] text-a-faint transition-[opacity,background-color,color] duration-150',
+    'flex items-center justify-center rounded-[6px] text-a-faint transition-[opacity,background-color,color] duration-[120ms]',
     'hover:bg-[color-mix(in_srgb,var(--a-ink)_9%,transparent)] hover:text-a-ink',
     'focus-visible:opacity-100 data-[state=open]:opacity-100',
   );
@@ -344,7 +344,7 @@ export function TableBlock({ block, isFocused, onUpdateTable, onFocus }: TableBl
                                 className={cn(gridButton, 'absolute right-1.5 top-[12px] z-20 size-5 opacity-0 group-hover/cell:opacity-100')}
                                 aria-label={`Options for ${getColLabel(colIdx)}`}
                               >
-                                <ChevronDown className="size-3" strokeWidth={2.75} />
+                                <ChevronDown className="size-3" strokeWidth={1.75} />
                               </button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="start" className="w-52">
@@ -409,7 +409,7 @@ export function TableBlock({ block, isFocused, onUpdateTable, onFocus }: TableBl
                                 className={cn(gridButton, 'absolute left-0 top-[12px] z-20 h-5 w-4 opacity-0 group-hover/row:opacity-100')}
                                 aria-label={`Options for row ${rowIdx + 1}`}
                               >
-                                <GripVertical className="size-3" strokeWidth={2.75} />
+                                <GripVertical className="size-3" strokeWidth={1.75} />
                               </button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="start" className="w-44">
@@ -443,7 +443,7 @@ export function TableBlock({ block, isFocused, onUpdateTable, onFocus }: TableBl
 
                         {/* Resize handle on the column's right edge. */}
                         <div
-                          className="absolute right-0 top-0 bottom-0 z-10 w-1.5 cursor-col-resize transition-colors duration-100 hover:bg-a-accent/40 active:bg-a-accent/60"
+                          className="absolute right-0 top-0 bottom-0 z-10 w-1.5 cursor-col-resize transition-colors duration-[120ms] hover:bg-a-accent/40 active:bg-a-accent/60"
                           onMouseDown={(e) => startResize(e, colIdx)}
                           aria-hidden
                         />
@@ -471,7 +471,7 @@ export function TableBlock({ block, isFocused, onUpdateTable, onFocus }: TableBl
                             'placeholder:text-a-faint/60',
                             // Header and body share one size and line height; weight
                             // alone marks the header, with no band behind it.
-                            'text-[15px] leading-[1.45] text-a-ink',
+                            'text-[14px] leading-[1.45] text-a-ink',
                             isHeader && 'font-semibold',
                             // Leave room for the column menu on first-row cells.
                             isFirstRow && 'pr-8',
@@ -527,7 +527,7 @@ function EdgeAddRail({ visible, label, onClick, className }: {
       title={label}
       className={cn(
         'absolute flex items-center justify-center rounded-[6px] text-a-faint',
-        'bg-[color-mix(in_srgb,var(--a-ink)_4%,transparent)] transition-[opacity,background-color,color] duration-150',
+        'bg-[color-mix(in_srgb,var(--a-ink)_4%,transparent)] transition-[opacity,background-color,color] duration-[120ms]',
         'hover:bg-[color-mix(in_srgb,var(--a-ink)_9%,transparent)] hover:text-a-ink',
         // Reachable by keyboard even while visually hidden; never blocks clicks
         // on the block below while hidden.
@@ -537,7 +537,7 @@ function EdgeAddRail({ visible, label, onClick, className }: {
         className,
       )}
     >
-      <Plus className="size-3.5" strokeWidth={2.75} />
+      <Plus className="size-3.5" strokeWidth={1.75} />
     </button>
   );
 }

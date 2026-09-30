@@ -13,24 +13,28 @@ import {
 const TYPES = Object.keys(BLOCK_METRICS) as BlockType[];
 
 describe('blockMetrics', () => {
+  // These numbers moved when the editor's type scale was put on the design's
+  // grid (body 16.5→16, h1 34→32, h2 27→24, h3 19→20, quote 17→16, code
+  // 13.5→14, callout 15.5→16, table 15→14). They are derived, not chosen —
+  // each is round(insetTop + fontSize * lineHeight / 2 - 11).
   it('centres the 22px controls on each block type’s first line', () => {
-    expect(controlsTop('paragraph')).toBe(3);
-    expect(controlsTop('bullet')).toBe(3);
-    expect(controlsTop('numbered')).toBe(3);
-    expect(controlsTop('todo')).toBe(3);
-    expect(controlsTop('heading1')).toBe(8);
-    expect(controlsTop('heading2')).toBe(5);
-    expect(controlsTop('heading3')).toBe(2);
-    expect(controlsTop('quote')).toBe(3);
-    expect(controlsTop('code')).toBe(16);
+    expect(controlsTop('paragraph')).toBe(2);
+    expect(controlsTop('bullet')).toBe(2);
+    expect(controlsTop('numbered')).toBe(2);
+    expect(controlsTop('todo')).toBe(2);
+    expect(controlsTop('heading1')).toBe(7);
+    expect(controlsTop('heading2')).toBe(3);
+    expect(controlsTop('heading3')).toBe(3);
+    expect(controlsTop('quote')).toBe(2);
+    expect(controlsTop('code')).toBe(17);
     expect(controlsTop('callout')).toBe(18);
-    expect(controlsTop('table')).toBe(11);
+    expect(controlsTop('table')).toBe(10);
     expect(controlsTop('divider')).toBe(1);
   });
 
   it('centres markers on the first line', () => {
-    // 6px bullet on a 27.72px line: centre 13.86 → 11 (was a hand-set 10).
-    expect(markerTop('bullet', 6)).toBe(11);
+    // 6px bullet on a 26.88px line: centre 13.44 → 10.
+    expect(markerTop('bullet', 6)).toBe(10);
     // 19px to-do box.
     expect(markerTop('todo', 19)).toBe(4);
     // 22px emoji box inside the callout panel.

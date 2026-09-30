@@ -26,8 +26,8 @@ interface LinkedTaskChipProps {
 }
 
 const CHIP = cn(
-  'inline-flex max-w-[260px] items-center gap-1.5 rounded-full px-2.5 py-[3px] text-[12px] leading-none whitespace-nowrap',
-  'transition-colors duration-150',
+  'inline-flex max-w-[260px] items-center gap-1.5 rounded-[3px] px-2.5 py-[3px] text-[12px] leading-none whitespace-nowrap',
+  'transition-colors duration-[120ms]',
 );
 
 export function LinkedTaskChip({ task, lists, pending, onOpen, onUnlink }: LinkedTaskChipProps) {
@@ -60,7 +60,7 @@ export function LinkedTaskChip({ task, lists, pending, onOpen, onUnlink }: Linke
           {quad ? (
             <>
               {done
-                ? <Check className="size-3 flex-shrink-0" strokeWidth={3} aria-hidden />
+                ? <Check className="size-3 flex-shrink-0" strokeWidth={1.75} aria-hidden />
                 : <span className={cn('size-1.5 flex-shrink-0 rounded-full', quad.dotClass)} aria-hidden />}
               <span className={cn('font-semibold', done && 'line-through decoration-[1.5px]')}>{quad.label}</span>
               {list && <span className="min-w-0 truncate opacity-80">· {list.name}</span>}

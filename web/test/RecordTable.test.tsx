@@ -16,6 +16,7 @@ const status: FieldDef = {
 };
 const owned: FieldDef = { id: 'owned', name: 'Owned', kind: 'checkbox', options: [], fieldOrder: 1, showOnCard: false, createdAt: 1, updatedAt: 1 };
 const pages: FieldDef = { id: 'pages', name: 'Pages', kind: 'number', options: [], fieldOrder: 2, showOnCard: false, createdAt: 1, updatedAt: 1 };
+const review: FieldDef = { id: 'review', name: 'Review', kind: 'longtext', options: [], fieldOrder: 3, showOnCard: false, createdAt: 1, updatedAt: 1 };
 
 const record = (over: Partial<ApiDatabaseRow> = {}): ApiDatabaseRow => ({
   id: 'r1', databaseId: 'db1', title: 'Dune', rowOrder: 0, createdAt: 1, updatedAt: 1, ...over,
@@ -37,6 +38,23 @@ function setup(over: Partial<RecordTableProps> = {}) {
     onDeleteField: vi.fn(),
     onCreateField: vi.fn(),
     onReorderFields: vi.fn(),
+    sort: null,
+    onSortField: vi.fn(),
+    onClearSort: vi.fn(),
+    groupFieldId: null,
+    onGroupField: vi.fn(),
+    calc: {},
+    onCalcField: vi.fn(),
+    frozenFieldId: null,
+    onFreezeField: vi.fn(),
+    wrapFieldIds: [],
+    onWrapField: vi.fn(),
+    colWidths: {},
+    onResizeField: vi.fn(),
+    onHideField: vi.fn(),
+    onInsertField: vi.fn(),
+    onDuplicateField: vi.fn(),
+    onChangeFieldKind: vi.fn(),
     ...over,
   };
   render(<RecordTable {...props} />);
@@ -118,7 +136,7 @@ describe('RecordTable', () => {
     expect(props.onEditField).toHaveBeenCalledWith('status');
 
     await userEvent.click(screen.getByRole('button', { name: 'Status column options' }));
-    await userEvent.click(await screen.findByRole('menuitem', { name: /Delete column/ }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: /Delete property/ }));
     expect(props.onDeleteField).not.toHaveBeenCalled();
     await userEvent.click(await screen.findByRole('menuitem', { name: /Delete from every record/ }));
     expect(props.onDeleteField).toHaveBeenCalledWith('status');
@@ -128,6 +146,49 @@ describe('RecordTable', () => {
     const props = setup();
     fireEvent.click(screen.getByRole('button', { name: 'Add a column' }));
     expect(props.onCreateField).toHaveBeenCalled();
+  });
+
+  // A `text` cell is a single-line input: a paragraph scrolls sideways and is
+  // effectively unreadable. `longtext` is the same stored string in a textarea
+  // that wraps and grows.
+  it('edits a text-area column in a textarea, not a one-line input', () => {
+    const para = 'A long review that runs past the width of its column and needs to wrap onto a second line.';
+    const props = setup({ fields: [review], values: { r1: { review: para } } });
+
+    const cell = screen.getByLabelText('Review of Dune');
+    expect(cell.tagName).toBe('TEXTAREA');
+    expect(cell).toHaveValue(para);
+
+    fireEvent.change(cell, { target: { value: 'Shorter now' } });
+    fireEvent.blur(cell);
+    expect(props.onSetValue).toHaveBeenLastCalledWith('r1', 'review', 'Shorter now');
+  });
+
+  it('clears a text-area cell to null when emptied', () => {
+    const props = setup({ fields: [review], values: { r1: { review: 'something' } } });
+    const cell = screen.getByLabelText('Review of Dune');
+    fireEvent.change(cell, { target: { value: '' } });
+    fireEvent.blur(cell);
+    expect(props.onSetValue).toHaveBeenLastCalledWith('r1', 'review', null);
+  });
+
+  it('offers Text area in the change-type submenu', async () => {
+    setup();
+    await userEvent.click(screen.getByRole('button', { name: 'Status column options' }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: /Change type/ }));
+    expect(await screen.findByRole('menuitem', { name: /Text area/ })).toBeInTheDocument();
+  });
+
+  it('resizes a column by dragging its header edge', () => {
+    const props = setup();
+    const handle = screen.getByRole('separator', { name: 'Resize Status' });
+
+    fireEvent.pointerDown(handle, { clientX: 200 });
+    fireEvent(document, new PointerEvent('pointermove', { clientX: 260 }));
+    fireEvent(document, new PointerEvent('pointerup', {}));
+
+    // 180 default + 60 dragged
+    expect(props.onResizeField).toHaveBeenLastCalledWith('status', 240);
   });
 
   it('shows a record with no values as empty cells', () => {

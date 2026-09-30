@@ -50,7 +50,7 @@ function PermissionBadge({ permission }: { permission: NotificationPermission })
 
   if (!supported) {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+      <span className="inline-flex items-center gap-1 rounded-[3px] bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
         <AlertTriangle className="size-2.5" />
         Not supported
       </span>
@@ -59,7 +59,7 @@ function PermissionBadge({ permission }: { permission: NotificationPermission })
 
   if (permission === 'granted') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+      <span className="inline-flex items-center gap-1 rounded-[3px] bg-emerald-500/15 px-2 py-0.5 text-[11px] font-semibold text-emerald-600 dark:text-emerald-400">
         <Check className="size-2.5" />
         Enabled
       </span>
@@ -68,7 +68,7 @@ function PermissionBadge({ permission }: { permission: NotificationPermission })
 
   if (permission === 'denied') {
     return (
-      <span className="inline-flex items-center gap-1 rounded-full bg-destructive/15 px-2 py-0.5 text-[10px] font-semibold text-destructive">
+      <span className="inline-flex items-center gap-1 rounded-[3px] bg-destructive/15 px-2 py-0.5 text-[11px] font-semibold text-destructive">
         <ShieldAlert className="size-2.5" />
         Blocked
       </span>
@@ -76,7 +76,7 @@ function PermissionBadge({ permission }: { permission: NotificationPermission })
   }
 
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-600 dark:text-amber-400">
+    <span className="inline-flex items-center gap-1 rounded-[3px] bg-amber-500/15 px-2 py-0.5 text-[11px] font-semibold text-amber-600 dark:text-amber-400">
       <BellOff className="size-2.5" />
       Not enabled
     </span>
@@ -111,7 +111,7 @@ export function RemindersSettingsPanel({
   return (
     <div
       className={cn(
-        'rounded-xl border transition-all duration-200',
+        'rounded-xl border transition-all duration-[180ms]',
         alertCount > 0 && permission === 'granted'
           ? 'border-amber-500/30 bg-amber-500/[0.04]'
           : 'border-border bg-card'
@@ -127,7 +127,7 @@ export function RemindersSettingsPanel({
         {/* Icon */}
         <div
           className={cn(
-            'flex size-7 flex-shrink-0 items-center justify-center rounded-lg transition-colors duration-150',
+            'flex size-7 flex-shrink-0 items-center justify-center rounded-lg transition-colors duration-[120ms]',
             permission === 'granted'
               ? alertCount > 0
                 ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400'
@@ -152,7 +152,7 @@ export function RemindersSettingsPanel({
             <span className="text-xs font-semibold text-foreground">Reminders</span>
             <PermissionBadge permission={permission} />
             {permission === 'granted' && activeReminderCount > 0 && (
-              <span className="text-[10px] text-muted-foreground">
+              <span className="text-[11px] text-muted-foreground">
                 {activeReminderCount} task{activeReminderCount !== 1 ? 's' : ''} scheduled
               </span>
             )}
@@ -161,24 +161,24 @@ export function RemindersSettingsPanel({
           {permission === 'granted' && (overdueCount > 0 || dueSoonCount > 0) && (
             <div className="flex items-center gap-2 mt-0.5 flex-wrap">
               {overdueCount > 0 && (
-                <span className="text-[10px] font-medium text-destructive">
+                <span className="text-[11px] font-medium text-destructive">
                   {overdueCount} overdue
                 </span>
               )}
               {dueSoonCount > 0 && (
-                <span className="text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                <span className="text-[11px] font-medium text-amber-600 dark:text-amber-400">
                   {dueSoonCount} due soon
                 </span>
               )}
             </div>
           )}
           {permission === 'denied' && (
-            <p className="text-[10px] text-muted-foreground mt-0.5">
+            <p className="text-[11px] text-muted-foreground mt-0.5">
               Enable in browser settings to receive task reminders
             </p>
           )}
           {!supported && (
-            <p className="text-[10px] text-muted-foreground mt-0.5">
+            <p className="text-[11px] text-muted-foreground mt-0.5">
               Your browser doesn't support notifications
             </p>
           )}
@@ -268,7 +268,7 @@ export function RemindersSettingsPanel({
               <div className="grid grid-cols-3 gap-2">
                 <div className="rounded-lg bg-muted/50 px-3 py-2 text-center">
                   <p className="text-base font-bold text-foreground">{activeReminderCount}</p>
-                  <p className="text-[10px] text-muted-foreground">Scheduled</p>
+                  <p className="text-[11px] text-muted-foreground">Scheduled</p>
                 </div>
                 <div
                   className={cn(
@@ -284,7 +284,7 @@ export function RemindersSettingsPanel({
                   >
                     {dueSoonCount}
                   </p>
-                  <p className="text-[10px] text-muted-foreground">Due soon</p>
+                  <p className="text-[11px] text-muted-foreground">Due soon</p>
                 </div>
                 <div
                   className={cn(
@@ -300,11 +300,11 @@ export function RemindersSettingsPanel({
                   >
                     {overdueCount}
                   </p>
-                  <p className="text-[10px] text-muted-foreground">Overdue</p>
+                  <p className="text-[11px] text-muted-foreground">Overdue</p>
                 </div>
               </div>
 
-              <p className="text-[10px] text-muted-foreground/70 leading-relaxed">
+              <p className="text-[11px] text-muted-foreground/70 leading-relaxed">
                 Reminders are scheduled per-task. Enable them on individual tasks via the task detail panel or the reminder toggle on each card.
               </p>
             </div>

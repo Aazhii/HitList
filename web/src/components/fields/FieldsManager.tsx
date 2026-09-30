@@ -15,7 +15,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import {
-  Calendar, Check, CircleDot, Hash, ListChecks, Plus, SquareCheck, Trash2, Type, X, SlidersHorizontal,
+  AlignLeft, Calendar, Check, CircleDot, Hash, ListChecks, Plus, SquareCheck, Trash2, Type, X, SlidersHorizontal,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -55,7 +55,7 @@ interface FieldsManagerDialogProps {
 interface DraftOption { id?: string; label: string; color: OptionColor }
 interface Draft { name: string; kind: FieldKind; options: DraftOption[]; showOnCard: boolean }
 
-const KINDS: FieldKind[] = ['select', 'multi', 'number', 'date', 'checkbox', 'text'];
+const KINDS: FieldKind[] = ['select', 'multi', 'number', 'date', 'checkbox', 'text', 'longtext'];
 const KIND_ICON: Record<FieldKind, typeof Type> = {
   select: CircleDot,
   multi: ListChecks,
@@ -63,6 +63,7 @@ const KIND_ICON: Record<FieldKind, typeof Type> = {
   date: Calendar,
   checkbox: SquareCheck,
   text: Type,
+  longtext: AlignLeft,
 };
 const emptyDraft = (): Draft => ({ name: '', kind: 'select', options: [{ label: '', color: OPTION_COLORS[0] }], showOnCard: true });
 const hasOptions = (k: FieldKind) => k === 'select' || k === 'multi';
@@ -209,7 +210,7 @@ export function FieldsManagerDialog({
         ) : (
           <div className="space-y-4 pt-1">
             <div className="space-y-1.5">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Name</p>
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Name</p>
               <Input
                 autoFocus value={draft.name} maxLength={100}
                 onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
@@ -219,7 +220,7 @@ export function FieldsManagerDialog({
             </div>
 
             <div className="space-y-1.5">
-              <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Type</p>
+              <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Type</p>
               {editing === 'new' ? (
                 <div className="grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="Type">
                   {KINDS.map((k) => {
@@ -233,7 +234,7 @@ export function FieldsManagerDialog({
                         aria-checked={active}
                         onClick={() => setDraft((d) => ({ ...d, kind: k }))}
                         className={cn(
-                          'flex items-center gap-2 rounded-xl px-2.5 py-2 text-left text-xs font-medium transition-colors duration-150',
+                          'flex items-center gap-2 rounded-xl px-2.5 py-2 text-left text-xs font-medium transition-colors duration-[120ms]',
                           active ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
                         )}
                       >
@@ -252,7 +253,7 @@ export function FieldsManagerDialog({
 
             {hasOptions(draft.kind) && (
               <div ref={optionsRef} className="space-y-1.5">
-                <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Options</p>
+                <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Options</p>
                 {draft.options.map((option, i) => (
                   <div key={option.id ?? `new-${i}`}>
                     <div className="flex items-center gap-2">
@@ -293,7 +294,7 @@ export function FieldsManagerDialog({
                             className="flex size-7 items-center justify-center rounded-lg hover:bg-muted"
                           >
                             <span className={cn('flex size-5 items-center justify-center rounded-full', OPTION_DOT_CLASS[color])}>
-                              {option.color === color && <Check className="size-3 text-white" strokeWidth={3} />}
+                              {option.color === color && <Check className="size-3 text-white" strokeWidth={1.75} />}
                             </span>
                           </button>
                         ))}

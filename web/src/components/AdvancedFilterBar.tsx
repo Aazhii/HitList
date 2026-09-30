@@ -132,7 +132,7 @@ export function AdvancedFilterBar({ filters, onChange, className, fieldDefs = []
             aria-label={filters.sortDir === 'asc' ? 'Sort descending' : 'Sort ascending'}
             title={filters.sortDir === 'asc' ? 'Ascending' : 'Descending'}
           >
-            <span className="text-[10px] font-bold">{filters.sortDir === 'asc' ? '↑' : '↓'}</span>
+            <span className="text-[11px] font-bold">{filters.sortDir === 'asc' ? '↑' : '↓'}</span>
           </Button>
         </div>
 
@@ -142,7 +142,7 @@ export function AdvancedFilterBar({ filters, onChange, className, fieldDefs = []
           size="sm"
           onClick={() => setExpanded((v) => !v)}
           className={cn(
-            'h-8 rounded-xl px-2.5 text-xs gap-1.5 transition-colors duration-150 flex-shrink-0',
+            'h-8 rounded-xl px-2.5 text-xs gap-1.5 transition-colors duration-[120ms] flex-shrink-0',
             (expanded || activeCount > 0)
               ? 'bg-primary/10 text-primary hover:bg-primary/15'
               : 'text-muted-foreground hover:text-foreground'
@@ -153,11 +153,11 @@ export function AdvancedFilterBar({ filters, onChange, className, fieldDefs = []
           <SlidersHorizontal className="size-3.5" />
           <span className="hidden sm:inline">Filters</span>
           {activeCount > 0 && (
-            <Badge className="h-4 min-w-4 px-1 text-[9px] font-bold bg-primary text-primary-foreground rounded-full">
+            <Badge className="h-4 min-w-4 px-1 text-[11px] font-bold bg-primary text-primary-foreground rounded-[3px]">
               {activeCount}
             </Badge>
           )}
-          <ChevronDown className={cn('size-3 transition-transform duration-150', expanded && 'rotate-180')} />
+          <ChevronDown className={cn('size-3 transition-transform duration-[120ms]', expanded && 'rotate-180')} />
         </Button>
 
         {/* Clear all */}
@@ -223,7 +223,7 @@ export function AdvancedFilterBar({ filters, onChange, className, fieldDefs = []
 
           {/* Due after */}
           <div className="flex items-center gap-1">
-            <span className="text-[10px] text-muted-foreground font-medium">From</span>
+            <span className="text-[11px] text-muted-foreground font-medium">From</span>
             <Input
               type="date"
               value={filters.dueAfter}
@@ -235,7 +235,7 @@ export function AdvancedFilterBar({ filters, onChange, className, fieldDefs = []
 
           {/* Due before */}
           <div className="flex items-center gap-1">
-            <span className="text-[10px] text-muted-foreground font-medium">To</span>
+            <span className="text-[11px] text-muted-foreground font-medium">To</span>
             <Input
               type="date"
               value={filters.dueBefore}
@@ -305,7 +305,7 @@ export function FieldFilterMenu({ field, chosen, onChange }: FieldFilterMenuProp
         <button
           type="button"
           className={cn(
-            'flex h-7 items-center gap-1.5 rounded-xl border px-2.5 text-xs transition-colors duration-150',
+            'flex h-7 items-center gap-1.5 rounded-xl border px-2.5 text-xs transition-colors duration-[120ms]',
             chosen.length
               ? 'border-primary/30 bg-primary/10 text-primary'
               : 'border-border/60 bg-muted/40 text-muted-foreground hover:text-foreground',

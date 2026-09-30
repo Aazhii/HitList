@@ -519,6 +519,12 @@ export interface ViewDisplay {
   hidden: string[];
   order: string[];
   widths: Record<string, number>;
+  /** Databases only, all additive/optional — stored as extra keys in the same JSON blob. */
+  sort?: { fieldId: string; dir: 1 | -1 } | null;
+  groupField?: string | null;
+  calc?: Record<string, string>;
+  frozenFieldId?: string | null;
+  wrapFieldIds?: string[];
 }
 
 export interface ApiSavedView {

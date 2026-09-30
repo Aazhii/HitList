@@ -67,7 +67,7 @@ export interface ViewTabsProps {
 }
 
 const TAB = cn(
-  'flex h-7 flex-shrink-0 items-center gap-1.5 rounded-full px-3 text-[13.5px] whitespace-nowrap transition-colors duration-150 sm:px-3.5',
+  'flex h-7 flex-shrink-0 items-center gap-1.5 rounded-[6px] px-3 text-[14px] whitespace-nowrap transition-colors duration-[120ms] sm:px-3.5',
 );
 const TAB_ACTIVE = 'bg-a-bg font-semibold text-a-ink shadow-[0_1px_2px_rgba(46,43,37,0.14)]';
 const TAB_IDLE = 'text-a-muted hover:text-a-ink';
@@ -99,7 +99,7 @@ export function ViewTabs({
       <div
         role="tablist"
         aria-label="Task views"
-        className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto rounded-full bg-[color-mix(in_srgb,var(--a-ink)_7%,transparent)] p-[3px]"
+        className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto rounded-[6px] bg-[color-mix(in_srgb,var(--a-ink)_7%,transparent)] p-[3px]"
       >
         {TAB_LAYOUTS.map((l) => {
           const active = !appliedViewId && layout === l.value;
@@ -155,10 +155,10 @@ export function ViewTabs({
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    className="flex size-5 items-center justify-center rounded-full text-a-faint hover:text-a-ink"
+                    className="flex size-5 items-center justify-center rounded-[4px] text-a-faint hover:text-a-ink"
                     aria-label={`Options for ${view.name}`}
                   >
-                    <MoreHorizontal className="size-3.5" strokeWidth={2.75} />
+                    <MoreHorizontal className="size-3.5" strokeWidth={1.75} />
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="start" className="w-52">
@@ -195,17 +195,17 @@ export function ViewTabs({
           <button
             type="button"
             onClick={() => onSaveChanges(applied)}
-            className="flex h-7 items-center gap-1.5 rounded-full bg-a-accent px-3 text-[13px] font-semibold text-a-bg transition-colors duration-150 hover:bg-a-accent-600"
+            className="flex h-7 items-center gap-1.5 rounded-[6px] bg-a-accent px-3 text-[13px] font-semibold text-a-surface transition-colors duration-[120ms] hover:bg-a-accent-600"
           >
-            <Check className="size-3.5" strokeWidth={2.75} aria-hidden />
+            <Check className="size-3.5" strokeWidth={1.75} aria-hidden />
             Save
           </button>
           <button
             type="button"
             onClick={() => onResetChanges(applied)}
-            className="flex h-7 items-center gap-1.5 rounded-full px-2.5 text-[13px] text-a-muted transition-colors duration-150 hover:text-a-ink"
+            className="flex h-7 items-center gap-1.5 rounded-[6px] px-2.5 text-[13px] text-a-muted transition-colors duration-[120ms] hover:text-a-ink"
           >
-            <RotateCcw className="size-3.5" strokeWidth={2.5} aria-hidden />
+            <RotateCcw className="size-3.5" strokeWidth={1.75} aria-hidden />
             Reset
           </button>
         </div>
@@ -262,7 +262,7 @@ function NewViewButton({ layout, listName, groupFields, online, onCreate, onMana
           disabled={!online}
           title={online ? undefined : 'Saved views need the server'}
         >
-          <Plus className="size-3.5" strokeWidth={2.75} aria-hidden />
+          <Plus className="size-3.5" strokeWidth={1.75} aria-hidden />
           New
         </button>
       </PopoverTrigger>
@@ -278,7 +278,7 @@ function NewViewButton({ layout, listName, groupFields, online, onCreate, onMana
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') void submit(); }}
               placeholder="e.g. Stages"
-              className="h-8 rounded-full text-[14px]"
+              className="h-8 rounded-[4px] text-[14px]"
             />
           </div>
 
@@ -293,9 +293,9 @@ function NewViewButton({ layout, listName, groupFields, online, onCreate, onMana
                   aria-checked={newLayout === l.value}
                   onClick={() => setNewLayout(l.value)}
                   className={cn(
-                    'h-7 flex-1 rounded-full text-[13px] transition-colors duration-150',
+                    'h-7 flex-1 rounded-[6px] text-[13px] transition-colors duration-[120ms]',
                     newLayout === l.value
-                      ? 'bg-a-accent font-semibold text-a-bg'
+                      ? 'bg-a-accent font-semibold text-a-surface'
                       : 'text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)] hover:text-a-ink',
                   )}
                 >
@@ -343,7 +343,7 @@ function NewViewButton({ layout, listName, groupFields, online, onCreate, onMana
             type="button"
             onClick={() => void submit()}
             disabled={!name.trim() || saving || (newLayout === 'board' && groupFields.length === 0)}
-            className="h-8 w-full rounded-full bg-a-accent text-[13.5px] font-semibold text-a-bg transition-colors duration-150 hover:bg-a-accent-600 disabled:opacity-50"
+            className="h-8 w-full rounded-[6px] bg-a-accent text-[14px] font-semibold text-a-surface transition-colors duration-[120ms] hover:bg-a-accent-600 disabled:opacity-50"
           >
             {saving ? 'Saving…' : 'Create view'}
           </button>

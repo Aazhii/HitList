@@ -53,10 +53,10 @@ export function SavedViewsSection({
 
   return (
     <div className="mb-5">
-      <ContextSectionHeader label="Views" />
+      <ContextSectionHeader label="Saved views" />
 
       {views.length === 0 ? (
-        <p className="px-3 pb-1 text-[12.5px] leading-relaxed text-a-faint">
+        <p className="px-3 pb-1 text-[12px] leading-relaxed text-a-faint">
           Set a filter, then use <span className="font-semibold">Save as view</span> to keep it here.
         </p>
       ) : (
@@ -68,7 +68,7 @@ export function SavedViewsSection({
             if (renamingId === view.id) {
               return (
                 <li key={view.id} className={contextRowClass(true)}>
-                  <Bookmark className="size-3.5 flex-shrink-0 text-a-accent-700" strokeWidth={2.75} aria-hidden />
+                  <Bookmark className="size-3.5 flex-shrink-0 text-a-accent-700" strokeWidth={1.75} aria-hidden />
                   <input
                     ref={renameRef}
                     value={renameValue}
@@ -79,7 +79,7 @@ export function SavedViewsSection({
                       if (e.key === 'Enter') commitRename(view);
                       if (e.key === 'Escape') setRenamingId(null);
                     }}
-                    className="min-w-0 flex-1 border-b border-a-accent bg-transparent text-[14.5px] font-semibold text-a-ink outline-none"
+                    className="min-w-0 flex-1 border-b border-a-accent bg-transparent text-[14px] font-semibold text-a-ink outline-none"
                     aria-label="Rename view"
                   />
                 </li>
@@ -97,25 +97,25 @@ export function SavedViewsSection({
                 >
                   <Bookmark
                     className={cn('size-3.5 flex-shrink-0', active ? 'text-a-accent-700' : 'text-a-faint')}
-                    strokeWidth={2.75}
+                    strokeWidth={1.75}
                     aria-hidden
                   />
-                  <span className={cn('min-w-0 flex-1 truncate text-[14.5px]', active ? 'font-semibold text-a-ink' : 'text-a-muted')}>
+                  <span className={cn('min-w-0 flex-1 truncate text-[14px]', active ? 'font-semibold text-a-ink' : 'text-a-muted')}>
                     {view.name}
                   </span>
                   {list && (
                     <span
-                      className={cn('size-2 flex-shrink-0 rounded-full transition-opacity duration-150 group-hover:opacity-0 group-focus-within:opacity-0 group-has-[[data-state=open]]:opacity-0', getListColorDot(list.color))}
+                      className={cn('size-2 flex-shrink-0 rounded-full transition-opacity duration-[120ms] group-hover:opacity-0 group-focus-within:opacity-0 group-has-[[data-state=open]]:opacity-0', getListColorDot(list.color))}
                       aria-label={`In ${list.name}`}
                     />
                   )}
                 </button>
 
-                <div className="absolute top-1/2 right-2 -translate-y-1/2 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100 has-[[data-state=open]]:opacity-100">
+                <div className="absolute top-1/2 right-2 -translate-y-1/2 opacity-0 transition-opacity duration-[120ms] group-hover:opacity-100 group-focus-within:opacity-100 has-[[data-state=open]]:opacity-100">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                       <button type="button" className={contextIconButton} aria-label={`Options for ${view.name}`}>
-                        <MoreHorizontal className="size-3.5" strokeWidth={2.75} />
+                        <MoreHorizontal className="size-3.5" strokeWidth={1.75} />
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-56">

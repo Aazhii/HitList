@@ -12,7 +12,7 @@ import { FieldChips } from '@/components/fields/FieldChips';
 import type { ApiDatabaseRow } from '@/lib/api';
 import type { FieldDef, FieldValue } from '@/types/fields';
 
-const CHIP = 'inline-flex items-center rounded-full px-2.5 py-[3px] text-[12px] leading-none whitespace-nowrap';
+const CHIP = 'inline-flex items-center rounded-[3px] px-2.5 py-[3px] text-[12px] leading-none whitespace-nowrap';
 
 export interface RecordCardProps {
   record: ApiDatabaseRow;
@@ -25,12 +25,12 @@ export function RecordCard({ record, fields, values, className }: RecordCardProp
   return (
     <article
       className={cn(
-        'flex flex-col gap-[7px] rounded-[14px] bg-a-bg px-[14px] py-[10px]',
+        'flex flex-col gap-[7px] rounded-[8px] bg-a-bg px-[14px] py-[10px]',
         'shadow-[inset_0_0_0_1px_var(--a-line-soft)]',
         className,
       )}
     >
-      <p className="text-[14.5px] leading-snug text-a-ink">{record.title}</p>
+      <p className="text-[14px] leading-snug text-a-ink">{record.title}</p>
 
       <div className="flex flex-wrap items-center gap-1.5 empty:hidden">
         <FieldChips fields={fields} values={values} chipClass={CHIP} />

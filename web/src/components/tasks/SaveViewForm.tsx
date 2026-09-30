@@ -33,9 +33,9 @@ export function SaveViewForm({ listName, onSave }: SaveViewFormProps) {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="mt-3 flex items-center gap-1.5 text-[13px] font-semibold text-a-accent-700 transition-colors duration-150 hover:text-a-accent"
+        className="mt-3 flex items-center gap-1.5 text-[13px] font-semibold text-a-accent-700 transition-colors duration-[120ms] hover:text-a-accent"
       >
-        <Bookmark className="size-3.5" strokeWidth={2.75} aria-hidden />
+        <Bookmark className="size-3.5" strokeWidth={1.75} aria-hidden />
         Save as view
       </button>
     );
@@ -53,7 +53,7 @@ export function SaveViewForm({ listName, onSave }: SaveViewFormProps) {
           if (e.key === 'Escape') setOpen(false);
         }}
         placeholder="View name, e.g. Overdue at work"
-        className="h-8 rounded-full text-[14px]"
+        className="h-8 rounded-[4px] text-[14px]"
         aria-label="View name"
       />
       <label className="flex cursor-pointer items-center gap-2 text-[13px] text-a-ink">
@@ -75,14 +75,14 @@ export function SaveViewForm({ listName, onSave }: SaveViewFormProps) {
           type="button"
           onClick={() => void submit()}
           disabled={!name.trim() || saving}
-          className="h-7 flex-1 rounded-full bg-a-accent px-3 text-[13px] font-semibold text-a-bg transition-colors duration-150 hover:bg-a-accent-600 disabled:opacity-50"
+          className="h-7 flex-1 rounded-[6px] bg-a-accent px-3 text-[13px] font-semibold text-a-surface transition-colors duration-[120ms] hover:bg-a-accent-600 disabled:opacity-50"
         >
           {saving ? 'Saving…' : 'Save view'}
         </button>
         <button
           type="button"
           onClick={() => setOpen(false)}
-          className="h-7 rounded-full px-3 text-[13px] text-a-muted transition-colors duration-150 hover:text-a-ink"
+          className="h-7 rounded-[6px] px-3 text-[13px] text-a-muted transition-colors duration-[120ms] hover:text-a-ink"
         >
           Cancel
         </button>

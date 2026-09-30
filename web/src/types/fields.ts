@@ -1,6 +1,6 @@
 /** Custom task fields, as the client sees them. */
 
-export type FieldKind = 'select' | 'multi' | 'number' | 'date' | 'checkbox' | 'text';
+export type FieldKind = 'select' | 'multi' | 'number' | 'date' | 'checkbox' | 'text' | 'longtext';
 /**
  * `accent`/`sage`/`do`/`schedule`/`delegate`/`eliminate` are legacy: options
  * created before the dedicated tag palette below. Kept so those options keep
@@ -36,7 +36,16 @@ export const FIELD_KIND_LABELS: Record<FieldKind, string> = {
   date: 'Date',
   checkbox: 'Checkbox',
   text: 'Text',
+  longtext: 'Text area',
 };
+
+/**
+ * Kinds that store a plain string and accept the same values, so switching
+ * between them keeps every cell's contents. The server agrees — see
+ * WorkspaceService.interchangeable(), which is what stops the type change from
+ * cloaking the column.
+ */
+export const TEXTUAL_KINDS: readonly FieldKind[] = ['text', 'longtext'];
 
 export const OPTION_COLORS: OptionColor[] = [
   'gray', 'brown', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'red',

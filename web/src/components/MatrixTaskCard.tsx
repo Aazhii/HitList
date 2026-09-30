@@ -30,10 +30,10 @@ interface MatrixTaskCardProps {
   fieldValues?: Record<string, FieldValue>;
 }
 
-const CHIP = 'inline-flex items-center gap-1 rounded-full px-2.5 py-[3px] text-[12px] leading-none whitespace-nowrap';
+const CHIP = 'inline-flex items-center gap-1 rounded-[3px] px-2.5 py-[3px] text-[12px] leading-none whitespace-nowrap';
 
 const CARD_ACTION = cn(
-  'flex size-[22px] items-center justify-center rounded-[7px] text-a-faint transition-[opacity,background-color,color] duration-150',
+  'flex size-[22px] items-center justify-center rounded-[6px] text-a-faint transition-[opacity,background-color,color] duration-[120ms]',
   'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
   'hover:bg-[color-mix(in_srgb,var(--a-ink)_9%,transparent)] hover:text-a-ink',
 );
@@ -86,8 +86,8 @@ export function MatrixTaskCard({
       }}
       style={{ animationDelay: `${index * 50}ms`, animationFillMode: 'both' }}
       className={cn(
-        'group relative flex cursor-pointer flex-col gap-1.5 rounded-[14px] bg-a-bg px-3.5 py-2.5 animate-slide-up',
-        'transition-[box-shadow,opacity,scale] duration-300 hover:shadow-[var(--a-shadow-sm)]',
+        'group relative flex cursor-pointer flex-col gap-1.5 rounded-[8px] bg-a-bg px-3.5 py-2.5 animate-slide-up',
+        'transition-[box-shadow,opacity,scale] duration-[260ms] hover:shadow-[var(--a-shadow-sm)]',
         isDone && 'opacity-60',
         !isDone && dueInfo?.isOverdue
           ? 'shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--a-q-do)_40%,transparent)]'
@@ -112,7 +112,7 @@ export function MatrixTaskCard({
 
         <p
           className={cn(
-            'min-w-0 flex-1 text-[14.5px] leading-[1.45] break-words',
+            'min-w-0 flex-1 text-[14px] leading-[1.45] break-words',
             isDone ? 'text-a-faint line-through decoration-[1.5px]' : 'text-a-ink',
           )}
         >
@@ -127,7 +127,7 @@ export function MatrixTaskCard({
 
         <div className="flex flex-shrink-0 items-center gap-0.5">
           <button type="button" onClick={handleDelete} aria-label="Delete task" className={cn(CARD_ACTION, 'hover:text-q-do')}>
-            <Trash2 className="size-3.5" strokeWidth={2.75} />
+            <Trash2 className="size-3.5" strokeWidth={1.75} />
           </button>
         </div>
       </div>
@@ -149,22 +149,22 @@ export function MatrixTaskCard({
               onClick={() => onOpenNote!(todo.sourceNoteId!)}
               title="Open the note this came from"
               aria-label={`Open the note “${todo.text}” came from`}
-              className={cn(CHIP, 'text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)] transition-colors duration-150 hover:text-a-ink')}
+              className={cn(CHIP, 'text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)] transition-colors duration-[120ms] hover:text-a-ink')}
             >
-              <FileText className="size-3" strokeWidth={2.75} aria-hidden /> Note
+              <FileText className="size-3" strokeWidth={1.75} aria-hidden /> Note
             </button>
           )}
 
           {dueInfo && (
-            <span className={cn(CHIP, DUE_TONE_CLASS[dueTone(dueInfo)])}>
-              {dueInfo.isOverdue && <AlertCircle className="size-3" strokeWidth={2.75} aria-hidden />}
+            <span className={cn("whitespace-nowrap", DUE_TONE_CLASS[dueTone(dueInfo)])}>
+              {dueInfo.isOverdue && <AlertCircle className="size-3" strokeWidth={1.75} aria-hidden />}
               {dueInfo.label}
             </span>
           )}
 
           {todo.note && (
             <span className="inline-flex items-center text-a-faint" title="Has a note">
-              <FileText className="size-3.5" strokeWidth={2.75} aria-hidden />
+              <FileText className="size-3.5" strokeWidth={1.75} aria-hidden />
               <span className="sr-only">Has a note</span>
             </span>
           )}

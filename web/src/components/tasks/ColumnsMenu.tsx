@@ -40,16 +40,16 @@ export function ColumnsMenu({ columns, hidden, onToggle, onMove, onReset }: Colu
         <button
           type="button"
           className={cn(
-            'flex h-8 flex-shrink-0 items-center gap-1.5 rounded-full px-3 text-[13.5px] transition-colors duration-150',
+            'flex h-8 flex-shrink-0 items-center gap-1.5 rounded-[6px] px-3 text-[14px] transition-colors duration-[120ms]',
             'shadow-[inset_0_0_0_1px_var(--a-line)]',
             changed ? 'text-a-ink' : 'text-a-muted hover:text-a-ink',
           )}
           aria-label={`Columns${hiddenCount ? ` (${hiddenCount} hidden)` : ''}`}
         >
-          <Columns3 className="size-3.5" strokeWidth={2.5} aria-hidden />
+          <Columns3 className="size-3.5" strokeWidth={1.75} aria-hidden />
           <span className="hidden sm:inline">Columns</span>
           {hiddenCount > 0 && (
-            <span className="flex min-w-[18px] items-center justify-center rounded-full bg-a-accent px-1 text-[11px] font-bold leading-[18px] text-a-bg">
+            <span className="flex min-w-[18px] items-center justify-center rounded-[3px] bg-a-accent px-1 text-[11px] font-bold leading-[18px] text-a-surface">
               {hiddenCount}
             </span>
           )}
@@ -61,8 +61,8 @@ export function ColumnsMenu({ columns, hidden, onToggle, onMove, onReset }: Colu
           {columns.map((column, i) => {
             const isHidden = !column.fixed && hiddenSet.has(column.id);
             return (
-              <li key={column.id} className="flex items-center gap-1 rounded-[10px] px-1 py-0.5 hover:bg-a-row-hover">
-                <span className={cn('min-w-0 flex-1 truncate text-[13.5px]', isHidden ? 'text-a-faint' : 'text-a-ink')}>
+              <li key={column.id} className="flex items-center gap-1 rounded-[8px] px-1 py-0.5 hover:bg-a-row-hover">
+                <span className={cn('min-w-0 flex-1 truncate text-[14px]', isHidden ? 'text-a-faint' : 'text-a-ink')}>
                   {column.label}
                 </span>
 
@@ -71,23 +71,23 @@ export function ColumnsMenu({ columns, hidden, onToggle, onMove, onReset }: Colu
                   onClick={() => onMove(column.id, -1)}
                   disabled={i === 0}
                   aria-label={`Move ${column.label} left`}
-                  className="flex size-6 items-center justify-center rounded-[7px] text-a-faint transition-colors duration-150 hover:text-a-ink disabled:opacity-30"
+                  className="flex size-6 items-center justify-center rounded-[6px] text-a-faint transition-colors duration-[120ms] hover:text-a-ink disabled:opacity-30"
                 >
-                  <ArrowUp className="size-3.5" strokeWidth={2.5} />
+                  <ArrowUp className="size-3.5" strokeWidth={1.75} />
                 </button>
                 <button
                   type="button"
                   onClick={() => onMove(column.id, 1)}
                   disabled={i === columns.length - 1}
                   aria-label={`Move ${column.label} right`}
-                  className="flex size-6 items-center justify-center rounded-[7px] text-a-faint transition-colors duration-150 hover:text-a-ink disabled:opacity-30"
+                  className="flex size-6 items-center justify-center rounded-[6px] text-a-faint transition-colors duration-[120ms] hover:text-a-ink disabled:opacity-30"
                 >
-                  <ArrowDown className="size-3.5" strokeWidth={2.5} />
+                  <ArrowDown className="size-3.5" strokeWidth={1.75} />
                 </button>
 
                 {column.fixed ? (
                   <span className="flex size-6 items-center justify-center text-a-faint/50" title="Always shown">
-                    <Eye className="size-3.5" strokeWidth={2.5} aria-hidden />
+                    <Eye className="size-3.5" strokeWidth={1.75} aria-hidden />
                   </span>
                 ) : (
                   <button
@@ -95,11 +95,11 @@ export function ColumnsMenu({ columns, hidden, onToggle, onMove, onReset }: Colu
                     onClick={() => onToggle(column.id)}
                     aria-label={isHidden ? `Show ${column.label}` : `Hide ${column.label}`}
                     aria-pressed={!isHidden}
-                    className="flex size-6 items-center justify-center rounded-[7px] text-a-faint transition-colors duration-150 hover:text-a-ink"
+                    className="flex size-6 items-center justify-center rounded-[6px] text-a-faint transition-colors duration-[120ms] hover:text-a-ink"
                   >
                     {isHidden
-                      ? <EyeOff className="size-3.5" strokeWidth={2.5} />
-                      : <Eye className="size-3.5" strokeWidth={2.5} />}
+                      ? <EyeOff className="size-3.5" strokeWidth={1.75} />
+                      : <Eye className="size-3.5" strokeWidth={1.75} />}
                   </button>
                 )}
               </li>
@@ -110,9 +110,9 @@ export function ColumnsMenu({ columns, hidden, onToggle, onMove, onReset }: Colu
         <button
           type="button"
           onClick={onReset}
-          className="mt-1.5 flex w-full items-center gap-1.5 rounded-[10px] px-2 py-1.5 text-left text-[13px] text-a-muted transition-colors duration-150 hover:bg-a-row-hover hover:text-a-ink"
+          className="mt-1.5 flex w-full items-center gap-1.5 rounded-[8px] px-2 py-1.5 text-left text-[13px] text-a-muted transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
         >
-          <RotateCcw className="size-3.5" strokeWidth={2.5} aria-hidden />
+          <RotateCcw className="size-3.5" strokeWidth={1.75} aria-hidden />
           Show all, in field order
         </button>
       </PopoverContent>

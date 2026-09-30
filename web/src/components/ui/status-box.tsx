@@ -51,7 +51,7 @@ export const StatusBox = React.forwardRef<HTMLButtonElement, StatusBoxProps>(
           aria-hidden
           data-state={state}
           className={cn(
-            'flex size-[19px] items-center justify-center rounded-[6px] transition-[background-color,box-shadow] duration-150',
+            'flex size-[19px] items-center justify-center rounded-[6px] transition-[background-color,box-shadow] duration-[120ms]',
             'group-focus-visible/status:outline-2 group-focus-visible/status:outline-offset-2 group-focus-visible/status:outline-a-accent',
             state === 'todo' && [
               'shadow-[inset_0_0_0_1.5px_color-mix(in_srgb,var(--a-ink)_28%,transparent)]',
@@ -62,7 +62,7 @@ export const StatusBox = React.forwardRef<HTMLButtonElement, StatusBoxProps>(
           )}
         >
           {state === 'in-progress' && <span className="size-[9px] rounded-[3px] bg-a-accent" />}
-          {state === 'done' && <Check className="size-3 text-a-bg" strokeWidth={3.4} />}
+          {state === 'done' && <Check className="size-3 text-a-surface" strokeWidth={1.75} />}
         </span>
       </button>
     );

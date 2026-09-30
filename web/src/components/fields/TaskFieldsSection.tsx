@@ -17,7 +17,7 @@ export function TaskFieldsSection({ fields, values, online, loading, onSetValue,
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
-        <Label className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+        <Label className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
           <SlidersHorizontal className="size-3" />
           Fields
         </Label>
@@ -38,7 +38,7 @@ export function TaskFieldsSection({ fields, values, online, loading, onSetValue,
         <button
           type="button"
           onClick={onManage}
-          className="w-full rounded-xl bg-muted/30 px-3.5 py-3 text-left transition-colors duration-150 hover:bg-muted/50"
+          className="w-full rounded-xl bg-muted/30 px-3.5 py-3 text-left transition-colors duration-[120ms] hover:bg-muted/50"
         >
           <p className="text-xs font-medium text-foreground">Add your own fields</p>
           <p className="mt-0.5 text-[11px] leading-relaxed text-muted-foreground">
@@ -53,7 +53,7 @@ export function TaskFieldsSection({ fields, values, online, loading, onSetValue,
               <FieldValueEditor field={field} value={values?.[field.id]} onChange={(v) => onSetValue(field.id, v)} />
             </div>
           ))}
-          <p className="text-[10.5px] text-muted-foreground/70">Field values save as you change them.</p>
+          <p className="text-[11px] text-muted-foreground/70">Field values save as you change them.</p>
         </div>
       )}
     </div>

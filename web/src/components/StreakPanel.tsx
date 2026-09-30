@@ -118,7 +118,7 @@ export function StreakPanel({ todos, listName }: StreakPanelProps) {
 
   if (totalDone === 0) {
     return (
-      <div className="rounded-2xl border border-border bg-card p-5 animate-fade-in">
+      <div className="rounded-[8px] border border-border bg-card p-5 animate-fade-in">
         <div className="flex items-center gap-2 mb-4">
           <TrendingUp className="size-4 text-primary" />
           <span className="text-sm font-semibold text-foreground">Progress</span>
@@ -137,7 +137,7 @@ export function StreakPanel({ todos, listName }: StreakPanelProps) {
   }
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-5 space-y-5 animate-fade-in">
+    <div className="rounded-[8px] border border-border bg-card p-5 space-y-5 animate-fade-in">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -166,7 +166,7 @@ export function StreakPanel({ todos, listName }: StreakPanelProps) {
               {currentStreak}
             </span>
           </div>
-          <span className="text-[10px] text-muted-foreground text-center leading-tight">
+          <span className="text-[11px] text-muted-foreground text-center leading-tight">
             Day streak
           </span>
         </div>
@@ -176,7 +176,7 @@ export function StreakPanel({ todos, listName }: StreakPanelProps) {
             <Trophy className="size-3.5 text-amber-500" />
             <span className="text-xl font-bold tabular-nums text-foreground">{longestStreak}</span>
           </div>
-          <span className="text-[10px] text-muted-foreground text-center leading-tight">
+          <span className="text-[11px] text-muted-foreground text-center leading-tight">
             Best streak
           </span>
         </div>
@@ -186,7 +186,7 @@ export function StreakPanel({ todos, listName }: StreakPanelProps) {
             <CheckCircle2 className="size-3.5 text-primary" />
             <span className="text-xl font-bold tabular-nums text-foreground">{totalDone}</span>
           </div>
-          <span className="text-[10px] text-muted-foreground text-center leading-tight">
+          <span className="text-[11px] text-muted-foreground text-center leading-tight">
             Total done
           </span>
         </div>
@@ -194,7 +194,7 @@ export function StreakPanel({ todos, listName }: StreakPanelProps) {
 
       {/* 14-day activity chart */}
       <div>
-        <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-2">
+        <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">
           Last 14 days
         </p>
         <div className="flex items-end gap-1 h-10">
@@ -209,7 +209,7 @@ export function StreakPanel({ todos, listName }: StreakPanelProps) {
               >
                 <div
                   className={cn(
-                    'w-full rounded-sm transition-all duration-300',
+                    'w-full rounded-sm transition-all duration-[260ms]',
                     day.count === 0
                       ? 'bg-muted/60 h-1'
                       : isToday
@@ -225,7 +225,7 @@ export function StreakPanel({ todos, listName }: StreakPanelProps) {
             );
           })}
         </div>
-        <div className="flex justify-between mt-4 text-[9px] text-muted-foreground/60">
+        <div className="flex justify-between mt-4 text-[11px] text-muted-foreground/60">
           <span>14d ago</span>
           <span>Today</span>
         </div>
@@ -234,7 +234,7 @@ export function StreakPanel({ todos, listName }: StreakPanelProps) {
       {/* Recent completions timeline */}
       {recentCompletions.length > 0 && (
         <div>
-          <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide mb-2.5">
+          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2.5">
             Recent completions
           </p>
           <div className="space-y-2">
@@ -262,14 +262,14 @@ export function StreakPanel({ todos, listName }: StreakPanelProps) {
                       {catConfig && (
                         <span
                           className={cn(
-                            'inline-flex items-center rounded-full px-1.5 py-0 text-[9px] font-medium',
+                            'inline-flex items-center rounded-[3px] px-1.5 py-0 text-[11px] font-medium',
                             catConfig.color
                           )}
                         >
                           {catConfig.label}
                         </span>
                       )}
-                      <span className="text-[10px] text-muted-foreground/70">
+                      <span className="text-[11px] text-muted-foreground/70">
                         {getDayLabel(getLocalDateStr(todo.completedAt!))} · {formatTime(todo.completedAt!)}
                       </span>
                     </div>

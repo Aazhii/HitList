@@ -39,7 +39,7 @@ const TRIGGER_ICONS: Record<TriggerType, React.ElementType> = {
 // The organic palette's inks, rather than the Tailwind emerald / amber / rose
 // the old cards used. Each ink clears 4.5:1 on its own tint.
 
-const CHIP = 'inline-flex items-center gap-1 rounded-full px-2.5 py-[3px] text-[12px] leading-none whitespace-nowrap';
+const CHIP = 'inline-flex items-center gap-1 rounded-[3px] px-2.5 py-[3px] text-[12px] leading-none whitespace-nowrap';
 
 const STATUS_CHIP: Record<AutomationStatus, string> = {
   active: 'bg-a-sage-tint text-a-sage-ink font-semibold',
@@ -169,10 +169,10 @@ export function AutomationFilters({
                   )}
                   aria-hidden
                 />
-                <span className={cn('min-w-0 flex-1 truncate text-[14.5px]', active ? 'font-semibold text-a-ink' : 'text-a-muted')}>
+                <span className={cn('min-w-0 flex-1 truncate text-[14px]', active ? 'font-semibold text-a-ink' : 'text-a-muted')}>
                   {opt.label}
                 </span>
-                <span className={cn('text-[12.5px] tabular-nums', active ? 'font-bold text-a-accent-700' : 'text-a-faint')}>
+                <span className={cn('text-[12px] tabular-nums', active ? 'font-bold text-a-accent-700' : 'text-a-faint')}>
                   {counts[opt.id]}
                 </span>
               </button>
@@ -189,14 +189,14 @@ export function AutomationFilters({
 function EmptyAutomations({ onNew }: { onNew: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center px-6 py-20 text-center animate-fade-in">
-      <div className="mb-5 flex size-16 items-center justify-center rounded-[20px] bg-a-accent-tint">
-        <Zap className="size-7 text-a-accent-700" strokeWidth={2.25} />
+      <div className="mb-5 flex size-16 items-center justify-center rounded-[12px] bg-a-accent-tint">
+        <Zap className="size-7 text-a-accent-700" strokeWidth={1.75} />
       </div>
-      <h3 className="mb-2 font-display text-[22px] text-a-ink">No automation rules yet</h3>
-      <p className="mb-6 max-w-xs text-[14.5px] leading-relaxed text-a-muted">
+      <h3 className="mb-2 font-display text-[20px] text-a-ink">No automation rules yet</h3>
+      <p className="mb-6 max-w-xs text-[14px] leading-relaxed text-a-muted">
         Create rules to automatically remind you about tasks, send daily digests, or escalate overdue items.
       </p>
-      <Button onClick={onNew} className="gap-2 rounded-full px-5">
+      <Button onClick={onNew} className="gap-2 rounded-[6px] px-5">
         <Zap className="size-3.5" />
         Create your first rule
       </Button>
@@ -215,13 +215,13 @@ interface RuleCardProps {
 }
 
 const ROW_ACTION = cn(
-  'flex size-7 items-center justify-center rounded-[9px] text-a-faint transition-[opacity,background-color,color] duration-150',
+  'flex size-7 items-center justify-center rounded-[8px] text-a-faint transition-[opacity,background-color,color] duration-[120ms]',
   'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
   'hover:bg-[color-mix(in_srgb,var(--a-ink)_9%,transparent)] hover:text-a-ink',
 );
 
 const FOOT_BUTTON =
-  'flex items-center gap-1.5 rounded-full px-3 py-1 text-[13px] font-medium transition-colors duration-150';
+  'flex items-center gap-1.5 rounded-[6px] px-3 py-1 text-[13px] font-medium transition-colors duration-[120ms]';
 
 const RuleCard = memo(function RuleCard({
   rule,
@@ -237,7 +237,7 @@ const RuleCard = memo(function RuleCard({
   return (
     <article
       className={cn(
-        'group relative rounded-[16px] bg-a-bg px-4 pt-3.5 pb-2.5 transition-[box-shadow,opacity] duration-200',
+        'group relative rounded-[12px] bg-a-bg px-4 pt-3.5 pb-2.5 transition-[box-shadow,opacity] duration-[180ms]',
         'shadow-[inset_0_0_0_1px_var(--a-line)] hover:shadow-[inset_0_0_0_1px_var(--a-line),var(--a-shadow-sm)]',
         !isActive && 'opacity-85 hover:opacity-100',
       )}
@@ -245,38 +245,38 @@ const RuleCard = memo(function RuleCard({
       <div className="flex items-start gap-3.5">
         <div
           className={cn(
-            'flex size-9 flex-shrink-0 items-center justify-center rounded-[12px] transition-colors duration-200',
+            'flex size-9 flex-shrink-0 items-center justify-center rounded-[12px] transition-colors duration-[180ms]',
             isActive ? 'bg-a-accent-tint text-a-accent-700' : 'bg-a-surface text-a-faint',
           )}
           aria-hidden
         >
-          <TriggerIcon className="size-4" strokeWidth={2.5} />
+          <TriggerIcon className="size-4" strokeWidth={1.75} />
         </div>
 
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="truncate text-[15.5px] font-semibold leading-tight text-a-ink">{rule.name}</h3>
+            <h3 className="truncate text-[14px] font-semibold leading-tight text-a-ink">{rule.name}</h3>
             <span className={cn(CHIP, STATUS_CHIP[rule.status], 'capitalize')}>{rule.status}</span>
             <span className={cn(CHIP, URGENCY_CHIP[rule.urgency])}>{URGENCY_LABELS[rule.urgency]}</span>
           </div>
 
           {rule.description && (
-            <p className="mt-1 line-clamp-2 text-[13.5px] leading-relaxed text-a-muted">{rule.description}</p>
+            <p className="mt-1 line-clamp-2 text-[14px] leading-relaxed text-a-muted">{rule.description}</p>
           )}
 
-          <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12.5px] text-a-faint">
+          <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-a-faint">
             <span className="flex items-center gap-1.5">
-              <Calendar className="size-3.5 flex-shrink-0" strokeWidth={2.5} aria-hidden />
+              <Calendar className="size-3.5 flex-shrink-0" strokeWidth={1.75} aria-hidden />
               {formatOffset(rule)}
             </span>
             {rule.taskTitle && (
               <span className="flex min-w-0 items-center gap-1.5">
-                <ExternalLink className="size-3.5 flex-shrink-0" strokeWidth={2.5} aria-hidden />
+                <ExternalLink className="size-3.5 flex-shrink-0" strokeWidth={1.75} aria-hidden />
                 <span className="max-w-[200px] truncate" title={rule.taskTitle}>{rule.taskTitle}</span>
               </span>
             )}
             <span className="flex items-center gap-1.5">
-              <Bell className="size-3.5 flex-shrink-0" strokeWidth={2.5} aria-hidden />
+              <Bell className="size-3.5 flex-shrink-0" strokeWidth={1.75} aria-hidden />
               {[rule.notifyInApp && 'In-app', rule.notifyBrowser && 'Browser'].filter(Boolean).join(' · ') || 'No notifications'}
             </span>
           </div>
@@ -296,16 +296,16 @@ const RuleCard = memo(function RuleCard({
 
         <div className="flex flex-shrink-0 items-center gap-0.5">
           <button type="button" onClick={() => onEdit(rule)} aria-label="Edit rule" className={ROW_ACTION}>
-            <Pencil className="size-3.5" strokeWidth={2.5} />
+            <Pencil className="size-3.5" strokeWidth={1.75} />
           </button>
           <button type="button" onClick={() => onDelete(rule.id)} aria-label="Delete rule" className={cn(ROW_ACTION, 'hover:text-q-do')}>
-            <Trash2 className="size-3.5" strokeWidth={2.5} />
+            <Trash2 className="size-3.5" strokeWidth={1.75} />
           </button>
         </div>
       </div>
 
       <div className="mt-3 flex items-center justify-between border-t border-a-line-soft pt-2">
-        <span className="text-[12.5px] text-a-faint">
+        <span className="text-[12px] text-a-faint">
           {isActive ? 'Rule is active' : isPaused ? 'Rule is paused' : 'Draft — not active'}
         </span>
         <div className="flex items-center gap-1">
@@ -316,7 +316,7 @@ const RuleCard = memo(function RuleCard({
               aria-label="Run rule now"
               className={cn(FOOT_BUTTON, 'text-a-accent-700 hover:bg-a-accent-tint')}
             >
-              <Play className="size-3.5" strokeWidth={2.5} /> Run now
+              <Play className="size-3.5" strokeWidth={1.75} /> Run now
             </button>
           )}
           <button
@@ -329,8 +329,8 @@ const RuleCard = memo(function RuleCard({
             )}
           >
             {isActive
-              ? <><Pause className="size-3.5" strokeWidth={2.5} /> Pause</>
-              : <><Play className="size-3.5" strokeWidth={2.5} /> Activate</>}
+              ? <><Pause className="size-3.5" strokeWidth={1.75} /> Pause</>
+              : <><Play className="size-3.5" strokeWidth={1.75} /> Activate</>}
           </button>
         </div>
       </div>
@@ -370,7 +370,7 @@ export function AutomationList({
     return (
       <div className="flex items-center justify-center gap-2 py-10 text-a-faint">
         <Loader2 className="size-4 animate-spin" aria-hidden />
-        <span className="text-[13.5px]">Loading…</span>
+        <span className="text-[14px]">Loading…</span>
       </div>
     );
   }
@@ -383,8 +383,8 @@ export function AutomationList({
   if (filtered.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-12 text-center animate-fade-in">
-        <p className="text-[14.5px] text-a-muted">No {filter} rules.</p>
-        <Button variant="ghost" size="sm" onClick={onNew} className="mt-3 gap-1.5 rounded-full text-xs">
+        <p className="text-[14px] text-a-muted">No {filter} rules.</p>
+        <Button variant="ghost" size="sm" onClick={onNew} className="mt-3 gap-1.5 rounded-[6px] text-xs">
           <Zap className="size-3" />
           Create a rule
         </Button>

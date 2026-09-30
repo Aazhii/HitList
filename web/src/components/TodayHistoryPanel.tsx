@@ -176,7 +176,7 @@ function TaskRow({ todo, index, onUndo }: {
     <div
       className={cn(
         'group relative rounded-xl border border-border bg-background p-4',
-        'hover:border-border/80 hover:shadow-sm transition-all duration-200',
+        'hover:border-border/80 hover:shadow-sm transition-all duration-[180ms]',
         'animate-fade-in',
       )}
       style={{ animationDelay: `${index * 40}ms`, animationFillMode: 'both' }}
@@ -199,7 +199,7 @@ function TaskRow({ todo, index, onUndo }: {
             {/* Quadrant badge */}
             <span
               className={cn(
-                'inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium',
+                'inline-flex items-center gap-1 rounded-[3px] px-2 py-0.5 text-[11px] font-medium',
                 qConfig.badgeClass,
               )}
             >
@@ -211,7 +211,7 @@ function TaskRow({ todo, index, onUndo }: {
             {catConfig && (
               <span
                 className={cn(
-                  'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium',
+                  'inline-flex items-center rounded-[3px] px-2 py-0.5 text-[11px] font-medium',
                   catConfig.color,
                 )}
               >
@@ -255,7 +255,7 @@ function TaskRow({ todo, index, onUndo }: {
 function EmptyState() {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center space-y-4">
-      <div className="flex size-16 items-center justify-center rounded-2xl bg-muted/50">
+      <div className="flex size-16 items-center justify-center rounded-[8px] bg-muted/50">
         <CheckCircle2 className="size-7 text-muted-foreground/40" />
       </div>
       <div className="space-y-1.5">

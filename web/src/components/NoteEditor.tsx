@@ -88,8 +88,8 @@ const ROW_SPACING: Partial<Record<BlockType, string>> = {
 function getContentWrapperClass(block: NoteBlock): string {
   switch (block.type) {
     case 'quote':   return 'border-l-[3px] border-a-accent pl-5';
-    case 'code':    return 'rounded-[16px] bg-a-surface-2 px-5 py-4';
-    case 'callout': return cn('rounded-[18px] px-5 py-4', block.tone === 'sage' ? 'bg-a-sage-tint' : 'bg-a-accent-tint');
+    case 'code':    return 'rounded-[12px] bg-a-surface-2 px-5 py-4';
+    case 'callout': return cn('rounded-[12px] px-5 py-4', block.tone === 'sage' ? 'bg-a-sage-tint' : 'bg-a-accent-tint');
     default:        return '';
   }
 }
@@ -148,7 +148,7 @@ function InlineToolbar({ marks, active, onToggle }: {
           // mousedown, prevented: the textarea must keep focus and its selection.
           onMouseDown={(e) => { e.preventDefault(); onToggle(mark); }}
           className={cn(
-            'flex size-7 items-center justify-center rounded-[8px] transition-colors duration-150',
+            'flex size-7 items-center justify-center rounded-[8px] transition-colors duration-[120ms]',
             active.has(mark)
               ? 'bg-a-accent-tint text-a-accent-700'
               : 'text-a-muted hover:bg-a-row-hover hover:text-a-ink',
@@ -193,7 +193,7 @@ interface BlockControlsProps {
 }
 
 const GUTTER_BUTTON = cn(
-  'flex size-[22px] items-center justify-center rounded-[7px] text-a-faint transition-colors duration-150',
+  'flex size-[22px] items-center justify-center rounded-[6px] text-a-faint transition-colors duration-[120ms]',
   'hover:bg-[color-mix(in_srgb,var(--a-ink)_9%,transparent)] hover:text-a-ink',
   'data-[state=open]:bg-[color-mix(in_srgb,var(--a-ink)_9%,transparent)] data-[state=open]:text-a-ink',
 );
@@ -318,7 +318,7 @@ function BlockRow({
   const gutter = (
     <div
       className={cn(
-        'absolute right-full z-10 hidden gap-[2px] pr-1.5 select-none transition-opacity duration-150 md:flex',
+        'absolute right-full z-10 hidden gap-[2px] pr-1.5 select-none transition-opacity duration-[120ms] md:flex',
         // Also kept visible while a control has keyboard focus or its menu is open.
         showControls ? 'opacity-100' : 'opacity-0 focus-within:opacity-100 has-[[data-state=open]]:opacity-100',
       )}
@@ -392,7 +392,7 @@ function BlockRow({
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="flex size-[22px] items-center justify-center rounded-[6px] text-[18px] leading-none transition-transform duration-150 hover:scale-110"
+                className="flex size-[22px] items-center justify-center rounded-[6px] text-[18px] leading-none transition-transform duration-[120ms] hover:scale-110"
                 aria-label="Change callout emoji and colour"
               >
                 {block.emoji ?? '💡'}
@@ -407,7 +407,7 @@ function BlockRow({
                     onClick={() => onUpdateMeta(block.id, { emoji: em })}
                     aria-label={`Use ${em}`}
                     className={cn(
-                      'rounded-[8px] p-1.5 text-center text-lg transition-colors duration-100 hover:bg-accent',
+                      'rounded-[8px] p-1.5 text-center text-lg transition-colors duration-[120ms] hover:bg-accent',
                       (block.emoji ?? '💡') === em && 'bg-accent',
                     )}
                   >
@@ -438,7 +438,7 @@ function BlockRow({
         {block.type === 'numbered' && (
           <span
             aria-hidden
-            className={cn(MARKER_BOX_CLASS, 'text-[16.5px] leading-[1.68] tabular-nums text-a-muted')}
+            className={cn(MARKER_BOX_CLASS, 'text-[16px] leading-[1.68] tabular-nums text-a-muted')}
           >
             {ordinal ?? 1}.
           </span>
@@ -1027,7 +1027,7 @@ export function NoteEditor({
             }
           }
         }}
-        className="mt-2 w-full cursor-text py-6 text-left text-[13.5px] text-a-faint/60 transition-colors duration-200 hover:text-a-faint"
+        className="mt-2 w-full cursor-text py-6 text-left text-[14px] text-a-faint/60 transition-colors duration-[180ms] hover:text-a-faint"
         aria-label="Add new block"
       >
         Click to add more…

@@ -169,8 +169,8 @@ function FieldGroup({
           className={cn('size-[9px] flex-shrink-0 rounded-full', group.color ? OPTION_DOT_CLASS[group.color] : 'shadow-[inset_0_0_0_1.5px_var(--a-line)]')}
           aria-hidden
         />
-        <h2 id={headingId} className="font-display text-[17px] leading-tight text-a-ink">{group.label}</h2>
-        <span className="text-[12.5px] font-bold tabular-nums text-a-muted">
+        <h2 id={headingId} className="font-display text-[16px] leading-tight text-a-ink">{group.label}</h2>
+        <span className="text-[12px] font-bold tabular-nums text-a-muted">
           {openCount}
           <span className="sr-only"> open</span>
         </span>
@@ -197,7 +197,7 @@ function FieldGroup({
         ))}
       </SortableContext>
       {group.tasks.length === 0 && (
-        <p className="px-3 py-2 text-[13.5px] text-a-faint">No tasks</p>
+        <p className="px-3 py-2 text-[14px] text-a-faint">No tasks</p>
       )}
     </section>
   );
@@ -231,9 +231,9 @@ function QuadrantGroup({
     <section aria-labelledby={headingId}>
       <header className="mb-1.5 flex items-center gap-2.5 px-1">
         <span className={cn('size-[9px] flex-shrink-0 rounded-full', q.dotClass)} aria-hidden />
-        <h2 id={headingId} className={cn('font-display text-[17px] leading-tight', q.inkClass)}>{q.label}</h2>
-        <span className="hidden text-[12.5px] text-a-faint sm:inline">{q.subtitle}</span>
-        <span className={cn('text-[12.5px] font-bold tabular-nums', q.inkClass)}>
+        <h2 id={headingId} className={cn('font-display text-[16px] leading-tight', q.inkClass)}>{q.label}</h2>
+        <span className="hidden text-[12px] text-a-faint sm:inline">{q.subtitle}</span>
+        <span className={cn('text-[12px] font-bold tabular-nums', q.inkClass)}>
           {openCount}
           <span className="sr-only"> open</span>
         </span>
@@ -242,7 +242,7 @@ function QuadrantGroup({
 
       <div
         ref={setNodeRef}
-        className={cn('rounded-[16px] transition-colors duration-150', isOver && 'bg-a-row-hover')}
+        className={cn('rounded-[12px] transition-colors duration-[120ms]', isOver && 'bg-a-row-hover')}
       >
         <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
           {tasks.map((todo, i) => (
@@ -268,10 +268,10 @@ function QuadrantGroup({
           type="button"
           onClick={() => onAddToQuadrant(q.id)}
           aria-label={`Add task to ${q.label}`}
-          className="flex w-full items-center gap-[11px] rounded-[14px] px-3 py-2 text-left text-[13.5px] text-a-faint transition-colors duration-150 hover:bg-a-row-hover hover:text-a-ink"
+          className="flex w-full items-center gap-[11px] rounded-[8px] px-3 py-2 text-left text-[14px] text-a-faint transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
         >
           <span className="flex size-5 flex-shrink-0 items-center justify-center" aria-hidden>
-            <Plus className="size-3.5" strokeWidth={2.75} />
+            <Plus className="size-3.5" strokeWidth={1.75} />
           </span>
           {tasks.length === 0 ? 'Nothing here yet — add a task' : 'Add task'}
         </button>

@@ -102,7 +102,7 @@ export function ReminderStepList({ steps, onChange, error }: ReminderStepListPro
                 type="button"
                 onClick={() => remove(i)}
                 aria-label={`Remove step ${i + 1}`}
-                className="flex size-8 flex-shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground"
+                className="flex size-8 flex-shrink-0 items-center justify-center rounded-lg text-muted-foreground transition-colors duration-[120ms] hover:bg-muted hover:text-foreground"
               >
                 <X className="size-3.5" />
               </button>
@@ -122,7 +122,7 @@ export function ReminderStepList({ steps, onChange, error }: ReminderStepListPro
               disabled={used || full}
               onClick={() => add(preset.minutes)}
               className={cn(
-                'flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-[11px] transition-colors duration-150',
+                'flex items-center gap-1 rounded-lg border border-border px-2 py-1 text-[11px] transition-colors duration-[120ms]',
                 used || full
                   ? 'cursor-default text-muted-foreground/40'
                   : 'text-muted-foreground hover:border-border/80 hover:text-foreground',

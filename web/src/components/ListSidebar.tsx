@@ -108,7 +108,7 @@ export function ListSidebar({
             aria-label="New list"
             title="New list"
           >
-            <Plus className="size-3.5" strokeWidth={2.75} />
+            <Plus className="size-3.5" strokeWidth={1.75} />
           </button>
         }
       />
@@ -119,7 +119,7 @@ export function ListSidebar({
           {[0, 1, 2].map((i) => (
             <div key={i} className="flex h-9 items-center gap-2.5 px-3">
               <div className="size-2 rounded-full bg-a-line" />
-              <div className="h-3 rounded-full bg-a-line" style={{ width: `${55 + i * 15}%` }} />
+              <div className="h-3 rounded-[4px] bg-a-line" style={{ width: `${55 + i * 15}%` }} />
             </div>
           ))}
         </div>
@@ -127,7 +127,7 @@ export function ListSidebar({
 
       {!loading && lists.length === 0 && (
         <div className="flex flex-col items-center px-4 py-8 text-center">
-          <ListTodo className="mb-2 size-6 text-a-faint/60" strokeWidth={2.25} />
+          <ListTodo className="mb-2 size-6 text-a-faint/60" strokeWidth={1.75} />
           <p className="text-[13px] leading-relaxed text-a-faint">No lists yet. Create one with +.</p>
         </div>
       )}
@@ -152,7 +152,7 @@ export function ListSidebar({
                     if (e.key === 'Enter') handleRenameCommit();
                     if (e.key === 'Escape') setRenamingId(null);
                   }}
-                  className="min-w-0 flex-1 border-b border-a-accent bg-transparent text-[14.5px] font-semibold text-a-ink outline-none"
+                  className="min-w-0 flex-1 border-b border-a-accent bg-transparent text-[14px] font-semibold text-a-ink outline-none"
                   aria-label="Rename list"
                 />
               </li>
@@ -169,7 +169,7 @@ export function ListSidebar({
               >
                 <span className={cn('size-2 flex-shrink-0 rounded-full', dotClass)} aria-hidden />
                 <span className={cn(
-                  'min-w-0 flex-1 truncate text-[14.5px]',
+                  'min-w-0 flex-1 truncate text-[14px]',
                   isActive ? 'font-semibold text-a-ink' : 'text-a-muted',
                 )}>
                   {list.name}
@@ -177,7 +177,7 @@ export function ListSidebar({
                 {counts.active > 0 && (
                   <span
                     className={cn(
-                      'text-[12.5px] tabular-nums transition-opacity duration-150',
+                      'text-[12px] tabular-nums transition-opacity duration-[120ms]',
                       'group-hover:opacity-0 group-focus-within:opacity-0',
                       isActive ? 'font-bold text-a-accent-700' : 'text-a-faint',
                     )}
@@ -189,14 +189,14 @@ export function ListSidebar({
               </button>
 
               {/* Siblings of the row button, not children: no nested interactive elements. */}
-              <div className="absolute top-1/2 right-2 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+              <div className="absolute top-1/2 right-2 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity duration-[120ms] group-hover:opacity-100 group-focus-within:opacity-100">
                 <button
                   type="button"
                   onClick={() => handleRenameStart(list)}
                   aria-label={`Rename ${list.name}`}
                   className={contextIconButton}
                 >
-                  <Pencil className="size-3" strokeWidth={2.75} />
+                  <Pencil className="size-3" strokeWidth={1.75} />
                 </button>
                 {lists.length > 1 && (
                   <button
@@ -205,7 +205,7 @@ export function ListSidebar({
                     aria-label={`Delete ${list.name}`}
                     className={cn(contextIconButton, 'hover:text-q-do')}
                   >
-                    <Trash2 className="size-3" strokeWidth={2.75} />
+                    <Trash2 className="size-3" strokeWidth={1.75} />
                   </button>
                 )}
               </div>
@@ -215,7 +215,7 @@ export function ListSidebar({
       </ul>
 
       {creatingNew && (
-        <div className="mx-1 mt-2 space-y-2.5 rounded-[14px] bg-a-bg p-3 shadow-[inset_0_0_0_1px_var(--a-line)] animate-fade-in">
+        <div className="mx-1 mt-2 space-y-2.5 rounded-[8px] bg-a-bg p-3 shadow-[inset_0_0_0_1px_var(--a-line)] animate-fade-in">
           <Input
             ref={newInputRef}
             value={newName}
@@ -225,7 +225,7 @@ export function ListSidebar({
               if (e.key === 'Escape') setCreatingNew(false);
             }}
             placeholder="List name…"
-            className="h-8 rounded-full text-[14px]"
+            className="h-8 rounded-[4px] text-[14px]"
             aria-label="New list name"
           />
           <div className="flex flex-wrap items-center gap-1.5" role="radiogroup" aria-label="List colour">
@@ -238,7 +238,7 @@ export function ListSidebar({
                 onClick={() => setNewColor(c.id)}
                 aria-label={c.label}
                 className={cn(
-                  'size-5 rounded-full transition-all duration-150',
+                  'size-5 rounded-[4px] transition-all duration-[120ms]',
                   c.dot,
                   newColor === c.id
                     ? 'scale-110 ring-2 ring-a-ink/40 ring-offset-2 ring-offset-a-bg'
@@ -248,14 +248,14 @@ export function ListSidebar({
             ))}
           </div>
           <div className="flex gap-1.5">
-            <Button size="sm" onClick={handleCreate} disabled={!newName.trim()} className="h-7 flex-1 rounded-full text-xs">
+            <Button size="sm" onClick={handleCreate} disabled={!newName.trim()} className="h-7 flex-1 rounded-[6px] text-xs">
               <Check className="mr-1 size-3" /> Create
             </Button>
             <Button
               size="sm"
               variant="ghost"
               onClick={() => { setCreatingNew(false); setNewName(''); }}
-              className="h-7 rounded-full text-xs"
+              className="h-7 rounded-[6px] text-xs"
             >
               Cancel
             </Button>
@@ -275,7 +275,7 @@ export function ListSidebar({
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={handleDeleteConfirm}
-              className="bg-destructive text-a-bg hover:bg-destructive/90"
+              className="bg-destructive text-a-surface hover:bg-destructive/90"
             >
               Delete list
             </AlertDialogAction>

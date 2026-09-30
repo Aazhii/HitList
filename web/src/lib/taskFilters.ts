@@ -261,7 +261,7 @@ export function matchesFieldFilters(
 }
 
 /** A saved view's field filters, narrowed to fields that still exist on this database/task. */
-function knownFieldFilters(fields: Record<string, string[]> | undefined, defs: FieldDef[]): Array<[string, string[]]> {
+export function knownFieldFilters(fields: Record<string, string[]> | undefined, defs: FieldDef[]): Array<[string, string[]]> {
   const known = new Set(defs.map((d) => d.id));
   return Object.entries(fields ?? {}).filter(([id, choices]) => known.has(id) && choices.length > 0);
 }

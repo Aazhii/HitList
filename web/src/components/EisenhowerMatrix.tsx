@@ -1,11 +1,15 @@
-import { useMemo } from 'react';
-import { Plus } from 'lucide-react';
+import { useMemo, type MouseEvent } from 'react';
+import { Circle, CircleCheck, Loader, Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { MatrixTaskCard } from '@/components/MatrixTaskCard';
-import { QUADRANTS } from '@/types/todo';
+import { getCategoryConfig, QUADRANTS } from '@/types/todo';
 import type { Todo, TodoStatus, Quadrant } from '@/types/todo';
 import { bucketByQuadrant, type TaskCompare } from '@/lib/quadrantBuckets';
-import type { FieldDef, TaskFieldValues } from '@/types/fields';
+import { DUE_TONE_CLASS, dueTone, getDueInfo } from '@/lib/dueInfo';
+import { NEXT_STATUS } from '@/lib/taskStatus';
+import { FieldChips } from '@/components/fields/FieldChips';
+import type { FieldDef, FieldValue, TaskFieldValues } from '@/types/fields';
+
+const FIELD_CHIP = 'inline-flex items-center gap-1 rounded-[6px] px-2 py-[3px] text-[12px] leading-none whitespace-nowrap';
 
 interface EisenhowerMatrixProps {
   todos: Todo[];
@@ -26,11 +30,10 @@ interface EisenhowerMatrixProps {
 }
 
 /**
- * The Eisenhower matrix: four quadrant panels, each filled with its own tint.
- *
- * Every panel ends in an "Add here" row, which replaces the small "+" that used
- * to sit in each header. The urgent / important micro-badges are gone — the
- * subtitle says the same thing in words.
+ * The Eisenhower matrix: four quadrant panels — a white card with a tinted
+ * header bar, flat rows below (not cards on a tint), matching the reference's
+ * `showMatrix` block exactly (`background:#fff` panel, `background:{{q.bg}}`
+ * header only).
  */
 export function EisenhowerMatrix({
   todos,
@@ -40,8 +43,6 @@ export function EisenhowerMatrix({
   onAddToQuadrant,
   nextId,
   showDone,
-  onToggleReminder,
-  notificationPermission,
   onOpenNote,
   compare,
   fieldDefs,
@@ -53,71 +54,214 @@ export function EisenhowerMatrix({
   );
 
   return (
-    <div className="mx-auto grid max-w-6xl grid-cols-1 gap-4 md:grid-cols-2 animate-fade-in">
+    <div className="mx-auto grid max-w-[1200px] grid-cols-1 gap-4 md:grid-cols-2 animate-fade-in">
       {QUADRANTS.map((q) => {
+        const all = todos.filter((t) => t.quadrant === q.id);
         const quadrantTodos = todosByQuadrant.get(q.id) ?? [];
-        const taskCount = quadrantTodos.length;
+        const doneCount = all.length - all.filter((t) => t.status !== 'done').length;
+        const doneNote = doneCount && !showDone ? `${doneCount} completed · hidden` : '';
         const headingId = `matrix-quadrant-${q.id}`;
 
         return (
           <section
             key={q.id}
             aria-labelledby={headingId}
-            className={cn('flex flex-col gap-[9px] overflow-hidden rounded-[24px] px-5 py-[18px]', q.tintClass)}
+            className="flex min-h-[240px] flex-col overflow-hidden rounded-[8px] border border-a-line bg-a-surface shadow-[var(--a-shadow-sm)]"
           >
-            <header className="flex items-center gap-2">
-              <span className="text-[15px] leading-none" aria-hidden>{q.emptyIcon}</span>
-              <h2 id={headingId} className={cn('font-display text-[19px] leading-tight', q.inkClass)}>
+            <header className={cn('flex items-center gap-2 border-b border-a-line-soft px-4 py-2.5', q.tintClass)}>
+              <span className={cn('size-2 flex-shrink-0 rounded-full', q.dotClass)} aria-hidden />
+              <h2 id={headingId} className={cn('text-[14px] font-bold leading-none', q.inkClass)}>
                 {q.label}
               </h2>
-              <span className={cn('hidden truncate text-[12px] opacity-75 sm:inline', q.inkClass)}>
+              <span className={cn('hidden truncate text-[12px] leading-none opacity-80 sm:inline', q.inkClass)}>
                 {q.subtitle}
               </span>
-              <span className={cn('ml-auto text-[13px] font-bold tabular-nums', q.inkClass)}>
-                {taskCount}
+              <span className="flex-1" />
+              <span className={cn('font-mono text-[11px] leading-none', q.inkClass)}>
+                {all.length - doneCount}
                 <span className="sr-only"> tasks</span>
               </span>
+              <button
+                type="button"
+                onClick={() => onAddToQuadrant(q.id)}
+                aria-label={`Add task to ${q.label}`}
+                className={cn(
+                  'flex size-7 flex-shrink-0 items-center justify-center rounded-[6px] transition-colors duration-[120ms]',
+                  'hover:bg-[color-mix(in_srgb,var(--a-ink)_9%,transparent)]',
+                  q.inkClass,
+                )}
+              >
+                <Plus className="size-3.5" strokeWidth={1.75} aria-hidden />
+              </button>
             </header>
 
-            {quadrantTodos.length === 0 ? (
-              // The quadrant's name is deliberately not repeated here: the header
-              // above already says it.
-              <p className={cn('px-1 py-2 text-[13.5px] opacity-70', q.inkClass)}>Nothing here yet</p>
-            ) : (
-              quadrantTodos.map((todo, i) => (
-                <MatrixTaskCard
-                  key={todo.id}
-                  todo={todo}
-                  isNext={todo.id === nextId}
-                  onStatusChange={onStatusChange}
-                  onDelete={onDelete}
-                  onOpen={onOpen}
-                  onToggleReminder={onToggleReminder}
-                  notificationPermission={notificationPermission}
-                  onOpenNote={onOpenNote}
-                  fieldDefs={fieldDefs}
-                  fieldValues={fieldValues?.[todo.id]}
-                  index={i}
-                />
-              ))
-            )}
-
-            <button
-              type="button"
-              onClick={() => onAddToQuadrant(q.id)}
-              aria-label={`Add task to ${q.label}`}
-              className={cn(
-                'flex items-center gap-[9px] rounded-[14px] px-3.5 py-2 text-left text-[13.5px] transition-colors duration-150 hover:bg-a-bg/60',
-                q.inkClass,
-                q.ringClass,
+            <div className="flex flex-1 flex-col">
+              {quadrantTodos.length === 0 ? (
+                <div className="mx-4 my-3 rounded-[8px] border border-dashed border-a-line py-3.5 text-center text-[13px] text-a-faint">
+                  Nothing here. Add a task to {q.label}.
+                </div>
+              ) : (
+                quadrantTodos.map((todo, i) => (
+                  <MatrixRow
+                    key={todo.id}
+                    todo={todo}
+                    isNext={todo.id === nextId}
+                    onStatusChange={onStatusChange}
+                    onDelete={onDelete}
+                    onOpen={onOpen}
+                    onOpenNote={onOpenNote}
+                    fieldDefs={fieldDefs}
+                    fieldValues={fieldValues?.[todo.id]}
+                    index={i}
+                  />
+                ))
               )}
-            >
-              <Plus className="size-3.5" strokeWidth={2.75} aria-hidden />
-              Add here
-            </button>
+
+              {doneNote && (
+                <div className="mt-auto border-t border-a-line-soft px-4 py-2 text-[12px] text-a-faint">
+                  {doneNote}
+                </div>
+              )}
+            </div>
           </section>
         );
       })}
     </div>
+  );
+}
+
+interface MatrixRowProps {
+  todo: Todo;
+  isNext: boolean;
+  index: number;
+  onStatusChange: (id: string, status: TodoStatus) => void;
+  onDelete: (id: string) => void;
+  onOpen: (todo: Todo) => void;
+  onOpenNote?: (noteId: string) => void;
+  fieldDefs?: FieldDef[];
+  fieldValues?: Record<string, FieldValue>;
+}
+
+/**
+ * One task inside a quadrant panel: a flat row, not a card — the reference's
+ * `showMatrix` task template (`padding:9px 16px`, border-bottom between rows,
+ * a status icon rather than the shared squircle `StatusBox`, title on its own
+ * line with due/category/note on a second 12px line below it).
+ */
+function MatrixRow({ todo, isNext, index, onStatusChange, onDelete, onOpen, onOpenNote, fieldDefs, fieldValues }: MatrixRowProps) {
+  const isDone = todo.status === 'done';
+  const next = NEXT_STATUS[todo.status];
+  const category = getCategoryConfig(todo.category);
+  const dueInfo = !isDone ? getDueInfo(todo.dueDate, todo.dueTime) : null;
+  const fromNote = !!todo.sourceNoteId && !!onOpenNote;
+  const hasFieldChips = !!fieldDefs && !!fieldValues
+    && fieldDefs.some((f) => f.showOnCard && fieldValues[f.id] !== undefined);
+  const hasMeta = !!category || !!dueInfo || fromNote || hasFieldChips;
+
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onOpen(todo)}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(todo); }
+      }}
+      style={{ animationDelay: `${index * 50}ms`, animationFillMode: 'both' }}
+      className="group flex cursor-pointer items-center gap-2.5 border-b border-a-line-soft px-4 py-2.5 transition-colors duration-[120ms] last:border-b-0 hover:bg-a-row-hover animate-slide-up"
+      aria-label={`Open task: ${todo.text}`}
+    >
+      <StatusIcon
+        status={todo.status}
+        label={todo.text}
+        disabled={!next}
+        onClick={(e) => { e.stopPropagation(); if (next) onStatusChange(todo.id, next); }}
+      />
+
+      <div className="min-w-0 flex-1">
+        <p
+          className={cn(
+            'truncate text-[14px] font-medium leading-tight',
+            isDone ? 'text-a-faint line-through decoration-[1.5px]' : 'text-a-ink',
+          )}
+        >
+          {todo.text}
+        </p>
+
+        {hasMeta && (
+          <div className="mt-[3px] flex flex-wrap items-center gap-2 text-[12px]">
+            {dueInfo && (
+              <span className={cn("whitespace-nowrap", DUE_TONE_CLASS[dueTone(dueInfo)])}>
+                {dueInfo.label}
+              </span>
+            )}
+            {category && <CategoryTag category={category} />}
+            {fieldDefs && <FieldChips fields={fieldDefs} values={fieldValues} chipClass={FIELD_CHIP} />}
+            {fromNote && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onOpenNote!(todo.sourceNoteId!); }}
+                title="Open the note this came from"
+                aria-label={`Open the note “${todo.text}” came from`}
+                className="inline-flex items-center gap-1 text-a-accent-700 transition-opacity duration-[120ms] hover:opacity-75"
+              >
+                Note
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+
+      {isNext && !isDone && (
+        <span className="flex-shrink-0 rounded-[6px] bg-a-accent-tint px-2 py-[3px] text-[11px] font-bold text-a-accent-700">
+          Next up
+        </span>
+      )}
+    </div>
+  );
+}
+
+function CategoryTag({ category }: { category: NonNullable<ReturnType<typeof getCategoryConfig>> }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-[6px] bg-a-surface px-2 py-[3px] font-medium text-a-ink shadow-[inset_0_0_0_1px_var(--a-line)]">
+      <span className={cn('size-2 flex-shrink-0 rounded-[3px]', category.swatchClass)} aria-hidden />
+      {category.label}
+    </span>
+  );
+}
+
+interface StatusIconProps {
+  status: TodoStatus;
+  label: string;
+  disabled?: boolean;
+  onClick: (e: MouseEvent) => void;
+}
+
+/**
+ * The reference's per-row status glyph — `circle` / `loader` / `circle-check`,
+ * colored `#9b9a97` / `#006eb9` / `--a-dq-valid` — not the shared squircle
+ * `StatusBox` used by note to-dos. Still clickable: advances to the next
+ * status, same as before.
+ */
+function StatusIcon({ status, label, disabled, onClick }: StatusIconProps) {
+  const Icon = status === 'done' ? CircleCheck : status === 'in-progress' ? Loader : Circle;
+  return (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={status === 'done' ? true : status === 'in-progress' ? 'mixed' : false}
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+      className={cn('flex flex-shrink-0 items-center justify-center', disabled ? 'cursor-default' : 'cursor-pointer')}
+    >
+      <Icon
+        className={cn(
+          'size-[17px]',
+          status === 'done' ? 'text-a-dq-valid' : status === 'in-progress' ? 'text-a-accent' : 'text-a-faint',
+        )}
+        strokeWidth={1.75}
+      />
+    </button>
   );
 }

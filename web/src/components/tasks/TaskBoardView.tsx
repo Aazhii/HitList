@@ -267,12 +267,12 @@ function BoardToolbar({ field, groupableFields, onGroupFieldChange, onManageFiel
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className="flex h-8 items-center gap-1.5 rounded-full px-3 text-[13.5px] text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)] transition-colors duration-150 hover:text-a-ink"
+            className="flex h-8 items-center gap-1.5 rounded-[6px] px-3 text-[14px] text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)] transition-colors duration-[120ms] hover:text-a-ink"
             aria-label={`Columns from ${field.name}`}
           >
-            <Columns3 className="size-3.5" strokeWidth={2.5} aria-hidden />
+            <Columns3 className="size-3.5" strokeWidth={1.75} aria-hidden />
             Columns: <span className="font-semibold text-a-ink">{field.name}</span>
-            <ChevronDown className="size-3" strokeWidth={2.75} aria-hidden />
+            <ChevronDown className="size-3" strokeWidth={1.75} aria-hidden />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent
@@ -317,7 +317,7 @@ function BoardColumn({ fieldId, column, fieldDefs, fieldValues, onAddTask, ...ha
   return (
     <section
       aria-labelledby={headingId}
-      className="flex w-[292px] flex-shrink-0 flex-col rounded-[18px] bg-[color-mix(in_srgb,var(--a-ink)_4%,transparent)] p-2.5"
+      className="flex w-[292px] flex-shrink-0 flex-col rounded-[12px] bg-[color-mix(in_srgb,var(--a-ink)_4%,transparent)] p-2.5"
     >
       <header className="mb-2 flex items-center gap-2 px-1.5 pt-0.5">
         <span
@@ -325,7 +325,7 @@ function BoardColumn({ fieldId, column, fieldDefs, fieldValues, onAddTask, ...ha
           aria-hidden
         />
         <h2 id={headingId} className="min-w-0 truncate font-display text-[16px] leading-tight text-a-ink">{column.label}</h2>
-        <span className="text-[12.5px] font-bold tabular-nums text-a-muted">
+        <span className="text-[12px] font-bold tabular-nums text-a-muted">
           {taskCount}
           <span className="sr-only"> tasks</span>
         </span>
@@ -334,7 +334,7 @@ function BoardColumn({ fieldId, column, fieldDefs, fieldValues, onAddTask, ...ha
       <div
         ref={setNodeRef}
         className={cn(
-          'flex min-h-[96px] flex-col gap-2 rounded-[14px] p-0.5 transition-[background-color,box-shadow] duration-150',
+          'flex min-h-[96px] flex-col gap-2 rounded-[8px] p-0.5 transition-[background-color,box-shadow] duration-[120ms]',
           isOver && 'bg-a-row-hover shadow-[inset_0_0_0_1.5px_var(--a-accent)]',
         )}
       >
@@ -378,10 +378,10 @@ function ColumnComposer({ columnLabel, onAdd }: { columnLabel: string; onAdd: (t
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="mt-1.5 flex items-center gap-1.5 rounded-[10px] px-2 py-1.5 text-left text-[13px] text-a-faint transition-colors duration-150 hover:bg-a-row-hover hover:text-a-ink"
+        className="mt-1.5 flex items-center gap-1.5 rounded-[8px] px-2 py-1.5 text-left text-[13px] text-a-faint transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
         aria-label={`Add task to ${columnLabel}`}
       >
-        <Plus className="size-3.5" strokeWidth={2.75} aria-hidden />
+        <Plus className="size-3.5" strokeWidth={1.75} aria-hidden />
         Add
       </button>
     );
@@ -400,7 +400,7 @@ function ColumnComposer({ columnLabel, onAdd }: { columnLabel: string; onAdd: (t
       }}
       placeholder="What needs to be done?"
       aria-label={`New task in ${columnLabel}`}
-      className="mt-1.5 h-9 w-full rounded-[12px] bg-a-bg px-2.5 text-[13.5px] text-a-ink shadow-[inset_0_0_0_1px_var(--a-line)] outline-none focus-visible:shadow-[inset_0_0_0_1.5px_var(--a-accent)]"
+      className="mt-1.5 h-9 w-full rounded-[12px] bg-a-bg px-2.5 text-[14px] text-a-ink shadow-[inset_0_0_0_1px_var(--a-line)] outline-none focus-visible:shadow-[inset_0_0_0_1.5px_var(--a-accent)]"
     />
   );
 }
@@ -422,7 +422,7 @@ function DraggableCard({ columnKey, todo, index, fieldDefs, fieldValues, ...hand
       {...attributes}
       {...listeners}
       aria-roledescription="Draggable task"
-      className={cn('cursor-grab touch-none rounded-[14px] outline-none focus-visible:ring-2 focus-visible:ring-a-accent', isDragging && 'opacity-40')}
+      className={cn('cursor-grab touch-none rounded-[8px] outline-none focus-visible:ring-2 focus-visible:ring-a-accent', isDragging && 'opacity-40')}
     >
       <MatrixTaskCard
         todo={todo}
@@ -458,7 +458,7 @@ function BoardSetup({ groupableFields, otherFields, fieldsOnline, fieldsLoading,
 
   return (
     <div className="mx-auto flex max-w-[480px] flex-col items-center py-16 text-center animate-fade-in">
-      <Columns3 className="mb-3 size-6 text-a-faint" strokeWidth={2.25} aria-hidden />
+      <Columns3 className="mb-3 size-6 text-a-faint" strokeWidth={1.75} aria-hidden />
       <p className="font-display text-[20px] text-a-ink">Choose the columns</p>
 
       {!fieldsOnline ? (
@@ -478,9 +478,9 @@ function BoardSetup({ groupableFields, otherFields, fieldsOnline, fieldsLoading,
           <button
             type="button"
             onClick={onManageFields}
-            className="mt-4 flex items-center gap-1.5 rounded-full bg-a-accent px-4 py-2 text-[13.5px] font-semibold text-a-bg transition-colors duration-150 hover:bg-a-accent-600"
+            className="mt-4 flex items-center gap-1.5 rounded-[6px] bg-a-accent px-4 py-2 text-[14px] font-semibold text-a-surface transition-colors duration-[120ms] hover:bg-a-accent-600"
           >
-            <Plus className="size-3.5" strokeWidth={2.75} aria-hidden />
+            <Plus className="size-3.5" strokeWidth={1.75} aria-hidden />
             Create a field
           </button>
         </>
@@ -495,7 +495,7 @@ function BoardSetup({ groupableFields, otherFields, fieldsOnline, fieldsLoading,
                 key={field.id}
                 type="button"
                 onClick={() => onGroupFieldChange(field.id)}
-                className="rounded-full px-3.5 py-1.5 text-[13.5px] font-semibold text-a-ink shadow-[inset_0_0_0_1px_var(--a-line)] transition-colors duration-150 hover:bg-a-row-hover"
+                className="rounded-[6px] px-3.5 py-1.5 text-[14px] font-semibold text-a-ink shadow-[inset_0_0_0_1px_var(--a-line)] transition-colors duration-[120ms] hover:bg-a-row-hover"
               >
                 {field.name}
                 <span className="ml-1.5 font-normal text-a-faint">{FIELD_KIND_LABELS[field.kind]}</span>

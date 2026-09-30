@@ -5,7 +5,7 @@
  * save when the input loses focus or on Enter, so typing "120" is one save,
  * not three.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
@@ -76,7 +76,7 @@ export function FieldValueEditor({ field, value, onChange, disabled, onSelectOpt
                   onSelectOption?.();
                 }}
                 className={cn(
-                  'flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12.5px] font-medium transition-opacity duration-150',
+                  'flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-[12px] font-medium transition-opacity duration-[120ms]',
                   OPTION_CHIP_CLASS[o.color],
                   on ? 'opacity-100' : 'opacity-50 hover:opacity-80',
                 )}
@@ -113,7 +113,42 @@ export function FieldValueEditor({ field, value, onChange, disabled, onSelectOpt
     case 'number':
     case 'text':
       return <CommitOnBlurInput field={field} value={value} onChange={onChange} disabled={disabled} />;
+
+    // A wrapping box, not a one-line input — the whole reason the kind exists.
+    case 'longtext':
+      return <CommitOnBlurTextArea field={field} value={value} onChange={onChange} disabled={disabled} />;
   }
+}
+
+function CommitOnBlurTextArea({ field, value, onChange, disabled }: FieldValueEditorProps) {
+  const initial = value === undefined ? '' : String(value);
+  const [draft, setDraft] = useState(initial);
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => { setDraft(initial); }, [initial]);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 320)}px`;
+  }, [draft]);
+
+  return (
+    <textarea
+      ref={ref}
+      rows={2}
+      value={draft}
+      maxLength={10_000}
+      disabled={disabled}
+      placeholder="Empty"
+      aria-label={field.name}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => { if (draft.trim() !== initial.trim()) onChange(draft.trim() === '' ? null : draft); }}
+      // Enter makes a new line here; Escape reverts, matching the table cell.
+      onKeyDown={(e) => { if (e.key === 'Escape') { setDraft(initial); e.currentTarget.blur(); } }}
+      className={cn(INPUT, 'h-auto resize-none py-1.5 leading-[1.5]')}
+    />
+  );
 }
 
 function CommitOnBlurInput({ field, value, onChange, disabled }: FieldValueEditorProps) {

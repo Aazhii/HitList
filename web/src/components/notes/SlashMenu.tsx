@@ -97,7 +97,7 @@ export function SlashMenu({ query, position, onSelect, selectedIndex }: SlashMen
   return (
     <div
       data-slash-menu
-      className="fixed z-50 w-60 overflow-hidden rounded-[16px] border border-a-line bg-a-bg text-a-ink shadow-[var(--a-shadow-md)] animate-fade-in"
+      className="fixed z-50 w-60 overflow-hidden rounded-[12px] border border-a-line bg-a-bg text-a-ink shadow-[var(--a-shadow-md)] animate-fade-in"
       style={{ top, left: Math.max(8, position.left) }}
       onMouseDown={(e) => e.preventDefault()}
     >
@@ -120,7 +120,7 @@ export function SlashMenu({ query, position, onSelect, selectedIndex }: SlashMen
             aria-selected={i === selectedIndex}
             onMouseDown={(e) => { e.preventDefault(); onSelect(cmd.type); }}
             className={cn(
-              'flex w-full items-center gap-2.5 rounded-[10px] px-2 py-1.5 text-left transition-colors duration-100',
+              'flex w-full items-center gap-2.5 rounded-[8px] px-2 py-1.5 text-left transition-colors duration-[120ms]',
               i === selectedIndex ? 'bg-a-accent-tint' : 'hover:bg-a-row-hover',
             )}
           >
@@ -133,8 +133,8 @@ export function SlashMenu({ query, position, onSelect, selectedIndex }: SlashMen
               {cmd.icon}
             </span>
             <span className="min-w-0">
-              <span className="block text-[15px] leading-tight text-a-ink">{cmd.label}</span>
-              <span className="block text-[12.5px] leading-tight text-a-faint">{cmd.description}</span>
+              <span className="block text-[14px] leading-tight text-a-ink">{cmd.label}</span>
+              <span className="block text-[12px] leading-tight text-a-faint">{cmd.description}</span>
             </span>
           </button>
         ))}

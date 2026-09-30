@@ -107,7 +107,7 @@ export function TaskFormDialog({ open, onOpenChange, editTodo, onSubmit }: TaskF
               }}
               placeholder="What's your next small step?"
               className={cn(
-                'resize-none min-h-[72px] rounded-2xl text-sm leading-relaxed',
+                'resize-none min-h-[72px] rounded-[4px] text-sm leading-relaxed',
                 errors.text && 'border-destructive focus-visible:ring-destructive/30'
               )}
               maxLength={200}
@@ -128,7 +128,7 @@ export function TaskFormDialog({ open, onOpenChange, editTodo, onSubmit }: TaskF
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder="Any extra context…"
-              className="rounded-2xl text-sm"
+              className="rounded-[4px] text-sm"
               maxLength={200}
             />
           </div>
@@ -141,10 +141,10 @@ export function TaskFormDialog({ open, onOpenChange, editTodo, onSubmit }: TaskF
                 <Tag className="size-3" /> Category
               </Label>
               <Select value={category} onValueChange={setCategory}>
-                <SelectTrigger className="w-full rounded-2xl text-sm h-9">
+                <SelectTrigger className="w-full rounded-[4px] text-sm h-9">
                   <SelectValue placeholder="None">
                     {selectedCategory ? (
-                      <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', selectedCategory.color)}>
+                      <span className={cn('rounded-[3px] px-2 py-0.5 text-xs font-medium', selectedCategory.color)}>
                         {selectedCategory.label}
                       </span>
                     ) : (
@@ -158,7 +158,7 @@ export function TaskFormDialog({ open, onOpenChange, editTodo, onSubmit }: TaskF
                   </SelectItem>
                   {CATEGORIES.map((cat) => (
                     <SelectItem key={cat.id} value={cat.id}>
-                      <span className={cn('rounded-full px-2 py-0.5 text-xs font-medium', cat.color)}>
+                      <span className={cn('rounded-[3px] px-2 py-0.5 text-xs font-medium', cat.color)}>
                         {cat.label}
                       </span>
                     </SelectItem>
@@ -181,7 +181,7 @@ export function TaskFormDialog({ open, onOpenChange, editTodo, onSubmit }: TaskF
                   if (errors.dueDate) setErrors((prev) => ({ ...prev, dueDate: undefined }));
                 }}
                 className={cn(
-                  'rounded-2xl text-sm h-9',
+                  'rounded-[4px] text-sm h-9',
                   errors.dueDate && 'border-amber-400 focus-visible:ring-amber-400/30'
                 )}
               />
@@ -198,7 +198,7 @@ export function TaskFormDialog({ open, onOpenChange, editTodo, onSubmit }: TaskF
                 Status
               </Label>
               <Select value={status} onValueChange={(v) => setStatus(v as TodoStatus)}>
-                <SelectTrigger className="w-full rounded-2xl text-sm h-9">
+                <SelectTrigger className="w-full rounded-[4px] text-sm h-9">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -214,12 +214,12 @@ export function TaskFormDialog({ open, onOpenChange, editTodo, onSubmit }: TaskF
             <Button
               type="button"
               variant="ghost"
-              className="rounded-2xl"
+              className="rounded-[6px]"
               onClick={() => onOpenChange(false)}
             >
               Cancel
             </Button>
-            <Button type="submit" className="rounded-2xl flex-1">
+            <Button type="submit" className="rounded-[6px] flex-1">
               {isEdit ? 'Save changes' : 'Add task'}
             </Button>
           </DialogFooter>

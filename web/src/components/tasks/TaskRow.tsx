@@ -44,10 +44,10 @@ export interface TaskRowProps {
   fieldValues?: Record<string, FieldValue>;
 }
 
-const CHIP = 'inline-flex items-center rounded-full px-[11px] py-1 text-[12.5px] leading-none whitespace-nowrap';
+const CHIP = 'inline-flex items-center rounded-[3px] px-[11px] py-1 text-[12px] leading-none whitespace-nowrap';
 
 const HOVER_BUTTON = cn(
-  'flex size-5 items-center justify-center rounded-[7px] text-a-faint transition-[opacity,background-color,color] duration-150',
+  'flex size-5 items-center justify-center rounded-[6px] text-a-faint transition-[opacity,background-color,color] duration-[120ms]',
   'opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100',
   'hover:bg-[color-mix(in_srgb,var(--a-ink)_9%,transparent)] hover:text-a-ink',
 );
@@ -91,8 +91,8 @@ export function TaskRow({
         animationFillMode: 'both',
       }}
       className={cn(
-        'group relative flex items-start gap-[11px] rounded-[14px] px-3 py-2.5 animate-slide-up',
-        'transition-[background-color,box-shadow,opacity,scale] duration-300',
+        'group relative flex items-start gap-[11px] rounded-[8px] px-3 py-2.5 animate-slide-up',
+        'transition-[background-color,box-shadow,opacity,scale] duration-[260ms]',
         isDragging
           ? 'z-10 bg-a-bg shadow-[var(--a-shadow-md)]'
           : isNext && !isDone
@@ -110,7 +110,7 @@ export function TaskRow({
           aria-label={`Reorder “${todo.text}”`}
           className={cn(HOVER_BUTTON, 'mt-0.5 flex-shrink-0 cursor-grab active:cursor-grabbing')}
         >
-          <GripVertical className="size-3.5" strokeWidth={2.75} />
+          <GripVertical className="size-3.5" strokeWidth={1.75} />
         </button>
       ) : (
         <span className="size-5 flex-shrink-0" aria-hidden />
@@ -130,7 +130,7 @@ export function TaskRow({
         type="button"
         onClick={() => onOpen(todo)}
         className={cn(
-          'min-w-0 flex-1 text-left text-[15.5px] leading-[1.5] break-words',
+          'min-w-0 flex-1 text-left text-[14px] leading-[1.5] break-words',
           isDone ? 'text-a-faint line-through decoration-[1.5px]' : 'text-a-ink',
         )}
       >
@@ -139,10 +139,10 @@ export function TaskRow({
 
       <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2 self-center">
         {isNext && !isDone && (
-          <span className="text-[11.5px] font-bold uppercase tracking-[0.06em] text-a-accent-700">Next</span>
+          <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-a-accent-700">Next</span>
         )}
 
-        {due && <span className={cn(CHIP, DUE_TONE_CLASS[dueTone(due)])}>{due.label}</span>}
+        {due && <span className={cn("whitespace-nowrap", DUE_TONE_CLASS[dueTone(due)])}>{due.label}</span>}
 
         {todo.sourceNoteId && onOpenNote && (
           <button
@@ -150,9 +150,9 @@ export function TaskRow({
             onClick={() => onOpenNote(todo.sourceNoteId!)}
             title="Open the note this came from"
             aria-label={`Open the note “${todo.text}” came from`}
-            className={cn(CHIP, 'gap-1 text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)] transition-colors duration-150 hover:text-a-ink')}
+            className={cn(CHIP, 'gap-1 text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)] transition-colors duration-[120ms] hover:text-a-ink')}
           >
-            <FileText className="size-3" strokeWidth={2.75} aria-hidden /> Note
+            <FileText className="size-3" strokeWidth={1.75} aria-hidden /> Note
           </button>
         )}
 
@@ -167,7 +167,7 @@ export function TaskRow({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button type="button" className={HOVER_BUTTON} aria-label={`Options for “${todo.text}”`}>
-              <MoreHorizontal className="size-3.5" strokeWidth={2.75} />
+              <MoreHorizontal className="size-3.5" strokeWidth={1.75} />
             </button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">

@@ -159,31 +159,31 @@ export function UnifiedCalendar({
         <section className="min-w-0 flex-1" aria-label={`Calendar, ${monthLabel}`}>
           <header className="mb-3 flex flex-wrap items-center gap-2">
             <h2 className="font-display text-[20px] leading-tight text-a-ink">{monthLabel}</h2>
-            {loading && <span className="text-[12.5px] text-a-faint">Loading…</span>}
+            {loading && <span className="text-[12px] text-a-faint">Loading…</span>}
 
             <div className="ml-auto flex items-center gap-1">
               <button
                 type="button"
                 onClick={() => setMonth(monthOf(now))}
-                className="h-8 rounded-full px-3 text-[13px] font-semibold text-a-ink shadow-[inset_0_0_0_1px_var(--a-line)] transition-colors duration-150 hover:bg-a-row-hover"
+                className="h-8 rounded-[6px] px-3 text-[13px] font-semibold text-a-ink shadow-[inset_0_0_0_1px_var(--a-line)] transition-colors duration-[120ms] hover:bg-a-row-hover"
               >
                 Today
               </button>
               <button
                 type="button"
                 onClick={() => setMonth((m) => shiftMonth(m, -1))}
-                className="flex size-8 items-center justify-center rounded-full text-a-muted transition-colors duration-150 hover:bg-a-row-hover hover:text-a-ink"
+                className="flex size-8 items-center justify-center rounded-[4px] text-a-muted transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
                 aria-label="Previous month"
               >
-                <ChevronLeft className="size-4" strokeWidth={2.5} />
+                <ChevronLeft className="size-4" strokeWidth={1.75} />
               </button>
               <button
                 type="button"
                 onClick={() => setMonth((m) => shiftMonth(m, 1))}
-                className="flex size-8 items-center justify-center rounded-full text-a-muted transition-colors duration-150 hover:bg-a-row-hover hover:text-a-ink"
+                className="flex size-8 items-center justify-center rounded-[4px] text-a-muted transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
                 aria-label="Next month"
               >
-                <ChevronRight className="size-4" strokeWidth={2.5} />
+                <ChevronRight className="size-4" strokeWidth={1.75} />
               </button>
             </div>
           </header>
@@ -199,7 +199,7 @@ export function UnifiedCalendar({
                     aria-pressed={on}
                     onClick={() => onToggleSource(source.id)}
                     className={cn(
-                      'flex h-7 items-center gap-1.5 rounded-full px-2.5 text-[12.5px] transition-colors duration-150',
+                      'flex h-7 items-center gap-1.5 rounded-[6px] px-2.5 text-[12px] transition-colors duration-[120ms]',
                       on
                         ? 'text-a-ink shadow-[inset_0_0_0_1px_var(--a-line)]'
                         : 'text-a-faint shadow-[inset_0_0_0_1px_var(--a-line-soft)]',
@@ -274,7 +274,7 @@ function CalendarDay({ dateKey, items, inMonth, isToday, dotBySource, onOpen, on
       role="group"
       aria-label={label}
       className={cn(
-        'group/day flex min-h-[112px] min-w-0 flex-col gap-1 border-b border-r border-a-line-soft p-1.5 transition-colors duration-150 first:border-l',
+        'group/day flex min-h-[112px] min-w-0 flex-col gap-1 border-b border-r border-a-line-soft p-1.5 transition-colors duration-[120ms] first:border-l',
         !inMonth && 'bg-[color-mix(in_srgb,var(--a-ink)_2.5%,transparent)]',
         isOver && 'bg-a-row-hover shadow-[inset_0_0_0_1.5px_var(--a-accent)]',
       )}
@@ -282,8 +282,8 @@ function CalendarDay({ dateKey, items, inMonth, isToday, dotBySource, onOpen, on
       <div className="flex items-center justify-between">
         <span
           className={cn(
-            'flex size-6 items-center justify-center rounded-full text-[12.5px] tabular-nums',
-            isToday ? 'bg-a-accent font-bold text-a-bg' : inMonth ? 'text-a-ink' : 'text-a-faint',
+            'flex size-6 items-center justify-center rounded-full text-[12px] tabular-nums',
+            isToday ? 'bg-a-accent font-bold text-a-surface' : inMonth ? 'text-a-ink' : 'text-a-faint',
           )}
           aria-current={isToday ? 'date' : undefined}
         >
@@ -292,10 +292,10 @@ function CalendarDay({ dateKey, items, inMonth, isToday, dotBySource, onOpen, on
         <button
           type="button"
           onClick={(e) => onAddOnDate(dateKey, e.currentTarget)}
-          className="flex size-6 items-center justify-center rounded-full text-a-faint opacity-0 transition-opacity duration-150 group-hover/day:opacity-100 focus-visible:opacity-100 hover:text-a-ink"
+          className="flex size-6 items-center justify-center rounded-full text-a-faint opacity-0 transition-opacity duration-[120ms] group-hover/day:opacity-100 focus-visible:opacity-100 hover:text-a-ink"
           aria-label={`Add on ${label}`}
         >
-          <Plus className="size-3.5" strokeWidth={2.75} />
+          <Plus className="size-3.5" strokeWidth={1.75} />
         </button>
       </div>
 
@@ -308,7 +308,7 @@ function CalendarDay({ dateKey, items, inMonth, isToday, dotBySource, onOpen, on
           <PopoverTrigger asChild>
             <button
               type="button"
-              className="rounded-[8px] px-1.5 py-0.5 text-left text-[12px] font-semibold text-a-muted transition-colors duration-150 hover:bg-a-row-hover hover:text-a-ink"
+              className="rounded-[8px] px-1.5 py-0.5 text-left text-[12px] font-semibold text-a-muted transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
               aria-label={`Show all ${items.length} on ${label}`}
             >
               +{items.length - MAX_CHIPS} more
@@ -345,12 +345,12 @@ function NoDateTray({
     <aside aria-label="Without a date" className="w-full flex-shrink-0 xl:w-[240px]">
       <h2 className="mb-3 flex items-baseline gap-2 font-display text-[16px] leading-tight text-a-ink">
         No date
-        <span className="font-sans text-[12.5px] font-bold tabular-nums text-a-muted">{items.length}</span>
+        <span className="font-sans text-[12px] font-bold tabular-nums text-a-muted">{items.length}</span>
       </h2>
       <div
         ref={setNodeRef}
         className={cn(
-          'flex min-h-[96px] flex-col gap-1 rounded-[14px] bg-[color-mix(in_srgb,var(--a-ink)_4%,transparent)] p-2 transition-[background-color,box-shadow] duration-150',
+          'flex min-h-[96px] flex-col gap-1 rounded-[8px] bg-[color-mix(in_srgb,var(--a-ink)_4%,transparent)] p-2 transition-[background-color,box-shadow] duration-[120ms]',
           isOver && 'bg-a-row-hover shadow-[inset_0_0_0_1.5px_var(--a-accent)]',
         )}
       >
@@ -358,7 +358,7 @@ function NoDateTray({
           <ItemChip key={`${item.kind}:${item.id}`} item={item} dotBySource={dotBySource} onOpen={onOpen} />
         ))}
         {items.length === 0 && (
-          <p className="px-2 py-5 text-center text-[12.5px] leading-relaxed text-a-faint">
+          <p className="px-2 py-5 text-center text-[12px] leading-relaxed text-a-faint">
             Everything has a date. Drop something here to take its date off.
           </p>
         )}
@@ -420,7 +420,7 @@ function ItemChipBody({
     <span
       title={`${item.title} — ${item.sourceName}`}
       className={cn(
-        'flex min-w-0 items-center gap-1.5 rounded-[8px] px-1.5 py-1 text-[12.5px] leading-tight transition-colors duration-150 hover:bg-a-row-hover',
+        'flex min-w-0 items-center gap-1.5 rounded-[8px] px-1.5 py-1 text-[12px] leading-tight transition-colors duration-[120ms] hover:bg-a-row-hover',
         className,
       )}
     >

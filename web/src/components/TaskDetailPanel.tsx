@@ -167,14 +167,14 @@ export function TaskDetailPanel({
             {/* Quadrant badge */}
             <span
               className={cn(
-                'inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide flex-shrink-0',
+                'inline-flex items-center rounded-[3px] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide flex-shrink-0',
                 quadrantConfig.badgeClass
               )}
             >
               {quadrantConfig.label}
             </span>
             {isDirty && (
-              <span className="text-[10px] text-muted-foreground animate-fade-in">Unsaved</span>
+              <span className="text-[11px] text-muted-foreground animate-fade-in">Unsaved</span>
             )}
           </div>
           <div className="flex items-center gap-1">
@@ -224,7 +224,7 @@ export function TaskDetailPanel({
 
             {/* Task title */}
             <div className="space-y-1.5">
-              <Label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              <Label className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
                 Task
               </Label>
               <Textarea
@@ -242,7 +242,7 @@ export function TaskDetailPanel({
 
             {/* Status */}
             <div className="space-y-1.5">
-              <Label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+              <Label className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
                 Status
               </Label>
               <div className="flex gap-2">
@@ -251,7 +251,7 @@ export function TaskDetailPanel({
                     key={opt.value}
                     onClick={() => { setStatus(opt.value); markDirty(); }}
                     className={cn(
-                      'flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium border transition-all duration-150',
+                      'flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium border transition-all duration-[120ms]',
                       status === opt.value
                         ? 'border-primary/40 bg-primary/10 text-primary'
                         : 'border-border bg-card text-muted-foreground hover:border-border/80 hover:text-foreground'
@@ -267,7 +267,7 @@ export function TaskDetailPanel({
 
             {/* Quadrant */}
             <div className="space-y-1.5">
-              <Label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+              <Label className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
                 <ArrowRight className="size-3" />
                 Priority Quadrant
               </Label>
@@ -277,7 +277,7 @@ export function TaskDetailPanel({
                     key={q.id}
                     onClick={() => { setQuadrant(q.id); markDirty(); }}
                     className={cn(
-                      'flex flex-col items-start rounded-xl px-3 py-2.5 text-left border transition-all duration-150',
+                      'flex flex-col items-start rounded-xl px-3 py-2.5 text-left border transition-all duration-[120ms]',
                       quadrant === q.id
                         ? cn('border-primary/40 bg-primary/8 ring-1 ring-primary/20')
                         : 'border-border bg-card hover:border-border/80'
@@ -285,7 +285,7 @@ export function TaskDetailPanel({
                     aria-pressed={quadrant === q.id}
                   >
                     <span className="text-xs font-semibold text-foreground">{q.label}</span>
-                    <span className="text-[10px] text-muted-foreground mt-0.5">{q.subtitle}</span>
+                    <span className="text-[11px] text-muted-foreground mt-0.5">{q.subtitle}</span>
                   </button>
                 ))}
               </div>
@@ -293,7 +293,7 @@ export function TaskDetailPanel({
 
             {/* Due date + time */}
             <div className="space-y-1.5">
-              <Label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+              <Label className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
                 <CalendarClock className="size-3" />
                 Due Date & Time
               </Label>
@@ -344,7 +344,7 @@ export function TaskDetailPanel({
 
             {/* Category */}
             <div className="space-y-1.5">
-              <Label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+              <Label className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
                 <Tag className="size-3" />
                 Category
               </Label>
@@ -361,7 +361,7 @@ export function TaskDetailPanel({
                   </SelectItem>
                   {CATEGORIES.map((cat) => (
                     <SelectItem key={cat.id} value={cat.id}>
-                      <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium', cat.color)}>
+                      <span className={cn('inline-flex items-center rounded-[3px] px-2 py-0.5 text-[11px] font-medium', cat.color)}>
                         {cat.label}
                       </span>
                     </SelectItem>
@@ -369,7 +369,7 @@ export function TaskDetailPanel({
                 </SelectContent>
               </Select>
               {categoryConfig && (
-                <span className={cn('inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium animate-fade-in', categoryConfig.color)}>
+                <span className={cn('inline-flex items-center rounded-[3px] px-2 py-0.5 text-[11px] font-medium animate-fade-in', categoryConfig.color)}>
                   {categoryConfig.label}
                 </span>
               )}
@@ -388,7 +388,7 @@ export function TaskDetailPanel({
 
             {/* Notes */}
             <div className="space-y-1.5">
-              <Label className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
+              <Label className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
                 <FileText className="size-3" />
                 Notes
               </Label>
@@ -403,7 +403,7 @@ export function TaskDetailPanel({
 
             {/* Metadata */}
             <div className="rounded-xl bg-muted/30 px-3.5 py-3 space-y-1.5">
-              <p className="text-[10px] text-muted-foreground/60 uppercase tracking-widest font-semibold">Info</p>
+              <p className="text-[11px] text-muted-foreground/60 uppercase tracking-widest font-semibold">Info</p>
               <div className="space-y-1">
                 <p className="text-xs text-muted-foreground">
                   <span className="text-muted-foreground/60">Created</span>{' '}

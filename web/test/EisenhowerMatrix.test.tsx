@@ -40,10 +40,10 @@ beforeEach(() => {
 describe('EisenhowerMatrix', () => {
   it('renders all four quadrant labels', () => {
     render(<EisenhowerMatrix {...defaultProps} todos={[]} />);
-    expect(screen.getByText(/do first/i)).toBeInTheDocument();
-    expect(screen.getByText(/schedule/i)).toBeInTheDocument();
-    expect(screen.getByText(/delegate/i)).toBeInTheDocument();
-    expect(screen.getByText(/eliminate/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /do first/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /schedule/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /delegate/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /eliminate/i })).toBeInTheDocument();
   });
 
   it('renders a task in the correct quadrant', () => {
@@ -117,9 +117,9 @@ describe('EisenhowerMatrix', () => {
     expect(onStatusChange).toHaveBeenCalledWith('todo-1', 'in-progress');
   });
 
-  it('marks the next task with a "Next" label', () => {
+  it('marks the next task with a "Next up" badge', () => {
     const todo = makeTodo({ id: 'todo-1', text: 'Next task', quadrant: 'do', status: 'todo' });
     render(<EisenhowerMatrix {...defaultProps} todos={[todo]} nextId="todo-1" />);
-    expect(screen.getByText('Next')).toBeInTheDocument();
+    expect(screen.getByText('Next up')).toBeInTheDocument();
   });
 });

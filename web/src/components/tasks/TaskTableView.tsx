@@ -95,8 +95,8 @@ const STATUS_OPTIONS: Array<{ value: TodoStatus; label: string }> = [
 
 const CELL = 'px-2 py-1 align-top';
 const CONTROL = cn(
-  'w-full rounded-[9px] border-0 bg-transparent px-2 text-left text-[13.5px] text-a-ink',
-  'transition-colors duration-150 hover:bg-[color-mix(in_srgb,var(--a-ink)_6%,transparent)]',
+  'w-full rounded-[8px] border-0 bg-transparent px-2 text-left text-[14px] text-a-ink',
+  'transition-colors duration-[120ms] hover:bg-[color-mix(in_srgb,var(--a-ink)_6%,transparent)]',
   'focus-visible:bg-[color-mix(in_srgb,var(--a-ink)_6%,transparent)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-a-accent',
 );
 const CONTROL_ROW = cn(CONTROL, 'h-8');
@@ -152,7 +152,7 @@ export function TaskTableView({
 
   return (
     <div className="w-full overflow-x-auto animate-fade-in">
-      <table className="w-full min-w-max border-collapse text-[13.5px]">
+      <table className="w-full min-w-max border-collapse text-[14px]">
         <thead>
           <tr className="border-b border-a-line-soft">
             <ColumnHeader
@@ -177,10 +177,10 @@ export function TaskTableView({
                 <button
                   type="button"
                   onClick={onCreateField}
-                  className="flex size-7 items-center justify-center rounded-[7px] text-a-faint transition-colors duration-150 hover:bg-a-row-hover hover:text-a-ink"
+                  className="flex size-7 items-center justify-center rounded-[6px] text-a-faint transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
                   aria-label="Add a field"
                 >
-                  <Plus className="size-3.5" strokeWidth={2.75} />
+                  <Plus className="size-3.5" strokeWidth={1.75} />
                 </button>
               )}
             </th>
@@ -198,7 +198,7 @@ export function TaskTableView({
                       aria-hidden
                     />
                     <span className="font-display text-[16px] text-a-ink">{group.label}</span>
-                    <span className="text-[12.5px] font-bold tabular-nums text-a-muted">{group.tasks.length}</span>
+                    <span className="text-[12px] font-bold tabular-nums text-a-muted">{group.tasks.length}</span>
                   </span>
                 </th>
               </tr>
@@ -237,7 +237,7 @@ export function TaskTableView({
       </table>
 
       {rowCount === 0 && !groupField && (
-        <p className="px-4 py-8 text-center text-[13.5px] text-a-faint">
+        <p className="px-4 py-8 text-center text-[14px] text-a-faint">
           No open tasks. Turn on <span className="font-semibold">Show completed</span> to see finished ones.
         </p>
       )}
@@ -271,13 +271,13 @@ function ColumnHeader({ label, sort, onSort, className, onHide, onEditField, onD
           type="button"
           onClick={onSort}
           className={cn(
-            'flex items-center gap-1 rounded-[7px] px-2 py-1 text-[12.5px] font-semibold whitespace-nowrap transition-colors duration-150',
+            'flex items-center gap-1 rounded-[6px] px-2 py-1 text-[12px] font-semibold whitespace-nowrap transition-colors duration-[120ms]',
             sort ? 'text-a-ink' : 'text-a-faint hover:text-a-ink',
           )}
         >
           {label}
-          {sort === 'asc' && <ArrowUp className="size-3" strokeWidth={2.75} aria-hidden />}
-          {sort === 'desc' && <ArrowDown className="size-3" strokeWidth={2.75} aria-hidden />}
+          {sort === 'asc' && <ArrowUp className="size-3" strokeWidth={1.75} aria-hidden />}
+          {sort === 'desc' && <ArrowDown className="size-3" strokeWidth={1.75} aria-hidden />}
         </button>
 
         {hasMenu && (
@@ -285,10 +285,10 @@ function ColumnHeader({ label, sort, onSort, className, onHide, onEditField, onD
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="flex size-6 items-center justify-center rounded-[7px] text-a-faint opacity-0 transition-opacity duration-150 group-hover/head:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 hover:text-a-ink"
+                className="flex size-6 items-center justify-center rounded-[6px] text-a-faint opacity-0 transition-opacity duration-[120ms] group-hover/head:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 hover:text-a-ink"
                 aria-label={`${label} column options`}
               >
-                <ChevronDown className="size-3.5" strokeWidth={2.75} />
+                <ChevronDown className="size-3.5" strokeWidth={1.75} />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent
@@ -367,10 +367,10 @@ function TaskTableRow({ todo, columns, values, onStatusChange, onUpdate, onSetFi
           <button
             type="button"
             onClick={() => onOpen(todo)}
-            className="mt-0.5 flex size-7 flex-shrink-0 items-center justify-center rounded-[8px] text-a-faint opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-visible:opacity-100 hover:text-a-ink"
+            className="mt-0.5 flex size-7 flex-shrink-0 items-center justify-center rounded-[8px] text-a-faint opacity-0 transition-opacity duration-[120ms] group-hover:opacity-100 focus-visible:opacity-100 hover:text-a-ink"
             aria-label={`Open ${todo.text}`}
           >
-            <PanelRightOpen className="size-3.5" strokeWidth={2.5} />
+            <PanelRightOpen className="size-3.5" strokeWidth={1.75} />
           </button>
           <RowMenu todo={todo} onOpen={onOpen} onDelete={onDelete} />
         </div>
@@ -512,13 +512,13 @@ function DueCell({ todo, onChange }: { todo: Todo; onChange: (dueDate: string) =
             value={todo.dueDate ?? ''}
             onChange={(e) => { onChange(e.target.value); if (e.target.value) setOpen(false); }}
             aria-label="Due date"
-            className="h-8 rounded-[9px] bg-transparent px-2 text-[13.5px] text-a-ink shadow-[inset_0_0_0_1px_var(--a-line)] outline-none"
+            className="h-8 rounded-[8px] bg-transparent px-2 text-[14px] text-a-ink shadow-[inset_0_0_0_1px_var(--a-line)] outline-none"
           />
           {todo.dueDate && (
             <button
               type="button"
               onClick={() => { onChange(''); setOpen(false); }}
-              className="h-8 rounded-full px-3 text-[13px] text-a-muted transition-colors duration-150 hover:text-a-ink"
+              className="h-8 rounded-[6px] px-3 text-[13px] text-a-muted transition-colors duration-[120ms] hover:text-a-ink"
             >
               Clear
             </button>
@@ -538,10 +538,10 @@ function RowMenu({ todo, onOpen, onDelete }: Pick<TaskTableRowProps, 'todo' | 'o
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="mt-0.5 flex size-7 flex-shrink-0 items-center justify-center rounded-[8px] text-a-faint opacity-0 transition-opacity duration-150 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 hover:text-a-ink"
+          className="mt-0.5 flex size-7 flex-shrink-0 items-center justify-center rounded-[8px] text-a-faint opacity-0 transition-opacity duration-[120ms] group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 hover:text-a-ink"
           aria-label={`Options for ${todo.text}`}
         >
-          <MoreHorizontal className="size-3.5" strokeWidth={2.5} />
+          <MoreHorizontal className="size-3.5" strokeWidth={1.75} />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-48">
@@ -575,7 +575,7 @@ function NewTaskRow({ label, onAdd }: { label: string; onAdd: (title: string) =>
 
   return (
     <div className="flex items-center gap-1.5 text-a-faint">
-      <Plus className="size-3.5 flex-shrink-0" strokeWidth={2.75} aria-hidden />
+      <Plus className="size-3.5 flex-shrink-0" strokeWidth={1.75} aria-hidden />
       <input
         value={title}
         maxLength={200}
@@ -587,7 +587,7 @@ function NewTaskRow({ label, onAdd }: { label: string; onAdd: (title: string) =>
         }}
         placeholder="New task"
         aria-label={`New task in ${label}`}
-        className="h-8 w-full max-w-[320px] rounded-[9px] bg-transparent px-1 text-[13.5px] text-a-ink outline-none placeholder:text-a-faint/70 focus-visible:bg-[color-mix(in_srgb,var(--a-ink)_6%,transparent)]"
+        className="h-8 w-full max-w-[320px] rounded-[8px] bg-transparent px-1 text-[14px] text-a-ink outline-none placeholder:text-a-faint/70 focus-visible:bg-[color-mix(in_srgb,var(--a-ink)_6%,transparent)]"
       />
     </div>
   );
@@ -654,8 +654,8 @@ function FieldCell({ def, value, taskName, onChange }: FieldCellProps) {
         >
           <span
             className={cn(
-              'flex size-[17px] items-center justify-center rounded-[6px] transition-colors duration-150',
-              on ? 'bg-a-accent text-a-bg' : 'shadow-[inset_0_0_0_1.5px_var(--a-line)]',
+              'flex size-[17px] items-center justify-center rounded-[6px] transition-colors duration-[120ms]',
+              on ? 'bg-a-accent text-a-surface' : 'shadow-[inset_0_0_0_1.5px_var(--a-line)]',
             )}
             aria-hidden
           >
@@ -701,7 +701,7 @@ function FieldCell({ def, value, taskName, onChange }: FieldCellProps) {
             <button type="button" className={cn(CONTROL, 'flex min-h-8 flex-wrap items-center gap-1 py-1')} aria-label={label}>
               {chosen.length === 0 && <span className="text-a-faint/60">Empty</span>}
               {chosen.map((o) => (
-                <span key={o.id} className={cn('rounded-full px-2 py-0.5 text-[12px] font-medium', OPTION_CHIP_CLASS[o.color])}>
+                <span key={o.id} className={cn('rounded-[3px] px-2 py-0.5 text-[12px] font-medium', OPTION_CHIP_CLASS[o.color])}>
                   {o.label}
                 </span>
               ))}

@@ -29,12 +29,14 @@ export function getDueInfo(dueDate?: string, dueTime?: string): DueInfo | null {
 
   const base = { isOverdue: false, isUrgentSoon: false, isToday: false, isSoon: false };
 
+  // The design names the date rather than counting down from it: "Overdue ·
+  // Sep 27" reads at a glance, "2d overdue" makes you do arithmetic to find out
+  // which day you missed (showcase 1232).
   if (diffMs < 0) {
     const absMins = Math.abs(diffMins);
     if (absMins < 60) return { ...base, label: `${Math.round(absMins)}m overdue`, isOverdue: true };
-    const absHrs = Math.floor(absMins / 60);
-    if (absHrs < 24) return { ...base, label: `${absHrs}h overdue`, isOverdue: true };
-    return { ...base, label: `${Math.floor(absHrs / 24)}d overdue`, isOverdue: true };
+    if (absMins < 60 * 24) return { ...base, label: `${Math.floor(absMins / 60)}h overdue`, isOverdue: true };
+    return { ...base, label: `Overdue · ${shortDate(dueTs)}`, isOverdue: true };
   }
 
   if (diffMins <= 120 && dueTime) {
@@ -57,36 +59,45 @@ export function getDueInfo(dueDate?: string, dueTime?: string): DueInfo | null {
   if (dueTs < tomorrowMidnight) {
     if (dueTime) {
       const time = dueTs.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-      return { ...base, label: `Today ${time}`, isToday: true };
+      return { ...base, label: `Today, ${time}`, isToday: true };
     }
-    return { ...base, label: 'Due today', isToday: true };
+    return { ...base, label: 'Today', isToday: true };
   }
 
-  if (diffDays < 2) return { ...base, label: 'Due tomorrow', isSoon: true };
-  if (diffDays <= 7) return { ...base, label: `Due in ${Math.ceil(diffDays)}d`, isSoon: true };
+  if (diffDays < 2) return { ...base, label: 'Tomorrow', isSoon: true };
 
-  return { ...base, label: dueTs.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) };
+  // Past tomorrow the design shows the date itself, not a countdown
+  // (showcase 1234-1237: "Oct 2", "Oct 9", "Oct 5").
+  return { ...base, label: shortDate(dueTs), isSoon: diffDays <= 7 };
+}
+
+function shortDate(d: Date): string {
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 }
 
 export type DueTone = 'urgent' | 'soon' | 'plain';
 
 /**
- * The handoff's chip tones (§7h): overdue or due today → the "Do First" ink;
- * due soon → the "Schedule" ink; anything further out stays plain.
+ * The prototype's three due states (showcase 1272):
+ *   over -> #b83232, soon -> #C0741A, ok -> --text-tertiary.
  *
- * "Due in 45 minutes" counts as today, so it takes the urgent tone. Mapping the
- * two-hour flag to "soon" would colour a task due in 45 minutes more calmly
- * than one due this evening.
+ * "Soon" here means today — the thing you act on now. A date later this week is
+ * just a date; colouring it would spend the one warm colour on something that
+ * is not yet urgent, which is how everything ends up looking urgent.
  */
 export function dueTone(info: DueInfo): DueTone {
-  if (info.isOverdue || info.isToday) return 'urgent';
-  if (info.isSoon) return 'soon';
+  if (info.isOverdue) return 'urgent';
+  if (info.isToday) return 'soon';
   return 'plain';
 }
 
-/** Chip classes per tone. 12.5px pills, per §7h. */
+/**
+ * Plain coloured text, no background. The design renders a due date as
+ * `<span style="color:…;font-weight:…">` (showcase 202) — a tinted pill per row
+ * turns a list of tasks into a list of badges.
+ */
 export const DUE_TONE_CLASS: Record<DueTone, string> = {
-  urgent: 'bg-q-do-bg text-q-do font-semibold',
-  soon: 'bg-q-schedule-bg text-q-schedule font-semibold',
-  plain: 'text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)]',
+  urgent: 'text-a-attention font-semibold',
+  soon: 'text-a-amber font-semibold',
+  plain: 'text-a-muted',
 };

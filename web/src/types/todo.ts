@@ -29,8 +29,8 @@ export interface QuadrantConfig {
 export const QUADRANTS: QuadrantConfig[] = [
   {
     id: 'do',
-    label: 'Do First',
-    subtitle: 'Urgent & Important',
+    label: 'Do first',
+    subtitle: 'Urgent · Important',
     urgentLabel: 'Urgent',
     importantLabel: 'Important',
     isUrgent: true,
@@ -48,7 +48,7 @@ export const QUADRANTS: QuadrantConfig[] = [
   {
     id: 'schedule',
     label: 'Schedule',
-    subtitle: 'Not Urgent & Important',
+    subtitle: 'Not urgent · Important',
     urgentLabel: 'Not Urgent',
     importantLabel: 'Important',
     isUrgent: false,
@@ -66,7 +66,7 @@ export const QUADRANTS: QuadrantConfig[] = [
   {
     id: 'delegate',
     label: 'Delegate',
-    subtitle: 'Urgent & Not Important',
+    subtitle: 'Urgent · Not important',
     urgentLabel: 'Urgent',
     importantLabel: 'Not Important',
     isUrgent: true,
@@ -84,7 +84,7 @@ export const QUADRANTS: QuadrantConfig[] = [
   {
     id: 'eliminate',
     label: 'Eliminate',
-    subtitle: 'Not Urgent & Not Important',
+    subtitle: 'Not urgent · Not important',
     urgentLabel: 'Not Urgent',
     importantLabel: 'Not Important',
     isUrgent: false,
@@ -171,11 +171,14 @@ export interface AppState {
 }
 
 export const CATEGORIES = [
-  { id: 'personal', label: 'Personal', color: 'bg-violet-500/15 text-violet-600 dark:text-violet-400' },
-  { id: 'work', label: 'Work', color: 'bg-blue-500/15 text-blue-600 dark:text-blue-400' },
-  { id: 'health', label: 'Health', color: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400' },
-  { id: 'learning', label: 'Learning', color: 'bg-amber-500/15 text-amber-600 dark:text-amber-400' },
-  { id: 'creative', label: 'Creative', color: 'bg-pink-500/15 text-pink-600 dark:text-pink-400' },
+  // `swatchClass` is the small rounded-square dot the reference's Tag
+  // component draws before the label (`HitList Notion x Zoho.dc.html`'s `CAT`
+  // swatch colors) — a solid fill, distinct from `color`'s tinted badge below.
+  { id: 'personal', label: 'Personal', color: 'bg-violet-500/15 text-violet-600 dark:text-violet-400', swatchClass: 'bg-violet-500' },
+  { id: 'work', label: 'Work', color: 'bg-blue-500/15 text-blue-600 dark:text-blue-400', swatchClass: 'bg-blue-500' },
+  { id: 'health', label: 'Health', color: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400', swatchClass: 'bg-emerald-500' },
+  { id: 'learning', label: 'Learning', color: 'bg-amber-500/15 text-amber-600 dark:text-amber-400', swatchClass: 'bg-amber-500' },
+  { id: 'creative', label: 'Creative', color: 'bg-pink-500/15 text-pink-600 dark:text-pink-400', swatchClass: 'bg-pink-500' },
 ] as const;
 
 export type CategoryId = typeof CATEGORIES[number]['id'];

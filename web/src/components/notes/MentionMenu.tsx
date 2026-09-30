@@ -36,7 +36,7 @@ interface MentionMenuProps {
 const COL_W = 212;
 
 const itemClass = (active: boolean) => cn(
-  'flex w-full items-center gap-2.5 rounded-[10px] px-2 py-1.5 text-left text-[14.5px] text-a-ink transition-colors duration-100',
+  'flex w-full items-center gap-2.5 rounded-[8px] px-2 py-1.5 text-left text-[14px] text-a-ink transition-colors duration-[120ms]',
   active ? 'bg-a-accent-tint' : 'hover:bg-a-row-hover',
 );
 
@@ -116,7 +116,7 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
       data-mention-menu
       role="dialog"
       aria-label="Add to quadrant"
-      className="fixed z-50 flex overflow-hidden rounded-[16px] border border-a-line bg-a-bg text-a-ink shadow-[var(--a-shadow-md)] animate-fade-in"
+      className="fixed z-50 flex overflow-hidden rounded-[12px] border border-a-line bg-a-bg text-a-ink shadow-[var(--a-shadow-md)] animate-fade-in"
       style={{ top, left }}
       // Keep the caret in the block while the menu is used.
       onMouseDown={(e) => e.preventDefault()}
@@ -134,9 +134,9 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
             onClick={() => setLevel((l) => Math.max(l, 1))}
             aria-expanded={level >= 1}
           >
-            <KanbanSquare className="size-3.5 text-a-accent-700" strokeWidth={2.75} aria-hidden />
+            <KanbanSquare className="size-3.5 text-a-accent-700" strokeWidth={1.75} aria-hidden />
             <span className="flex-1">Add to quadrant</span>
-            <ChevronRight className="size-3.5 text-a-faint" strokeWidth={2.75} aria-hidden />
+            <ChevronRight className="size-3.5 text-a-faint" strokeWidth={1.75} aria-hidden />
           </button>
         )}
       </div>
@@ -159,7 +159,7 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
               >
                 <span className={cn('size-2 flex-shrink-0 rounded-full', getListColorDot(l.color))} aria-hidden />
                 <span className="min-w-0 flex-1 truncate">{l.name}</span>
-                <ChevronRight className="size-3.5 text-a-faint" strokeWidth={2.75} aria-hidden />
+                <ChevronRight className="size-3.5 text-a-faint" strokeWidth={1.75} aria-hidden />
               </button>
             ))}
           </div>
