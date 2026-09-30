@@ -138,6 +138,15 @@ describe('TaskTableView', () => {
   });
 });
 
+describe('TaskTableView — data quality bars', () => {
+  it('shows how many tasks have a due date, and a value in each field', () => {
+    setup({ todos: [task({ id: 'a', text: 'Alpha', dueDate: '2030-06-15' }), task({ id: 'b', text: 'Beta' })] });
+    // Due: Alpha only. Effort: both. Points: Alpha only.
+    const bars = screen.getAllByRole('img', { name: /of 2 have a value/ }).map((b) => b.getAttribute('aria-label'));
+    expect(bars).toEqual(['1 of 2 have a value', '2 of 2 have a value', '1 of 2 have a value']);
+  });
+});
+
 describe('TaskTableView — rows, columns and fields', () => {
   it('adds a task from the last row, carrying the group it was added in', () => {
     const { props } = setup({ groupField: effort });

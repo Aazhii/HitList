@@ -7,6 +7,7 @@ import {
   AlertCircle,
   X,
   SlidersHorizontal,
+  CalendarOff,
 } from 'lucide-react';
 import { NotesWorkspace } from '@/components/NotesWorkspace';
 import type { NoteTaskLinking } from '@/components/NoteEditor';
@@ -75,6 +76,7 @@ import {
 } from '@/components/AdvancedFilterBar';
 import type { FilterState } from '@/components/AdvancedFilterBar';
 import { EmptyState, ILL } from '@/components/EmptyState';
+import { missingDueCount } from '@/lib/taskQuality';
 import { allDoneCopy, firstRunCopy, tasksEmptyKind } from '@/lib/emptyStates';
 import { FilterPanel } from '@/components/tasks/FilterPanel';
 import type {
@@ -609,6 +611,7 @@ function UserScopedApp() {
 
   const activeTodos = useMemo(() => listTodos.filter((t) => t.status !== 'done'), [listTodos]);
   const doneTodos = useMemo(() => listTodos.filter((t) => t.status === 'done'), [listTodos]);
+  const missingDue = useMemo(() => missingDueCount(listTodos), [listTodos]);
 
   const totalCount = listTodos.length;
   const doneCount = doneTodos.length;
@@ -1392,6 +1395,20 @@ function UserScopedApp() {
       }
       actions={
         <>
+          {/* P5.3: the one gap that decides whether a task gets done, as a filter and not a nag. */}
+          {missingDue > 0 && filterState.due !== 'none' && (
+            <button
+              type="button"
+              onClick={() => setFilterState((prev) => ({ ...prev, due: 'none' }))}
+              className={topBarPill}
+              title="Show only tasks with no due date"
+            >
+              <CalendarOff className="size-3.5" strokeWidth={1.75} aria-hidden />
+              <span className="hidden md:inline">{missingDue} {missingDue === 1 ? 'task has' : 'tasks have'} no due date</span>
+              <span className="md:hidden">{missingDue}</span>
+            </button>
+          )}
+
           {/* One quiet pill for everything that narrows or tidies the view. It
               was a filter bar in the scroll column, which scrolled away. */}
           <Popover>

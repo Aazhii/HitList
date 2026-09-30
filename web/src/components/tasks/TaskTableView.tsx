@@ -20,6 +20,7 @@ import {
   ArrowDown, ArrowUp, Calendar, CheckSquare, ChevronDown, CircleDot, EyeOff, Hash, List, MoreHorizontal,
   PanelRightOpen, Pencil, Plus, Trash2, Type, type LucideIcon,
 } from 'lucide-react';
+import { dueFill, fieldFill, fillRatio } from '@/lib/taskQuality';
 import { cn } from '@/lib/utils';
 import { topBarPill } from '@/components/shell/TopBar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -167,6 +168,13 @@ export function TaskTableView({
     return [{ key: '', label: '', color: null, tasks: rows }];
   }, [todos, showDone, compare, groupField, fieldValues]);
 
+  // The fill bar under a column that can be empty: Due, and each custom field. Status and Quadrant always have a value.
+  const openTodos = useMemo(() => todos.filter((t) => showDone || t.status !== 'done'), [todos, showDone]);
+  const fillOf = (column: TableColumn) => {
+    const f = column.field ? fieldFill(column.field, openTodos, fieldValues) : column.id === 'due' ? dueFill(openTodos) : null;
+    return f ? { ratio: fillRatio(f), filled: f.filled, total: f.total } : undefined;
+  };
+
   const columnCount = columns.length + 3;
   const rowCount = groups.reduce((n, g) => n + g.tasks.length, 0);
   let rowNumber = 0;
@@ -201,6 +209,7 @@ export function TaskTableView({
                 typeLabel={column.typeLabel}
                 sort={sortOf(column.sortKey)}
                 onSort={() => onSortChange(...cycle(column.sortKey))}
+                fill={fillOf(column)}
                 onHide={onHideColumn && (() => onHideColumn(column.id))}
                 onEditField={column.field && onEditField ? () => onEditField(column.id) : undefined}
                 onDeleteField={column.field && onDeleteField ? () => onDeleteField(column.id) : undefined}
@@ -294,13 +303,15 @@ interface ColumnHeaderProps {
   sort: 'asc' | 'desc' | null;
   onSort: () => void;
   className?: string;
+  /** 0–1: how many tasks have a value here; a bar under the header says so (P5.3). Omitted: not measured. */
+  fill?: { ratio: number; filled: number; total: number };
   onHide?: () => void;
   onEditField?: () => void;
   onDeleteField?: () => void;
 }
 
 /** A sortable header with a menu: hide the column, and edit or delete a field. */
-function ColumnHeader({ label, glyph: Glyph, typeLabel, sort, onSort, className, onHide, onEditField, onDeleteField }: ColumnHeaderProps) {
+function ColumnHeader({ label, glyph: Glyph, typeLabel, sort, onSort, className, fill, onHide, onEditField, onDeleteField }: ColumnHeaderProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const hasMenu = Boolean(onHide || onEditField || onDeleteField);
 
@@ -374,6 +385,17 @@ function ColumnHeader({ label, glyph: Glyph, typeLabel, sort, onSort, className,
       </span>
       <span className="text-[11px] font-normal text-a-faint">{typeLabel}</span>
       </div>
+      {fill && (
+        // DataPrep's fill bar: the share of tasks with a value in this column.
+        <span
+          role="img"
+          aria-label={`${fill.filled} of ${fill.total} have a value`}
+          title={`${fill.filled} of ${fill.total} have a value`}
+          className="absolute inset-x-0 bottom-0 h-[3px] bg-a-dq-missing"
+        >
+          <span className="block h-full bg-a-dq-valid" style={{ width: `${Math.round(fill.ratio * 100)}%` }} />
+        </span>
+      )}
     </th>
   );
 }

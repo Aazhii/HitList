@@ -714,3 +714,7 @@ Everything below deliberately stops matching the prototype. Each entry says wher
 ### P5.7 Empty states
 - A task list that is empty now says why: never had a task ("Start with one task", or "Nothing in X yet" when other lists have some); tasks hidden by filters (the prototype's "No tasks match these filters"); everything finished ("Everything in X is done", the happy mascot, Add task and Show completed). Before, finishing every task showed the filter message, which was wrong.
 - Each matrix quadrant has its own empty line instead of "Nothing here. Add a task to …". Spends: `tasks-matrix` empty quadrants, `tasks-empty`.
+
+### P5.3 Data quality on tasks
+- The task table's Due column and every custom-field column get the Databases fill bar (3px, valid over missing) with a tooltip "N of M have a value". Status and Quadrant always have a value, so they get none; the bar counts what the table shows (done tasks only with "show completed").
+- A quiet chip in the top bar, "N tasks have no due date" (open tasks only), applies the existing "No date" filter; it disappears once that filter is on or nothing is missing. It is not a banner and cannot be dismissed, because it goes away by itself. Spends: `tasks-table` header, every tasks top bar.

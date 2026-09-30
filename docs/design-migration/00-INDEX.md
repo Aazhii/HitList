@@ -321,7 +321,7 @@ All seven accepted by the user on 2026-09-30; each is planned, built and recorde
 |---|---|---|
 | P5.1 | Make the daily decision the front door | **accepted** (2026-09-30) |
 | P5.2 | Promote momentum from sidebar furniture to a reason to return | **accepted** (2026-09-30) |
-| P5.3 | Data quality, applied to tasks | **accepted** (2026-09-30) |
+| P5.3 | Data quality, applied to tasks | **built** — `lib/taskQuality.ts`; fill bars under the Due and custom-field headers of the task table; a "N tasks have no due date" chip in the top bar that sets the No date filter; `taskQuality.test.ts`, table test |
 | P5.4 | Keyboard-first table and board | **accepted** (2026-09-30) |
 | P5.5 | Density preference | **accepted** (2026-09-30) |
 | P5.6 | Bidirectional note↔task links | **accepted** (2026-09-30) |
