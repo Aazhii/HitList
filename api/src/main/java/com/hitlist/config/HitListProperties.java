@@ -6,6 +6,25 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public class HitListProperties {
     private String allowedOrigins = "";
     private String ownerCookieSecret = "";
+    /** "cookie" (default): a signed browser cookie owns the workspace. "catalyst": Catalyst's sign-in does. */
+    private String authMode = "cookie";
+    private boolean debugHeaders;
+
+    public String getAuthMode() {
+        return authMode;
+    }
+
+    public void setAuthMode(String authMode) {
+        this.authMode = authMode;
+    }
+
+    public boolean isDebugHeaders() {
+        return debugHeaders;
+    }
+
+    public void setDebugHeaders(boolean debugHeaders) {
+        this.debugHeaders = debugHeaders;
+    }
 
     public String getAllowedOrigins() {
         return allowedOrigins;

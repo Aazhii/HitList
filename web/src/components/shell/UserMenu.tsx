@@ -1,7 +1,8 @@
 import { useRef, useState } from 'react';
-import { Bell, Download, Keyboard, Upload } from 'lucide-react';
+import { Bell, Download, Keyboard, LogOut, Upload } from 'lucide-react';
 import { toast } from 'sonner';
 import { backupApi } from '@/lib/api';
+import { currentSession, signOut } from '@/lib/session';
 import { backupFileName, importSummary, parseBackupText } from '@/lib/backupFile';
 import { DENSITIES, useDensity } from '@/hooks/useDensity';
 import {
@@ -121,6 +122,15 @@ export function UserMenu({ onOpenReminders, dailyLine }: {
               >
                 Daily summary on Today
               </DropdownMenuCheckboxItem>
+            )}
+            {currentSession()?.mode === 'catalyst' && (
+              <DropdownMenuItem
+                onSelect={() => { signOut(currentSession()?.loginUrl).catch(() => toast.error('Could not sign out', { duration: 3000 })); }}
+                className="gap-2.5 px-2.5 py-2 text-[14px] text-a-muted"
+              >
+                <LogOut className="size-[15px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
+                Sign out
+              </DropdownMenuItem>
             )}
             <DropdownMenuSeparator />
             <DropdownMenuLabel className="px-2.5 py-1.5 text-[12px] font-medium text-a-faint">Density</DropdownMenuLabel>

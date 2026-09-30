@@ -203,6 +203,50 @@ class ApiContractTest {
     }
 
     @Test
+    void catalystSignInOwnsTheWorkspaceAndClaimsAnOldCookieOnce() throws Exception {
+        RowStore store = new TestRowStore();
+        HitListProperties cookieProps = properties();
+        HitListProperties catalystProps = properties();
+        catalystProps.setAuthMode("catalyst");
+        MockMvc cookieMvc = mockMvc(store, cookieProps);
+        MockMvc catalystMvc = mockMvc(store, catalystProps);
+
+        // A workspace made before sign-in existed, under a browser cookie.
+        MvcResult setup = cookieMvc.perform(get("/api/setup")).andReturn();
+        String setCookie = setup.getResponse().getHeader(HttpHeaders.SET_COOKIE);
+        MockCookie old = new MockCookie(OwnerResolver.COOKIE_NAME, setCookie.substring(setCookie.indexOf('=') + 1, setCookie.indexOf(';')));
+        cookieMvc.perform(post("/api/tasks").cookie(old).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"clientId\":\"before-signin\",\"title\":\"From before\"}"))
+            .andExpect(status().isCreated());
+
+        // Signed out: the project's own id is not a person, and a missing id is nobody. Only /api/session answers.
+        catalystMvc.perform(get("/api/tasks").header("x-zc-user-id", "757330000000013053").header("x-zc-projectid", "757330000000013053"))
+            .andExpect(status().isUnauthorized());
+        catalystMvc.perform(get("/api/tasks")).andExpect(status().isUnauthorized());
+        catalystMvc.perform(get("/api/session")).andExpect(status().isOk())
+            .andExpect(jsonPath("$.authenticated").value(false))
+            .andExpect(jsonPath("$.loginUrl").value("/__catalyst/auth/login"));
+        catalystMvc.perform(get("/api/health")).andExpect(status().isOk()); // the service check stays open
+
+        // Signed in: a private workspace that the old cookie does not open, until it is claimed.
+        catalystMvc.perform(get("/api/tasks").header("x-zc-user-id", "757330000000099001").header("x-zc-projectid", "757330000000013053"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+        catalystMvc.perform(get("/api/session").cookie(old).header("x-zc-user-id", "757330000000099001").header("x-zc-projectid", "757330000000013053"))
+            .andExpect(jsonPath("$.authenticated").value(true))
+            .andExpect(jsonPath("$.claimed.KaizenTasks").value(1));
+        catalystMvc.perform(get("/api/tasks/before-signin").header("x-zc-user-id", "757330000000099001").header("x-zc-projectid", "757330000000013053"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.title").value("From before"));
+
+        // Claimed once: asking again moves nothing, and a different person never sees it.
+        catalystMvc.perform(get("/api/session").cookie(old).header("x-zc-user-id", "757330000000099001").header("x-zc-projectid", "757330000000013053"))
+            .andExpect(jsonPath("$.claimed").doesNotExist());
+        catalystMvc.perform(get("/api/tasks/before-signin").header("x-zc-user-id", "757330000000099002").header("x-zc-projectid", "757330000000013053"))
+            .andExpect(status().isNotFound());
+        // The cookie no longer finds it either.
+        cookieMvc.perform(get("/api/tasks/before-signin").cookie(old)).andExpect(status().isNotFound());
+    }
+
+    @Test
     void favoritesAndRecentsAreKeptPerOwnerAndTrimmed() throws Exception {
         MockCookie browser = browser();
         MockCookie other = browser();
@@ -378,9 +422,12 @@ class ApiContractTest {
     }
 
     private MockMvc mockMvc() {
-        RowStore store = new TestRowStore();
+        return mockMvc(new TestRowStore(), properties());
+    }
+
+    private MockMvc mockMvc(RowStore store, HitListProperties props) {
         EntityRepository repository = new EntityRepository(store);
-        OwnerResolver owners = new OwnerResolver(properties());
+        OwnerResolver owners = new OwnerResolver(props);
         ObjectMapper objectMapper = new ObjectMapper();
         MappingJackson2HttpMessageConverter converter = new MappingJackson2HttpMessageConverter(objectMapper);
         converter.setSupportedMediaTypes(List.of(MediaType.APPLICATION_JSON, MediaType.TEXT_PLAIN));
@@ -393,11 +440,12 @@ class ApiContractTest {
                 new NoteController(new NoteService(repository), owners),
                 new WorkspaceController(new WorkspaceService(repository, objectMapper), owners),
                 new PageMarksController(new PageMarksService(repository), owners),
-                new com.hitlist.web.BackupController(new com.hitlist.domain.WorkspaceBackupService(repository), owners)
+                new com.hitlist.web.BackupController(new com.hitlist.domain.WorkspaceBackupService(repository), owners),
+                new com.hitlist.web.SessionController(owners, new com.hitlist.domain.WorkspaceClaimService(repository, store))
             )
             .setControllerAdvice(new ApiExceptionHandler())
             .setMessageConverters(converter)
-            .addFilters(new OwnerSessionFilter(owners), simpleRequestFilter())
+            .addFilters(new OwnerSessionFilter(owners), new SimpleRequestFilter(props))
             .build();
     }
 

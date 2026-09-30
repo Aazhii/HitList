@@ -44,6 +44,7 @@ import { CommandPalette } from '@/components/CommandPalette';
 import { toApiRecurrence, type Recurrence } from '@/lib/recurrence';
 import { taskCountLabel } from '@/lib/bulkSelection';
 import type { BulkChange } from '@/components/tasks/BulkBar';
+import { takeClaimedMessage } from '@/lib/session';
 import { QuickCapture } from '@/components/QuickCapture';
 import { isTypingTarget } from '@/lib/taskKeyboard';
 import { PageSections } from '@/components/shell/PageSections';
@@ -476,6 +477,12 @@ function UserScopedApp() {
   useEffect(() => {
     if (initialScreen === null) setActiveView('today');
   }, [initialScreen, setActiveView]);
+  // First sign-in from a browser that held an old cookie workspace: say what came across.
+  useEffect(() => {
+    const message = takeClaimedMessage();
+    if (message) toast.success(message, { duration: 6000 });
+  }, []);
+
   // P5.2: the once-a-day line on Today. On by default, one click to turn off, and back on from the Account menu.
   const [dailyLineOn, setDailyLineOn] = useLocalStorage('hitlist-daily-line', true);
   const [dailyLineSeen, setDailyLineSeen] = useLocalStorage('hitlist-daily-line-seen', '');

@@ -612,7 +612,7 @@ Shared primitives now follow the DS, so every dialog inherits them:
 1. **Verify before you change.** Every task quotes the current code. If what you find does not match the quote, **stop and report** — do not adapt silently. The file may have moved on.
 2. **Never invent a value.** If a task does not give you a number and this file does not either, ask. Guessing is what produced the current state.
 3. **One task, one commit.** Commit message: `design(T1.4): set every icon stroke to 1.75`.
-4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 480 tests.
+4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 486 tests.
 5. **Update `00-INDEX.md`** — set State and fill in "Verified by" with the actual command output or screenshot pair. A task with an empty "Verified by" is not done.
 6. **Do not delete the Automations or Reminders code.** It is being revived in Phase 4, not removed.
 
@@ -776,4 +776,13 @@ A re-shoot of every screen found small drifts that the 2px comparison tolerance 
 Also learned: the app opens on Today now, so `shoot.mjs` routes must click their nav row (it now falls back to a starts-with match, because a row reads "Tasks8" with its count). Anything shot before this pass with no `nav` was silently photographing Today.
 
 Known gaps that remain, on purpose or for lack of support: a Link/URL column kind (the prototype renders underlined links; the server has no `url` kind); the prototype's Status/Quadrant/Stage headers say "text" with a T glyph, the app says what the column is; the Zoho Calendar notice and the extra Account-menu rows are the app's, not the prototype's.
+
+## Catalyst sign-in (2026-10-01)
+
+- **Scope:** only the Catalyst deployment. `AUTH_MODE=catalyst` (baked into the deploy image by `Dockerfile.catalyst-local --build-arg AUTH_MODE=catalyst`) makes Catalyst's hosted sign-in the owner of a workspace. The default `cookie` mode, used by the :3001 Docker build and the desktop app, is unchanged.
+- **Who is signed in:** Catalyst's gateway sets `x-zc-user-id` on every request to the AppSail and replaces any client-supplied value (checked against the deployed gateway); before sign-in it carries the project's own id, which is refused. `x-zc-user-type` is ignored because the gateway passes a forged one through. The owner id is `base64url(sha256("catalyst:" + userId))`, 43 characters like a cookie owner, so the storage layer is untouched.
+- **Signed out:** every `/api/**` call except `/api/session` and `/api/health` answers 401 with `loginUrl`. The page asks `/api/session` before the app starts (`main.tsx`, `lib/session.ts`) and goes to `/__catalyst/auth/login`. Any failure of that check lets the app start, so a flaky network never becomes a wall. Account menu → Sign out (Catalyst's web SDK, loaded on demand) appears only in this mode.
+- **Old cookie data, no loss:** on a first sign-in from a browser still holding a valid `hitlist_owner_v1` cookie, `/api/session` re-owns that workspace's rows to the account (`WorkspaceClaimService`): rows are moved, never copied or deleted; a row whose id the account already has stays with the cookie owner; afterwards nothing is left to claim, so repeating it is harmless. The app says what came across. Covered by `ApiContractTest.catalystSignInOwnsTheWorkspaceAndClaimsAnOldCookieOnce`.
+- **Needs the console:** Authentication → Native Catalyst Authentication → Hosted must be switched on for the project, or the login page does not exist.
+- `/api/_debug/headers` exists only while `HITLIST_DEBUG_HEADERS=true` and shows redacted request headers; it is for working out the gateway's behaviour and should be off in a deploy people use.
 

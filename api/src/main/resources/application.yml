@@ -18,5 +18,7 @@ spring:
           max-age: 365d
 
 hitlist:
+  debug-headers: ${HITLIST_DEBUG_HEADERS:false}
+  auth-mode: ${AUTH_MODE:cookie}
   allowed-origins: ${ALLOWED_ORIGINS:}
   owner-cookie-secret: ${OWNER_COOKIE_SECRET:}

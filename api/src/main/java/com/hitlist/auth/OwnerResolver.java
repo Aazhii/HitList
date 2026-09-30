@@ -23,8 +23,10 @@ public class OwnerResolver {
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final int OWNER_BYTES = 32;
     private final byte[] signingSecret;
+    private final boolean catalystMode;
 
     public OwnerResolver(HitListProperties properties) {
+        catalystMode = "catalyst".equalsIgnoreCase(properties.getAuthMode());
         String configuredSecret = properties.getOwnerCookieSecret();
         signingSecret = configuredSecret == null || configuredSecret.isBlank()
             ? randomBytes(OWNER_BYTES)
@@ -32,6 +34,41 @@ public class OwnerResolver {
         if (configuredSecret != null && !configuredSecret.isBlank() && signingSecret.length < OWNER_BYTES) {
             throw new IllegalArgumentException("OWNER_COOKIE_SECRET must be at least 32 bytes");
         }
+    }
+
+    /** True when Catalyst's own sign-in decides who a request is from, rather than a browser cookie. */
+    public boolean isCatalystMode() {
+        return catalystMode;
+    }
+
+    /**
+     * The signed-in Catalyst user, or null. Catalyst's gateway sets x-zc-user-id on every request to the AppSail and
+     * replaces any value a client sends (checked against the deployed gateway). Before sign-in it carries the
+     * project's own id, which is not a person, so that is refused. x-zc-user-type is NOT used: the gateway passes
+     * a client-supplied one through.
+     */
+    public String catalystUserId(HttpServletRequest request) {
+        String id = request.getHeader("x-zc-user-id");
+        String project = request.getHeader("x-zc-projectid");
+        if (id == null || !id.matches("[0-9]{5,30}") || id.equals(project)) {
+            return null;
+        }
+        return id;
+    }
+
+    /** A stable 43-character owner id for a Catalyst user, so it fits the same storage as a cookie owner. */
+    public String catalystOwner(String userId) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(("catalyst:" + userId).getBytes(StandardCharsets.US_ASCII));
+            return Base64.getUrlEncoder().withoutPadding().encodeToString(digest);
+        } catch (GeneralSecurityException exception) {
+            throw new IllegalStateException("SHA-256 is unavailable", exception);
+        }
+    }
+
+    /** The browser's old cookie workspace, if it carries a valid one. Never issues a new cookie. */
+    public String legacyCookieOwner(HttpServletRequest request) {
+        return cookieValue(request);
     }
 
     public String owner(HttpServletRequest request) {
