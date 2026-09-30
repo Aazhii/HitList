@@ -61,9 +61,8 @@ export interface CalendarSource {
 export interface UnifiedCalendarProps {
   items: CalendarItem[];
   sources: CalendarSource[];
-  /** Source ids that are switched off; everything else shows. */
+  /** Source ids that are switched off (from the sidebar's Sources list); everything else shows. */
   hiddenSources: string[];
-  onToggleSource: (sourceId: string) => void;
   /** A drop: `date` is '' when dropped on the no-date tray. */
   onMove: (item: CalendarItem, date: string) => void;
   onOpen: (item: CalendarItem) => void;
@@ -74,7 +73,7 @@ export interface UnifiedCalendarProps {
   today?: Date;
 }
 
-const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 /** Chips per day before the rest go behind "+N more". */
 const MAX_CHIPS = 3;
 
@@ -96,7 +95,7 @@ function withinDay(a: CalendarItem, b: CalendarItem): number {
 }
 
 export function UnifiedCalendar({
-  items, sources, hiddenSources, onToggleSource, onMove, onOpen, onAddOnDate, loading, today,
+  items, sources, hiddenSources, onMove, onOpen, onAddOnDate, loading, today,
 }: UnifiedCalendarProps) {
   const now = today ?? new Date();
   const todayKey = localDateKey(now);
@@ -148,6 +147,9 @@ export function UnifiedCalendar({
     onMove(item, date);
   };
 
+  // DS IconButton, outline, sm (showcase 797): 28px, 1px strong border, 4px radius.
+  const NAV_BUTTON = 'flex size-7 items-center justify-center rounded-[4px] border border-a-line-strong text-a-muted transition-colors duration-[120ms] hover:bg-a-line-soft hover:text-a-ink';
+
   return (
     <DndContext
       sensors={sensors}
@@ -155,69 +157,31 @@ export function UnifiedCalendar({
       onDragCancel={() => setActiveId(null)}
       onDragEnd={handleDragEnd}
     >
-      <div className="flex flex-col gap-5 animate-fade-in xl:flex-row xl:items-start">
-        <section className="min-w-0 flex-1" aria-label={`Calendar, ${monthLabel}`}>
-          <header className="mb-3 flex flex-wrap items-center gap-2">
-            <h2 className="font-display text-[20px] leading-tight text-a-ink">{monthLabel}</h2>
+      <div className="mx-auto max-w-[1200px] animate-fade-in">
+        <section className="min-w-0" aria-label={`Calendar, ${monthLabel}`}>
+          <header className="mb-3 flex items-center gap-2">
+            <button type="button" onClick={() => setMonth((m) => shiftMonth(m, -1))} className={NAV_BUTTON} aria-label="Previous month">
+              <ChevronLeft className="size-4" strokeWidth={1.75} />
+            </button>
+            <button type="button" onClick={() => setMonth((m) => shiftMonth(m, 1))} className={NAV_BUTTON} aria-label="Next month">
+              <ChevronRight className="size-4" strokeWidth={1.75} />
+            </button>
+            <h2 className="mx-2 text-[20px] leading-tight font-semibold text-a-ink">{monthLabel}</h2>
+            <button
+              type="button"
+              onClick={() => setMonth(monthOf(now))}
+              className="h-7 rounded-[3px] border border-a-line-strong bg-a-surface px-3 text-[11px] font-semibold text-a-ink transition-colors duration-[120ms] hover:bg-a-bg"
+            >
+              Today
+            </button>
             {loading && <span className="text-[12px] text-a-faint">Loading…</span>}
-
-            <div className="ml-auto flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setMonth(monthOf(now))}
-                className="h-8 rounded-[6px] px-3 text-[13px] font-semibold text-a-ink shadow-[inset_0_0_0_1px_var(--a-line)] transition-colors duration-[120ms] hover:bg-a-row-hover"
-              >
-                Today
-              </button>
-              <button
-                type="button"
-                onClick={() => setMonth((m) => shiftMonth(m, -1))}
-                className="flex size-8 items-center justify-center rounded-[4px] text-a-muted transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
-                aria-label="Previous month"
-              >
-                <ChevronLeft className="size-4" strokeWidth={1.75} />
-              </button>
-              <button
-                type="button"
-                onClick={() => setMonth((m) => shiftMonth(m, 1))}
-                className="flex size-8 items-center justify-center rounded-[4px] text-a-muted transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
-                aria-label="Next month"
-              >
-                <ChevronRight className="size-4" strokeWidth={1.75} />
-              </button>
-            </div>
           </header>
 
-          {sources.length > 0 && (
-            <div className="mb-3 flex flex-wrap items-center gap-1.5" role="group" aria-label="What the calendar shows">
-              {sources.map((source) => {
-                const on = !hiddenSources.includes(source.id);
-                return (
-                  <button
-                    key={source.id}
-                    type="button"
-                    aria-pressed={on}
-                    onClick={() => onToggleSource(source.id)}
-                    className={cn(
-                      'flex h-7 items-center gap-1.5 rounded-[6px] px-2.5 text-[12px] transition-colors duration-[120ms]',
-                      on
-                        ? 'text-a-ink shadow-[inset_0_0_0_1px_var(--a-line)]'
-                        : 'text-a-faint shadow-[inset_0_0_0_1px_var(--a-line-soft)]',
-                    )}
-                  >
-                    <span className={cn('size-[7px] rounded-full', on ? source.dotClass : 'bg-a-faint/40')} aria-hidden />
-                    {source.name}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-
           <div className="overflow-x-auto">
-            <div className="min-w-[700px]">
-              <div className="grid grid-cols-7 border-b border-a-line-soft pb-1.5" aria-hidden>
+            <div className="min-w-[700px] overflow-hidden rounded-[8px] border border-a-line bg-a-surface">
+              <div className="grid grid-cols-7 border-b border-a-line bg-a-bg" aria-hidden>
                 {WEEKDAYS.map((d) => (
-                  <div key={d} className="px-2 text-[12px] font-semibold text-a-faint">{d}</div>
+                  <div key={d} className="px-2.5 py-2 text-[11px] font-semibold tracking-[0.06em] text-a-faint uppercase">{d}</div>
                 ))}
               </div>
               {weeks.map((week) => (
@@ -229,6 +193,7 @@ export function UnifiedCalendar({
                       items={byDay.get(key) ?? []}
                       inMonth={isInMonth(key, month)}
                       isToday={key === todayKey}
+                      isPast={key < todayKey}
                       dotBySource={dotBySource}
                       onOpen={onOpen}
                       onAddOnDate={onAddOnDate}
@@ -246,7 +211,7 @@ export function UnifiedCalendar({
       <DragOverlay dropAnimation={null}>
         {active && (
           <div className="w-[180px] cursor-grabbing">
-            <ItemChipBody item={active} dotBySource={dotBySource} className="bg-a-bg shadow-lg" />
+            <ItemChipBody item={active} dotBySource={dotBySource} className="shadow-lg" />
           </div>
         )}
       </DragOverlay>
@@ -259,48 +224,53 @@ interface CalendarDayProps {
   items: CalendarItem[];
   inMonth: boolean;
   isToday: boolean;
+  /** Before today: an open task here is overdue. */
+  isPast: boolean;
   dotBySource: Map<string, string>;
   onOpen: (item: CalendarItem) => void;
   onAddOnDate: (dateKey: string, anchor: HTMLElement) => void;
 }
 
-function CalendarDay({ dateKey, items, inMonth, isToday, dotBySource, onOpen, onAddOnDate }: CalendarDayProps) {
+function CalendarDay({ dateKey, items, inMonth, isToday, isPast, dotBySource, onOpen, onAddOnDate }: CalendarDayProps) {
   const { setNodeRef, isOver } = useDroppable({ id: `${CALENDAR_DAY_PREFIX}${dateKey}` });
   const label = longDate(dateKey);
+  const overdue = (item: CalendarItem) => isPast && item.kind === 'task' && !item.done;
 
   return (
     <div
       ref={setNodeRef}
       role="group"
       aria-label={label}
+      // Showcase 806: 104px, 6px 8px, a 3px gap, hairlines right and below.
       className={cn(
-        'group/day flex min-h-[112px] min-w-0 flex-col gap-1 border-b border-r border-a-line-soft p-1.5 transition-colors duration-[120ms] first:border-l',
-        !inMonth && 'bg-[color-mix(in_srgb,var(--a-ink)_2.5%,transparent)]',
+        'group/day relative flex min-h-[104px] min-w-0 flex-col gap-[3px] border-r border-b border-a-line-soft px-2 py-1.5 transition-colors duration-[120ms]',
+        !inMonth && 'bg-a-bg',
         isOver && 'bg-a-row-hover shadow-[inset_0_0_0_1.5px_var(--a-accent)]',
       )}
     >
-      <div className="flex items-center justify-between">
-        <span
-          className={cn(
-            'flex size-6 items-center justify-center rounded-full text-[12px] tabular-nums',
-            isToday ? 'bg-a-accent font-bold text-a-surface' : inMonth ? 'text-a-ink' : 'text-a-faint',
-          )}
-          aria-current={isToday ? 'date' : undefined}
-        >
-          {Number(dateKey.slice(8))}
-        </span>
-        <button
-          type="button"
-          onClick={(e) => onAddOnDate(dateKey, e.currentTarget)}
-          className="flex size-6 items-center justify-center rounded-full text-a-faint opacity-0 transition-opacity duration-[120ms] group-hover/day:opacity-100 focus-visible:opacity-100 hover:text-a-ink"
-          aria-label={`Add on ${label}`}
-        >
-          <Plus className="size-3.5" strokeWidth={1.75} />
-        </button>
-      </div>
+      <span
+        className={cn(
+          // design-check-ignore: pill — the day number is a 99px-radius badge (showcase 807).
+          'inline-grid h-[22px] min-w-[22px] place-items-center self-start rounded-full px-1 text-[12px] tabular-nums',
+          isToday ? 'bg-a-accent font-bold text-a-surface' : cn('font-medium', inMonth ? 'text-a-ink' : 'text-a-disabled'),
+        )}
+        aria-current={isToday ? 'date' : undefined}
+      >
+        {Number(dateKey.slice(8))}
+      </span>
+
+      {/* Not in the prototype's cells; kept for picking any day, and shown only on hover. */}
+      <button
+        type="button"
+        onClick={(e) => onAddOnDate(dateKey, e.currentTarget)}
+        className="absolute top-1.5 right-1.5 flex size-[22px] items-center justify-center rounded-full text-a-faint opacity-0 transition-opacity duration-[120ms] group-hover/day:opacity-100 focus-visible:opacity-100 hover:text-a-ink"
+        aria-label={`Add on ${label}`}
+      >
+        <Plus className="size-3.5" strokeWidth={1.75} />
+      </button>
 
       {items.slice(0, MAX_CHIPS).map((item) => (
-        <ItemChip key={`${item.kind}:${item.id}`} item={item} dotBySource={dotBySource} onOpen={onOpen} />
+        <ItemChip key={`${item.kind}:${item.id}`} item={item} overdue={overdue(item)} dotBySource={dotBySource} onOpen={onOpen} />
       ))}
 
       {items.length > MAX_CHIPS && (
@@ -308,13 +278,13 @@ function CalendarDay({ dateKey, items, inMonth, isToday, dotBySource, onOpen, on
           <PopoverTrigger asChild>
             <button
               type="button"
-              className="rounded-[8px] px-1.5 py-0.5 text-left text-[12px] font-semibold text-a-muted transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
+              className="rounded-[4px] pl-1.5 text-left text-[11px] text-a-faint transition-colors duration-[120ms] hover:text-a-ink"
               aria-label={`Show all ${items.length} on ${label}`}
             >
-              +{items.length - MAX_CHIPS} more
+              {`+${items.length - MAX_CHIPS} more`}
             </button>
           </PopoverTrigger>
-          <PopoverContent align="start" className="w-[260px] p-2">
+          <PopoverContent align="start" className="flex w-[260px] flex-col gap-[3px] p-2">
             <p className="px-1.5 pb-1.5 text-[12px] font-semibold text-a-muted">{label}</p>
             {/* Click to open. Dragging stays on the grid: a drag inside a popover
                 fights the popover's own dismissal. */}
@@ -326,7 +296,7 @@ function CalendarDay({ dateKey, items, inMonth, isToday, dotBySource, onOpen, on
                 className="block w-full text-left"
                 aria-label={`${item.title}${item.time ? `, ${item.time}` : ''}`}
               >
-                <ItemChipBody item={item} dotBySource={dotBySource} />
+                <ItemChipBody item={item} overdue={overdue(item)} dotBySource={dotBySource} />
               </button>
             ))}
           </PopoverContent>
@@ -336,49 +306,51 @@ function CalendarDay({ dateKey, items, inMonth, isToday, dotBySource, onOpen, on
   );
 }
 
+/** Showcase 821: a dashed panel under the grid — "Not on a date", a count, a Tag per item, a hint. */
 function NoDateTray({
   items, dotBySource, onOpen,
 }: { items: CalendarItem[]; dotBySource: Map<string, string>; onOpen: (item: CalendarItem) => void }) {
   const { setNodeRef, isOver } = useDroppable({ id: `${CALENDAR_DAY_PREFIX}${NO_DATE}` });
 
   return (
-    <aside aria-label="Without a date" className="w-full flex-shrink-0 xl:w-[240px]">
-      <h2 className="mb-3 flex items-baseline gap-2 font-display text-[16px] leading-tight text-a-ink">
-        No date
-        <span className="font-sans text-[12px] font-bold tabular-nums text-a-muted">{items.length}</span>
-      </h2>
-      <div
-        ref={setNodeRef}
-        className={cn(
-          'flex min-h-[96px] flex-col gap-1 rounded-[8px] bg-[color-mix(in_srgb,var(--a-ink)_4%,transparent)] p-2 transition-[background-color,box-shadow] duration-[120ms]',
-          isOver && 'bg-a-row-hover shadow-[inset_0_0_0_1.5px_var(--a-accent)]',
-        )}
-      >
-        {items.map((item) => (
-          <ItemChip key={`${item.kind}:${item.id}`} item={item} dotBySource={dotBySource} onOpen={onOpen} />
-        ))}
-        {items.length === 0 && (
-          <p className="px-2 py-5 text-center text-[12px] leading-relaxed text-a-faint">
-            Everything has a date. Drop something here to take its date off.
-          </p>
-        )}
-      </div>
+    <aside
+      ref={setNodeRef}
+      aria-label="Without a date"
+      className={cn(
+        'mt-4 flex flex-wrap items-center gap-3 rounded-[8px] border border-dashed border-a-line-strong bg-a-surface px-4 py-3 text-[13px] transition-[background-color,box-shadow] duration-[120ms]',
+        isOver && 'bg-a-row-hover shadow-[inset_0_0_0_1.5px_var(--a-accent)]',
+      )}
+    >
+      <h2 className="font-semibold text-a-ink">Not on a date</h2>
+      <span className="font-mono text-[11px] text-a-faint">{items.length}</span>
+      {items.map((item) => (
+        <ItemChip key={`${item.kind}:${item.id}`} item={item} tag dotBySource={dotBySource} onOpen={onOpen} />
+      ))}
+      <span className="text-[12px] text-a-faint">
+        {items.length > 0
+          ? 'Drag one onto a day to give it a due date.'
+          : 'Everything has a date. Drop something here to take its date off.'}
+      </span>
     </aside>
   );
 }
 
-function ItemChip({
-  item, dotBySource, onOpen,
-}: { item: CalendarItem; dotBySource: Map<string, string>; onOpen: (item: CalendarItem) => void }) {
-  if (item.kind === 'zoho') {
-    return <ReadOnlyItemChip item={item as CalendarItem & { kind: 'zoho' }} dotBySource={dotBySource} onOpen={onOpen} />;
-  }
-  return <DraggableItemChip item={item as CalendarItem & { kind: 'task' | 'record' }} dotBySource={dotBySource} onOpen={onOpen} />;
+interface ItemChipProps {
+  item: CalendarItem;
+  dotBySource: Map<string, string>;
+  onOpen: (item: CalendarItem) => void;
+  /** The open task's day has passed. */
+  overdue?: boolean;
+  /** The DS Tag in the tray, rather than a day's chip. */
+  tag?: boolean;
 }
 
-function DraggableItemChip({
-  item, dotBySource, onOpen,
-}: { item: CalendarItem & { kind: 'task' | 'record' }; dotBySource: Map<string, string>; onOpen: (item: CalendarItem) => void }) {
+function ItemChip(props: ItemChipProps) {
+  if (props.item.kind === 'zoho') return <ReadOnlyItemChip {...props} />;
+  return <DraggableItemChip {...props} />;
+}
+
+function DraggableItemChip({ item, overdue, tag, dotBySource, onOpen }: ItemChipProps) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: `${item.kind}:${item.id}` });
 
   return (
@@ -390,46 +362,57 @@ function DraggableItemChip({
       onClick={() => onOpen(item)}
       aria-roledescription={item.kind === 'task' ? 'Draggable task' : 'Draggable record'}
       aria-label={`${item.title}${item.time ? `, ${item.time}` : ''}${item.done ? ', done' : ''} — ${item.sourceName}`}
-      className={cn('block w-full touch-none text-left', isDragging && 'opacity-40')}
+      className={cn('touch-none text-left', tag ? 'inline-flex' : 'block w-full', isDragging && 'opacity-40')}
     >
-      <ItemChipBody item={item} dotBySource={dotBySource} />
+      <ItemChipBody item={item} overdue={overdue} tag={tag} dotBySource={dotBySource} />
     </button>
   );
 }
 
-function ReadOnlyItemChip({
-  item, dotBySource, onOpen,
-}: { item: CalendarItem & { kind: 'zoho' }; dotBySource: Map<string, string>; onOpen: (item: CalendarItem) => void }) {
+function ReadOnlyItemChip({ item, overdue, tag, dotBySource, onOpen }: ItemChipProps) {
   return (
     <button
       type="button"
       onClick={() => onOpen(item)}
       aria-roledescription="Read-only Zoho Calendar event"
       aria-label={`${item.title}${item.time ? `, ${item.time}` : ''} — ${item.sourceName}`}
-      className="block w-full cursor-default text-left"
+      className={cn('cursor-default text-left', tag ? 'inline-flex' : 'block w-full')}
     >
-      <ItemChipBody item={item} dotBySource={dotBySource} />
+      <ItemChipBody item={item} overdue={overdue} tag={tag} dotBySource={dotBySource} />
     </button>
   );
 }
 
 function ItemChipBody({
-  item, dotBySource, className,
-}: { item: CalendarItem; dotBySource: Map<string, string>; className?: string }) {
+  item, dotBySource, overdue, tag, className,
+}: { item: CalendarItem; dotBySource: Map<string, string>; overdue?: boolean; tag?: boolean; className?: string }) {
+  if (tag) {
+    // DS Tag (showcase 823): 24px, 1px border, 4px radius, 11px / 500 secondary.
+    return (
+      <span
+        title={`${item.title} — ${item.sourceName}`}
+        className={cn('inline-flex h-6 items-center rounded-[4px] border border-a-line bg-a-surface px-2 text-[11px] font-medium whitespace-nowrap text-a-muted transition-colors duration-[120ms] hover:bg-a-bg', className)}
+      >
+        {item.title}
+      </span>
+    );
+  }
+  // Showcase 810: a 6px dot and the title on a grey chip; done is tertiary and struck, overdue is red.
   return (
     <span
       title={`${item.title} — ${item.sourceName}`}
       className={cn(
-        'flex min-w-0 items-center gap-1.5 rounded-[8px] px-1.5 py-1 text-[12px] leading-tight transition-colors duration-[120ms] hover:bg-a-row-hover',
+        'flex min-w-0 items-center gap-1.5 rounded-[4px] px-1.5 py-[2px] text-[12px] leading-[1.4]',
+        overdue ? 'bg-a-red-tint text-q-do' : 'bg-a-bg',
         className,
       )}
     >
       <span
-        className={cn('size-[7px] flex-shrink-0 rounded-full', dotBySource.get(item.sourceId) ?? 'bg-a-accent')}
+        className={cn('size-1.5 flex-shrink-0 rounded-full', dotBySource.get(item.sourceId) ?? 'bg-a-accent')}
         aria-hidden
       />
       {item.time && <span className="flex-shrink-0 tabular-nums text-a-faint">{item.time}</span>}
-      <span className={cn('min-w-0 truncate', item.done ? 'text-a-faint line-through' : 'text-a-ink')}>
+      <span className={cn('min-w-0 truncate', item.done ? 'text-a-faint line-through' : overdue ? '' : 'text-a-ink')}>
         {item.title}
       </span>
     </span>

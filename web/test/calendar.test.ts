@@ -2,21 +2,22 @@ import { describe, expect, it } from 'vitest';
 import { isInMonth, monthWeeks, shiftMonth } from '@/lib/calendar';
 
 describe('monthWeeks', () => {
-  it('starts on the Monday before the 1st and ends on the Sunday after the last day', () => {
+  it('starts on the Sunday before the 1st and ends on the Saturday after the last day', () => {
     // 1 September 2026 is a Tuesday; the 30th is a Wednesday.
     const weeks = monthWeeks({ year: 2026, month: 8 });
     expect(weeks).toHaveLength(5);
-    expect(weeks[0][0]).toBe('2026-08-31');
-    expect(weeks[0][1]).toBe('2026-09-01');
-    expect(weeks[4][6]).toBe('2026-10-04');
+    expect(weeks[0][0]).toBe('2026-08-30');
+    expect(weeks[0][2]).toBe('2026-09-01');
+    expect(weeks[4][6]).toBe('2026-10-03');
     expect(weeks.every((w) => w.length === 7)).toBe(true);
   });
 
-  it('is exactly four weeks for a February that starts on a Monday', () => {
-    const weeks = monthWeeks({ year: 2027, month: 1 });
+  it('is exactly four weeks for a February that starts on a Sunday', () => {
+    // 1 February 2026 is a Sunday and the month has 28 days.
+    const weeks = monthWeeks({ year: 2026, month: 1 });
     expect(weeks).toHaveLength(4);
-    expect(weeks[0][0]).toBe('2027-02-01');
-    expect(weeks[3][6]).toBe('2027-02-28');
+    expect(weeks[0][0]).toBe('2026-02-01');
+    expect(weeks[3][6]).toBe('2026-02-28');
   });
 
   it('never repeats or skips a day, across a daylight-saving change', () => {

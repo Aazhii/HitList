@@ -10,11 +10,13 @@
  * per database.
  */
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { CalendarDays, Plus } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { toast } from 'sonner';
-import { ViewLayoutContext, ContextSectionHeader } from '@/components/shell/ViewLayout';
-import { TopBar } from '@/components/shell/TopBar';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { cn } from '@/lib/utils';
+import { ViewLayoutContext, ContextSectionHeader, contextRowClass } from '@/components/shell/ViewLayout';
+import { EmptyState, ILL } from '@/components/EmptyState';
+import { TopBar, topBarPill } from '@/components/shell/TopBar';
+import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
 import { Input } from '@/components/ui/input';
 import {
   UnifiedCalendar, type CalendarItem, type CalendarSource,
@@ -25,6 +27,7 @@ import {
   type CalendarRecord, type CalendarTask,
 } from '@/lib/api';
 import { getListColorDot, type KaizenList } from '@/types/todo';
+import { localDateKey } from '@/lib/taskFilters';
 
 export interface CalendarPageProps {
   lists: KaizenList[];
@@ -150,7 +153,8 @@ export function CalendarPage({ lists, onOpenTask, onOpenDatabase, onSidebarConte
     else if (item.kind === 'record') onOpenDatabase(item.sourceId);
   }, [onOpenTask, onOpenDatabase]);
 
-  const [addOn, setAddOn] = useState<string | null>(null);
+  /** The day being added on, and the button it hangs from. */
+  const [addOn, setAddOn] = useState<{ dateKey: string; anchor: HTMLElement } | null>(null);
 
   const count = items.length;
   const dated = items.filter((i) => i.date).length;
@@ -168,25 +172,39 @@ export function CalendarPage({ lists, onOpenTask, onOpenDatabase, onSidebarConte
         <p className="px-3 pb-3 text-[12px] leading-relaxed text-a-faint">
           {ZOHO_CALENDAR_UNAVAILABLE_REASON}
         </p>
-        <ul className="space-y-0.5 px-3">
-          {sources.map((source) => (
-            <li key={source.id} className="flex items-center gap-2 py-1 text-[14px] text-a-muted">
-              <span className={`size-2 flex-shrink-0 rounded-full ${source.dotClass}`} aria-hidden />
-              <span className="min-w-0 truncate">{source.name}</span>
-              <span className="ml-auto text-[12px] tabular-nums text-a-faint">
-                {items.filter((i) => i.sourceId === source.id).length}
-              </span>
-            </li>
-          ))}
+        <ContextSectionHeader label="Sources" />
+        <ul className="space-y-0.5 px-1">
+          {sources.map((source) => {
+            const on = !hiddenSources.includes(source.id);
+            return (
+              <li key={source.id}>
+                {/* The sidebar's Sources are also the on/off switches for what the grid shows. */}
+                <button
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => setHiddenSources((prev) => (
+                    prev.includes(source.id) ? prev.filter((x) => x !== source.id) : [...prev, source.id]
+                  ))}
+                  className={cn(contextRowClass(false), 'gap-1.5')}
+                >
+                  <span className={`size-2 flex-shrink-0 rounded-full ${on ? source.dotClass : 'bg-a-faint/40'}`} aria-hidden />
+                  <span className={`min-w-0 flex-1 truncate ${on ? '' : 'text-a-faint'}`}>{source.name}</span>
+                  <span className="font-mono text-[11px] text-a-faint">
+                    {items.filter((i) => i.sourceId === source.id).length}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
           {sources.length === 0 && !loading && (
-            <li className="py-1 text-[12px] text-a-faint">Nothing has a date yet.</li>
+            <li className="px-2 py-1 text-[12px] text-a-faint">Nothing has a date yet.</li>
           )}
         </ul>
       </div>,
     );
     return () => onSidebarContentChange?.(null);
      
-  }, [sources, items, loading]);
+  }, [sources, items, loading, hiddenSources]);
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1">
@@ -200,30 +218,37 @@ export function CalendarPage({ lists, onOpenTask, onOpenDatabase, onSidebarConte
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <TopBar
           title="Calendar"
-          subtitle={loading ? 'Loading…' : `${dated} of ${count} on a date`}
+          subtitle={loading ? 'Loading…' : online ? `${dated} of ${count} on a date` : undefined}
+          actions={
+            // Ghost, not primary (showcase 139): the calendar's page action is a quiet one. Offline it
+            // has nowhere to write, so it stays but is inert.
+            <button
+              type="button"
+              disabled={!online}
+              onClick={(e) => setAddOn({ dateKey: localDateKey(new Date()), anchor: e.currentTarget })}
+              className={cn(topBarPill, 'disabled:opacity-50')}
+            >
+              <Plus className="size-[15px]" strokeWidth={1.75} aria-hidden />
+              Add on a day
+            </button>
+          }
         />
         <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
         <div className="px-4 pt-4 pb-12 md:px-12">
           {!online ? (
-            <div className="mx-auto flex max-w-[460px] flex-col items-center py-16 text-center animate-fade-in">
-              <CalendarDays className="mb-3 size-6 text-a-faint" strokeWidth={1.75} aria-hidden />
-              <p className="font-display text-[20px] text-a-ink">The calendar needs the server</p>
-              <p className="mt-2 text-[14px] leading-relaxed text-a-muted">
-                It reads your tasks and every database at once, so there is no offline copy.
-                Try again when the server is reachable.
-              </p>
-            </div>
+            <EmptyState
+              image={ILL.schedule}
+              title="The calendar needs the server"
+              description="It reads your tasks and every database at once, so there is no offline copy. Try again when the server is reachable."
+            />
           ) : (
             <UnifiedCalendar
               items={items}
               sources={sources}
               hiddenSources={hiddenSources}
-              onToggleSource={(id) => setHiddenSources((prev) => (
-                prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-              ))}
               onMove={(item, date) => { void handleMove(item, date); }}
               onOpen={handleOpen}
-              onAddOnDate={(dateKey) => setAddOn(dateKey)}
+              onAddOnDate={(dateKey, anchor) => setAddOn({ dateKey, anchor })}
               loading={loading}
             />
           )}
@@ -234,7 +259,8 @@ export function CalendarPage({ lists, onOpenTask, onOpenDatabase, onSidebarConte
 
       {addOn && (
         <AddOnDayDialog
-          dateKey={addOn}
+          dateKey={addOn.dateKey}
+          anchor={addOn.anchor}
           onClose={() => setAddOn(null)}
           onDone={() => { setAddOn(null); void load(); }}
         />
@@ -249,8 +275,8 @@ export function CalendarPage({ lists, onOpenTask, onOpenDatabase, onSidebarConte
  * different most times.
  */
 function AddOnDayDialog({
-  dateKey, onClose, onDone,
-}: { dateKey: string; onClose: () => void; onDone: () => void }) {
+  dateKey, anchor, onClose, onDone,
+}: { dateKey: string; anchor: HTMLElement; onClose: () => void; onDone: () => void }) {
   const [databases, setDatabases] = useState<Array<{ id: string; name: string; dateFieldId: string }>>([]);
   const [target, setTarget] = useState<'task' | string>('task');
   const [title, setTitle] = useState('');
@@ -290,11 +316,16 @@ function AddOnDayDialog({
 
   return (
     <Popover open onOpenChange={(open) => { if (!open) onClose(); }}>
-      <PopoverTrigger asChild>
-        <span className="sr-only" aria-hidden />
-      </PopoverTrigger>
-      <PopoverContent align="center" side="bottom" className="w-[300px] p-3" aria-label={`Add on ${label}`}>
-        <p className="mb-2 text-[12px] font-semibold text-a-muted">Add on {label}</p>
+      {/* It hangs from whatever opened it: the header action, or a day's + . */}
+      <PopoverAnchor virtualRef={{ current: anchor }} />
+      {/* Showcase 1115: 300px, 12px radius, 14px padding, 12px gap. */}
+      <PopoverContent
+        align="end"
+        side="bottom"
+        className="flex w-[300px] flex-col gap-3 rounded-[12px] p-[14px] text-[13px] shadow-[var(--a-shadow-xl)]"
+        aria-label={`Add on ${label}`}
+      >
+        <span className="font-semibold text-a-muted">Add on {label}</span>
 
         <Input
           autoFocus
@@ -304,10 +335,10 @@ function AddOnDayDialog({
           onKeyDown={(e) => { if (e.key === 'Enter') void submit(); }}
           placeholder="What is it?"
           aria-label="Title"
-          className="h-8 rounded-[4px] text-[14px]"
+          className="h-7"
         />
 
-        <div className="mt-2.5 space-y-0.5" role="radiogroup" aria-label="Where it goes">
+        <div className="flex flex-col gap-0.5" role="radiogroup" aria-label="Where it goes">
           <TargetRow label="A task" active={target === 'task'} onClick={() => setTarget('task')} />
           {databases.map((d) => (
             <TargetRow
@@ -323,7 +354,7 @@ function AddOnDayDialog({
           type="button"
           onClick={() => void submit()}
           disabled={!title.trim() || saving}
-          className="mt-3 h-8 w-full rounded-[6px] bg-a-accent text-[14px] font-semibold text-a-surface transition-colors duration-[120ms] hover:bg-a-accent-600 disabled:opacity-50"
+          className="h-7 w-full rounded-[3px] bg-a-accent text-[11px] font-semibold text-white transition-colors duration-[120ms] hover:bg-a-accent-600 disabled:opacity-50"
         >
           {saving ? 'Adding…' : 'Add'}
         </button>
@@ -339,11 +370,10 @@ function TargetRow({ label, active, onClick }: { label: string; active: boolean;
       role="radio"
       aria-checked={active}
       onClick={onClick}
-      className={`flex w-full items-center gap-2 rounded-[8px] px-2 py-1.5 text-left text-[14px] transition-colors duration-[120ms] ${
-        active ? 'bg-a-accent-tint font-semibold text-a-ink' : 'text-a-muted hover:bg-a-row-hover hover:text-a-ink'
+      className={`w-full rounded-[6px] px-2 py-1.5 text-left text-[13px] transition-colors duration-[120ms] ${
+        active ? 'bg-a-blue-tint font-semibold text-a-accent' : 'text-a-muted hover:bg-a-line-soft'
       }`}
     >
-      <Plus className="size-3.5 flex-shrink-0 opacity-0" aria-hidden />
       {label}
     </button>
   );

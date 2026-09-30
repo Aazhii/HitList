@@ -146,7 +146,7 @@ that one is fine where it is.
 | Visual | `node web/scripts/shoot.mjs <screen-id>` → a `.ref.png` / `.app.png` pair | every Phase 3 task |
 | Real build | `sh desktop/scripts/prepare-jar.sh` → copy to `api/target/hitlist.jar` → restart Electron → re-check its own port | every **phase** exit, not every task |
 
-Test baseline: **385 tests across 44 files.** This must not regress.
+Test baseline: **386 tests across 44 files.** This must not regress.
 
 ---
 
@@ -156,10 +156,10 @@ Test baseline: **385 tests across 44 files.** This must not regress.
 Phase 0  █████   5 / 5      done
 Phase 1  █████  11 / 11      foundations — the broken UI
 Phase 2  █████   5 / 5       shell exactness
-Phase 3  ███░░  36 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
+Phase 3  ███░░  39 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
 Phase 4  ░░░░░   1 / 12      missing features
 Phase 5  ░░░░░   0 / 7       proposals, unreviewed
-                58 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
+                61 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
 ```
 
 ### A note on "partially built"
@@ -278,9 +278,9 @@ on a description. Execution order is the section order below.
 
 | ID | Screen | State | Verified by |
 |---|---|---|---|
-| T3.37 | `cal-month` | todo | |
-| T3.38 | `cal-add` | todo | |
-| T3.39 | `cal-offline` | todo | |
+| T3.37 | `cal-month` | **done** | shots/cal-month.{ref,app}.png — Sunday-first grid in a bordered card, grey weekday band, 104px cells with 22px day pills and dot chips, overdue in red, "Not on a date" dashed panel; Sources moved to the sidebar list |
+| T3.38 | `cal-add` | **done** | shots/cal-add.{ref,app}.png — "Add on a day" is the ghost page action; the 300px dialog hangs from the button that opened it |
+| T3.39 | `cal-offline` | **done** | shots/cal-offline.{ref,app}.png — DS EmptyState with schedule.png |
 
 ### 3F · Shell overlays
 

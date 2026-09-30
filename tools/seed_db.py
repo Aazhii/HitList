@@ -87,3 +87,11 @@ for emoji, title, blocks, pinned in [('🧭', 'Onboarding plan', onboarding, Tru
                              ('🤝', 'Meeting: vendor demo', [], False), ('💡', 'Ideas', [], False), ('🗺️', 'Q4 roadmap draft', [], False), ('🎒', 'Trip packing', [], False)]:
     call('POST', '/notes', {'id': str(uuid.uuid4()), 'title': title, 'emoji': emoji, 'pinned': pinned,
                             'blocksJson': json.dumps(blocks or [b('paragraph', '')]), 'createdAt': edited, 'updatedAt': edited})
+
+# --- Lists and a date column, so the calendar has sources (showcase Work / Personal / Side project / Reading list). ---
+lists = {name: call('POST', '/lists', {'name': name, 'color': color}) for name, color in [('Work', 'violet'), ('Personal', 'sky'), ('Side project', 'rose')]}
+for t in call('GET', '/tasks') or []:
+    target = lists['Personal' if t.get('category') == 'personal' else 'Work']
+    body = {k: t[k] for k in ('title', 'status', 'quadrant', 'dueDate', 'dueTime', 'category', 'note') if k in t and t[k] is not None}
+    call('PUT', f"/tasks/{t['id']}", {**body, 'listId': target['id']})
+call('PUT', f'/databases/{db}', {'name': 'Reading list', 'icon': '📚', 'dateFieldId': finished['id']})

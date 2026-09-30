@@ -612,7 +612,7 @@ Shared primitives now follow the DS, so every dialog inherits them:
 1. **Verify before you change.** Every task quotes the current code. If what you find does not match the quote, **stop and report** — do not adapt silently. The file may have moved on.
 2. **Never invent a value.** If a task does not give you a number and this file does not either, ask. Guessing is what produced the current state.
 3. **One task, one commit.** Commit message: `design(T1.4): set every icon stroke to 1.75`.
-4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 385 tests.
+4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 386 tests.
 5. **Update `00-INDEX.md`** — set State and fill in "Verified by" with the actual command output or screenshot pair. A task with an empty "Verified by" is not done.
 6. **Do not delete the Automations or Reminders code.** It is being revived in Phase 4, not removed.
 
@@ -649,3 +649,13 @@ Shared primitives now follow the DS, so every dialog inherits them:
 - The mention card is one panel (quadrant grid, List select, Cancel, Add task) with Schedule and the open list preselected; arrows move the quadrant, ↵ adds, Esc closes. What was typed after "@" preselects a quadrant or list it starts. This replaces the three-column cascade the docs described — the docs described the app, not the prototype.
 - The slash menu's Database group (Create database / board / linked view) is not rendered: it belongs to T4.8.
 - The prototype's blocks-count reads 12 for the sample note because it counts a list as one block; the app counts every item.
+
+### Calendar: month, add-on-a-day, offline (T3.37–T3.39)
+
+- The week starts on Sunday, as in the prototype (it was Monday). `monthWeeks` changed with it.
+- The grid sits in one bordered 8px card under a grey weekday band; cells are 104px with hairlines right and below, a 22px day pill (today filled in the brand colour, days outside the month in `--a-disabled`), and 12px chips: 6px source dot, title, tinted red when an open task's day has passed, tertiary and struck through when done.
+- The Sources on/off chips above the grid are gone: the sidebar's "Sources" rows (dot, name, mono count) now do the switching (`aria-pressed`), as the prototype lists them there. The Zoho "unavailable" copy stays in the sidebar under "What's on it".
+- "Add on a day" is the ghost page action (defaults to today); a day's hover "+" is kept for picking another day. The 300px dialog hangs from whichever button opened it, not from a fixed spot as in the prototype. Its Add button stays disabled until there is a title.
+- The "Not on a date" panel is a dashed row of Tags under the grid, and is still the drop target for taking a date off. The count is mono.
+- Offline: the DS EmptyState with schedule.png. The subtitle count is hidden and the page action is inert rather than hidden.
+- Scratch seed now creates the Work / Personal lists, assigns every task to one, and points Reading list at its Finished column, so the calendar has sources.

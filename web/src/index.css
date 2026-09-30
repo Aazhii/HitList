@@ -120,6 +120,7 @@
     --color-a-line-soft: var(--a-line-soft);
     --color-a-line-strong: var(--a-line-strong);
     --color-a-code-ink: var(--a-code-ink);
+    --color-a-disabled: var(--a-disabled);
     --color-a-row-hover: var(--a-row-hover);
     --color-a-dq-valid: var(--a-dq-valid);
     --color-a-dq-missing: var(--a-dq-missing);
@@ -575,6 +576,7 @@ html.login-locked body {
   --a-line: #e9e9e7;
   --a-line-soft: #f1f1ef;
   /* --border-strong (CONVENTIONS §2): dashed drop targets, strong dividers. */
+  --a-disabled: #9b9a97; /* showcase gray-400: a day outside the month */
   --a-code-ink: #e4e7ec; /* showcase 352: text on the ink code panel */
   --a-line-strong: #d3d1cb;
   /* The showcase's nav/menu-row hover (rgba(55,53,47,.06)) — its table-row

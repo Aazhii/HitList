@@ -77,6 +77,8 @@ const APP_ROUTE = {
   'db-filter':    { nav: 'Databases', then: ['~Reading list', '@Filter'] },
   'db-picker':    { nav: 'Databases', then: ['~Reading list', '@Status of Dune'] },
   'cal-month':    { nav: 'Calendar' },
+  'cal-add':      { nav: 'Calendar', then: ['Add on a day'] },
+  'cal-offline':  { nav: 'Calendar' },
 };
 
 const args = process.argv.slice(2);

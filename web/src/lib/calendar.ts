@@ -23,8 +23,8 @@ export function isInMonth(dateKey: string, m: CalendarMonth): boolean {
 }
 
 /**
- * The weeks a month grid shows, Monday first: from the Monday on or before the
- * 1st to the Sunday on or after the last day. Each day is a YYYY-MM-DD key.
+ * The weeks a month grid shows, Sunday first (showcase 803): from the Sunday on or before the
+ * 1st to the Saturday on or after the last day. Each day is a YYYY-MM-DD key.
  *
  * Steps a day at a time with setDate rather than adding 24 hours, so a
  * daylight-saving change cannot skip or repeat a day.
@@ -32,8 +32,8 @@ export function isInMonth(dateKey: string, m: CalendarMonth): boolean {
 export function monthWeeks(m: CalendarMonth): string[][] {
   const first = new Date(m.year, m.month, 1);
   const last = new Date(m.year, m.month + 1, 0);
-  const day = new Date(m.year, m.month, 1 - ((first.getDay() + 6) % 7));
-  const end = localDateKey(new Date(m.year, m.month, last.getDate() + (6 - ((last.getDay() + 6) % 7))));
+  const day = new Date(m.year, m.month, 1 - first.getDay());
+  const end = localDateKey(new Date(m.year, m.month, last.getDate() + (6 - last.getDay())));
 
   const weeks: string[][] = [];
   for (;;) {

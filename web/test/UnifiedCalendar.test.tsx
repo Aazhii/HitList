@@ -38,7 +38,6 @@ function setup(over: Partial<UnifiedCalendarProps> = {}) {
     items: [task(), record(), task({ id: 't2', title: 'No date yet', date: '', time: undefined })],
     sources,
     hiddenSources: [],
-    onToggleSource: vi.fn(),
     onMove: vi.fn(),
     onOpen: vi.fn(),
     onAddOnDate: vi.fn(),
@@ -69,13 +68,10 @@ describe('UnifiedCalendar', () => {
     expect(within(tray).getByText('No date yet')).toBeInTheDocument();
   });
 
-  it('hides a whole source when its chip is switched off', () => {
-    const props = setup({ hiddenSources: ['books'] });
+  it('leaves out a source that is switched off', () => {
+    setup({ hiddenSources: ['books'] });
     expect(screen.queryByText('Dune')).not.toBeInTheDocument();
     expect(screen.getByText('Ship the table')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Reading list' }));
-    expect(props.onToggleSource).toHaveBeenCalledWith('books');
   });
 
   it('marks today, and moves between months', () => {
@@ -98,7 +94,7 @@ describe('UnifiedCalendar', () => {
     expect(props.onOpen).toHaveBeenCalledWith(expect.objectContaining({ kind: 'task', id: 't1' }));
   });
 
-  it('renders Zoho events as read-only and filters their calendar', () => {
+  it('renders Zoho events as read-only', () => {
     const props = setup({ items: [task(), zohoEvent()] });
     expect(screen.getByRole('button', { name: /Team planning, 09:00 — Zoho Personal/ })).toHaveAttribute(
       'aria-roledescription', 'Read-only Zoho Calendar event',
@@ -106,9 +102,6 @@ describe('UnifiedCalendar', () => {
     fireEvent.click(screen.getByRole('button', { name: /Team planning/ }));
     expect(props.onOpen).toHaveBeenCalledWith(expect.objectContaining({ kind: 'zoho' }));
     expect(props.onMove).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Zoho Personal' }));
-    expect(props.onToggleSource).toHaveBeenCalledWith('zoho:primary');
   });
 
   it('asks the caller to add on a day', () => {
