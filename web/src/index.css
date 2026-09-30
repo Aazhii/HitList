@@ -162,6 +162,16 @@
     --color-q-delegate-bg: var(--a-q-delegate-bg);
     --color-q-eliminate: var(--a-q-eliminate);
     --color-q-eliminate-bg: var(--a-q-eliminate-bg);
+    --color-dot-gray: var(--a-dot-gray);
+    --color-dot-brown: var(--a-dot-brown);
+    --color-dot-orange: var(--a-dot-orange);
+    --color-dot-yellow: var(--a-dot-yellow);
+    --color-dot-green: var(--a-dot-green);
+    --color-dot-blue: var(--a-dot-blue);
+    --color-dot-purple: var(--a-dot-purple);
+    --color-dot-pink: var(--a-dot-pink);
+    --color-dot-red: var(--a-dot-red);
+    --color-dot-none: var(--a-dot-none);
     --color-tag-gray: var(--a-tag-gray);
     --color-tag-gray-bg: var(--a-tag-gray-bg);
     --color-tag-brown: var(--a-tag-brown);
@@ -637,6 +647,11 @@ html.login-locked body {
   /* Tag colors for select/multi options — the showcase's own literal `TAGC`
      table (`HitList Notion x Zoho.dc.html` line 1390), Notion's 9 named
      colors verbatim, not re-toned. */
+  /* Option swatches: the showcase's Stage colours (line 1299); brown/orange/yellow/pink
+     are the same family for options it does not show. */
+  --a-dot-gray: #9b9a97;   --a-dot-brown: #9f6b53;  --a-dot-orange: #d9730d; --a-dot-yellow: #cb912f;
+  --a-dot-green: #1fa45e;  --a-dot-blue: #006eb9;   --a-dot-purple: #9065b0; --a-dot-pink: #c14c8a;
+  --a-dot-red: #e03e3e;    --a-dot-none: #d0d5dd;
   --a-tag-gray: #32302c;   --a-tag-gray-bg: #e3e2e0;
   --a-tag-brown: #603b2c;  --a-tag-brown-bg: #eee0da;
   --a-tag-orange: #854c1d; --a-tag-orange-bg: #fadec9;

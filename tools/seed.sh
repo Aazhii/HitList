@@ -8,12 +8,12 @@ rm -f $J
 curl -s -c $J -b $J $B/health >/dev/null || { echo "no backend on :$PORT"; exit 1; }
 post() { curl -s -c $J -b $J -X POST "$B$1" -H 'Content-Type: application/json' -d "$2"; }
 put()  { curl -s -c $J -b $J -X PUT  "$B$1" -H 'Content-Type: application/json' -d "$2" >/dev/null; }
-id()   { grep -o '"id":"[^"]*"' | head -1 | cut -d'"' -f4; }
+id()   { python3 -c 'import sys,json; print(json.load(sys.stdin)["id"])'; }
 d() { date -v${1} +%Y-%m-%d; }
 
-STAGE=$(post /fields '{"name":"Stage","kind":"select","options":[{"label":"Backlog","color":"sage"},{"label":"In progress","color":"sky"},{"label":"In review","color":"sand"},{"label":"Shipped","color":"rose"}]}')
+STAGE=$(post /fields '{"name":"Stage","kind":"select","options":[{"label":"Backlog","color":"gray"},{"label":"In progress","color":"blue"},{"label":"In review","color":"purple"},{"label":"Shipped","color":"green"}]}')
 FID=$(echo "$STAGE" | id)
-OPT() { echo "$STAGE" | sed -E 's/\},\{/}\n{/g' | grep "\"label\":\"$1\"" | grep -o '"id":"[^"]*"' | tail -1 | cut -d'"' -f4; }
+OPT()  { echo "$STAGE" | python3 -c 'import sys,json; print(next(o["id"] for o in json.load(sys.stdin)["options"] if o["label"]==sys.argv[1]))' "$1"; }
 BACKLOG=$(OPT Backlog); PROG=$(OPT 'In progress'); REVIEW=$(OPT 'In review')
 
 add() { # title quadrant due category stageOptionId

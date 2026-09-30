@@ -35,7 +35,7 @@ import { QUADRANTS } from '@/types/todo';
 import type { Quadrant, QuadrantConfig, Todo, TodoStatus } from '@/types/todo';
 import { bucketByQuadrant, compareTasks } from '@/lib/quadrantBuckets';
 import { groupByField, type TaskGroup } from '@/lib/taskFilters';
-import { OPTION_DOT_CLASS } from '@/lib/fieldValues';
+import { NO_VALUE_DOT_CLASS, OPTION_DOT_CLASS } from '@/lib/fieldValues';
 import type { TaskCompare } from '@/lib/quadrantBuckets';
 import type { FieldDef, TaskFieldValues } from '@/types/fields';
 import { computeReorder, quadrantDropId, type ReorderChange } from '@/lib/reorder';
@@ -173,7 +173,7 @@ function FieldGroup({
     <section aria-labelledby={headingId}>
       <header className="mb-1.5 flex items-center gap-2.5 px-1">
         <span
-          className={cn('size-[9px] flex-shrink-0 rounded-full', group.color ? OPTION_DOT_CLASS[group.color] : 'shadow-[inset_0_0_0_1.5px_var(--a-line)]')}
+          className={cn('size-[9px] flex-shrink-0 rounded-full', group.color ? OPTION_DOT_CLASS[group.color] : NO_VALUE_DOT_CLASS)}
           aria-hidden
         />
         <h2 id={headingId} className="font-display text-[16px] leading-tight text-a-ink">{group.label}</h2>

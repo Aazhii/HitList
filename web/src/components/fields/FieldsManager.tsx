@@ -8,20 +8,26 @@
  * and flips or shifts rather than running off-screen — which is what makes it
  * usable on the last column of a wide table.
  *
- * A field's type is fixed once it is created — changing it would leave every
- * stored value unreadable — so the type picker is only shown for a new field.
- * Renaming an option keeps every task that uses it; removing one clears it
- * from those tasks, and the dialog says so before saving.
+ * One panel (showcase 1076–1095): the field list, the selected field's editor
+ * beneath it, and Delete field / Done at the foot. A field's type is fixed once it
+ * is created — changing it would leave every stored value unreadable — so the type
+ * select is only enabled for a new field. Renaming an option keeps every task that
+ * uses it; removing one clears it from those tasks, and the panel says so before
+ * Done saves. Deleting a field asks first, saying what it would remove.
  */
 import { useEffect, useRef, useState } from 'react';
 import {
-  AlignLeft, Calendar, Check, CircleDot, Hash, ListChecks, Plus, SquareCheck, Trash2, Type, X, SlidersHorizontal,
+  AlignLeft, Calendar, CircleDot, Hash, ListChecks, Plus, SquareCheck, Trash2, Type, X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import {
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
+import { BTN_MD, topBarPill, topBarPrimary, topBarSecondary } from '@/components/shell/TopBar';
 import { OPTION_DOT_CLASS } from '@/lib/fieldValues';
 import type { FieldInput } from '@/lib/api';
 import {
@@ -50,6 +56,12 @@ interface FieldsManagerDialogProps {
   onCreate: (input: FieldInput) => Promise<FieldDef | null>;
   onUpdate: (id: string, input: FieldInput) => Promise<FieldDef | null>;
   onDelete: (id: string) => Promise<boolean>;
+  /** How many tasks/records use an option — shown beside it ("5 tasks", "unused"). Omit to show nothing. */
+  optionUsage?: (fieldId: string, optionId: string) => number;
+  /** What deleting a field would remove, for the warning (showcase 967). */
+  fieldUsage?: (fieldId: string) => { valueCount: number; viewNames: string[] };
+  /** What the things a field is on are called: "task" (default) or "record". */
+  noun?: string;
 }
 
 interface DraftOption { id?: string; label: string; color: OptionColor }
@@ -70,12 +82,13 @@ const hasOptions = (k: FieldKind) => k === 'select' || k === 'multi';
 
 export function FieldsManagerDialog({
   open, onOpenChange, anchor, fields, initialFieldId, startNew, onCreate, onUpdate, onDelete,
+  optionUsage, fieldUsage, noun = 'task',
 }: FieldsManagerDialogProps) {
-  /** null = the list; 'new' = creating; an id = editing that field. */
+  /** An id = that field is selected; 'new' = a field being created. */
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [saving, setSaving] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   /** Index of the option whose color swatches are expanded, or null. */
   const [colorPickerFor, setColorPickerFor] = useState<number | null>(null);
   const optionsRef = useRef<HTMLDivElement>(null);
@@ -91,18 +104,20 @@ export function FieldsManagerDialog({
     return () => document.removeEventListener('mousedown', handler);
   }, [colorPickerFor]);
 
+  const select = (field: FieldDef) => {
+    setEditing(field.id);
+    setDraft({ name: field.name, kind: field.kind, options: field.options.map((o) => ({ ...o })), showOnCard: field.showOnCard });
+    setColorPickerFor(null);
+  };
+
   useEffect(() => {
     if (!open) return;
-    setConfirmDelete(null);
-    // Opened from a column menu: go straight to that field, or to a new one.
+    setConfirmDelete(false);
+    // Opened from a column menu: that field; from "+": a new one; otherwise the first.
     const asked = initialFieldId ? fields.find((f) => f.id === initialFieldId) : undefined;
-    if (asked) {
-      setEditing(asked.id);
-      setDraft({ name: asked.name, kind: asked.kind, options: asked.options.map((o) => ({ ...o })), showOnCard: asked.showOnCard });
-      return;
-    }
-    setEditing(startNew || fields.length === 0 ? 'new' : null);
-    setDraft(emptyDraft());
+    if (asked) { select(asked); return; }
+    if (startNew || fields.length === 0) { setEditing('new'); setDraft(emptyDraft()); return; }
+    select(fields[0]);
     // `anchor` is a fresh object on every open request (anchorRectOf/activeAnchor
     // always return a new literal) even when the popover was already open — e.g.
     // clicking "New column" again right after creating one, without closing the
@@ -115,229 +130,294 @@ export function FieldsManagerDialog({
     ? current.options.filter((o) => !draft.options.some((d) => d.id === o.id))
     : [];
 
-  const startEdit = (field: FieldDef) => {
-    setEditing(field.id);
-    setDraft({ name: field.name, kind: field.kind, options: field.options.map((o) => ({ ...o })), showOnCard: field.showOnCard });
-  };
-
   const setOption = (i: number, patch: Partial<DraftOption>) =>
     setDraft((d) => ({ ...d, options: d.options.map((o, j) => (j === i ? { ...o, ...patch } : o)) }));
 
-  const save = async () => {
-    const input: FieldInput = {
-      name: draft.name.trim(),
-      kind: draft.kind,
-      showOnCard: draft.showOnCard,
-      ...(hasOptions(draft.kind) ? { options: draft.options.filter((o) => o.label.trim()) } : {}),
-    };
-    if (!input.name) return;
+  const inputFor = (): FieldInput => ({
+    name: draft.name.trim(),
+    kind: draft.kind,
+    showOnCard: draft.showOnCard,
+    ...(hasOptions(draft.kind) ? { options: draft.options.filter((o) => o.label.trim()) } : {}),
+  });
+
+  /** Whether the draft differs from what is stored, so Done doesn't rewrite an untouched field. */
+  const changed = (() => {
+    if (editing === 'new') return draft.name.trim() !== '';
+    if (!current) return false;
+    return JSON.stringify(inputFor()) !== JSON.stringify({
+      name: current.name,
+      kind: current.kind,
+      showOnCard: current.showOnCard,
+      ...(hasOptions(current.kind) ? { options: current.options.map((o) => ({ ...o })) } : {}),
+    });
+  })();
+
+  // Done saves what was edited, then closes. An unnamed new field is simply dropped.
+  const done = async () => {
+    if (!changed || !draft.name.trim()) { onOpenChange(false); return; }
     setSaving(true);
-    const ok = editing === 'new' ? await onCreate(input) : await onUpdate(editing!, input);
+    const ok = editing === 'new' ? await onCreate(inputFor()) : await onUpdate(editing!, inputFor());
     setSaving(false);
-    if (ok) { setEditing(null); setDraft(emptyDraft()); }
+    if (ok) onOpenChange(false);
   };
 
+  // Moving to another field keeps what was typed: it is saved first.
+  const choose = async (field: FieldDef) => {
+    if (field.id === editing) return;
+    if (changed && draft.name.trim()) {
+      setSaving(true);
+      const ok = editing === 'new' ? await onCreate(inputFor()) : await onUpdate(editing!, inputFor());
+      setSaving(false);
+      if (!ok) return;
+    }
+    select(field);
+  };
+
+  const startNewField = async () => {
+    if (editing !== 'new' && changed && draft.name.trim()) {
+      setSaving(true);
+      const ok = await onUpdate(editing!, inputFor());
+      setSaving(false);
+      if (!ok) return;
+    }
+    setEditing('new');
+    setDraft(emptyDraft());
+    setColorPickerFor(null);
+  };
+
+  const usage = current && fieldUsage ? fieldUsage(current.id) : { valueCount: 0, viewNames: [] as string[] };
+  const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
+
   return (
-    <Popover open={open} onOpenChange={onOpenChange}>
-      {/* A zero-size anchor at the trigger's rect. The popover is rendered from
-          the page root, far from the button that opened it, so there is no
-          element here to hang off otherwise. */}
-      <PopoverAnchor asChild>
-        <span
-          aria-hidden
-          style={anchor
-            ? { position: 'fixed', left: anchor.x, top: anchor.y, width: anchor.width, height: anchor.height }
-            : { position: 'fixed', left: '50%', top: '20%' }}
-        />
-      </PopoverAnchor>
+    <>
+      <Popover open={open && !confirmDelete} onOpenChange={onOpenChange}>
+        {/* A zero-size anchor at the trigger's rect. The popover is rendered from
+            the page root, far from the button that opened it, so there is no
+            element here to hang off otherwise. */}
+        <PopoverAnchor asChild>
+          <span
+            aria-hidden
+            style={anchor
+              ? { position: 'fixed', left: anchor.x, top: anchor.y, width: anchor.width, height: anchor.height }
+              : { position: 'fixed', left: '50%', top: '20%' }}
+          />
+        </PopoverAnchor>
 
-      <PopoverContent
-        align="start"
-        side="bottom"
-        sideOffset={6}
-        collisionPadding={12}
-        className="max-h-[min(560px,72vh)] w-[392px] overflow-y-auto p-3"
-      >
-        <div className="mb-2">
-          <p className="flex items-center gap-2 text-[13px] font-semibold text-a-ink">
-            <SlidersHorizontal className="size-4 text-a-accent-700" />
-            Fields
-          </p>
-        </div>
-
-        {editing === null ? (
-          <div className="space-y-2 pt-1">
-            {fields.map((field) => (
-              <div key={field.id} className="flex items-center gap-3 rounded-xl border border-border px-3 py-2.5">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-foreground">{field.name}</p>
-                  <p className="text-[11px] text-muted-foreground">
-                    {FIELD_KIND_LABELS[field.kind]}
-                    {hasOptions(field.kind) ? ` · ${field.options.length} option${field.options.length === 1 ? '' : 's'}` : ''}
-                    {field.showOnCard ? ' · on cards' : ''}
-                  </p>
-                </div>
-                {confirmDelete === field.id ? (
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[11px] text-muted-foreground">Remove from every task?</span>
-                    <Button
-                      size="sm" variant="destructive" className="h-7 rounded-lg text-xs"
-                      onClick={async () => { if (await onDelete(field.id)) setConfirmDelete(null); }}
-                    >
-                      Delete
-                    </Button>
-                    <Button size="sm" variant="ghost" className="h-7 rounded-lg text-xs" onClick={() => setConfirmDelete(null)}>Keep</Button>
-                  </div>
-                ) : (
-                  <>
-                    <Button size="sm" variant="ghost" className="h-7 rounded-lg text-xs" onClick={() => startEdit(field)}>Edit</Button>
-                    <button
-                      type="button"
-                      onClick={() => setConfirmDelete(field.id)}
-                      aria-label={`Delete ${field.name}`}
-                      className="flex size-7 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-destructive"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </button>
-                  </>
-                )}
-              </div>
-            ))}
-            <Button className="w-full gap-2 rounded-xl" onClick={() => { setEditing('new'); setDraft(emptyDraft()); }}>
-              <Plus className="size-3.5" /> New field
-            </Button>
+        {/* Showcase 1076–1095: 440px, 12px radius, shadow-xl, list / editor / footer. */}
+        <PopoverContent
+          role="dialog"
+          aria-label="Fields"
+          align="start"
+          side="bottom"
+          sideOffset={6}
+          collisionPadding={12}
+          className="flex max-h-[min(640px,80vh)] w-[min(440px,92vw)] flex-col gap-0 overflow-hidden rounded-[12px] border border-a-line p-0 text-[13px] leading-normal text-a-muted shadow-[var(--a-shadow-xl)]"
+        >
+          <div className="flex flex-shrink-0 items-center gap-2 border-b border-a-line-soft px-4 py-3.5">
+            <span className="text-[14px] font-semibold text-a-ink">Fields</span>
+            <div className="flex-1" />
+            <button type="button" className={topBarSecondary} onClick={() => void startNewField()}>
+              <Plus className="size-4" strokeWidth={1.75} aria-hidden />
+              New field
+            </button>
           </div>
-        ) : (
-          <div className="space-y-4 pt-1">
-            <div className="space-y-1.5">
-              <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Name</p>
-              <Input
-                autoFocus value={draft.name} maxLength={100}
-                onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
-                placeholder="e.g. Effort"
-                className="rounded-xl text-sm"
-              />
-            </div>
 
-            <div className="space-y-1.5">
-              <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Type</p>
-              {editing === 'new' ? (
-                <div className="grid grid-cols-2 gap-1.5" role="radiogroup" aria-label="Type">
-                  {KINDS.map((k) => {
-                    const Icon = KIND_ICON[k];
-                    const active = draft.kind === k;
-                    return (
-                      <button
-                        key={k}
-                        type="button"
-                        role="radio"
-                        aria-checked={active}
-                        onClick={() => setDraft((d) => ({ ...d, kind: k }))}
-                        className={cn(
-                          'flex items-center gap-2 rounded-xl px-2.5 py-2 text-left text-xs font-medium transition-colors duration-[120ms]',
-                          active ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted hover:text-foreground',
-                        )}
-                      >
-                        <Icon className="size-3.5 flex-shrink-0" />
-                        {FIELD_KIND_LABELS[k]}
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <p className="text-xs text-muted-foreground">
-                  {FIELD_KIND_LABELS[draft.kind]} — a field's type can't change after it's created.
-                </p>
-              )}
-            </div>
-
-            {hasOptions(draft.kind) && (
-              <div ref={optionsRef} className="space-y-1.5">
-                <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">Options</p>
-                {draft.options.map((option, i) => (
-                  <div key={option.id ?? `new-${i}`}>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        aria-label={`Colour for ${option.label || 'option'}`}
-                        aria-expanded={colorPickerFor === i}
-                        title="Change colour"
-                        onClick={() => setColorPickerFor((cur) => (cur === i ? null : i))}
-                        className="flex size-8 flex-shrink-0 items-center justify-center rounded-lg hover:bg-muted"
-                      >
-                        <span className={cn('size-3 rounded-full', OPTION_DOT_CLASS[option.color])} />
-                      </button>
-                      <Input
-                        value={option.label} maxLength={60}
-                        onChange={(e) => setOption(i, { label: e.target.value })}
-                        placeholder={`Option ${i + 1}`}
-                        className="h-8 rounded-xl text-xs"
-                      />
-                      <button
-                        type="button"
-                        aria-label={`Remove ${option.label || 'option'}`}
-                        onClick={() => setDraft((d) => ({ ...d, options: d.options.filter((_, j) => j !== i) }))}
-                        className="flex size-8 flex-shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground"
-                      >
-                        <X className="size-3.5" />
-                      </button>
-                    </div>
-                    {colorPickerFor === i && (
-                      <div className="ml-1 mt-1 mb-0.5 flex flex-wrap gap-1.5 rounded-xl bg-muted/30 p-2" role="group" aria-label="Colour">
-                        {OPTION_COLORS.map((color) => (
-                          <button
-                            key={color}
-                            type="button"
-                            aria-label={color}
-                            aria-pressed={option.color === color}
-                            onClick={() => { setOption(i, { color }); setColorPickerFor(null); }}
-                            className="flex size-7 items-center justify-center rounded-lg hover:bg-muted"
-                          >
-                            <span className={cn('flex size-5 items-center justify-center rounded-full', OPTION_DOT_CLASS[color])}>
-                              {option.color === color && <Check className="size-3 text-white" strokeWidth={1.75} />}
-                            </span>
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-                {draft.options.length < 50 && (
-                  <button
-                    type="button"
-                    onClick={() => setDraft((d) => ({ ...d, options: [...d.options, { label: '', color: OPTION_COLORS[d.options.length % OPTION_COLORS.length] }] }))}
-                    className="flex items-center gap-1 text-[12px] font-medium text-muted-foreground hover:text-foreground"
-                  >
-                    <Plus className="size-3" /> Add option
-                  </button>
-                )}
-                {removedOptions.length > 0 && (
-                  <p className="text-[11px] text-destructive">
-                    Saving removes {removedOptions.map((o) => `“${o.label}”`).join(', ')} from every task that uses {removedOptions.length === 1 ? 'it' : 'them'}.
-                  </p>
-                )}
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {fields.length > 0 && (
+              <div className="flex flex-col gap-0.5 px-2 pt-2">
+                {fields.map((field) => {
+                  const Icon = KIND_ICON[field.kind];
+                  const on = field.id === editing;
+                  return (
+                    <button
+                      key={field.id}
+                      type="button"
+                      onClick={() => void choose(field)}
+                      aria-current={on ? 'true' : undefined}
+                      className={cn(
+                        'flex items-center gap-2.5 rounded-[6px] px-2.5 py-2 text-left transition-colors duration-[120ms]',
+                        on ? 'bg-a-blue-tint' : 'hover:bg-a-bg',
+                      )}
+                    >
+                      <Icon className="size-[15px] flex-shrink-0 text-a-faint" strokeWidth={1.75} aria-hidden />
+                      <span className={cn('flex-1 truncate text-a-ink', on && 'font-semibold')}>{field.name}</span>
+                      <span className="text-[12px] text-a-faint">{FIELD_KIND_LABELS[field.kind]}</span>
+                    </button>
+                  );
+                })}
               </div>
             )}
 
-            <label className="flex cursor-pointer items-center justify-between rounded-xl bg-muted/30 px-3.5 py-2.5 text-xs">
-              <span>Show on task cards</span>
-              <Switch checked={draft.showOnCard} onCheckedChange={(on) => setDraft((d) => ({ ...d, showOnCard: on }))} />
-            </label>
+            <div className="mx-4 mt-2 flex flex-col gap-3 border-t border-a-line-soft py-3.5">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-2">
+                  <label className="text-[13px] font-medium leading-[1.35] text-a-ink" htmlFor="field-name">Name</label>
+                  <Input
+                    id="field-name"
+                    autoFocus={editing === 'new'}
+                    className="h-7 px-2"
+                    value={draft.name}
+                    maxLength={100}
+                    onChange={(e) => setDraft((d) => ({ ...d, name: e.target.value }))}
+                    placeholder="e.g. Effort"
+                  />
+                </div>
+                <div className="flex flex-col gap-2">
+                  <span className="text-[13px] font-medium leading-[1.35] text-a-ink">Type</span>
+                  {/* A field's type is fixed once it exists — changing it would strand every stored value. */}
+                  <Select
+                    value={draft.kind}
+                    disabled={editing !== 'new'}
+                    onValueChange={(k) => setDraft((d) => ({ ...d, kind: k as FieldKind }))}
+                  >
+                    <SelectTrigger size="sm" className="w-full" aria-label="Type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {KINDS.map((k) => <SelectItem key={k} value={k}>{FIELD_KIND_LABELS[k]}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
 
-            <div className="flex gap-2">
-              <Button
-                variant="ghost" className="rounded-xl"
-                onClick={() => (fields.length ? setEditing(null) : onOpenChange(false))}
-              >
-                Cancel
-              </Button>
-              <Button className="flex-1 rounded-xl" disabled={!draft.name.trim() || saving} onClick={() => void save()}>
-                {saving ? 'Saving…' : editing === 'new' ? 'Create field' : 'Save field'}
-              </Button>
+              {hasOptions(draft.kind) && (
+                <div ref={optionsRef}>
+                  <div className="mb-1.5 font-medium text-a-ink">Options</div>
+                  <div className="flex flex-col gap-1.5">
+                    {draft.options.map((option, i) => {
+                      const n = option.id && optionUsage ? optionUsage(current?.id ?? '', option.id) : null;
+                      return (
+                        <div key={option.id ?? `new-${i}`}>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              aria-label={`Colour for ${option.label || 'option'}`}
+                              aria-expanded={colorPickerFor === i}
+                              title="Change colour"
+                              onClick={() => setColorPickerFor((cur) => (cur === i ? null : i))}
+                              className={cn('size-3.5 flex-shrink-0 rounded-[4px]', OPTION_DOT_CLASS[option.color])}
+                            />
+                            <input
+                              value={option.label}
+                              maxLength={60}
+                              onChange={(e) => setOption(i, { label: e.target.value })}
+                              placeholder={`Option ${i + 1}`}
+                              aria-label={`Option ${i + 1}`}
+                              className="min-w-0 flex-1 rounded-[4px] border border-a-line bg-a-surface px-2 py-1 text-a-ink outline-none placeholder:text-a-faint focus-visible:border-a-accent focus-visible:shadow-[0_0_0_3px_var(--a-accent-ring)]"
+                            />
+                            {n !== null && (
+                              <span className="min-w-14 text-right text-[12px] text-a-faint">
+                                {n === 0 ? 'unused' : plural(n, noun)}
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              aria-label={`Remove ${option.label || 'option'}`}
+                              onClick={() => setDraft((d) => ({ ...d, options: d.options.filter((_, j) => j !== i) }))}
+                              className="flex size-7 flex-shrink-0 items-center justify-center rounded-[4px] text-a-muted transition-colors duration-[120ms] hover:bg-a-line-soft hover:text-a-ink"
+                            >
+                              <X className="size-4" strokeWidth={1.75} />
+                            </button>
+                          </div>
+                          {colorPickerFor === i && (
+                            <div className="mt-1 mb-0.5 ml-1 flex flex-wrap gap-1.5 rounded-[6px] bg-a-bg p-2" role="group" aria-label="Colour">
+                              {OPTION_COLORS.map((color) => (
+                                <button
+                                  key={color}
+                                  type="button"
+                                  aria-label={color}
+                                  aria-pressed={option.color === color}
+                                  onClick={() => { setOption(i, { color }); setColorPickerFor(null); }}
+                                  className={cn(
+                                    'size-5 rounded-[4px]',
+                                    OPTION_DOT_CLASS[color],
+                                    option.color === color && 'shadow-[0_0_0_2px_var(--a-surface),0_0_0_3.5px_var(--a-accent)]',
+                                  )}
+                                />
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {draft.options.length < 50 && (
+                    <div className="mt-1.5">
+                      <button
+                        type="button"
+                        className={topBarPill}
+                        onClick={() => setDraft((d) => ({ ...d, options: [...d.options, { label: '', color: OPTION_COLORS[d.options.length % OPTION_COLORS.length] }] }))}
+                      >
+                        <Plus className="size-4" strokeWidth={1.75} aria-hidden />
+                        Add option
+                      </button>
+                    </div>
+                  )}
+                  {removedOptions.length > 0 && (
+                    <p className="mt-2 text-[12px] text-a-red-ink">
+                      Saving removes {removedOptions.map((o) => `“${o.label}”`).join(', ')} from every {noun} that uses {removedOptions.length === 1 ? 'it' : 'them'}.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <Checkbox
+                label="Show on cards"
+                checked={draft.showOnCard}
+                onChange={(e) => setDraft((d) => ({ ...d, showOnCard: e.target.checked }))}
+              />
             </div>
           </div>
-        )}
-      </PopoverContent>
-    </Popover>
+
+          <div className="flex flex-shrink-0 items-center gap-2 border-t border-a-line-soft px-4 py-3">
+            {current && (
+              <button type="button" className={topBarPill} onClick={() => setConfirmDelete(true)}>
+                <Trash2 className="size-4" strokeWidth={1.75} aria-hidden />
+                Delete field
+              </button>
+            )}
+            <div className="flex-1" />
+            <button type="button" className={topBarPrimary} disabled={saving} onClick={() => void done()}>
+              {saving ? 'Saving…' : 'Done'}
+            </button>
+          </div>
+        </PopoverContent>
+      </Popover>
+
+      {/* ov-fielddelete — showcase 967–969. The fields panel steps aside while it is open. */}
+      <Dialog open={open && confirmDelete && !!current} onOpenChange={(v) => { if (!v) setConfirmDelete(false); }}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Delete the “{current?.name}” field?</DialogTitle>
+            <DialogDescription>
+              {usage.valueCount === 0
+                ? `No ${noun} has a value in it.`
+                : `It has a value on ${plural(usage.valueCount, noun)}`}
+              {usage.viewNames.length > 0 && ` and is used by ${plural(usage.viewNames.length, 'saved view')}: ${usage.viewNames.join(' and ')}`}
+              {usage.valueCount === 0 && usage.viewNames.length === 0 ? '' : '.'}
+              {' '}The {noun}s are kept; only their {current?.name} values are removed. This can’t be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center justify-end gap-2">
+            <button type="button" className={cn(topBarPill, BTN_MD)} onClick={() => setConfirmDelete(false)}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className={cn(
+                'flex flex-shrink-0 items-center gap-2 border border-transparent bg-a-red-line font-semibold whitespace-nowrap text-white transition-colors duration-[120ms] hover:bg-a-red-ink',
+                BTN_MD,
+              )}
+              onClick={async () => {
+                if (!current) return;
+                if (await onDelete(current.id)) { setConfirmDelete(false); onOpenChange(false); }
+              }}
+            >
+              {usage.valueCount > 0 ? `Delete field and ${plural(usage.valueCount, 'value')}` : 'Delete field'}
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

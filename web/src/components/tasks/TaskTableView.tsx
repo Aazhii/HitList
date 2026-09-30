@@ -37,7 +37,7 @@ import type { TaskCompare } from '@/lib/quadrantBuckets';
 import {
   FIELD_EMPTY, fieldSortKey, groupByField, type FilterState, type TaskGroup,
 } from '@/lib/taskFilters';
-import { OPTION_CHIP_CLASS, OPTION_DOT_CLASS, selectedOptions } from '@/lib/fieldValues';
+import { OPTION_CHIP_CLASS, NO_VALUE_DOT_CLASS, OPTION_DOT_CLASS, selectedOptions } from '@/lib/fieldValues';
 import { FIELD_KIND_LABELS, type FieldDef, type FieldKind, type FieldValue, type TaskFieldValues } from '@/types/fields';
 
 type SortBy = FilterState['sortBy'];
@@ -228,7 +228,7 @@ export function TaskTableView({
                 <th colSpan={columnCount} scope="rowgroup" className="px-2 pt-5 pb-1.5 text-left font-normal">
                   <span className="sticky left-2 inline-flex items-center gap-2.5">
                     <span
-                      className={cn('size-[9px] rounded-full', group.color ? OPTION_DOT_CLASS[group.color] : 'shadow-[inset_0_0_0_1.5px_var(--a-line)]')}
+                      className={cn('size-[9px] rounded-full', group.color ? OPTION_DOT_CLASS[group.color] : NO_VALUE_DOT_CLASS)}
                       aria-hidden
                     />
                     <span className="font-display text-[16px] text-a-ink">{group.label}</span>

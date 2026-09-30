@@ -33,16 +33,21 @@ export const OPTION_DOT_CLASS: Record<OptionColor, string> = {
   delegate: 'bg-q-delegate',
   eliminate: 'bg-q-eliminate',
 
-  gray: 'bg-tag-gray',
-  brown: 'bg-tag-brown',
-  orange: 'bg-tag-orange',
-  yellow: 'bg-tag-yellow',
-  green: 'bg-tag-green',
-  blue: 'bg-tag-blue',
-  purple: 'bg-tag-purple',
-  pink: 'bg-tag-pink',
-  red: 'bg-tag-red',
+  // The swatches are vivid (showcase 1299: Backlog #9b9a97, In review #006EB9, Shipped #1FA45E,
+  // Blocked #e03e3e), not the tags' near-black ink — so a dot reads as a colour.
+  gray: 'bg-dot-gray',
+  brown: 'bg-dot-brown',
+  orange: 'bg-dot-orange',
+  yellow: 'bg-dot-yellow',
+  green: 'bg-dot-green',
+  blue: 'bg-dot-blue',
+  purple: 'bg-dot-purple',
+  pink: 'bg-dot-pink',
+  red: 'bg-dot-red',
 };
+
+/** The dot for "no value" — the showcase's "No Stage" swatch (#D0D5DD). */
+export const NO_VALUE_DOT_CLASS = 'bg-dot-none';
 
 /** The options a select or multi value refers to, in the field's order. Removed options are skipped. */
 export function selectedOptions(def: FieldDef, value: FieldValue | undefined): FieldOption[] {

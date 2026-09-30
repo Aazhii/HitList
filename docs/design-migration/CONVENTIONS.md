@@ -537,11 +537,29 @@ Shared primitives now follow the DS, so every dialog inherits them:
   Databases until T3.25.
 - New DS primitives: `ui/switch` (34×20 track, sm 28×16) and `ui/checkbox` (16px, 1.5px border).
 
+### Fields manager and delete-field warning (T3.13, T3.14)
+
+- One anchored popover (**not** a Dialog), 440px, 12px radius, `shadow-xl`: header "Fields" +
+  secondary "New field"; the field list (glyph, name, kind; the selected row tinted); beneath it
+  the selected field's editor — Name + Type (Type is a select, **disabled for an existing field**
+  because a type can't change), Options (a 14px swatch, the name, a usage count — "5 tasks" /
+  "unused" — and an X), "Add option", "Show on cards" (DS Checkbox); footer ghost "Delete field"
+  and primary "Done". **Done saves what changed and closes**; moving to another field saves the
+  current one first; an unnamed new field is dropped. The removed-option warning stays inline.
+- **Delete field** opens a danger dialog (400px): "Delete the “Stage” field?" — "It has a value on
+  12 tasks and is used by 2 saved views: … The tasks are kept; only their Stage values are removed.
+  This can't be undone." — ghost Cancel (back to the fields panel), red "Delete field and 12 values".
+  The fields panel steps aside while it is open. Databases pass `noun="record"`.
+- **Option swatches are vivid** (`--a-dot-*`: gray #9b9a97, blue #006eb9, green #1fa45e, red #e03e3e,
+  plus brown/orange/yellow/purple/pink), separate from the near-black tag ink; "no value" is
+  `#D0D5DD`. Board lanes, list/table group headers and the editor all use them.
+- Board "Manage fields" opens the list (first field selected), not a new blank field.
+
 ## 13. Standing rules for whoever executes a task
 
 1. **Verify before you change.** Every task quotes the current code. If what you find does not match the quote, **stop and report** — do not adapt silently. The file may have moved on.
 2. **Never invent a value.** If a task does not give you a number and this file does not either, ask. Guessing is what produced the current state.
 3. **One task, one commit.** Commit message: `design(T1.4): set every icon stroke to 1.75`.
-4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 361 tests.
+4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 368 tests.
 5. **Update `00-INDEX.md`** — set State and fill in "Verified by" with the actual command output or screenshot pair. A task with an empty "Verified by" is not done.
 6. **Do not delete the Automations or Reminders code.** It is being revived in Phase 4, not removed.

@@ -1585,7 +1585,7 @@ function UserScopedApp() {
                   fieldsLoading={taskFields.loading}
                   nextId={nextId}
                   onGroupFieldChange={(fieldId) => setFilterState({ ...filterState, groupBy: fieldId })}
-                  onManageFields={() => { setFieldsAnchor(activeAnchor()); setFieldsManagerTarget({ startNew: true }); setFieldsManagerOpen(true); }}
+                  onManageFields={() => { setFieldsAnchor(activeAnchor()); setFieldsManagerTarget({}); setFieldsManagerOpen(true); }}
                   onSetFieldValue={(taskId, fieldId, value) => {
                     const before = taskFields.values[taskId]?.[fieldId] ?? null;
                     undoable('Moved', () => { void taskFields.setValue(taskId, fieldId, value); },
@@ -1713,6 +1713,16 @@ function UserScopedApp() {
         }}
         onUpdate={taskFields.updateField}
         onDelete={taskFields.deleteField}
+        optionUsage={(fieldId, optionId) => Object.values(taskFields.values).filter((v) => {
+          const x = v[fieldId];
+          return x === optionId || (Array.isArray(x) && x.includes(optionId));
+        }).length}
+        fieldUsage={(fieldId) => ({
+          valueCount: Object.values(taskFields.values).filter((v) => v[fieldId] !== undefined).length,
+          viewNames: savedViews.views
+            .filter((v) => v.filters.groupBy === fieldId || v.filters.fields?.[fieldId] || v.filters.sortBy === `field:${fieldId}`)
+            .map((v) => v.name),
+        })}
       />
     </>
   );

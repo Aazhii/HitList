@@ -34,7 +34,7 @@ import {
   BOARD_COLUMN_PREFIX, boardCardId, boardDrop, parseBoardCardId,
 } from '@/components/tasks/TaskBoardView';
 import { groupItemsByField, isGroupableField, type FieldGroup } from '@/lib/taskFilters';
-import { OPTION_DOT_CLASS } from '@/lib/fieldValues';
+import { NO_VALUE_DOT_CLASS, OPTION_DOT_CLASS } from '@/lib/fieldValues';
 import { FIELD_KIND_LABELS, type FieldDef, type FieldValue, type TaskFieldValues } from '@/types/fields';
 import type { ApiDatabaseRow } from '@/lib/api';
 
@@ -207,7 +207,7 @@ function BoardColumn({ fieldId, column, fields, values, onAdd }: BoardColumnProp
     >
       <header className="mb-2 flex items-center gap-2 px-1.5 pt-0.5">
         <span
-          className={cn('size-[9px] flex-shrink-0 rounded-full', column.color ? OPTION_DOT_CLASS[column.color] : 'shadow-[inset_0_0_0_1.5px_var(--a-line)]')}
+          className={cn('size-[9px] flex-shrink-0 rounded-full', column.color ? OPTION_DOT_CLASS[column.color] : NO_VALUE_DOT_CLASS)}
           aria-hidden
         />
         <h2 id={headingId} className="min-w-0 truncate font-display text-[16px] leading-tight text-a-ink">{column.label}</h2>

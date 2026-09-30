@@ -716,6 +716,7 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
         onCreate={handleCreateField}
         onUpdate={handleUpdateField}
         onDelete={handleDeleteField}
+        noun="record"
       />
     </div>
   );

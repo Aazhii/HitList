@@ -146,7 +146,7 @@ that one is fine where it is.
 | Visual | `node web/scripts/shoot.mjs <screen-id>` → a `.ref.png` / `.app.png` pair | every Phase 3 task |
 | Real build | `sh desktop/scripts/prepare-jar.sh` → copy to `api/target/hitlist.jar` → restart Electron → re-check its own port | every **phase** exit, not every task |
 
-Test baseline: **361 tests across 41 files.** This must not regress.
+Test baseline: **368 tests across 42 files.** This must not regress.
 
 ---
 
@@ -156,10 +156,10 @@ Test baseline: **361 tests across 41 files.** This must not regress.
 Phase 0  █████   5 / 5      done
 Phase 1  █████  11 / 11      foundations — the broken UI
 Phase 2  █████   5 / 5       shell exactness
-Phase 3  ██░░░  14 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
+Phase 3  ██░░░  16 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
 Phase 4  ░░░░░   1 / 12      missing features
 Phase 5  ░░░░░   0 / 7       proposals, unreviewed
-                36 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
+                38 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
 ```
 
 ### A note on "partially built"
@@ -239,8 +239,8 @@ on a description. Execution order is the section order below.
 | T3.10 | `ov-detail` | **done** | design:check PASS, tsc/lint clean, vitest 345/345; shots/ov-detail.{ref,app}.png — 440px peek panel, no scrim, every label/control within 2px in `cmp.mjs` |
 | T3.11 | `ov-delete` | **done** | shots/ov-delete.{ref,app}.png — danger confirm dialog replaces the inline "Yes, delete"; panel hides behind it like the prototype |
 | T3.12 | `ov-filter` | **done** | design:check PASS, tsc/lint clean, vitest 361/361 (+7 FilterPanel, +3 category); shots/ov-filter.{ref,app}.png — panel position/type match in `cmp.mjs`; added a Category filter the design requires |
-| T3.13 | `ov-fields` | todo — don't reintroduce a Dialog here | |
-| T3.14 | `ov-fielddelete` | todo | |
+| T3.13 | `ov-fields` | **done** | design:check PASS, tsc/lint clean, vitest 368/368 (+7 FieldsManager); shots/ov-fields.{ref,app}.png — still an anchored popover (no Dialog); list + editor in one panel, usage counts, Done |
+| T3.14 | `ov-fielddelete` | **done** | shots/ov-fielddelete.{ref,app}.png — danger dialog naming the value count and the saved views that use the field |
 | T3.15 | `ov-history` | **done** | design:check PASS, tsc/lint clean, vitest 351/351; shots/ov-history.{ref,app}.png — 400px peek panel, no scrim, green count badge, subtle Undo, footer line |
 | T3.16 | `ov-progress` | **done** | shots/ov-progress.{ref,app}.png — four stat tiles + completed-per-day bars (today in brand blue); date logic unit-tested |
 

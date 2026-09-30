@@ -41,7 +41,7 @@ import type { Todo, TodoStatus } from '@/types/todo';
 import type { TaskCompare } from '@/lib/quadrantBuckets';
 import { FIELD_EMPTY, FIELD_SET, groupByField, isGroupableField, type TaskGroup } from '@/lib/taskFilters';
 import { FIELD_KIND_LABELS } from '@/types/fields';
-import { OPTION_DOT_CLASS } from '@/lib/fieldValues';
+import { NO_VALUE_DOT_CLASS, OPTION_DOT_CLASS } from '@/lib/fieldValues';
 import type { FieldDef, FieldValue, TaskFieldValues } from '@/types/fields';
 
 export const BOARD_COLUMN_PREFIX = 'board-column:';
@@ -322,7 +322,7 @@ function BoardColumn({ fieldId, column, fieldDefs, fieldValues, onAddTask, ...ha
     >
       <header className="flex items-center gap-2 px-1.5 py-1">
         <span
-          className={cn('size-2 flex-shrink-0 rounded-full', column.color ? OPTION_DOT_CLASS[column.color] : 'shadow-[inset_0_0_0_1.5px_var(--a-line-strong)]')}
+          className={cn('size-2 flex-shrink-0 rounded-full', column.color ? OPTION_DOT_CLASS[column.color] : NO_VALUE_DOT_CLASS)}
           aria-hidden
         />
         <h2 id={headingId} className="min-w-0 truncate text-[13px] font-semibold leading-tight text-a-ink">{column.label}</h2>
