@@ -4,8 +4,12 @@
 # Then:                  docker buildx build --platform linux/amd64 -f Dockerfile.catalyst-local -t hitlist-appsail-local:amd64 --load .
 # Deployed AppSails set DATABASE_URL and OWNER_COOKIE_SECRET in the Catalyst console instead; never use this image there.
 FROM hitlist-appsail:amd64
-# For a deploy, pass a random secret:  --build-arg COOKIE_SECRET=$(openssl rand -hex 32)
+# For a deploy, pass a random secret:  --build-arg COOKIE_SECRET=$(openssl rand -hex 32) --build-arg ALLOWED_ORIGINS=<the AppSail URL>
 ARG COOKIE_SECRET=local-catalyst-dev-secret-0123456789abcdef
+# The browser's own address, so the app's CORS check lets its scripts load (module scripts send an Origin header).
+# Local serve uses http://localhost:3001; a deploy passes the AppSail URL.
+ARG ALLOWED_ORIGINS=http://localhost:3001
 ENV STORAGE_MODE=sqlite \
     SQLITE_PATH=/tmp/hitlist-local.db \
-    OWNER_COOKIE_SECRET=$COOKIE_SECRET
+    OWNER_COOKIE_SECRET=$COOKIE_SECRET \
+    ALLOWED_ORIGINS=$ALLOWED_ORIGINS
