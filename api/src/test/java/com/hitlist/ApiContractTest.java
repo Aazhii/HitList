@@ -161,6 +161,48 @@ class ApiContractTest {
     }
 
     @Test
+    void aBackupRoundTripsAndImportOnlyEverAdds() throws Exception {
+        MockCookie from = browser();
+        MockCookie to = browser();
+        mvc.perform(post("/api/tasks").cookie(from).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"clientId\":\"bk-1\",\"title\":\"Keep me\",\"dueDate\":\"2030-01-02\",\"recurrence\":\"DAILY\",\"reminderEnabled\":true,\"reminderMinutesBefore\":15}"))
+            .andExpect(status().isCreated());
+
+        String file = mvc.perform(get("/api/backup").cookie(from)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.schema").value("hitlist.backup.v1"))
+            .andExpect(jsonPath("$.counts.KaizenTasks").value(1))
+            .andReturn().getResponse().getContentAsString();
+        org.assertj.core.api.Assertions.assertThat(file).doesNotContain("OwnerId").doesNotContain("ROWID");
+
+        mvc.perform(post("/api/backup").cookie(to).contentType(MediaType.APPLICATION_JSON).content(file))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.imported.KaizenTasks").value(1));
+        mvc.perform(get("/api/tasks/bk-1").cookie(to)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.recurrence").value("DAILY"))
+            .andExpect(jsonPath("$.reminderMinutesBefore").value(15));
+
+        // Again: nothing is added and nothing is overwritten.
+        mvc.perform(post("/api/tasks/bk-1?_method=PUT").cookie(to).contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"Edited\"}"))
+            .andExpect(status().isOk());
+        mvc.perform(post("/api/backup").cookie(to).contentType(MediaType.APPLICATION_JSON).content(file))
+            .andExpect(jsonPath("$.imported.KaizenTasks").value(0))
+            .andExpect(jsonPath("$.skipped.KaizenTasks").value(1));
+        mvc.perform(get("/api/tasks/bk-1").cookie(to)).andExpect(jsonPath("$.title").value("Edited"));
+
+        // The other owner's data is untouched, and a bad file changes nothing.
+        mvc.perform(post("/api/backup").cookie(to).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"schema\":\"nope\",\"tables\":{}}"))
+            .andExpect(status().isBadRequest());
+        mvc.perform(post("/api/backup").cookie(to).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"schema\":\"hitlist.backup.v1\",\"tables\":{\"KaizenZohoCalendarConnections\":[]}}"))
+            .andExpect(status().isBadRequest());
+        mvc.perform(post("/api/backup").cookie(to).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"schema\":\"hitlist.backup.v1\",\"tables\":{\"KaizenTasks\":[{\"TaskId\":\"ok\",\"Title\":\"Fine\"},{\"TaskId\":\"bad\"}]}}"))
+            .andExpect(status().isBadRequest());
+        mvc.perform(get("/api/tasks/ok").cookie(to)).andExpect(status().isNotFound());
+    }
+
+    @Test
     void favoritesAndRecentsAreKeptPerOwnerAndTrimmed() throws Exception {
         MockCookie browser = browser();
         MockCookie other = browser();
@@ -350,7 +392,8 @@ class ApiContractTest {
                 new ListController(new ListService(repository), owners),
                 new NoteController(new NoteService(repository), owners),
                 new WorkspaceController(new WorkspaceService(repository, objectMapper), owners),
-                new PageMarksController(new PageMarksService(repository), owners)
+                new PageMarksController(new PageMarksService(repository), owners),
+                new com.hitlist.web.BackupController(new com.hitlist.domain.WorkspaceBackupService(repository), owners)
             )
             .setControllerAdvice(new ApiExceptionHandler())
             .setMessageConverters(converter)

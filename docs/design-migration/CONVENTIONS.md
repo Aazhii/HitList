@@ -612,7 +612,7 @@ Shared primitives now follow the DS, so every dialog inherits them:
 1. **Verify before you change.** Every task quotes the current code. If what you find does not match the quote, **stop and report** — do not adapt silently. The file may have moved on.
 2. **Never invent a value.** If a task does not give you a number and this file does not either, ask. Guessing is what produced the current state.
 3. **One task, one commit.** Commit message: `design(T1.4): set every icon stroke to 1.75`.
-4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 477 tests.
+4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 480 tests.
 5. **Update `00-INDEX.md`** — set State and fill in "Verified by" with the actual command output or screenshot pair. A task with an empty "Verified by" is not done.
 6. **Do not delete the Automations or Reminders code.** It is being revived in Phase 4, not removed.
 
@@ -761,4 +761,11 @@ Everything below deliberately stops matching the prototype. Each entry says wher
 - The task table's "#" column: hovering a row swaps its number for a checkbox (it stays once anything is selected; the header then holds a select-all checkbox). Space selects the row under the keyboard cursor; Esc clears. Selection is on screen rows only — filtering a row away drops it from the selection.
 - A bar above the table while anything is selected: "N selected", Set status, Move to quadrant, a date input and "Clear date", Delete (asks "Delete N tasks? This cannot be undone." in the bar), and a clear-selection ×. Status/quadrant/date changes are one toast and one Undo for the whole batch (the Undo puts each task's own previous value back); tasks and momentum are re-read afterwards, since finishing a repeating task creates its next copy on the server. Bulk delete has no Undo, which the confirmation says.
 - Spends: one checkbox state in the row-number cell, one bar (8px radius, hairline, shadow-sm). No schema change. Only the table has selection; list, matrix and board do not.
+
+### P6.4 Export and import
+- Account menu: "Export workspace" downloads `hitlist-backup-YYYY-MM-DD.json`; "Import backup" takes one back. The file is the stored rows of lists, tasks, notes, views, databases, fields, database rows, field values, automation rules, favourites and recents, with the owner id stripped (`hitlist.backup.v1`). Left out on purpose: Zoho Calendar connections (credentials), notifications and their queue, and automation run records (they stop a rule firing twice).
+- Import only adds. A row whose id already exists is left exactly as it is, so a second import adds nothing and nothing is overwritten or deleted; the whole file is validated before anything is written, so a bad file changes nothing; unknown tables are refused. The toast says what was added and how many were already there; the page then reloads to show it.
+- The older `/api/migrations/remote-export` importer (empty workspace only, lossy) is untouched.
+- Also fixed on the way: two "recents" opened in the same millisecond tied, so the order was not guaranteed; a visit is now always strictly newer than the last.
+- Spends: two rows in the Account menu. No new tokens.
 

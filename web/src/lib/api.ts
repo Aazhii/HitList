@@ -766,3 +766,23 @@ export async function checkServerHealth(): Promise<boolean> {
     return false;
   }
 }
+
+// ── Backup (P6.4) ────────────────────────────────────────────────────────────
+
+export interface BackupFile {
+  schema: string;
+  exportedAt: string;
+  counts: Record<string, number>;
+  tables: Record<string, unknown[]>;
+}
+
+export interface BackupImportResult {
+  ok: boolean;
+  imported: Record<string, number>;
+  skipped: Record<string, number>;
+}
+
+export const backupApi = {
+  export: () => get<BackupFile>('/backup'),
+  import: (file: unknown) => post<BackupImportResult>('/backup', file),
+};

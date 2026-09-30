@@ -146,7 +146,7 @@ that one is fine where it is.
 | Visual | `node web/scripts/shoot.mjs <screen-id>` → a `.ref.png` / `.app.png` pair | every Phase 3 task |
 | Real build | `sh desktop/scripts/prepare-jar.sh` → copy to `api/target/hitlist.jar` → restart Electron → re-check its own port | every **phase** exit, not every task |
 
-Test baseline: **477 tests across 63 files.** This must not regress.
+Test baseline: **480 tests across 64 files.** This must not regress.
 
 ---
 
@@ -336,7 +336,7 @@ Proposed after Phase 5 and accepted by the user: P6.1–P6.4. Each is additive; 
 | P6.1 | Quick capture | **built** — `lib/quickCapture.ts`, `components/QuickCapture.tsx`; `c` or ⌘⇧N anywhere; reads a date, time and `!quadrant` from the line, shows what it read before saving |
 | P6.2 | Recurring tasks | **built** — `Recurrence` on tasks (server `TaskService.spawnNext`, `lib/recurrence.ts`); Task details → Repeat; a repeat glyph beside the due date; quick capture reads "every week" etc.; Java `RecurrenceTest` (4) + `ApiContractTest` case |
 | P6.3 | Bulk actions in the task table | **built** — `components/tasks/BulkBar.tsx`, `lib/bulkSelection.ts`; a checkbox replaces the row number on hover (or Space on the cursor row); set status, quadrant, due date / clear date, or delete, for all selected; one toast and one Undo |
-| P6.4 | Export and import | accepted |
+| P6.4 | Export and import | **built** — `WorkspaceBackupService` + `GET/POST /api/backup`, Account → Export workspace / Import backup; lossless (recurrence, reminders, fields, inline databases, rules, favourites); import only adds; Java `ApiContractTest` round-trip case |
 
 ---
 

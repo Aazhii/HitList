@@ -62,7 +62,10 @@ public class PageMarksService {
     public Map<String, Object> visit(String owner, String kind, String pageId) {
         String key = key(kind, pageId);
         Map<String, Object> row = row(key, kind, pageId);
-        row.put("VisitedAt", System.currentTimeMillis());
+        // Strictly after the newest visit, so two opens in the same millisecond still have an order.
+        long newest = repository.list(StorageTables.RECENTS, owner).stream()
+            .mapToLong(r -> Values.number(r.get("VisitedAt"), 0)).max().orElse(0);
+        row.put("VisitedAt", Math.max(System.currentTimeMillis(), newest + 1));
         if (repository.find(StorageTables.RECENTS, owner, key).isPresent()) {
             repository.replace(StorageTables.RECENTS, owner, key, row);
         } else {

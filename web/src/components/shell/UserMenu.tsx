@@ -1,5 +1,8 @@
-import { useState } from 'react';
-import { Bell, Keyboard } from 'lucide-react';
+import { useRef, useState } from 'react';
+import { Bell, Download, Keyboard, Upload } from 'lucide-react';
+import { toast } from 'sonner';
+import { backupApi } from '@/lib/api';
+import { backupFileName, importSummary, parseBackupText } from '@/lib/backupFile';
 import { DENSITIES, useDensity } from '@/hooks/useDensity';
 import {
   DropdownMenu,
@@ -26,6 +29,36 @@ export function UserMenu({ onOpenReminders, dailyLine }: {
 }) {
   const [shortcuts, setShortcuts] = useState(false);
   const [density, setDensity] = useDensity();
+  const fileInput = useRef<HTMLInputElement>(null);
+
+  /** Everything in the workspace, as one JSON file the person keeps. */
+  const exportBackup = async () => {
+    try {
+      const file = await backupApi.export();
+      const url = URL.createObjectURL(new Blob([JSON.stringify(file, null, 2)], { type: 'application/json' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = backupFileName(new Date());
+      link.click();
+      URL.revokeObjectURL(url);
+      toast.success('Backup downloaded', { duration: 2500 });
+    } catch {
+      toast.error('Could not make a backup', { duration: 3000 });
+    }
+  };
+
+  /** Adds what the file holds. Anything already here is left as it is. */
+  const importBackup = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const result = await backupApi.import(parseBackupText(await file.text()));
+      toast.success(importSummary(result), { duration: 5000 });
+      // The pages read their data on load, so a reload is the honest way to show what arrived.
+      window.setTimeout(() => window.location.reload(), 1200);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not import that file', { duration: 4000 });
+    }
+  };
 
   return (
     <>
@@ -68,6 +101,14 @@ export function UserMenu({ onOpenReminders, dailyLine }: {
                 Reminders
               </DropdownMenuItem>
             )}
+            <DropdownMenuItem onSelect={() => { void exportBackup(); }} className="gap-2.5 px-2.5 py-2 text-[14px] text-a-muted">
+              <Download className="size-[15px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
+              Export workspace
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => fileInput.current?.click()} className="gap-2.5 px-2.5 py-2 text-[14px] text-a-muted">
+              <Upload className="size-[15px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
+              Import backup
+            </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => setShortcuts(true)} className="gap-2.5 px-2.5 py-2 text-[14px] text-a-muted">
               <Keyboard className="size-[15px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
               Keyboard shortcuts
@@ -92,6 +133,14 @@ export function UserMenu({ onOpenReminders, dailyLine }: {
         </DropdownMenuContent>
       </DropdownMenu>
 
+      <input
+        ref={fileInput}
+        type="file"
+        accept="application/json,.json"
+        aria-label="Backup file"
+        className="hidden"
+        onChange={(e) => { void importBackup(e.target.files?.[0]); e.target.value = ''; }}
+      />
       <ShortcutsDialog open={shortcuts} onOpenChange={setShortcuts} />
     </>
   );
