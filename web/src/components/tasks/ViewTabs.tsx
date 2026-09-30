@@ -68,10 +68,12 @@ export interface ViewTabsProps {
 }
 
 const TAB = cn(
-  'flex h-6 flex-shrink-0 items-center gap-1.5 rounded-[6px] px-2 text-[12px] whitespace-nowrap transition-colors duration-[120ms]',
+  // DS Tag (Tag.jsx): 11px / 500, 3px 8px, 1px border, 6px radius, 6px gap.
+  'inline-flex flex-shrink-0 items-center gap-1.5 rounded-[6px] px-2 py-[3px] text-[11px] font-medium whitespace-nowrap transition-colors duration-[120ms]',
 );
-const TAB_ACTIVE = 'bg-a-accent-tint font-medium text-a-accent-700 shadow-[inset_0_0_0_1px_var(--a-accent)]';
-const TAB_IDLE = 'text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)] hover:text-a-ink';
+// Selected: --color-primary-subtle fill, --blue-200 border, --blue-700 text.
+const TAB_ACTIVE = 'bg-a-blue-tint text-a-accent-700 shadow-[inset_0_0_0_1px_var(--a-blue-line)]';
+const TAB_IDLE = 'bg-a-surface text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)] hover:bg-a-bg hover:shadow-[inset_0_0_0_1px_var(--a-faint)]';
 
 export function ViewTabs({
   layout, views, appliedViewId, dirty, listId, listName, online, groupFields,
@@ -252,13 +254,12 @@ function NewViewButton({ layout, listName, groupFields, online, onCreate, onMana
       <PopoverTrigger asChild>
         <button
           type="button"
-          className={cn(TAB, TAB_IDLE, 'gap-1')}
+          className="flex size-7 flex-shrink-0 items-center justify-center rounded-[6px] text-a-muted transition-colors duration-[120ms] hover:bg-a-line-soft hover:text-a-ink active:bg-a-line disabled:opacity-45"
           aria-label="New view"
           disabled={!online}
-          title={online ? undefined : 'Saved views need the server'}
+          title={online ? 'Save current filters as a view' : 'Saved views need the server'}
         >
-          <Plus className="size-3.5" strokeWidth={1.75} aria-hidden />
-          New
+          <Plus className="size-4" strokeWidth={1.75} aria-hidden />
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[300px] p-3">

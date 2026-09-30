@@ -407,6 +407,44 @@ been declared in `ViewDisplay` and left unused since it was written.
   <clauses>." from `describeActiveFilters` (search, status, quadrant, due, custom
   fields; sort and grouping hide nothing so are omitted).
 
+### Measured corrections to the foundations (found by `tools/cmp.mjs`)
+
+These were wrong at the source and every screen inherited them.
+
+- **Text colours.** `--a-muted` is now `#5f5e5b` (`--text-secondary`) and `--a-faint`
+  `#787774` (`--text-tertiary`); they were `#6f6e69` and `#9b9a97` (`--gray-400`, an icon
+  grey). Plain due dates, captions, counts and placeholders all use the faint one.
+- **DS `Button` sm** — what every page-header control is: 28px tall, `0 12px`, **11px /
+  600**, 8px gap, **4px radius** (md: 34px, `0 16px`, 13px, 6px). Variants: primary
+  (`#006eb9`), secondary (white, `--border-strong` ring, ink), ghost (transparent,
+  secondary ink, `--gray-100` hover). `topBarPrimary / topBarSecondary / topBarPill` in
+  `TopBar.tsx` are these; `BTN_MD` is the md override.
+- **DS `Tabs`**: 13px, 500 (selected 600, brand), `12px` padding, 4px gap, a 1px
+  `--border-default` rule under the row and a 2px brand rule inset 12px on the selected tab.
+  The page header puts **8px** between the title row and the tab row.
+- **DS `Tag`**: 11px / 500, `3px 8px`, 1px border, 6px radius, 6px gap, an 8px swatch.
+  Selected: `--blue-50` fill, `--blue-200` border, `--blue-700` text. Used for the
+  saved-view chips and every category chip.
+- **DS `Badge`**: 11px / 600, `3px 8px`, pill, 6px dot in the ink. Sync pill
+  (green-50/600, amber-50/600, red-50/600) and "Next up" (blue-50/700).
+- **Quadrant and category colours are the showcase's literals** (lines 1224–1227), with a
+  separate dot colour per quadrant: Do `#b83232 / #ffeaea / #e03e3e`, Schedule
+  `#005c9c / #e7f3ff / #2383e2`, Delegate `#6b4884 / #f4f0f7 / #9065b0`, Eliminate
+  `#5f5e5b / #f1f1ef / #9b9a97`; Work `#2383e2`, Personal `#9065b0`, Health `#0f7b0f`,
+  Learning `#d9730d`. (`#2383e2` is allowed here as a *data* colour; the `accent` rule
+  still bans it as a brand colour — see the two `design-check-ignore` lines in `index.css`.)
+- **DS `Table`** (tasks table): a bordered 8px container; sticky `--gray-50` header whose
+  cells are glyph + 13px/600 name over an 11px tertiary type label (`text`, `date`,
+  `select`…); a 44px `#` gutter (`--gray-100` head, `--gray-25` cells, row numbers 13px ink);
+  cells 13px, hairline rows, hover `--gray-25`; overdue due cells use the DS "invalid" cell
+  (`red-50` fill, `red-600` ink, 2px `red-500` left bar); empty cells read `—` in italic
+  tertiary; number columns are right-aligned mono 11px. The frozen title column is white,
+  not grey.
+- **Deviation:** a **single select** shows plain text in the tasks table (as the
+  prototype's Stage column does); **multi-select** keeps its coloured chips.
+- **Deviation:** the saved-view strip's `+` is a 28px icon button like the prototype's,
+  but still opens our name/layout/columns popover (a saved view needs those).
+
 ## 13. Standing rules for whoever executes a task
 
 1. **Verify before you change.** Every task quotes the current code. If what you find does not match the quote, **stop and report** — do not adapt silently. The file may have moved on.

@@ -17,9 +17,11 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowDown, ArrowUp, ChevronDown, EyeOff, MoreHorizontal, PanelRightOpen, Pencil, Plus, Trash2,
+  ArrowDown, ArrowUp, Calendar, CheckSquare, ChevronDown, CircleDot, EyeOff, Hash, List, MoreHorizontal,
+  PanelRightOpen, Pencil, Plus, Trash2, Type, type LucideIcon,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { topBarPill } from '@/components/shell/TopBar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import {
@@ -36,7 +38,7 @@ import {
   FIELD_EMPTY, fieldSortKey, groupByField, type FilterState, type TaskGroup,
 } from '@/lib/taskFilters';
 import { OPTION_CHIP_CLASS, OPTION_DOT_CLASS, selectedOptions } from '@/lib/fieldValues';
-import type { FieldDef, FieldValue, TaskFieldValues } from '@/types/fields';
+import { FIELD_KIND_LABELS, type FieldDef, type FieldKind, type FieldValue, type TaskFieldValues } from '@/types/fields';
 
 type SortBy = FilterState['sortBy'];
 
@@ -93,13 +95,15 @@ const STATUS_OPTIONS: Array<{ value: TodoStatus; label: string }> = [
   { value: 'done', label: 'Done' },
 ];
 
-const CELL = 'px-2 py-1 align-top';
+// DS Table (Table.jsx): 13px cells, 8px 12px padding (here 4px cell + 8px control), a
+// hairline under each row. Controls look like plain text until hovered or focused.
+const CELL = 'border-b border-a-line-soft px-1 py-0.5 align-middle group-hover:bg-a-row-alt';
 const CONTROL = cn(
-  'w-full rounded-[8px] border-0 bg-transparent px-2 text-left text-[14px] text-a-ink',
+  'w-full rounded-[4px] border-0 bg-transparent px-2 text-left text-[13px] text-a-ink',
   'transition-colors duration-[120ms] hover:bg-[color-mix(in_srgb,var(--a-ink)_6%,transparent)]',
   'focus-visible:bg-[color-mix(in_srgb,var(--a-ink)_6%,transparent)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-a-accent',
 );
-const CONTROL_ROW = cn(CONTROL, 'h-8');
+const CONTROL_ROW = cn(CONTROL, 'h-8 [&_svg]:opacity-0 hover:[&_svg]:opacity-100 focus-visible:[&_svg]:opacity-100');
 
 /** "Sep 20", or "Sep 20, 2027" in another year — the same shape as a card's due chip. */
 function formatDue(key: string): string {
@@ -108,6 +112,26 @@ function formatDue(key: string): string {
   const sameYear = date.getFullYear() === new Date().getFullYear();
   return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', ...(sameYear ? {} : { year: 'numeric' }) });
 }
+
+/**
+ * The table's due wording (showcase 250–261): "Overdue · Sep 27", "Today, 4:00 PM",
+ * "Tomorrow", "Oct 2". Whole days, so a due-today task is never "overdue".
+ */
+export function tableDueLabel(dueDate: string, dueTime: string | undefined, now = new Date()): { label: string; overdue: boolean } {
+  const key = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const tomorrow = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+  const time = dueTime
+    ? `, ${new Date(`1970-01-01T${dueTime}:00`).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}`
+    : '';
+  if (dueDate < key(now)) return { label: `Overdue · ${formatDue(dueDate)}`, overdue: true };
+  if (dueDate === key(now)) return { label: `Today${time}`, overdue: false };
+  if (dueDate === key(tomorrow)) return { label: `Tomorrow${time}`, overdue: false };
+  return { label: `${formatDue(dueDate)}${time}`, overdue: false };
+}
+
+const KIND_GLYPH: Record<FieldKind, LucideIcon> = {
+  text: Type, longtext: Type, number: Hash, date: Calendar, select: CircleDot, multi: List, checkbox: CheckSquare,
+};
 
 export function TaskTableView({
   todos, showDone, compare, sortBy, sortDir, onSortChange, groupField,
@@ -125,10 +149,13 @@ export function TaskTableView({
    */
   const columns = useMemo(() => {
     const all: TableColumn[] = [
-      { id: 'status', label: 'Status', sortKey: 'status' },
-      { id: 'quadrant', label: 'Quadrant', sortKey: 'quadrant' },
-      { id: 'due', label: 'Due', sortKey: 'due-date' },
-      ...shownFields.map((field) => ({ id: field.id, label: field.name, sortKey: fieldSortKey(field.id), field })),
+      { id: 'status', label: 'Status', sortKey: 'status', glyph: CircleDot, typeLabel: 'status' },
+      { id: 'quadrant', label: 'Quadrant', sortKey: 'quadrant', glyph: CircleDot, typeLabel: 'select' },
+      { id: 'due', label: 'Due', sortKey: 'due-date', glyph: Calendar, typeLabel: 'date' },
+      ...shownFields.map((field) => ({
+        id: field.id, label: field.name, sortKey: fieldSortKey(field.id), field,
+        glyph: KIND_GLYPH[field.kind], typeLabel: FIELD_KIND_LABELS[field.kind].toLowerCase(),
+      })),
     ];
 
     return sortByColumnOrder(all.filter((c) => !hidden.has(c.id)), columnOrder);
@@ -140,8 +167,9 @@ export function TaskTableView({
     return [{ key: '', label: '', color: null, tasks: rows }];
   }, [todos, showDone, compare, groupField, fieldValues]);
 
-  const columnCount = columns.length + 2;
+  const columnCount = columns.length + 3;
   const rowCount = groups.reduce((n, g) => n + g.tasks.length, 0);
+  let rowNumber = 0;
 
   const sortOf = (key: SortBy): 'asc' | 'desc' | null => (sortBy === key ? sortDir : null);
   const cycle = (key: SortBy): [SortBy, 'asc' | 'desc'] => {
@@ -151,20 +179,26 @@ export function TaskTableView({
   };
 
   return (
-    <div className="w-full overflow-x-auto animate-fade-in">
-      <table className="w-full min-w-max border-collapse text-[14px]">
+    <div className="animate-fade-in">
+    <div className="max-h-[calc(100vh-260px)] w-full overflow-auto rounded-[8px] border border-a-line bg-a-surface">
+      <table className="w-full min-w-max border-separate border-spacing-0 text-[13px]">
         <thead>
-          <tr className="border-b border-a-line-soft">
+          <tr>
+            <th scope="col" className="sticky top-0 left-0 z-[3] w-11 border-b border-a-line bg-a-line-soft px-3 py-2 text-right align-bottom text-[11px] font-bold text-a-faint">#</th>
             <ColumnHeader
               label="Title"
+              glyph={Type}
+              typeLabel="text"
               sort={sortOf('title')}
               onSort={() => onSortChange(...cycle('title'))}
-              className="sticky left-0 z-10 min-w-[280px] bg-a-bg"
+              className="left-11 z-[3] min-w-[280px]"
             />
             {columns.map((column) => (
               <ColumnHeader
                 key={column.id}
                 label={column.label}
+                glyph={column.glyph}
+                typeLabel={column.typeLabel}
                 sort={sortOf(column.sortKey)}
                 onSort={() => onSortChange(...cycle(column.sortKey))}
                 onHide={onHideColumn && (() => onHideColumn(column.id))}
@@ -172,7 +206,7 @@ export function TaskTableView({
                 onDeleteField={column.field && onDeleteField ? () => onDeleteField(column.id) : undefined}
               />
             ))}
-            <th scope="col" className="px-2 py-2 text-left align-bottom font-normal">
+            <th scope="col" className="sticky top-0 z-[2] w-11 border-b border-a-line bg-a-bg px-2 py-2 text-left align-bottom font-normal">
               {onCreateField && (
                 <button
                   type="button"
@@ -207,6 +241,7 @@ export function TaskTableView({
             {group.tasks.map((todo) => (
               <TaskTableRow
                 key={todo.id}
+                rowNumber={++rowNumber}
                 todo={todo}
                 columns={columns}
                 values={fieldValues[todo.id]}
@@ -218,7 +253,7 @@ export function TaskTableView({
               />
             ))}
 
-            {onAddTask && (
+            {onAddTask && groupField && (
               <tr>
                 <td colSpan={columnCount} className="px-2 py-0.5">
                   <NewTaskRow
@@ -235,6 +270,13 @@ export function TaskTableView({
           </tbody>
         ))}
       </table>
+    </div>
+
+      {onAddTask && !groupField && (
+        <div className="mt-2">
+          <NewTaskRow label="this list" onAdd={(title) => onAddTask(title, '')} />
+        </div>
+      )}
 
       {rowCount === 0 && !groupField && (
         <p className="px-4 py-8 text-center text-[14px] text-a-faint">
@@ -247,6 +289,8 @@ export function TaskTableView({
 
 interface ColumnHeaderProps {
   label: string;
+  glyph: LucideIcon;
+  typeLabel: string;
   sort: 'asc' | 'desc' | null;
   onSort: () => void;
   className?: string;
@@ -256,7 +300,7 @@ interface ColumnHeaderProps {
 }
 
 /** A sortable header with a menu: hide the column, and edit or delete a field. */
-function ColumnHeader({ label, sort, onSort, className, onHide, onEditField, onDeleteField }: ColumnHeaderProps) {
+function ColumnHeader({ label, glyph: Glyph, typeLabel, sort, onSort, className, onHide, onEditField, onDeleteField }: ColumnHeaderProps) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const hasMenu = Boolean(onHide || onEditField || onDeleteField);
 
@@ -264,17 +308,16 @@ function ColumnHeader({ label, sort, onSort, className, onHide, onEditField, onD
     <th
       scope="col"
       aria-sort={sort ? (sort === 'asc' ? 'ascending' : 'descending') : 'none'}
-      className={cn('group/head px-2 py-2 text-left align-bottom font-normal', className)}
+      className={cn('group/head sticky top-0 z-[2] border-b border-a-line bg-a-bg p-0 text-left align-bottom font-normal', className)}
     >
-      <span className="flex items-center gap-0.5">
+      <div className="flex min-w-[120px] flex-col gap-1.5 px-3 py-2">
+      <span className="flex items-center gap-1.5">
         <button
           type="button"
           onClick={onSort}
-          className={cn(
-            'flex items-center gap-1 rounded-[6px] px-2 py-1 text-[12px] font-semibold whitespace-nowrap transition-colors duration-[120ms]',
-            sort ? 'text-a-ink' : 'text-a-faint hover:text-a-ink',
-          )}
+          className="flex items-center gap-1.5 text-[13px] font-semibold whitespace-nowrap text-a-ink"
         >
+          <Glyph className="size-3.5 flex-shrink-0 text-a-faint" strokeWidth={1.75} aria-hidden />
           {label}
           {sort === 'asc' && <ArrowUp className="size-3" strokeWidth={1.75} aria-hidden />}
           {sort === 'desc' && <ArrowDown className="size-3" strokeWidth={1.75} aria-hidden />}
@@ -285,7 +328,7 @@ function ColumnHeader({ label, sort, onSort, className, onHide, onEditField, onD
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="flex size-6 items-center justify-center rounded-[6px] text-a-faint opacity-0 transition-opacity duration-[120ms] group-hover/head:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 hover:text-a-ink"
+                className="-my-0.5 flex size-5 items-center justify-center rounded-[4px] text-a-faint opacity-0 transition-opacity duration-[120ms] group-hover/head:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 hover:text-a-ink"
                 aria-label={`${label} column options`}
               >
                 <ChevronDown className="size-3.5" strokeWidth={1.75} />
@@ -329,6 +372,8 @@ function ColumnHeader({ label, sort, onSort, className, onHide, onEditField, onD
           </DropdownMenu>
         )}
       </span>
+      <span className="text-[11px] font-normal text-a-faint">{typeLabel}</span>
+      </div>
     </th>
   );
 }
@@ -337,11 +382,15 @@ export interface TableColumn {
   id: string;
   label: string;
   sortKey: SortBy;
+  glyph: LucideIcon;
+  /** The DS column head's second line: the column's type, lower-case. */
+  typeLabel: string;
   /** Set for a custom field column. */
   field?: FieldDef;
 }
 
 interface TaskTableRowProps {
+  rowNumber: number;
   todo: Todo;
   columns: TableColumn[];
   values: Record<string, FieldValue> | undefined;
@@ -352,13 +401,14 @@ interface TaskTableRowProps {
   onDelete: TaskTableViewProps['onDelete'];
 }
 
-function TaskTableRow({ todo, columns, values, onStatusChange, onUpdate, onSetFieldValue, onOpen, onDelete }: TaskTableRowProps) {
+function TaskTableRow({ rowNumber, todo, columns, values, onStatusChange, onUpdate, onSetFieldValue, onOpen, onDelete }: TaskTableRowProps) {
   const isDone = todo.status === 'done';
   const quadrant = QUADRANTS.find((q) => q.id === todo.quadrant) ?? QUADRANTS[0];
 
   return (
-    <tr className="group border-b border-a-line-soft/60">
-      <td className={cn(CELL, 'sticky left-0 z-10 bg-a-bg')}>
+    <tr className="group">
+      <td className="sticky left-0 z-[1] w-11 border-b border-a-line-soft bg-a-row-alt px-3 text-right text-[13px] tabular-nums text-a-ink">{rowNumber}</td>
+      <td className={cn(CELL, 'sticky left-11 z-[1] bg-a-surface')}>
         <div className="flex items-start gap-1">
           <TitleCell
             todo={todo}
@@ -428,7 +478,14 @@ function TaskTableRow({ todo, columns, values, onStatusChange, onUpdate, onSetFi
         }
 
         return (
-          <td key={column.id} className={cn(CELL, 'min-w-[130px]')}>
+          <td
+            key={column.id}
+            className={cn(
+              CELL, 'min-w-[130px]',
+              !isDone && todo.dueDate && tableDueLabel(todo.dueDate, todo.dueTime).overdue
+                && 'bg-a-red-tint text-a-red-ink shadow-[inset_2px_0_0_var(--a-red-line)]',
+            )}
+          >
             <DueCell todo={todo} onChange={(dueDate) => onUpdate(todo.id, { dueDate })} />
           </td>
         );
@@ -485,7 +542,7 @@ function TitleCell({ todo, onCommit }: { todo: Todo; onCommit: (text: string) =>
       type="button"
       onClick={() => setEditing(true)}
       aria-label={`Edit title of ${todo.text}`}
-      className={cn(CONTROL, 'min-w-0 flex-1 py-1.5 font-medium leading-snug', isDone && 'text-a-faint line-through')}
+      className={cn(CONTROL, 'min-w-0 flex-1 py-1.5 leading-snug', isDone && 'text-a-faint line-through')}
     >
       <span className="line-clamp-3 whitespace-pre-wrap">{todo.text}</span>
     </button>
@@ -501,8 +558,8 @@ function DueCell({ todo, onChange }: { todo: Todo; onChange: (dueDate: string) =
       <PopoverTrigger asChild>
         <button type="button" className={cn(CONTROL_ROW, 'flex items-center')} aria-label={`Due date of ${todo.text}`}>
           {todo.dueDate
-            ? <span className="tabular-nums">{formatDue(todo.dueDate)}{todo.dueTime ? `, ${todo.dueTime}` : ''}</span>
-            : <span className="text-a-faint/60">Empty</span>}
+            ? <span className="tabular-nums">{tableDueLabel(todo.dueDate, todo.dueTime).label}</span>
+            : <span className="italic text-a-faint">—</span>}
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-auto p-3">
@@ -563,31 +620,46 @@ function RowMenu({ todo, onOpen, onDelete }: Pick<TaskTableRowProps, 'todo' | 'o
   );
 }
 
-/** The last row of a group: type a title, Enter adds it there. */
+/**
+ * The last row of a group, or under an ungrouped table: the DS ghost "Add task"
+ * button (showcase 260). Click it, type a title, Enter adds it there.
+ */
 function NewTaskRow({ label, onAdd }: { label: string; onAdd: (title: string) => void }) {
+  const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
 
   const commit = () => {
     const trimmed = title.trim();
     if (trimmed) onAdd(trimmed);
     setTitle('');
+    setOpen(false);
   };
+
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)} className={topBarPill} aria-label={`Add task to ${label}`}>
+        <Plus className="size-3.5 flex-shrink-0" strokeWidth={1.75} aria-hidden />
+        Add task
+      </button>
+    );
+  }
 
   return (
     <div className="flex items-center gap-1.5 text-a-faint">
       <Plus className="size-3.5 flex-shrink-0" strokeWidth={1.75} aria-hidden />
       <input
+        autoFocus
         value={title}
         maxLength={200}
         onChange={(e) => setTitle(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
           if (e.key === 'Enter') { e.preventDefault(); commit(); }
-          if (e.key === 'Escape') setTitle('');
+          if (e.key === 'Escape') { setTitle(''); setOpen(false); }
         }}
-        placeholder="New task"
+        placeholder="What needs to be done?"
         aria-label={`New task in ${label}`}
-        className="h-8 w-full max-w-[320px] rounded-[8px] bg-transparent px-1 text-[14px] text-a-ink outline-none placeholder:text-a-faint/70 focus-visible:bg-[color-mix(in_srgb,var(--a-ink)_6%,transparent)]"
+        className="h-7 w-full max-w-[320px] rounded-[4px] bg-transparent px-1 text-[13px] text-a-ink outline-none placeholder:text-a-faint focus-visible:bg-a-line-soft"
       />
     </div>
   );
@@ -621,9 +693,9 @@ function CellInput({ value, type = 'text', ariaLabel, className, onCommit }: Cel
         if (e.key === 'Enter') { e.preventDefault(); commit(); (e.target as HTMLInputElement).blur(); }
         if (e.key === 'Escape') { setDraft(value); (e.target as HTMLInputElement).blur(); }
       }}
-      placeholder="Empty"
+      placeholder="—"
       aria-label={ariaLabel}
-      className={cn(CONTROL_ROW, 'placeholder:text-a-faint/60', className)}
+      className={cn(CONTROL_ROW, 'placeholder:italic placeholder:text-a-faint', className)}
     />
   );
 }
@@ -675,6 +747,8 @@ function FieldCell({ def, value, taskName, onChange }: FieldCellProps) {
       return (
         <CellInput
           type={def.kind}
+          // DS numeric column: right-aligned, mono, 11px, secondary ink.
+          className={def.kind === 'number' ? 'text-right font-mono text-[11px] text-a-muted' : undefined}
           value={value === undefined ? '' : String(value)}
           ariaLabel={label}
           onCommit={(draft) => {
@@ -699,11 +773,13 @@ function FieldCell({ def, value, taskName, onChange }: FieldCellProps) {
         <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
           <PopoverTrigger asChild>
             <button type="button" className={cn(CONTROL, 'flex min-h-8 flex-wrap items-center gap-1 py-1')} aria-label={label}>
-              {chosen.length === 0 && <span className="text-a-faint/60">Empty</span>}
+              {chosen.length === 0 && <span className="italic text-a-faint">—</span>}
               {chosen.map((o) => (
-                <span key={o.id} className={cn('rounded-[3px] px-2 py-0.5 text-[12px] font-medium', OPTION_CHIP_CLASS[o.color])}>
-                  {o.label}
-                </span>
+                // A single select reads as plain text, as the prototype's Stage column does;
+                // a multi-select keeps its coloured chips, which are what tell the values apart.
+                def.kind === 'select'
+                  ? <span key={o.id}>{o.label}</span>
+                  : <span key={o.id} className={cn('rounded-[3px] px-2 py-0.5 text-[12px] font-medium', OPTION_CHIP_CLASS[o.color])}>{o.label}</span>
               ))}
             </button>
           </PopoverTrigger>

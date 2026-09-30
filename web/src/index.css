@@ -130,6 +130,13 @@
     --color-a-sage-tint: var(--a-sage-tint);
     --color-a-sage-ink: var(--a-sage-ink);
     --color-a-amber: var(--a-amber);
+    --color-a-blue-tint: var(--a-blue-tint);
+    --color-a-blue-line: var(--a-blue-line);
+    --color-a-green-tint: var(--a-green-tint);
+    --color-a-green-ink: var(--a-green-ink);
+    --color-a-red-line: var(--a-red-line);
+    --color-a-red-tint: var(--a-red-tint);
+    --color-a-red-ink: var(--a-red-ink);
     --color-a-amber-tint: var(--a-amber-tint);
     --color-a-amber-line: var(--a-amber-line);
     --color-a-amber-ink: var(--a-amber-ink);
@@ -137,6 +144,14 @@
     --color-a-row-alt: var(--a-row-alt);
     --color-a-rail: var(--a-rail);
     --color-a-rail-fg: var(--a-rail-fg);
+    --color-q-do-dot: var(--a-q-do-dot);
+    --color-q-schedule-dot: var(--a-q-schedule-dot);
+    --color-q-delegate-dot: var(--a-q-delegate-dot);
+    --color-q-eliminate-dot: var(--a-q-eliminate-dot);
+    --color-cat-work: var(--a-cat-work);
+    --color-cat-personal: var(--a-cat-personal);
+    --color-cat-health: var(--a-cat-health);
+    --color-cat-learning: var(--a-cat-learning);
     --color-q-do: var(--a-q-do);
     --color-q-do-bg: var(--a-q-do-bg);
     --color-q-schedule: var(--a-q-schedule);
@@ -537,8 +552,11 @@ html.login-locked body {
   --a-surface: #ffffff;
   --a-surface-2: #f1f1ef;
   --a-ink: #37352f;
-  --a-muted: #6f6e69;
-  --a-faint: #9b9a97;
+  /* The showcase's --text-secondary (#5f5e5b) and --text-tertiary (#787774), measured
+     off the prototype's computed colours. Were #6f6e69 / #9b9a97 (an invented mid-grey
+     and --gray-400) — every secondary and caption in the app read too light. */
+  --a-muted: #5f5e5b;
+  --a-faint: #787774;
 
   /* Literal showcase values, not approximations: --border-default / --border-subtle. */
   --a-line: #e9e9e7;
@@ -572,6 +590,15 @@ html.login-locked body {
   --a-amber: #c0741a;
   /* The offline bar (showcase 146–154): DS --amber-50, its border and ink literals. */
   --a-amber-tint: #fdf3e4;
+  /* DS --blue-50 / --blue-200: a selected Tag's fill and border. */
+  --a-blue-tint: #e8f2fa;
+  --a-blue-line: #8fbfe1;
+  /* DS Badge tones: green-50/600, red-50/600 (amber-50/600 above). */
+  --a-green-tint: #e6f5ee;
+  --a-green-ink: #178049;
+  --a-red-tint: #fcebec;
+  --a-red-line: #e5484d;
+  --a-red-ink: #c63a3f;
   --a-amber-line: #f2d6a8;
   --a-amber-ink: #7a4a0e;
   /* The showcase's attention/overdue red (line 123). Distinct from --destructive:
@@ -592,10 +619,16 @@ html.login-locked body {
 
   /* Quadrant inks — the showcase's matrix-card family (red/blue/purple/gray),
      each measured against its own tint. */
-  --a-q-do: #a83a3a;        --a-q-do-bg: #ffe2dd;
-  --a-q-schedule: #1a5c8c;  --a-q-schedule-bg: #d3e5ef;
-  --a-q-delegate: #5d3a7a;  --a-q-delegate-bg: #e8deee;
-  --a-q-eliminate: #57524b; --a-q-eliminate-bg: #e3e2e0;
+  /* The showcase's Q table (line 1224), literally: ink, header tint, dot. */
+  --a-q-do: #b83232;        --a-q-do-bg: #ffeaea;        --a-q-do-dot: #e03e3e;
+  --a-q-schedule: #005c9c;  --a-q-schedule-bg: #e7f3ff;  --a-q-schedule-dot: #2383e2; /* design-check-ignore: accent — showcase Q.schedule.dot, a data colour not the brand */
+  --a-q-delegate: #6b4884;  --a-q-delegate-bg: #f4f0f7;  --a-q-delegate-dot: #9065b0;
+  --a-q-eliminate: #5f5e5b; --a-q-eliminate-bg: #f1f1ef; --a-q-eliminate-dot: #9b9a97;
+  /* The showcase's CAT swatches (line 1227). */
+  --a-cat-work: #2383e2; /* design-check-ignore: accent — showcase CAT.Work swatch, a data colour not the brand */
+  --a-cat-personal: #9065b0;
+  --a-cat-health: #0f7b0f;
+  --a-cat-learning: #d9730d;
 
   /* Tag colors for select/multi options — the showcase's own literal `TAGC`
      table (`HitList Notion x Zoho.dc.html` line 1390), Notion's 9 named
@@ -741,6 +774,13 @@ html.login-locked body {
   --a-line-soft: rgba(245, 234, 216, 0.07);
   --a-line-strong: rgba(245, 234, 216, 0.22);
   --a-amber-tint: rgba(232, 145, 42, 0.14);
+  --a-blue-tint: rgba(217, 133, 82, 0.14);
+  --a-blue-line: rgba(217, 133, 82, 0.5);
+  --a-green-tint: rgba(31, 164, 94, 0.16);
+  --a-green-ink: #7fd6a6;
+  --a-red-tint: rgba(229, 72, 77, 0.16);
+  --a-red-line: #e5484d;
+  --a-red-ink: #f0a0a3;
   --a-amber-line: rgba(232, 145, 42, 0.35);
   --a-amber-ink: #f0c48a;
   --a-row-hover: rgba(245, 234, 216, 0.045);
@@ -757,10 +797,10 @@ html.login-locked body {
   --a-rail: #141311;
   --a-rail-fg: #f2e6d3;
 
-  --a-q-do: #f2a48f;        --a-q-do-bg: #3a221c;
-  --a-q-schedule: #9cc3dd;  --a-q-schedule-bg: #1f2c35;
-  --a-q-delegate: #e2c078;  --a-q-delegate-bg: #33291a;
-  --a-q-eliminate: #cbc3b8; --a-q-eliminate-bg: #2e2a26;
+  --a-q-do: #f2a48f;        --a-q-do-bg: #3a221c;        --a-q-do-dot: #f2a48f;
+  --a-q-schedule: #9cc3dd;  --a-q-schedule-bg: #1f2c35;  --a-q-schedule-dot: #9cc3dd;
+  --a-q-delegate: #e2c078;  --a-q-delegate-bg: #33291a;  --a-q-delegate-dot: #e2c078;
+  --a-q-eliminate: #cbc3b8; --a-q-eliminate-bg: #2e2a26; --a-q-eliminate-dot: #cbc3b8;
 
   --a-tag-gray: #cbc3b8;   --a-tag-gray-bg: #2e2a26;
   --a-tag-brown: #d9b48f;  --a-tag-brown-bg: #332619;

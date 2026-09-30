@@ -99,5 +99,5 @@ export function dueTone(info: DueInfo): DueTone {
 export const DUE_TONE_CLASS: Record<DueTone, string> = {
   urgent: 'text-a-attention font-semibold',
   soon: 'text-a-amber font-semibold',
-  plain: 'text-a-muted',
+  plain: 'text-a-faint',
 };

@@ -19,7 +19,7 @@
  * with live tabs inside the rendered app, so entries must be matched excluding
  * elements whose role is `tab`.
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import puppeteer from 'puppeteer';
 
@@ -58,6 +58,34 @@ const args = process.argv.slice(2);
 const id = args.find((a) => !a.startsWith('--'));
 const appUrl = (args.find((a) => a.startsWith('--app-url=')) ?? '').slice('--app-url='.length);
 const only = args.includes('--ref') ? 'ref' : args.includes('--app') ? 'app' : 'both';
+
+/**
+ * Every visible text-bearing element's box and type/colour, for tools/cmp.mjs.
+ * `--dump` writes /tmp/hitlist-dump-<id>.<ref|app>.json next to the screenshot.
+ */
+async function dumpDom(page) {
+  return page.evaluate(() => {
+    const out = [];
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_ELEMENT);
+    for (let n = walker.currentNode; n; n = walker.nextNode()) {
+      const el = n;
+      const own = Array.from(el.childNodes).filter((c) => c.nodeType === 3).map((c) => c.textContent.trim()).join(' ').trim();
+      const isControl = /^(BUTTON|INPUT|TEXTAREA|SELECT|IMG|SVG)$/i.test(el.tagName);
+      if (!own && !isControl) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width < 1 || r.height < 1) continue;
+      const cs = getComputedStyle(el);
+      if (cs.visibility === 'hidden' || cs.display === 'none') continue;
+      out.push({
+        text: own.slice(0, 60), tag: el.tagName.toLowerCase(),
+        x: +r.x.toFixed(1), y: +r.y.toFixed(1), w: +r.width.toFixed(1), h: +r.height.toFixed(1),
+        fs: cs.fontSize, fw: cs.fontWeight, color: cs.color, bg: cs.backgroundColor, radius: cs.borderRadius,
+        ls: cs.letterSpacing, lh: cs.lineHeight,
+      });
+    }
+    return out;
+  });
+}
 
 /** A real mouse click at the element's centre. `.click()` does not work here. */
 async function realClick(page, handle) {
@@ -110,6 +138,7 @@ async function shootRef(browser, screenId) {
 
   const out = join(SHOTS, `${screenId}.ref.png`);
   await page.screenshot({ path: out });
+  if (args.includes('--dump')) writeFileSync(`/tmp/hitlist-dump-${screenId}.ref.json`, JSON.stringify(await dumpDom(page)));
   await page.close();
   return out;
 }
@@ -160,6 +189,7 @@ async function shootApp(browser, screenId, url) {
 
   const out = join(SHOTS, `${screenId}.app.png`);
   await page.screenshot({ path: out });
+  if (args.includes('--dump')) writeFileSync(`/tmp/hitlist-dump-${screenId}.app.json`, JSON.stringify(await dumpDom(page)));
   await page.close();
   if (errors.length) console.log(`  ! ${errors.length} console/page error(s):\n    ${errors.join('\n    ')}`);
   return out;

@@ -35,7 +35,7 @@ import { AppShell } from '@/components/shell/AppShell';
 import { Sidebar, type AppView } from '@/components/shell/Sidebar';
 import { AppHeader } from '@/components/shell/AppHeader';
 import { ViewLayoutContext } from '@/components/shell/ViewLayout';
-import { TopBar, TopBarToggle, topBarPill, topBarPrimary } from '@/components/shell/TopBar';
+import { BTN_MD, TopBar, TopBarToggle, topBarPill, topBarPrimary, topBarSecondary } from '@/components/shell/TopBar';
 import { UserMenu } from '@/components/shell/UserMenu';
 import { NotificationBell } from '@/components/NotificationBell';
 import { NotificationToast } from '@/components/NotificationToast';
@@ -294,7 +294,7 @@ function NoMatchingTasks({ hidden, clauses, onClear }: { hidden: number; clauses
       title="No tasks match these filters"
       description={`Your tasks are safe — ${hidden} ${hidden === 1 ? 'is' : 'are'} hidden${because}. Loosen a filter or clear them all.`}
       action={
-        <button type="button" onClick={onClear} className={cn(topBarPrimary, 'h-[34px] px-3.5 text-[14px]')}>
+        <button type="button" onClick={onClear} className={cn(topBarPrimary, BTN_MD)}>
           Clear filters
         </button>
       }
@@ -1562,7 +1562,7 @@ function UserScopedApp() {
                     <button
                       type="button"
                       onClick={() => { setFieldsAnchor(activeAnchor()); setFieldsManagerOpen(true); }}
-                      className="flex h-7 flex-shrink-0 items-center gap-1.5 rounded-[6px] px-2.5 text-[12px] text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)] transition-colors duration-[120ms] hover:text-a-ink"
+                      className={topBarSecondary}
                     >
                       <SlidersHorizontal className="size-3.5" strokeWidth={1.75} aria-hidden />
                       Fields
@@ -1585,7 +1585,7 @@ function UserScopedApp() {
                     <button
                       type="button"
                       onClick={() => { setDefaultQuadrant('do'); setDialogOpen(true); }}
-                      className={cn(topBarPrimary, 'h-[34px] px-3.5 text-[14px]')}
+                      className={cn(topBarPrimary, BTN_MD)}
                     >
                       <Plus className="size-[15px]" strokeWidth={1.75} aria-hidden />
                       Add task

@@ -10,6 +10,7 @@
 
 import { AlertCircle, RefreshCw, WifiOff, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { topBarSecondary } from '@/components/shell/TopBar';
 
 interface SyncStatusBarProps {
   error: string | null;
@@ -70,7 +71,7 @@ export function SyncStatusBar({
         <button
           type="button"
           onClick={onRetry}
-          className="h-7 flex-shrink-0 rounded-[6px] bg-a-surface px-2.5 text-[12px] font-medium text-a-ink shadow-[inset_0_0_0_1px_var(--a-line-strong)] transition-colors duration-[120ms] hover:bg-a-row-hover"
+          className={topBarSecondary}
         >
           Retry
         </button>

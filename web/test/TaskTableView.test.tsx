@@ -74,7 +74,7 @@ describe('TaskTableView', () => {
     expect(props.onSortChange).toHaveBeenLastCalledWith('title', 'asc');
 
     rerender(<TaskTableView {...props} sortBy="title" sortDir="asc" />);
-    expect(screen.getByRole('columnheader', { name: 'Title' })).toHaveAttribute('aria-sort', 'ascending');
+    expect(screen.getByRole('columnheader', { name: /^Title/ })).toHaveAttribute('aria-sort', 'ascending');
     fireEvent.click(screen.getByRole('button', { name: 'Title' }));
     expect(props.onSortChange).toHaveBeenLastCalledWith('title', 'desc');
 
@@ -141,6 +141,7 @@ describe('TaskTableView', () => {
 describe('TaskTableView — rows, columns and fields', () => {
   it('adds a task from the last row, carrying the group it was added in', () => {
     const { props } = setup({ groupField: effort });
+    fireEvent.click(screen.getByRole('button', { name: 'Add task to High' }));
     fireEvent.change(screen.getByRole('textbox', { name: 'New task in High' }), { target: { value: 'Write it up' } });
     fireEvent.keyDown(screen.getByRole('textbox', { name: 'New task in High' }), { key: 'Enter' });
     expect(props.onAddTask).toHaveBeenCalledWith('Write it up', 'hi');
@@ -148,6 +149,7 @@ describe('TaskTableView — rows, columns and fields', () => {
 
   it('adds nothing for an empty title', () => {
     const { props } = setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Add task to this list' }));
     const input = screen.getByRole('textbox', { name: 'New task in this list' });
     fireEvent.change(input, { target: { value: '  ' } });
     fireEvent.keyDown(input, { key: 'Enter' });

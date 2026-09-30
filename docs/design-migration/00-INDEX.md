@@ -92,10 +92,32 @@ Offline mode shows the app's built-in sample data ("Work Focus", 10 tasks) plus 
 due-soon toasts — that is the app's own offline fallback, not seed data.
 `tasks-nomatch` needs the seeded backend; its route types a search nothing matches.
 
+### The measured diff — use this, not your eyes
+
+Screenshots alone let real drift through (the first 3A pass was marked done while
+button text was 13px against the design's 11px, secondary text was the wrong grey, and the
+table had no row numbers). `shoot.mjs --dump` now writes every visible element's box, font
+size/weight, colour and letter-spacing for both the prototype and the app to
+`/tmp/hitlist-dump-<id>.{ref,app}.json`; `node tools/cmp.mjs <id>` matches them by text and
+prints each difference (position by left edge and vertical centre, size for controls).
+
+```
+node tools/shoot.mjs tasks-table --dump --app-url=http://localhost:9000
+node tools/cmp.mjs tasks-table --tol=2
+```
+
+Read the output with two caveats: rows are matched by text, so the same label in two rows
+can pair the wrong ones, and the prototype's sample data (14 tasks, Favorites, Recents,
+Automations) differs from a seeded scratch backend, so "only in prototype" is mostly data.
+What counts: `fs`, `fw`, `color`, `ls` differences, and `x`/`cy`/`w`/`h` on controls.
+When the DS is the authority, read its CSS in
+`~/Documents/newHitlistDesign/project/_ds/zoho-dataprep-design-system-*/_ds_bundle.js`
+(Button, Tabs, Tag, Badge, Table, EmptyState are all quoted in CONVENTIONS §12a).
+
 ## Tooling note
 
 `tools/` is a separate npm package from `web/` **on purpose** — it holds
-`shoot.mjs` (Puppeteer, for prototype-vs-app screenshots), `seed.sh`
+`shoot.mjs` (Puppeteer, for prototype-vs-app screenshots and DOM dumps), `cmp.mjs` (diffs the dumps), `seed.sh`
 (seeds a *scratch* backend so shots aren't empty — never point it at real data) and
 `probe-longtext.sh`. Puppeteer must never be a `web/` dependency: it was, once,
 briefly, and it broke the Docker frontend stage (`npm ci` inside the image
@@ -134,7 +156,7 @@ Test baseline: **343 tests across 39 files.** This must not regress.
 Phase 0  █████   5 / 5      done
 Phase 1  █████  11 / 11      foundations — the broken UI
 Phase 2  █████   5 / 5       shell exactness
-Phase 3  ██░░░   8 / 42      per-screen fidelity (3A Tasks done: T3.1–T3.8)
+Phase 3  ██░░░   8 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
 Phase 4  ░░░░░   1 / 12      missing features
 Phase 5  ░░░░░   0 / 7       proposals, unreviewed
                 30 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { AlertCircle, FileText, Trash2 } from 'lucide-react';
+import { FileText, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { StatusBox } from '@/components/ui/status-box';
 import { getCategoryConfig, getQuadrantConfig } from '@/types/todo';
@@ -37,7 +37,8 @@ interface MatrixTaskCardProps {
   variant?: 'matrix' | 'board';
 }
 
-const CHIP = 'inline-flex items-center gap-1 rounded-[3px] px-2.5 py-[3px] text-[12px] leading-none whitespace-nowrap';
+// DS Tag: 11px / 500, 3px 8px, 6px radius.
+const CHIP = 'inline-flex items-center gap-1.5 rounded-[6px] px-2 py-[3px] text-[11px] font-medium whitespace-nowrap';
 
 const CARD_ACTION = cn(
   'flex size-[22px] items-center justify-center rounded-[6px] text-a-faint transition-[opacity,background-color,color] duration-[120ms]',
@@ -122,14 +123,14 @@ export function MatrixTaskCard({
 
         <p
           className={cn(
-            'min-w-0 flex-1 text-[14px] leading-[1.45] break-words',
+            'min-w-0 flex-1 text-[13px] font-medium leading-[1.4] break-words',
             isDone ? 'text-a-faint line-through decoration-[1.5px]' : 'text-a-ink',
           )}
         >
           {todo.text}
         </p>
 
-        {isNext && !isDone && (
+        {isNext && !isDone && !board && (
           <span className="mt-[3px] flex-shrink-0 text-[11px] font-bold uppercase tracking-[0.06em] text-a-accent-700">
             Next
           </span>
@@ -146,8 +147,15 @@ export function MatrixTaskCard({
         // Indented to sit under the text, past the 19px status box and its gap.
         <div className={cn('flex flex-wrap items-center gap-1.5 pl-[30px]', board && 'text-[12px]')}>
           {board && <span className={cn('size-2 flex-shrink-0 rounded-full', getQuadrantConfig(todo.quadrant).dotClass)} aria-hidden />}
+          {dueInfo && (
+            <span className={cn("inline-flex items-center gap-1 whitespace-nowrap", DUE_TONE_CLASS[dueTone(dueInfo)])}>
+              {dueInfo.label}
+            </span>
+          )}
+
           {categoryConfig && (
             <span className={cn(CHIP, 'text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)]')}>
+              <span className={cn('size-2 flex-shrink-0 rounded-[3px]', categoryConfig.swatchClass)} aria-hidden />
               {categoryConfig.label}
             </span>
           )}
@@ -164,13 +172,6 @@ export function MatrixTaskCard({
             >
               <FileText className="size-3" strokeWidth={1.75} aria-hidden /> Note
             </button>
-          )}
-
-          {dueInfo && (
-            <span className={cn("inline-flex items-center gap-1 whitespace-nowrap", DUE_TONE_CLASS[dueTone(dueInfo)])}>
-              {dueInfo.isOverdue && <AlertCircle className="size-3" strokeWidth={1.75} aria-hidden />}
-              {dueInfo.label}
-            </span>
           )}
 
           {todo.note && (

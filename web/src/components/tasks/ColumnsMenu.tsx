@@ -11,6 +11,7 @@
  */
 import { ArrowDown, ArrowUp, Columns3, Eye, EyeOff, RotateCcw } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { topBarSecondary } from '@/components/shell/TopBar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 export interface ColumnChoice {
@@ -39,11 +40,7 @@ export function ColumnsMenu({ columns, hidden, onToggle, onMove, onReset }: Colu
       <PopoverTrigger asChild>
         <button
           type="button"
-          className={cn(
-            'flex h-7 flex-shrink-0 items-center gap-1.5 rounded-[6px] px-2.5 text-[12px] transition-colors duration-[120ms]',
-            'shadow-[inset_0_0_0_1px_var(--a-line)]',
-            changed ? 'text-a-ink' : 'text-a-muted hover:text-a-ink',
-          )}
+          className={topBarSecondary}
           aria-label={`Columns${hiddenCount ? ` (${hiddenCount} hidden)` : ''}`}
         >
           <Columns3 className="size-3.5" strokeWidth={1.75} aria-hidden />

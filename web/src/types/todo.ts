@@ -42,7 +42,7 @@ export const QUADRANTS: QuadrantConfig[] = [
     emptyIcon: '🔥',
     inkClass: 'text-q-do',
     tintClass: 'bg-q-do-bg',
-    dotClass: 'bg-q-do',
+    dotClass: 'bg-q-do-dot',
     ringClass: 'shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--a-q-do)_25%,transparent)]',
   },
   {
@@ -60,7 +60,7 @@ export const QUADRANTS: QuadrantConfig[] = [
     emptyIcon: '📅',
     inkClass: 'text-q-schedule',
     tintClass: 'bg-q-schedule-bg',
-    dotClass: 'bg-q-schedule',
+    dotClass: 'bg-q-schedule-dot',
     ringClass: 'shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--a-q-schedule)_25%,transparent)]',
   },
   {
@@ -78,7 +78,7 @@ export const QUADRANTS: QuadrantConfig[] = [
     emptyIcon: '🤝',
     inkClass: 'text-q-delegate',
     tintClass: 'bg-q-delegate-bg',
-    dotClass: 'bg-q-delegate',
+    dotClass: 'bg-q-delegate-dot',
     ringClass: 'shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--a-q-delegate)_25%,transparent)]',
   },
   {
@@ -96,7 +96,7 @@ export const QUADRANTS: QuadrantConfig[] = [
     emptyIcon: '🗑️',
     inkClass: 'text-q-eliminate',
     tintClass: 'bg-q-eliminate-bg',
-    dotClass: 'bg-q-eliminate',
+    dotClass: 'bg-q-eliminate-dot',
     ringClass: 'shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--a-q-eliminate)_25%,transparent)]',
   },
 ];
@@ -174,10 +174,10 @@ export const CATEGORIES = [
   // `swatchClass` is the small rounded-square dot the reference's Tag
   // component draws before the label (`HitList Notion x Zoho.dc.html`'s `CAT`
   // swatch colors) — a solid fill, distinct from `color`'s tinted badge below.
-  { id: 'personal', label: 'Personal', color: 'bg-violet-500/15 text-violet-600 dark:text-violet-400', swatchClass: 'bg-violet-500' },
-  { id: 'work', label: 'Work', color: 'bg-blue-500/15 text-blue-600 dark:text-blue-400', swatchClass: 'bg-blue-500' },
-  { id: 'health', label: 'Health', color: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400', swatchClass: 'bg-emerald-500' },
-  { id: 'learning', label: 'Learning', color: 'bg-amber-500/15 text-amber-600 dark:text-amber-400', swatchClass: 'bg-amber-500' },
+  { id: 'personal', label: 'Personal', color: 'bg-violet-500/15 text-violet-600 dark:text-violet-400', swatchClass: 'bg-cat-personal' },
+  { id: 'work', label: 'Work', color: 'bg-blue-500/15 text-blue-600 dark:text-blue-400', swatchClass: 'bg-cat-work' },
+  { id: 'health', label: 'Health', color: 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400', swatchClass: 'bg-cat-health' },
+  { id: 'learning', label: 'Learning', color: 'bg-amber-500/15 text-amber-600 dark:text-amber-400', swatchClass: 'bg-cat-learning' },
   { id: 'creative', label: 'Creative', color: 'bg-pink-500/15 text-pink-600 dark:text-pink-400', swatchClass: 'bg-pink-500' },
 ] as const;
 

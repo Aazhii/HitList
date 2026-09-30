@@ -77,7 +77,7 @@ export function TopBar({ dotClass, title, subtitle, attention, tabs, actions }: 
       </div>
 
       {(tabs || actions) && (
-        <div className="flex items-center gap-2">
+        <div className="mt-2 flex items-center gap-2">
           <div className="min-w-0 flex-1">{tabs}</div>
           {actions && <div className="flex flex-shrink-0 items-center gap-1 pb-1">{actions}</div>}
         </div>
@@ -86,17 +86,27 @@ export function TopBar({ dotClass, title, subtitle, attention, tabs, actions }: 
   );
 }
 
-/** The one quiet button in a page header, such as Filter. DS `sm`: 28px, 6px. */
+/**
+ * DS `Button` size sm (Button.jsx): 28px, 0 12px, 11px / 600, 4px radius, 8px gap.
+ * Three variants used in page chrome: ghost (Filter), primary (New), secondary
+ * (Columns, Fields, Retry). Anything bigger composes these with BTN_MD.
+ */
+const BTN_SM = 'flex h-7 flex-shrink-0 items-center gap-2 rounded-[4px] px-3 text-[11px] font-semibold whitespace-nowrap transition-colors duration-[120ms] active:translate-y-[0.5px]';
+
 export const topBarPill = cn(
-  'flex h-7 items-center gap-1.5 rounded-[6px] px-2.5 text-[13px] text-a-muted transition-colors duration-[120ms]',
-  'hover:bg-a-row-hover hover:text-a-ink data-[state=open]:bg-a-row-hover data-[state=open]:text-a-ink',
+  BTN_SM, 'text-a-muted hover:bg-a-line-soft active:bg-a-line data-[state=open]:bg-a-line-soft',
 );
 
-/** The one accent button in a page header, such as New. DS `sm`: 28px, 6px. */
 export const topBarPrimary = cn(
-  'flex h-7 items-center gap-1.5 rounded-[6px] bg-a-accent px-2.5 text-[13px] font-semibold text-a-surface',
-  'transition-colors duration-[120ms] hover:bg-a-accent-600 active:bg-a-accent-700',
+  BTN_SM, 'bg-a-accent text-a-surface hover:bg-a-accent-600 active:bg-a-accent-700',
 );
+
+export const topBarSecondary = cn(
+  BTN_SM, 'bg-a-surface text-a-ink shadow-[inset_0_0_0_1px_var(--a-line-strong)] hover:bg-a-bg active:bg-a-line-soft',
+);
+
+/** DS `Button` size md, to override a size-sm variant: 34px, 0 16px, 13px, 6px radius. */
+export const BTN_MD = 'h-[34px] rounded-[6px] px-4 text-[13px]';
 
 interface TopBarToggleProps<T extends string> {
   label: string;
@@ -113,11 +123,13 @@ interface TopBarToggleProps<T extends string> {
  * the row beneath them all.
  */
 export function TopBarToggle<T extends string>({ label, value, options, onChange }: TopBarToggleProps<T>) {
+  // DS Tabs (Tabs.jsx): 13px / 500, 12px padding, 4px gap, a 1px --border-default
+  // rule under the row, and a 2px rule inset 12px on the selected tab, sitting on it.
   return (
     <div
       role="radiogroup"
       aria-label={label}
-      className="flex items-center gap-1 border-b border-a-line"
+      className="flex items-stretch gap-1 border-b border-a-line"
     >
       {options.map((opt) => {
         const active = opt.value === value;
@@ -129,13 +141,12 @@ export function TopBarToggle<T extends string>({ label, value, options, onChange
             aria-checked={active}
             onClick={() => onChange(opt.value)}
             className={cn(
-              'relative -mb-px flex h-9 items-center border-b-2 px-3 text-[14px] transition-colors duration-[120ms]',
-              active
-                ? 'border-a-accent font-semibold text-a-accent'
-                : 'border-transparent text-a-muted hover:text-a-ink',
+              'relative flex items-center p-3 text-[13px] leading-[normal] whitespace-nowrap transition-colors duration-[120ms]',
+              active ? 'font-semibold text-a-accent' : 'font-medium text-a-muted hover:text-a-ink',
             )}
           >
             {opt.label}
+            {active && <span className="absolute inset-x-3 -bottom-px h-0.5 rounded-t-[3px] bg-a-accent" aria-hidden />}
           </button>
         );
       })}

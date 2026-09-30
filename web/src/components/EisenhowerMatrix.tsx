@@ -66,11 +66,11 @@ export function EisenhowerMatrix({
           <section
             key={q.id}
             aria-labelledby={headingId}
-            className="flex min-h-[240px] flex-col overflow-hidden rounded-[8px] border border-a-line bg-a-surface shadow-[var(--a-shadow-sm)]"
+            className="flex min-h-[240px] flex-col overflow-hidden rounded-[8px] border border-a-line bg-a-surface"
           >
             <header className={cn('flex items-center gap-2 border-b border-a-line-soft px-4 py-2.5', q.tintClass)}>
               <span className={cn('size-2 flex-shrink-0 rounded-full', q.dotClass)} aria-hidden />
-              <h2 id={headingId} className={cn('text-[14px] font-bold leading-none', q.inkClass)}>
+              <h2 id={headingId} className={cn('text-[13px] font-bold leading-none', q.inkClass)}>
                 {q.label}
               </h2>
               <span className={cn('hidden truncate text-[12px] leading-none opacity-80 sm:inline', q.inkClass)}>
@@ -168,7 +168,7 @@ function MatrixRow({ todo, isNext, index, onStatusChange, onDelete, onOpen, onOp
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(todo); }
       }}
       style={{ animationDelay: `${index * 50}ms`, animationFillMode: 'both' }}
-      className="group flex cursor-pointer items-center gap-2.5 border-b border-a-line-soft px-4 py-2.5 transition-colors duration-[120ms] last:border-b-0 hover:bg-a-row-hover animate-slide-up"
+      className="group flex cursor-pointer items-center gap-2.5 border-b border-a-line-soft px-4 py-[9px] transition-colors duration-[120ms] last:border-b-0 hover:bg-a-bg animate-slide-up"
       aria-label={`Open task: ${todo.text}`}
     >
       <StatusIcon
@@ -181,7 +181,7 @@ function MatrixRow({ todo, isNext, index, onStatusChange, onDelete, onOpen, onOp
       <div className="min-w-0 flex-1">
         <p
           className={cn(
-            'truncate text-[14px] font-medium leading-tight',
+            'truncate text-[13px] font-medium leading-normal',
             isDone ? 'text-a-faint line-through decoration-[1.5px]' : 'text-a-ink',
           )}
         >
@@ -213,7 +213,8 @@ function MatrixRow({ todo, isNext, index, onStatusChange, onDelete, onOpen, onOp
       </div>
 
       {isNext && !isDone && (
-        <span className="flex-shrink-0 rounded-[6px] bg-a-accent-tint px-2 py-[3px] text-[11px] font-bold text-a-accent-700">
+        // design-check-ignore: pill — the DS Badge is a pill (showcase 210).
+        <span className="flex-shrink-0 rounded-full bg-a-blue-tint px-2 py-[3px] text-[11px] font-semibold leading-none text-a-accent-700">
           Next up
         </span>
       )}
@@ -223,7 +224,7 @@ function MatrixRow({ todo, isNext, index, onStatusChange, onDelete, onOpen, onOp
 
 function CategoryTag({ category }: { category: NonNullable<ReturnType<typeof getCategoryConfig>> }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-[6px] bg-a-surface px-2 py-[3px] font-medium text-a-ink shadow-[inset_0_0_0_1px_var(--a-line)]">
+    <span className="inline-flex items-center gap-1.5 rounded-[6px] bg-a-surface px-2 py-[3px] text-[11px] font-medium text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)]">
       <span className={cn('size-2 flex-shrink-0 rounded-[3px]', category.swatchClass)} aria-hidden />
       {category.label}
     </span>
