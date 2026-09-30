@@ -1,17 +1,22 @@
 import { useRef, useEffect } from 'react';
 import {
-  Type, Heading1, Heading2, Heading3, List, ListOrdered,
+  Columns3, Link2, Type, Heading1, Heading2, Heading3, List, ListOrdered,
   CheckSquare, Quote, Minus, Code2, Table2, Lightbulb,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { BlockType } from '@/types/notes';
 
-interface SlashCommand {
+/** What a command sets up beyond changing the block's type: the database group (showcase 1753). */
+export type SlashAction = 'db-table' | 'db-board' | 'db-linked';
+
+export interface SlashCommand {
   trigger: string;
   label: string;
   description: string;
   type: BlockType;
   icon: React.ReactNode;
+  /** Present on the database group: it makes or picks a database for the block. */
+  action?: SlashAction;
 }
 
 const ICON = 'size-[15px]';
@@ -30,6 +35,9 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { trigger: 'divider',  label: 'Divider',       description: 'Horizontal rule',       type: 'divider',   icon: <Minus className={ICON} strokeWidth={STROKE} /> },
   { trigger: 'code',     label: 'Code',          description: 'Code block',            type: 'code',      icon: <Code2 className={ICON} strokeWidth={STROKE} /> },
   { trigger: 'table',    label: 'Table',         description: 'Insert a table',        type: 'table',     icon: <Table2 className={ICON} strokeWidth={STROKE} /> },
+  { trigger: 'database', label: 'Create database', description: 'A new table inside this note', type: 'database', action: 'db-table', icon: <Table2 className={ICON} strokeWidth={STROKE} /> },
+  { trigger: 'board',    label: 'Create board',    description: 'A new database shown as a board', type: 'database', action: 'db-board', icon: <Columns3 className={ICON} strokeWidth={STROKE} /> },
+  { trigger: 'linked',   label: 'Linked view of a database', description: 'Show an existing database here', type: 'database', action: 'db-linked', icon: <Link2 className={ICON} strokeWidth={STROKE} /> },
 ];
 
 /**
@@ -44,7 +52,7 @@ export function filterSlashCommands(query: string): SlashCommand[] {
   const q = query.toLowerCase();
   return SLASH_COMMANDS.filter(
     (cmd, i, arr) =>
-      arr.findIndex((c) => c.type === cmd.type) === i &&
+      arr.findIndex((c) => (c.action ?? c.type) === (cmd.action ?? cmd.type)) === i &&
       (q === '' || cmd.trigger.startsWith(q) || cmd.label.toLowerCase().includes(q)),
   );
 }
@@ -52,7 +60,7 @@ export function filterSlashCommands(query: string): SlashCommand[] {
 interface SlashMenuProps {
   query: string;
   position: { top: number; left: number };
-  onSelect: (type: BlockType) => void;
+  onSelect: (command: SlashCommand) => void;
   onClose: () => void;
   selectedIndex: number;
 }
@@ -103,29 +111,34 @@ export function SlashMenu({ query, position, onSelect, selectedIndex }: SlashMen
       style={{ top, left: Math.max(8, position.left) }}
       onMouseDown={(e) => e.preventDefault()}
     >
-      <p className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-a-faint">Basic blocks</p>
-
       <div ref={listRef} role="listbox" aria-label="Block types">
         {filtered.map((cmd, i) => (
-          <button
-            key={cmd.type}
-            type="button"
-            role="option"
-            aria-selected={i === selectedIndex}
-            onMouseDown={(e) => { e.preventDefault(); onSelect(cmd.type); }}
-            className={cn(
-              'flex w-full items-center gap-2.5 rounded-[6px] px-2 py-1.5 text-left transition-colors duration-[120ms]',
-              i === selectedIndex ? 'bg-a-blue-tint' : 'hover:bg-a-line-soft',
+          <div key={cmd.action ?? cmd.type}>
+            {/* The caption above each group, once (showcase 552, 561). */}
+            {(i === 0 || !!filtered[i - 1].action !== !!cmd.action) && (
+              <p className="px-2 py-1.5 text-[11px] font-semibold uppercase tracking-[0.06em] text-a-faint">
+                {cmd.action ? 'Database' : 'Basic blocks'}
+              </p>
             )}
-          >
-            <span className="flex size-7 flex-shrink-0 items-center justify-center rounded-[6px] border border-a-line bg-a-surface text-a-muted">
-              {cmd.icon}
-            </span>
-            <span className="flex min-w-0 flex-col">
-              <span className="text-[13px] font-medium">{cmd.label}</span>
-              <span className="text-[12px] text-a-faint">{cmd.description}</span>
-            </span>
-          </button>
+            <button
+              type="button"
+              role="option"
+              aria-selected={i === selectedIndex}
+              onMouseDown={(e) => { e.preventDefault(); onSelect(cmd); }}
+              className={cn(
+                'flex w-full items-center gap-2.5 rounded-[6px] px-2 py-1.5 text-left transition-colors duration-[120ms]',
+                i === selectedIndex ? 'bg-a-blue-tint' : 'hover:bg-a-line-soft',
+              )}
+            >
+              <span className="flex size-7 flex-shrink-0 items-center justify-center rounded-[6px] border border-a-line bg-a-surface text-a-muted">
+                {cmd.icon}
+              </span>
+              <span className="flex min-w-0 flex-col">
+                <span className="text-[13px] font-medium">{cmd.label}</span>
+                <span className="text-[12px] text-a-faint">{cmd.description}</span>
+              </span>
+            </button>
+          </div>
         ))}
       </div>
 

@@ -82,6 +82,11 @@ const APP_ROUTE = {
   'library':      { nav: 'Notes', notes: true, then: ['~Databases', '~Reading list', '~Tasks', '~View all'] },
   'auto-list':    { nav: '~Automations' },
   'auto-form':    { nav: '~Automations', then: ['@New rule'] },
+  'notes-db':      { nav: 'Notes', notes: true, scrollBottom: true },
+  'notes-db-menu': { nav: 'Notes', notes: true, scrollBottom: true, then: ['@Status column options'] },
+  'notes-db-board': { nav: 'Notes', notes: true, scrollBottom: true, then: ['~By status board'] },
+  'notes-db-new':  { nav: 'Notes', notes: true, focusLast: 'textarea[aria-label^="Block"]', keys: '/', then: ['~Create database'], scrollBottom: true },
+  'notes-db-linked': { nav: 'Notes', notes: true, focusLast: 'textarea[aria-label^="Block"]', keys: '/', then: ['~Linked view', '@Link Reading list'], scrollBottom: true },
   'cal-month':    { nav: 'Calendar' },
   'cal-add':      { nav: 'Calendar', then: ['Add on a day'] },
   'cal-offline':  { nav: 'Calendar' },
@@ -275,7 +280,6 @@ async function shootApp(browser, screenId, url) {
   const clickText = (text) => runStep(page, text);
   if (route.nav) { await clickText(route.nav); await new Promise((r) => setTimeout(r, 900)); }
   if (route.tab) { await clickText(route.tab); await new Promise((r) => setTimeout(r, 800)); }
-  for (const t of route.then ?? []) { await clickText(t); await new Promise((r) => setTimeout(r, 800)); }
   if (route.focusLast) {
     // Focus the last note block (an empty paragraph) and type into it, leaving any menu it opens showing.
     await page.evaluate((sel) => { const all = document.querySelectorAll(sel); all[all.length - 1]?.focus(); }, route.focusLast);
@@ -283,12 +287,21 @@ async function shootApp(browser, screenId, url) {
     if (route.keys) await page.keyboard.type(route.keys, { delay: 60 });
     await new Promise((r) => setTimeout(r, 700));
   }
+  for (const t of route.then ?? []) { await clickText(t); await new Promise((r) => setTimeout(r, 800)); }
   if (route.type) {
     const [label, text] = route.type;
     await page.type(`[aria-label="${label}"]`, text);
     await new Promise((r) => setTimeout(r, 500));
     await page.keyboard.press('Escape'); // close the popover the field lives in
     await new Promise((r) => setTimeout(r, 500));
+  }
+
+  if (route.scrollBottom) {
+    await new Promise((r) => setTimeout(r, 900));
+    await page.evaluate(() => document.querySelectorAll('*').forEach((el) => {
+      if (el.scrollHeight > el.clientHeight + 50 && getComputedStyle(el).overflowY !== 'visible') el.scrollTop = el.scrollHeight;
+    }));
+    await new Promise((r) => setTimeout(r, 400));
   }
 
   // --eval='<js>' runs in the app page once the route has run, and prints the result.

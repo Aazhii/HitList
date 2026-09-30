@@ -146,7 +146,7 @@ that one is fine where it is.
 | Visual | `node web/scripts/shoot.mjs <screen-id>` → a `.ref.png` / `.app.png` pair | every Phase 3 task |
 | Real build | `sh desktop/scripts/prepare-jar.sh` → copy to `api/target/hitlist.jar` → restart Electron → re-check its own port | every **phase** exit, not every task |
 
-Test baseline: **413 tests across 50 files.** This must not regress.
+Test baseline: **416 tests across 51 files.** This must not regress.
 
 ---
 
@@ -159,7 +159,7 @@ Phase 2  █████   5 / 5       shell exactness
 Phase 3  ███░░  42 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
 Phase 4  ░░░░░   1 / 12      missing features
 Phase 5  ░░░░░   0 / 7       proposals, unreviewed
-                74 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
+                75 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
 ```
 
 ### A note on "partially built"
@@ -305,7 +305,7 @@ on a description. Execution order is the section order below.
 | T4.5 | Remaining dead controls: Help, workspace chevron | **done** | Help opens a menu → shortcuts dialog; the workspace chevron is removed; `design:check` gains `dead-control` (0 violations) |
 | T4.6 | Finish the half-wired view persistence | **done** | applied saved views already wrote all five keys through `persistTableControls`; the rest are now remembered per database in `hitlist-db-table-controls-v1` (sort survives switching database and back, checked in the browser) |
 | T4.7 | Fix the blank Board (may be closed by T3.4) | **done** | closed by T3.4: `BoardSetup` renders `BoardSkeleton` while fields load; test 'shows a loading skeleton, not a blank page' |
-| T4.8 | Databases inside notes — the five `notes-db-*` screens | blocked on T3.9–T3.24 | |
+| T4.8 | Databases inside notes — the five `notes-db-*` screens | **done** | shots/notes-db{,-new,-menu,-board,-linked}.{ref,app}.png — `database` block type; Create database / Create board / Linked view in the slash menu; the block is the same `DatabaseWorkspace` the Databases page uses (extracted first); tests in `inlineDatabase.test.tsx` |
 
 > **T4.4 is a backend build, not a re-enable.** There is no automations controller, no
 > rule endpoint, and no service — only two unused table-name constants. `TaskService`

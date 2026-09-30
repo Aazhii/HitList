@@ -14,7 +14,8 @@ export type BlockType =
   | 'divider'
   | 'code'
   | 'table'
-  | 'callout';
+  | 'callout'
+  | 'database';
 
 /** A callout's tint: terracotta, or sage. */
 export type CalloutTone = 'accent' | 'sage';
@@ -53,6 +54,14 @@ export interface NoteBlock {
   emoji?: string;
   tone?: CalloutTone;
   /**
+   * Database blocks only: the database this block shows (its own, or a linked view of another).
+   * Optional like the callout fields, so no existing note needs migrating. The block only points at
+   * the database — deleting the block never deletes it.
+   */
+  databaseId?: string;
+  /** Database blocks only: which view it opens on. */
+  dbLayout?: 'table' | 'board';
+  /**
    * The task this block was added to a quadrant as, via the @ menu. Optional
    * for the same reason as the callout fields: blocks without it are simply
    * unlinked. Only the id is stored — the task's quadrant and list are read
@@ -84,6 +93,7 @@ export const BLOCK_TYPE_LABELS: Record<BlockType, string> = {
   code: 'Code',
   table: 'Table',
   callout: 'Callout',
+  database: 'Database',
 };
 
 export const NOTE_EMOJIS = ['📝', '💡', '🗒️', '🔖', '⭐', '🎯', '🧠', '🌱', '🔥', '📌', '💭', '🚀'];
@@ -156,7 +166,7 @@ export function formatNoteDate(ts: number): string {
  */
 export function getNotePreview(note: Note): string {
   for (const block of note.blocks) {
-    if (block.type === 'divider' || block.type === 'table') continue;
+    if (block.type === 'divider' || block.type === 'table' || block.type === 'database') continue;
     const plain = block.type === 'code' ? block.content : stripInline(block.content);
     const text = plain.trim();
     if (text) return text.slice(0, 120);

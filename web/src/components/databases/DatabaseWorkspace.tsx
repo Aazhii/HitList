@@ -70,11 +70,11 @@ export interface DatabaseWorkspaceProps {
   inline?: boolean;
   /** The page's own header, drawn above the toolbar with what it needs to say. */
   header?: (ctx: WorkspaceHeaderContext) => ReactNode;
-  /** Set when this is the database a board view was last given lanes for; otherwise the workspace keeps it per device. */
-  fixedView?: 'table' | 'board';
+  /** A board opens on the database's first board view (once its views have loaded). */
+  startOn?: 'table' | 'board';
 }
 
-export function DatabaseWorkspace({ database, store, linking, inline = false, header, fixedView }: DatabaseWorkspaceProps) {
+export function DatabaseWorkspace({ database, store, linking, inline = false, header, startOn }: DatabaseWorkspaceProps) {
   const open = database;
   const { rows, rowsLoading, createRow, updateRow, deleteRow, updateDatabase } = store;
   const notify = useCallback((message: string) => toast.error(message, { duration: 3000 }), []);
@@ -583,6 +583,16 @@ export function DatabaseWorkspace({ database, store, linking, inline = false, he
     toast(`Deleted view "${v.name}"`, { duration: 2000 });
   }, [savedViews, activeViewId, handleClearView]);
 
+
+  // A block made with "Create board" opens on its board view, once — after that the tabs are the user's.
+  const startedRef = useRef(false);
+  useEffect(() => {
+    if (startOn !== 'board' || startedRef.current || activeViewId) return;
+    const board = viewsForThisDb.find((v) => v.layout === 'board');
+    if (!board) return;
+    startedRef.current = true;
+    handleApplyView(board);
+  }, [startOn, viewsForThisDb, activeViewId, handleApplyView]);
 
   const toolbar = (
     <>

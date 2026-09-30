@@ -612,7 +612,7 @@ Shared primitives now follow the DS, so every dialog inherits them:
 1. **Verify before you change.** Every task quotes the current code. If what you find does not match the quote, **stop and report** — do not adapt silently. The file may have moved on.
 2. **Never invent a value.** If a task does not give you a number and this file does not either, ask. Guessing is what produced the current state.
 3. **One task, one commit.** Commit message: `design(T1.4): set every icon stroke to 1.75`.
-4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 413 tests.
+4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 416 tests.
 5. **Update `00-INDEX.md`** — set State and fill in "Verified by" with the actual command output or screenshot pair. A task with an empty "Verified by" is not done.
 6. **Do not delete the Automations or Reminders code.** It is being revived in Phase 4, not removed.
 
@@ -698,3 +698,11 @@ Shared primitives now follow the DS, so every dialog inherits them:
 - The rule form has no Description or Initial status field (the prototype has neither): a new rule is active, an existing rule's description and status are kept when it is edited, and the list's Switch pauses and activates.
 - `MAX_STEPS` is 5, matching the prototype's "up to 5" and the server.
 - Two icons on a rule row (edit, delete) appear on hover; they are not in the prototype.
+
+### Databases inside notes (T4.8)
+
+- A note block of type `database` holds `databaseId` and `dbLayout` (additive optional fields; the server stores blocks as opaque JSON, so no migration). The block only points at a database: removing it never removes the database or its records.
+- "Create database" makes a real database now (Name, Tags, Status, Date and three "Untitled" records, the prototype's blank one); "Create board" adds a "By status board" view and opens on it; "Linked view of a database" picks an existing one. Those are the slash menu's Database group (the prototype names a specific database, "Linked view of Reading list"; the menu says "of a database" and the picker lists them).
+- The block is the Databases page's own workspace (`DatabaseWorkspace`, extracted from the page for this): the same tabs (the database's saved views), toolbar, column menus and peek. In a note the table stays in the note's column instead of running edge to edge.
+- Records made with Create database are titled "Untitled" (the server refuses an empty title); the prototype greys an empty title as a placeholder.
+- The tabs the prototype shows ("Needs revisit", "All books") are its sample views; the block shows the database's own.

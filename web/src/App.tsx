@@ -1341,7 +1341,8 @@ function UserScopedApp() {
     updateTaskTitle: handleUpdateLinkedTaskTitle,
     unlinkTask: handleUnlinkTask,
     openTask: handleOpenLinkedTask,
-  }), [lists, todos, server.loading, activeListId, handleCreateLinkedTask, handleUpdateLinkedTaskTitle, handleUnlinkTask, handleOpenLinkedTask]);
+    openDatabase: (databaseId: string) => { setPendingDatabaseId(databaseId); setActiveView('databases'); },
+  }), [lists, todos, server.loading, activeListId, handleCreateLinkedTask, handleUpdateLinkedTaskTitle, handleUnlinkTask, handleOpenLinkedTask, setActiveView]);
 
   const databaseLinking = useMemo<DatabaseTaskLinking>(() => ({
     lists,

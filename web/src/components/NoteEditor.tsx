@@ -21,7 +21,11 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { SlashMenu, filterSlashCommands } from '@/components/notes/SlashMenu';
+import { SlashMenu, filterSlashCommands, type SlashCommand } from '@/components/notes/SlashMenu';
+import { DatabaseBlock } from '@/components/notes/DatabaseBlock';
+import { DatabasePicker } from '@/components/notes/DatabasePicker';
+import { createInlineDatabase } from '@/lib/inlineDatabase';
+import { toast } from 'sonner';
 import { TableBlock } from '@/components/notes/TableBlock';
 import { computeNumberedOrdinals } from '@/lib/noteBlocks';
 import { InlineText, supportedMarks } from '@/components/notes/InlineText';
@@ -41,7 +45,10 @@ import {
  * What the editor needs to add blocks to quadrants. Tasks live in App, so it
  * passes these down; without them the "@" menu is simply off.
  */
-export type NoteTaskLinking = TaskLinking<{ noteId: string; blockId: string }>;
+export type NoteTaskLinking = TaskLinking<{ noteId: string; blockId: string }> & {
+  /** A database block's arrow: open that database on the Databases page. */
+  openDatabase?: (databaseId: string) => void;
+};
 
 // ── Block type icon map ────────────────────────────────────────────────────────
 const ICON = 'size-3.5';
@@ -60,6 +67,7 @@ const BLOCK_ICONS: Record<BlockType, React.ReactNode> = {
   code:      <Code2 className={ICON} strokeWidth={STROKE} />,
   table:     <Table2 className={ICON} strokeWidth={STROKE} />,
   callout:   <Lightbulb className={ICON} strokeWidth={STROKE} />,
+  database:  <Table2 className={ICON} strokeWidth={STROKE} />,
 };
 
 const BLOCK_TYPES: BlockType[] = [
@@ -80,6 +88,8 @@ const ROW_SPACING: Partial<Record<BlockType, string>> = {
   todo:     'py-[4px]',
   quote:    'my-[12px]',
   code:     'my-[10px]',
+  // Showcase 357: 18px above, 10px below the inline database, on top of the 6px gap.
+  database: 'mt-[12px] mb-[4px]',
   callout:  'my-[10px]',
   // With the gap and the 24px box, 26px of space either side of the rule.
   divider:  'my-[8px]',
@@ -287,6 +297,8 @@ interface BlockRowProps {
   onMentionCheck: (id: string, el: HTMLTextAreaElement) => void;
   /** The linked-task chip, when this block is in a quadrant. */
   chip?: React.ReactNode;
+  /** A database block's arrow. */
+  onOpenDatabase?: (databaseId: string) => void;
 }
 
 /**
@@ -305,7 +317,7 @@ function BlockRow({
   onFocus, onChange, onToggleCheck, onKeyDown,
   onAddAfter, onDelete, onChangeType, onMoveUp, onMoveDown,
   onUpdateTable, textareaRef, onSlashOpen, onSelectionChange, onUpdateMeta,
-  onMentionCheck, chip,
+  onMentionCheck, chip, onOpenDatabase,
 }: BlockRowProps) {
   const [hovered, setHovered] = useState(false);
   const isFocused = focusedId === block.id;
@@ -365,6 +377,20 @@ function BlockRow({
         {gutter}
         <div className="flex h-[24px] flex-1 items-center">
           <hr className="h-px w-full border-0 bg-a-line" />
+        </div>
+      </div>
+    );
+  }
+
+  // ── Database ─────────────────────────────────────────────────────────────────
+  if (block.type === 'database') {
+    return (
+      <div {...rowProps}>
+        {gutter}
+        <div className="min-w-0 flex-1">
+          {block.databaseId
+            ? <DatabaseBlock databaseId={block.databaseId} layout={block.dbLayout} onOpenDatabase={onOpenDatabase} />
+            : <div className="rounded-[8px] border border-dashed border-a-line-strong px-4 py-3 text-[13px] text-a-faint">Choosing a database…</div>}
         </div>
       </div>
     );
@@ -780,13 +806,37 @@ export function NoteEditor({
     setSlashState({ blockId, query: '', position: pos, selectedIndex: 0 });
   }, []);
 
-  const handleSlashSelect = useCallback((type: BlockType) => {
+  /** Where the linked-database picker hangs, and which block it is for. */
+  const [dbPicker, setDbPicker] = useState<{ blockId: string; position: { top: number; left: number } } | null>(null);
+
+  /** A block becomes a database block pointing at `databaseId`. */
+  const attachDatabase = useCallback((blockId: string, databaseId: string, layout: 'table' | 'board') => {
+    onChangeBlockType(blockId, 'database');
+    onUpdateBlock(blockId, { content: '', databaseId, dbLayout: layout });
+  }, [onChangeBlockType, onUpdateBlock]);
+
+  const handleSlashSelect = useCallback((cmd: SlashCommand) => {
     if (!slashState) return;
-    onChangeBlockType(slashState.blockId, type);
-    onUpdateBlock(slashState.blockId, { content: '' });
+    const { blockId, position } = slashState;
     setSlashState(null);
-    pendingFocusId.current = slashState.blockId;
-  }, [slashState, onChangeBlockType, onUpdateBlock]);
+    if (cmd.action === 'db-linked') {
+      onUpdateBlock(blockId, { content: '' });
+      setDbPicker({ blockId, position });
+      return;
+    }
+    if (cmd.action) {
+      // A new database, made now: a block that names one that was never made would be a promise.
+      const layout = cmd.action === 'db-board' ? 'board' : 'table';
+      onUpdateBlock(blockId, { content: '' });
+      void createInlineDatabase(layout)
+        .then((db) => attachDatabase(blockId, db.id, layout))
+        .catch(() => toast.error("Couldn't create the database"));
+      return;
+    }
+    onChangeBlockType(blockId, cmd.type);
+    onUpdateBlock(blockId, { content: '' });
+    pendingFocusId.current = blockId;
+  }, [slashState, onChangeBlockType, onUpdateBlock, attachDatabase]);
 
   const handleChange = useCallback((blockId: string, content: string) => {
     if (slashState && slashState.blockId === blockId) {
@@ -889,7 +939,7 @@ export function NoteEditor({
       if (e.key === 'Enter') {
         e.preventDefault();
         const cmd = filtered[slashState.selectedIndex];
-        if (cmd) handleSlashSelect(cmd.type);
+        if (cmd) handleSlashSelect(cmd);
         return;
       }
       if (e.key === 'Escape') {
@@ -970,6 +1020,14 @@ export function NoteEditor({
         />
       )}
 
+      {dbPicker && (
+        <DatabasePicker
+          position={dbPicker.position}
+          onClose={() => setDbPicker(null)}
+          onPick={(db) => { attachDatabase(dbPicker.blockId, db.id, 'table'); setDbPicker(null); }}
+        />
+      )}
+
       {/* "@" → Add to quadrant */}
       {mention && linking && (
         <MentionMenu
@@ -1012,6 +1070,7 @@ export function NoteEditor({
             onSelectionChange={handleSelectionChange}
             onUpdateMeta={onUpdateBlock}
             onMentionCheck={handleMentionCheck}
+            onOpenDatabase={linking?.openDatabase}
             chip={
               linking && linking.tasksLoaded && (block.taskId || pendingLinks.has(block.id)) ? (
                 <LinkedTaskChip

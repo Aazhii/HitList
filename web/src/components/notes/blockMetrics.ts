@@ -44,6 +44,8 @@ export const BLOCK_METRICS: Record<BlockType, BlockMetric> = {
   table:     { fontSize: 13, lineHeight: 1.5, insetTop: 8 },
   // Not text: a 24px box with the rule through its middle.
   divider:   { fontSize: 24, lineHeight: 1,    insetTop: 0 },
+  // Not text: an inline database, whose header row is 28px tall.
+  database:  { fontSize: 16, lineHeight: 1.75, insetTop: 0 },
 };
 
 /** Size of each gutter control button (the DS small IconButton, 28px). */
@@ -104,7 +106,8 @@ export function getBlockTextClass(type: BlockType): string {
     case 'todo':     return 'text-[14px] leading-[1.5] text-a-ink';
     case 'bullet':
     case 'numbered': return 'text-[14px] leading-[1.8] text-a-muted';
-    case 'divider':  return '';
+    case 'divider':
+    case 'database': return '';
     default:         return 'text-[14px] leading-[1.65] text-a-muted';
   }
 }

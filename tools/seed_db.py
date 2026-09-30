@@ -69,6 +69,23 @@ import datetime
 # "Edited today, 9:42 AM" in the prototype.
 edited = int(datetime.datetime.now().replace(hour=9, minute=42, second=0, microsecond=0).timestamp() * 1000)
 b = lambda type, content='', **kw: {'id': str(uuid.uuid4()), 'type': type, 'content': content, **kw}
+# The inline database in "Onboarding plan" (showcase 371-380): three tasks with Tags / Status / Date, and a board view.
+ot = call('POST', '/databases', {'name': 'Onboarding tasks', 'icon': '', 'titleLabel': 'Name'})
+def ofield(name, kind, options=None, show=False):
+    return call('POST', '/fields', {'name': name, 'kind': kind, 'databaseId': ot['id'], 'showOnCard': show, **({'options': options} if options else {})})
+otags = ofield('Tags', 'multi', [{'label': 'Idea', 'color': 'purple'}, {'label': 'Research', 'color': 'blue'}, {'label': 'Draft', 'color': 'yellow'}], show=True)
+ostatus = ofield('Status', 'select', [{'label': 'Not started', 'color': 'gray'}, {'label': 'In progress', 'color': 'blue'}, {'label': 'Done', 'color': 'green'}])
+odate = ofield('Date', 'date')
+oopt = lambda f, label: next(o['id'] for o in f['options'] if o['label'] == label)
+for title, tag, st, when in [('Outline the onboarding flow', 'Idea', 'In progress', '2026-10-02'),
+                             ('Interview two new hires', 'Research', 'Not started', '2026-10-06'),
+                             ('Write the buddy guide', 'Draft', 'Done', '2026-09-28')]:
+    rec = call('POST', f'/databases/{ot["id"]}/rows', {'title': title})
+    for f, v in [(otags, [oopt(otags, tag)]), (ostatus, oopt(ostatus, st)), (odate, when)]:
+        call('PUT', f'/databases/rows/{rec["id"]}/fields/{f["id"]}', {'value': v})
+call('POST', '/views', {'name': 'By status board', 'layout': 'board', 'scopeListId': '', 'scopeDatabaseId': ot['id'],
+                        'filters': {**base_filters, 'groupBy': ostatus['id']}, 'showDone': False,
+                        'display': {'hidden': [], 'order': [], 'widths': {}}})
 onboarding = [
     b('heading2', 'Goals for the first week'),
     b('paragraph', 'Every new teammate should know who to ask, where things live, and what "done" looks like by Friday. Keep the list short — three outcomes, not thirty tasks.'),
@@ -81,6 +98,7 @@ onboarding = [
     b('quote', 'People remember how the first week felt, not the documents they read.'),
     b('table', '', tableData={'rows': [['Week', 'Focus', 'Owner'], ['Week 1', 'Setup and introductions', 'Buddy'], ['Week 2', 'First shipped change', 'Manager'], ['Week 4', 'Retro and goals', 'Team']], 'hasHeader': True, 'colWidths': [210, 297, 210], 'colAligns': ['left', 'left', 'left']}),
     b('code', 'make bootstrap   # installs toolchain\nmake dev         # runs API on :3001, UI on :5173'),
+    b('database', '', databaseId=ot['id'], dbLayout='table'),
     b('paragraph', ''),
 ]
 for emoji, title, blocks, pinned in [('🧭', 'Onboarding plan', onboarding, True), ('📚', 'Reading queue', [], True), ('📝', 'Weekly review', [], False),
