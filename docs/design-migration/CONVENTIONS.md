@@ -659,3 +659,9 @@ Shared primitives now follow the DS, so every dialog inherits them:
 - The "Not on a date" panel is a dashed row of Tags under the grid, and is still the drop target for taking a date off. The count is mono.
 - Offline: the DS EmptyState with schedule.png. The subtitle count is hidden and the page action is inert rather than hidden.
 - Scratch seed now creates the Work / Personal lists, assigns every task to one, and points Reading list at its Finished column, so the calendar has sources.
+
+### Shell overlays (T3.40–T3.42)
+
+- Notifications is a Popover (role dialog): "Notifications", "Mark all read" (it dismisses every reminder), one row per reminder — missed first — with a red or orange dot and "Missed · 2h ago" / "Upcoming · due in 25 minutes". The prototype's "was due Sun, 5:00 PM" needs the due time, which a reminder record does not keep. The unread count badge on the bell stays; per-row go-to-task and dismiss show on hover.
+- Account menu: no "Sign out" (there is no sign-in; data belongs to the browser). "Keyboard shortcuts" opens a dialog listing only shortcuts that exist.
+- Row menus (`shell/RowMenu.tsx`): notes and saved views use it. The prototype's Add to Favorites, Duplicate, Copy link, Rename-by-shortcut, Open in new tab and its keyboard hints are not offered — they depend on Phase 4 features or do not exist. Lists keep their inline rename/delete icons.

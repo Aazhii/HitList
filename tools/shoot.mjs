@@ -76,6 +76,9 @@ const APP_ROUTE = {
   'db-sort':      { nav: 'Databases', then: ['~Reading list', '@Sort'] },
   'db-filter':    { nav: 'Databases', then: ['~Reading list', '@Filter'] },
   'db-picker':    { nav: 'Databases', then: ['~Reading list', '@Status of Dune'] },
+  'sh-notif':     { then: ['@Notifications'] },
+  'sh-account':   { then: ['@Account'] },
+  'sh-pagemenu':  { nav: 'Notes', notes: true, then: ['^Onboarding plan', '@Options for Onboarding plan'] },
   'cal-month':    { nav: 'Calendar' },
   'cal-add':      { nav: 'Calendar', then: ['Add on a day'] },
   'cal-offline':  { nav: 'Calendar' },
@@ -134,6 +137,34 @@ async function realClick(page, handle) {
   return true;
 }
 
+
+/**
+ * One route step. '@label' clicks by aria-label prefix, '~text' by text prefix, plain text by exact
+ * text, and '^text' only hovers the element showing exactly that text (a row whose "⋯" appears on hover).
+ */
+async function runStep(page, text) {
+  if (text.startsWith('^')) {
+    const label = text.slice(1);
+    const h = await page.evaluateHandle((t) => {
+      const all = Array.from(document.querySelectorAll('body *')).filter((n) => n.children.length === 0 && n.textContent?.trim() === t);
+      return all.find((n) => n.getBoundingClientRect().left < 260) ?? all[0] ?? null;
+    }, label);
+    await h?.asElement?.()?.evaluate?.((el) => el.scrollIntoView({ block: 'center' }));
+    const box = await h?.asElement?.()?.boundingBox?.();
+    if (!box) return false;
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+    await new Promise((r) => setTimeout(r, 300));
+    return true;
+  }
+  const h = await page.evaluateHandle((t) => Array.from(document.querySelectorAll('button, [role="button"], [role="menuitem"], [role="option"]'))
+    .find((n) => {
+      if (t.startsWith('@')) return (n.getAttribute('aria-label') ?? '').startsWith(t.slice(1));
+      const x = n.textContent?.trim() ?? '';
+      return t.startsWith('~') ? x.startsWith(t.slice(1)) : x === t;
+    }) ?? null, text);
+  return realClick(page, h);
+}
+
 async function openSwitcher(page) {
   const pill = await page.evaluateHandle(() =>
     Array.from(document.querySelectorAll('button, div'))
@@ -158,6 +189,8 @@ async function shootRef(browser, screenId) {
 
   // The switcher labels a screen by its `label`, not its id — read the
   // screens[] array out of the page so an id maps to the right entry.
+  const REF_BASE = { 'sh-pagemenu': 'tasks-matrix' };
+  const REF_STEPS = { 'sh-pagemenu': ['^Reading queue', '@Page options'] };
   const { label, nth } = await page.evaluate((wanted) => {
     const src = Array.from(document.querySelectorAll('script'))
       .map((s) => s.textContent || '').find((t) => t.includes("id: '") && t.includes('g:'));
@@ -167,7 +200,7 @@ async function shootRef(browser, screenId) {
     const all = [...src.matchAll(/\{\s*id:\s*'([^']+)'[^}]*?label:\s*(['"])(.+?)\2/g)].map((m) => ({ id: m[1], label: m[3] }));
     const hit = all.find((x) => x.id === wanted);
     return { label: hit?.label ?? null, nth: hit ? all.filter((x) => x.label === hit.label).findIndex((x) => x.id === wanted) : 0 };
-  }, screenId);
+  }, REF_BASE[screenId] ?? screenId);
   if (!label) throw new Error(`no screen with id "${screenId}" in the prototype`);
 
   await openSwitcher(page);
@@ -184,6 +217,7 @@ async function shootRef(browser, screenId) {
   if (!(await realClick(page, first))) throw new Error(`could not click "${label}"`);
   await new Promise((r) => setTimeout(r, 1200));
 
+  for (const step of REF_STEPS[screenId] ?? []) { await runStep(page, step); await new Promise((r) => setTimeout(r, 600)); }
   if (['notes-slash', 'notes-mention'].includes(screenId)) {
     // These menus hang off the note's last line, below the fold: scroll every scroller to its end.
     await page.evaluate(() => document.querySelectorAll('*').forEach((el) => {
@@ -235,16 +269,7 @@ async function shootApp(browser, screenId, url) {
     await new Promise((r) => setTimeout(r, 1400));
   }
 
-  const clickText = async (text) => {
-    const h = await page.evaluateHandle((t) => Array.from(document.querySelectorAll('button, [role="button"], [role="menuitem"], [role="option"]'))
-      .find((n) => {
-        // '@label' matches an aria-label, '~text' a text prefix, otherwise exact text.
-        if (t.startsWith('@')) return (n.getAttribute('aria-label') ?? '').startsWith(t.slice(1));
-        const x = n.textContent?.trim() ?? '';
-        return t.startsWith('~') ? x.startsWith(t.slice(1)) : x === t;
-      }) ?? null, text);
-    return realClick(page, h);
-  };
+  const clickText = (text) => runStep(page, text);
   if (route.nav) { await clickText(route.nav); await new Promise((r) => setTimeout(r, 900)); }
   if (route.tab) { await clickText(route.tab); await new Promise((r) => setTimeout(r, 800)); }
   for (const t of route.then ?? []) { await clickText(t); await new Promise((r) => setTimeout(r, 800)); }

@@ -13,6 +13,7 @@ import { useSyncStatus } from '@/hooks/useSyncStatus';
 import type { SyncStatus } from '@/hooks/useSyncStatus';
 import { NoteEditor, type NoteTaskLinking } from '@/components/NoteEditor';
 import { EmptyState, ILL } from '@/components/EmptyState';
+import { RowMenuContent, RowMenuItem } from '@/components/shell/RowMenu';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -78,16 +79,14 @@ function NoteListItem({
               <MoreHorizontal className="size-3.5" strokeWidth={1.75} />
             </button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-40">
-            <DropdownMenuItem onClick={onPin}>
-              {note.pinned ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}
-              {note.pinned ? 'Unpin' : 'Pin note'}
-            </DropdownMenuItem>
+          <RowMenuContent
+            caption="Page"
+            footer={<>Last edited by You<br />{new Date(note.updatedAt).toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</>}
+          >
+            <RowMenuItem icon={note.pinned ? PinOff : Pin} label={note.pinned ? 'Unpin' : 'Pin note'} onSelect={onPin} />
             <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onClick={onDelete}>
-              <Trash2 className="size-3.5" /> Delete
-            </DropdownMenuItem>
-          </DropdownMenuContent>
+            <RowMenuItem icon={Trash2} label="Delete" onSelect={onDelete} destructive />
+          </RowMenuContent>
         </DropdownMenu>
       </div>
     </li>

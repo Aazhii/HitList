@@ -156,10 +156,10 @@ Test baseline: **386 tests across 44 files.** This must not regress.
 Phase 0  █████   5 / 5      done
 Phase 1  █████  11 / 11      foundations — the broken UI
 Phase 2  █████   5 / 5       shell exactness
-Phase 3  ███░░  39 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
+Phase 3  ███░░  42 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
 Phase 4  ░░░░░   1 / 12      missing features
 Phase 5  ░░░░░   0 / 7       proposals, unreviewed
-                61 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
+                64 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
 ```
 
 ### A note on "partially built"
@@ -286,9 +286,9 @@ on a description. Execution order is the section order below.
 
 | ID | Screen | State | Verified by |
 |---|---|---|---|
-| T3.40 | `sh-notif` | todo | |
-| T3.41 | `sh-account` | todo | |
-| T3.42 | sidebar page menu | todo | |
+| T3.40 | `sh-notif` | **done** | shots/sh-notif.{ref,app}.png — 360px / 12px-radius panel under the bell, "Mark all read", tone-dot rows, footer line; bell tints while open |
+| T3.41 | `sh-account` | **done** | shots/sh-account.{ref,app}.png — 272px panel: workspace + PostgreSQL badge, Keyboard shortcuts (now a real dialog); no Sign out (no accounts) |
+| T3.42 | sidebar page menu | **done** | shots/sh-pagemenu.{ref,app}.png — shared RowMenu (280px, "Page" caption, 16px icons, last-edited footer) on note and saved-view rows |
 
 ## Phase 4 — Missing features → `04-FEATURES.md`
 

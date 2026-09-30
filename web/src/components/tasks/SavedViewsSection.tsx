@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Bookmark, MoreHorizontal, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { RowMenuContent, RowMenuItem } from '@/components/shell/RowMenu';
 import type { ApiSavedView } from '@/lib/api';
 import { getListColorDot, type KaizenList } from '@/types/todo';
 import {
@@ -118,18 +119,12 @@ export function SavedViewsSection({
                         <MoreHorizontal className="size-3.5" strokeWidth={1.75} />
                       </button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-56">
-                      <DropdownMenuItem onClick={() => { setRenamingId(view.id); setRenameValue(view.name); }}>
-                        <Pencil className="size-3.5" /> Rename
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={() => onUpdateToCurrent(view)}>
-                        <RefreshCw className="size-3.5" /> Update to current filters
-                      </DropdownMenuItem>
+                    <RowMenuContent caption="View">
+                      <RowMenuItem icon={Pencil} label="Rename" onSelect={() => { setRenamingId(view.id); setRenameValue(view.name); }} />
+                      <RowMenuItem icon={RefreshCw} label="Update to current filters" onSelect={() => onUpdateToCurrent(view)} />
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem variant="destructive" onClick={() => onDelete(view)}>
-                        <Trash2 className="size-3.5" /> Delete view
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
+                      <RowMenuItem icon={Trash2} label="Delete view" onSelect={() => onDelete(view)} destructive />
+                    </RowMenuContent>
                   </DropdownMenu>
                 </div>
               </li>
