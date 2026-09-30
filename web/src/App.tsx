@@ -41,6 +41,8 @@ import { UserMenu } from '@/components/shell/UserMenu';
 import { NotificationBell } from '@/components/NotificationBell';
 import { NotificationToast } from '@/components/NotificationToast';
 import { CommandPalette } from '@/components/CommandPalette';
+import { QuickCapture } from '@/components/QuickCapture';
+import { isTypingTarget } from '@/lib/taskKeyboard';
 import { PageSections } from '@/components/shell/PageSections';
 import { TodayPage } from '@/pages/TodayPage';
 import { LibraryPage } from '@/pages/LibraryPage';
@@ -1271,6 +1273,21 @@ function UserScopedApp() {
     return () => document.removeEventListener('keydown', onKey);
   }, []);
 
+  // ── Quick capture (P6.1): `c` or ⌘⇧N, anywhere nothing is being typed into ──
+  const [captureOpen, setCaptureOpen] = useState(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const chord = (e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'n';
+      const bare = e.key === 'c' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey
+        && !isTypingTarget(document.activeElement) && !isTypingTarget(e.target as Element | null);
+      if (e.defaultPrevented || !(chord || bare)) return;
+      e.preventDefault();
+      setCaptureOpen(true);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
+
   /** Everything the palette can open, read fresh each time it opens. */
   const getPaletteItems = useCallback(async (): Promise<PaletteItem[]> => {
     const listName = new Map(lists.map((l) => [l.id, l.name]));
@@ -1886,6 +1903,13 @@ function UserScopedApp() {
         )}
       </div>
       </AppShell>
+
+      <QuickCapture
+        open={captureOpen}
+        onOpenChange={setCaptureOpen}
+        listName={activeList?.name}
+        onAdd={(t) => { void handleAddTask(t.title, t.quadrant ?? 'do', undefined, t.dueDate, t.dueTime); }}
+      />
 
       {/* Add task dialog */}
       <AddTaskDialog

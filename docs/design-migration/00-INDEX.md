@@ -146,7 +146,7 @@ that one is fine where it is.
 | Visual | `node web/scripts/shoot.mjs <screen-id>` → a `.ref.png` / `.app.png` pair | every Phase 3 task |
 | Real build | `sh desktop/scripts/prepare-jar.sh` → copy to `api/target/hitlist.jar` → restart Electron → re-check its own port | every **phase** exit, not every task |
 
-Test baseline: **456 tests across 59 files.** This must not regress.
+Test baseline: **466 tests across 61 files.** This must not regress.
 
 ---
 
@@ -326,6 +326,17 @@ All seven accepted by the user on 2026-09-30; each is planned, built and recorde
 | P5.5 | Density preference | **built** — `hooks/useDensity.ts`, one `--a-density` variable on `<html>`; Account menu → Density (Compact / Standard / Roomy); measured: task row 40 / 44 / 52px |
 | P5.6 | Bidirectional note↔task links | **built** — `lib/noteTaskRollup.ts`; the note's meta line reads "3 of 7 linked tasks done" live; a line whose task is done reads struck and faint; `noteTaskRollup.test.ts` |
 | P5.7 | Empty states that say the right thing | **built** — `lib/emptyStates.ts`: first-run / filtered / all-done for a task list, a line per quadrant; `emptyStates.test.ts` |
+
+## Phase 6 — more improvements (accepted 2026-10-01)
+
+Proposed after Phase 5 and accepted by the user: P6.1–P6.4. Each is additive; any change to a stored shape is an additive migration (no data loss). What each spends is recorded in `CONVENTIONS.md`.
+
+| ID | Proposal | Status |
+|---|---|---|
+| P6.1 | Quick capture | **built** — `lib/quickCapture.ts`, `components/QuickCapture.tsx`; `c` or ⌘⇧N anywhere; reads a date, time and `!quadrant` from the line, shows what it read before saving |
+| P6.2 | Recurring tasks | accepted |
+| P6.3 | Bulk actions in the task table | accepted |
+| P6.4 | Export and import | accepted |
 
 ---
 

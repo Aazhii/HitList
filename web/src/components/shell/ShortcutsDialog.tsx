@@ -2,6 +2,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 
 /** The shortcuts the app actually has, so the list can be trusted. */
 const SHORTCUTS: Array<{ keys: string; does: string }> = [
+  { keys: 'c  /  ⌘ / Ctrl + ⇧ + N', does: 'Quick add: one line, with a date, time or !quadrant in it' },
   { keys: '/', does: 'In a note or on an empty line: choose a block type' },
   { keys: '@', does: 'In a note or a text cell: add the line to a quadrant' },
   { keys: '↵', does: 'In a note: start a new block' },
