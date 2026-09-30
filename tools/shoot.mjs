@@ -60,6 +60,14 @@ const APP_ROUTE = {
   'notes-empty':  { nav: 'Notes' },
   'db-table':     { nav: 'Databases', then: ['~Reading list'] },
   'db-empty':     { nav: 'Databases' },
+  'db-colmenu':   { nav: 'Databases', then: ['~Reading list', '@Rating column options'] },
+  'db-type':      { nav: 'Databases', then: ['~Reading list', '@Rating column options', '~Change type'] },
+  'db-options':   { nav: 'Databases', then: ['~Reading list', '@Status column options', '~Edit options'] },
+  'db-newprop':   { nav: 'Databases', then: ['~Reading list', '@Add a property'] },
+  'db-props':     { nav: 'Databases', then: ['~Reading list', '@Show or hide columns'] },
+  'db-sort':      { nav: 'Databases', then: ['~Reading list', '@Sort'] },
+  'db-filter':    { nav: 'Databases', then: ['~Reading list', '@Filter'] },
+  'db-picker':    { nav: 'Databases', then: ['~Reading list', '@Status of Dune'] },
   'cal-month':    { nav: 'Calendar' },
 };
 
@@ -154,8 +162,14 @@ async function shootRef(browser, screenId) {
 
   await openSwitcher(page);
   await new Promise((r) => setTimeout(r, 400));
-  const entries = await page.evaluateHandle((l) => Array.from(document.querySelectorAll('button'))
-    .filter((n) => n.textContent?.trim() === l && n.getAttribute('role') !== 'tab'), label);
+  // Only the switcher's own entries: a label like "Filter" is also a button on the page itself.
+  const entries = await page.evaluateHandle((l) => {
+    const anchor = Array.from(document.querySelectorAll('button')).find((n) => n.textContent?.trim() === 'Sign in');
+    let panel = anchor?.parentElement ?? null;
+    while (panel && !panel.textContent?.includes('Task dialogs')) panel = panel.parentElement;
+    return Array.from((panel ?? document).querySelectorAll('button'))
+      .filter((n) => n.textContent?.trim() === l && n.getAttribute('role') !== 'tab');
+  }, label);
   const first = await page.evaluateHandle((a, i) => a[i] ?? a[0], entries, nth);
   if (!(await realClick(page, first))) throw new Error(`could not click "${label}"`);
   await new Promise((r) => setTimeout(r, 1200));
@@ -196,8 +210,13 @@ async function shootApp(browser, screenId, url) {
   await new Promise((r) => setTimeout(r, 1400));
 
   const clickText = async (text) => {
-    const h = await page.evaluateHandle((t) => Array.from(document.querySelectorAll('button, [role="button"]'))
-      .find((n) => { const x = n.textContent?.trim() ?? ''; return t.startsWith('~') ? x.startsWith(t.slice(1)) : x === t; }) ?? null, text);
+    const h = await page.evaluateHandle((t) => Array.from(document.querySelectorAll('button, [role="button"], [role="menuitem"], [role="option"]'))
+      .find((n) => {
+        // '@label' matches an aria-label, '~text' a text prefix, otherwise exact text.
+        if (t.startsWith('@')) return (n.getAttribute('aria-label') ?? '').startsWith(t.slice(1));
+        const x = n.textContent?.trim() ?? '';
+        return t.startsWith('~') ? x.startsWith(t.slice(1)) : x === t;
+      }) ?? null, text);
     return realClick(page, h);
   };
   if (route.nav) { await clickText(route.nav); await new Promise((r) => setTimeout(r, 900)); }
@@ -210,6 +229,10 @@ async function shootApp(browser, screenId, url) {
     await page.keyboard.press('Escape'); // close the popover the field lives in
     await new Promise((r) => setTimeout(r, 500));
   }
+
+  // --eval='<js>' runs in the app page once the route has run, and prints the result.
+  const evalArg = args.find((a) => a.startsWith('--eval='));
+  if (evalArg) console.log('eval:', JSON.stringify(await page.evaluate(evalArg.slice('--eval='.length))));
 
   const out = join(SHOTS, `${screenId}.app.png`);
   await page.screenshot({ path: out });

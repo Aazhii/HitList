@@ -34,7 +34,9 @@ function setup(over: Partial<RecordTableProps> = {}) {
     onRename: vi.fn(),
     onDelete: vi.fn(),
     onSetValue: vi.fn(),
-    onEditField: vi.fn(),
+    onRenameField: vi.fn(),
+    onChangeFieldOptions: vi.fn(),
+    onFilterField: vi.fn(),
     onDeleteField: vi.fn(),
     onCreateField: vi.fn(),
     onReorderFields: vi.fn(),
@@ -134,12 +136,40 @@ describe('RecordTable', () => {
     expect(props.onDelete).toHaveBeenCalledWith('r1');
   });
 
-  it('edits a column, and deletes one only after confirming', async () => {
+  it('opens the column menu from the header and renames from its first row', async () => {
     const props = setup();
     await userEvent.click(screen.getByRole('button', { name: 'Status column options' }));
-    await userEvent.click(await screen.findByRole('menuitem', { name: /Edit column/ }));
-    expect(props.onEditField).toHaveBeenCalledWith('status');
+    const name = await screen.findByLabelText('Property name');
+    fireEvent.change(name, { target: { value: 'Stage' } });
+    fireEvent.blur(name);
+    expect(props.onRenameField).toHaveBeenCalledWith('status', 'Stage');
+  });
 
+  it('offers Filter, which opens the filter on that column', async () => {
+    const props = setup();
+    await userEvent.click(screen.getByRole('button', { name: 'Status column options' }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: /Filter/ }));
+    expect(props.onFilterField).toHaveBeenCalledWith('status');
+  });
+
+  it('edits options at once, and asks before removing one a record uses', async () => {
+    const props = setup();
+    await userEvent.click(screen.getByRole('button', { name: 'Status column options' }));
+    await userEvent.click(await screen.findByRole('menuitem', { name: /Edit options/ }));
+    const add = await screen.findByLabelText('Add an option');
+    fireEvent.change(add, { target: { value: 'Paused' } });
+    fireEvent.keyDown(add, { key: 'Enter' });
+    expect(props.onChangeFieldOptions).toHaveBeenLastCalledWith('status', expect.arrayContaining([expect.objectContaining({ label: 'Paused' })]));
+
+    // "Read" is used by Dune, so its first click only asks.
+    const removes = await screen.findAllByRole('button', { name: 'Remove option' });
+    vi.mocked(props.onChangeFieldOptions).mockClear();
+    fireEvent.click(removes[0]);
+    expect(props.onChangeFieldOptions).not.toHaveBeenCalled();
+  });
+
+  it('deletes a column only after confirming', async () => {
+    const props = setup();
     await userEvent.click(screen.getByRole('button', { name: 'Status column options' }));
     await userEvent.click(await screen.findByRole('menuitem', { name: /Delete property/ }));
     expect(props.onDeleteField).not.toHaveBeenCalled();
@@ -149,7 +179,7 @@ describe('RecordTable', () => {
 
   it('adds a column from the + header', () => {
     const props = setup();
-    fireEvent.click(screen.getByRole('button', { name: 'Add a column' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add a property' }));
     expect(props.onCreateField).toHaveBeenCalled();
   });
 

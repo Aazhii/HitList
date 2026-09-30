@@ -10,11 +10,11 @@
  * offering something that would quietly never fire.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ArrowUpDown, Check, ChevronDown, Columns3, Eye, EyeOff, ListFilter, MoreHorizontal, Pencil, Plus, Search, SlidersHorizontal, Table2, Trash2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, Check, ChevronDown, Columns3, Eye, EyeOff, ListFilter, MoreHorizontal, Pencil, Plus, Search, SlidersHorizontal, Table2, Trash2, Type, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Popover, PopoverAnchor, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,16 +28,17 @@ import {
   contextIconButton,
   contextRowClass,
 } from '@/components/shell/ViewLayout';
-import { TopBar, topBarPrimary } from '@/components/shell/TopBar';
-import { FieldsManagerDialog, anchorRectOf, type AnchorRect } from '@/components/fields/FieldsManager';
-import { RecordTable } from '@/components/databases/RecordTable';
+import { TopBar, topBarPill, topBarPrimary } from '@/components/shell/TopBar';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { anchorRectOf, type AnchorRect } from '@/components/fields/FieldsManager';
+import { NewPropertyMenu } from '@/components/databases/NewPropertyMenu';
+import { CHANGE_TYPE_KINDS, KIND_ICON, RecordTable } from '@/components/databases/RecordTable';
 import { RecordBoard } from '@/components/databases/RecordBoard';
-import { FieldFilterMenu } from '@/components/AdvancedFilterBar';
 import { EmptyState, ILL, type IllustrationName } from '@/components/EmptyState';
 import { useDatabases } from '@/hooks/useDatabases';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { useSavedViews } from '@/hooks/useSavedViews';
-import { fieldApi, databaseApi, type ApiDatabase, type ApiSavedView, type FieldInput } from '@/lib/api';
+import { fieldApi, databaseApi, type ApiDatabase, type ApiDatabaseRow, type ApiSavedView, type FieldInput } from '@/lib/api';
 import { LatestValueQueue } from '@/lib/latestValueQueue';
 import { DEFAULT_FILTERS, FIELD_EMPTY, applyRecordFilters, isGroupableField, knownFieldFilters, matchesFieldFilters } from '@/lib/taskFilters';
 import type { FieldDef, FieldValue } from '@/types/fields';
@@ -118,6 +119,9 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
   const [activeViewId, setActiveViewId] = useState<string | null>(null);
   const [fieldFilters, setFieldFilters] = useState<Record<string, string[]>>({});
   const [search, setSearch] = useState('');
+  /** The toolbar's Filter (showcase 727–738): one column, "contains", some text. Ad hoc, like search. */
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [textFilter, setTextFilter] = useState<{ col: string; text: string }>({ col: 'title', text: '' });
   // The column-menu table controls: hidden/sorted/grouped/calculated/frozen/
   // wrapped columns. Ad-hoc per open database for now, same as fieldFilters —
   // not yet round-tripped into a saved view's own stored display.
@@ -144,7 +148,11 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
     ? fields.find((f) => f.id === boardFieldByDatabase[openId] && isGroupableField(f)) ?? null
     : null;
   const visibleRows = useMemo(() => {
-    const filtered = applyRecordFilters(rows, fieldFilters, fields, values);
+    let filtered = applyRecordFilters(rows, fieldFilters, fields, values);
+    const needle = textFilter.text.trim().toLowerCase();
+    if (needle) {
+      filtered = filtered.filter((r) => cellText(r, textFilter.col, fields, values).toLowerCase().includes(needle));
+    }
     const q = search.trim().toLowerCase();
     if (!q) return filtered;
     return filtered.filter((r) => {
@@ -157,13 +165,14 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
         return typeof v === 'string' && v.toLowerCase().includes(q);
       });
     });
-  }, [rows, fieldFilters, fields, values, search]);
+  }, [rows, fieldFilters, fields, values, search, textFilter]);
   const sortedVisibleRows = useMemo(() => {
     if (!sort) return visibleRows;
     const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
     return [...visibleRows].sort((a, b) => {
-      const av = values[a.id]?.[sort.fieldId];
-      const bv = values[b.id]?.[sort.fieldId];
+      // "title" is the Title column, which is not a field.
+      const av = sort.fieldId === 'title' ? a.title : values[a.id]?.[sort.fieldId];
+      const bv = sort.fieldId === 'title' ? b.title : values[b.id]?.[sort.fieldId];
       if (av === undefined && bv === undefined) return 0;
       if (av === undefined) return 1;
       if (bv === undefined) return -1;
@@ -312,6 +321,22 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
       return null;
     }
   }, [notify]);
+
+  /** A column's name, from its header menu. */
+  const handleRenameField = useCallback((id: string, name: string) => {
+    const f = fields.find((x) => x.id === id);
+    if (f) void handleUpdateField(id, { name, kind: f.kind, options: f.options, showOnCard: f.showOnCard });
+  }, [fields, handleUpdateField]);
+
+  /** Edit options applies at once: ids are kept (so records keep their values), new ones get none. */
+  const handleChangeFieldOptions = useCallback((id: string, options: FieldDef['options']) => {
+    const f = fields.find((x) => x.id === id);
+    if (!f) return;
+    void handleUpdateField(id, {
+      name: f.name, kind: f.kind, showOnCard: f.showOnCard,
+      options: options.map((o) => ({ id: o.id || undefined, label: o.label, color: o.color })),
+    });
+  }, [fields, handleUpdateField]);
 
   /** Changing a column's type never touches a record's stored values — the
    * server just stops decoding ones written under the old kind (cloaked,
@@ -505,7 +530,7 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
   const handleInsertField = useCallback((fieldId: string, side: 'left' | 'right') => {
     insertTargetRef.current = { fieldId, side };
     setFieldsAnchor(activeAnchor());
-    setFieldsTarget({ startNew: true });
+   
     setFieldsOpen(true);
   }, []);
 
@@ -597,7 +622,7 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
           actions={open ? (
             <button
               type="button"
-              onClick={(e) => { setFieldsAnchor(anchorRectOf(e.currentTarget)); setFieldsTarget({ startNew: true }); setFieldsOpen(true); }}
+              onClick={(e) => { setFieldsAnchor(anchorRectOf(e.currentTarget)); setFieldsOpen(true); }}
               className={topBarPrimary}
               aria-label="New column"
             >
@@ -624,7 +649,7 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
             <>
               {/* One 36px row (showcase 601–612): view chips, the active sort / filter pills, then
                   Filter · Sort · Search · Properties and a primary "New" that adds a record. */}
-              <div className="mb-2 flex h-9 items-center gap-1">
+              <div className="relative mb-2 flex h-9 items-center gap-1">
                 <DatabaseViewTabs
                   views={viewsForThisDb}
                   activeViewId={activeViewId}
@@ -637,13 +662,31 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
                 />
                 {view === 'table' && (
                   <>
-                    <SortPill fields={fields} sort={sort} onClear={handleClearSort} />
-                    <FilterPill fields={fields} fieldFilters={fieldFilters} onClear={() => fields.forEach((f) => { if ((fieldFilters[f.id] ?? []).length) handleChangeFieldFilter(f.id, []); })} />
+                    <SortPill fields={fields} titleLabel={open.titleLabel} sort={sort} onClear={handleClearSort} />
+                    <FilterPill
+                      fields={fields}
+                      fieldFilters={fieldFilters}
+                      textFilter={textFilter}
+                      onClear={() => {
+                        setTextFilter((prev) => ({ ...prev, text: '' }));
+                        fields.forEach((f) => { if ((fieldFilters[f.id] ?? []).length) handleChangeFieldFilter(f.id, []); });
+                      }}
+                    />
                     <div className="flex-1" />
-                    <FilterButton fields={fields} fieldFilters={fieldFilters} onChange={handleChangeFieldFilter} />
-                    <SortButton fields={fields} sort={sort} onSort={handleSortField} onClear={handleClearSort} />
+                    <FilterButton
+                      open={filterOpen}
+                      onOpenChange={setFilterOpen}
+                      fields={fields}
+                      titleLabel={open.titleLabel}
+                      filter={textFilter}
+                      onFilterChange={setTextFilter}
+                      matching={visibleRows.length}
+                      total={rows.length}
+                      active={textFilter.text.trim() !== '' || Object.values(fieldFilters).some((c) => c.length > 0)}
+                    />
+                    <SortButton fields={fields} titleLabel={open.titleLabel} sort={sort} onSort={handleSortField} onClear={handleClearSort} />
                     <SearchButton value={search} onChange={setSearch} />
-                    <PropertiesButton fields={fields} hiddenFieldIds={hiddenFieldIds} onShow={handleShowField} onHide={handleHideField} />
+                    <PropertiesButton fields={fields} titleLabel={open.titleLabel} hiddenFieldIds={hiddenFieldIds} onShow={handleShowField} onHide={handleHideField} onShowAll={() => hiddenFieldIds.forEach((id) => handleShowField(id))} />
                     <button
                       type="button"
                       onClick={() => { void createRow({ title: 'Untitled' }); }}
@@ -663,7 +706,7 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
                   values={values}
                   groupField={boardField}
                   onGroupFieldChange={(fieldId) => setBoardFieldByDatabase((prev) => ({ ...prev, [open.id]: fieldId }))}
-                  onManageFields={() => { setFieldsAnchor(activeAnchor()); setFieldsTarget({ startNew: true }); setFieldsOpen(true); }}
+                  onManageFields={() => { setFieldsAnchor(activeAnchor()); setFieldsOpen(true); }}
                   onSetValue={(recordId, fieldId, value) => { void setValue(recordId, fieldId, value); }}
                   onAdd={(title, columnKey) => { void addRecordInColumn(title, columnKey); }}
                 />
@@ -680,9 +723,11 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
                 onRename={(recordId, title) => { void updateRow(recordId, { title }); }}
                 onDelete={(recordId) => { void deleteRow(recordId); }}
                 onSetValue={(recordId, fieldId, value) => { void setValue(recordId, fieldId, value); }}
-                onEditField={(fieldId) => { setFieldsAnchor(activeAnchor()); setFieldsTarget({ fieldId }); setFieldsOpen(true); }}
+                onRenameField={handleRenameField}
+                onChangeFieldOptions={handleChangeFieldOptions}
+                onFilterField={(fieldId) => { setTextFilter((prev) => ({ ...prev, col: fieldId })); setFilterOpen(true); }}
                 onDeleteField={(fieldId) => { void handleDeleteField(fieldId); }}
-                onCreateField={() => { setFieldsAnchor(activeAnchor()); setFieldsTarget({ startNew: true }); setFieldsOpen(true); }}
+                onCreateField={() => { setFieldsAnchor(activeAnchor()); setFieldsOpen(true); }}
                 onReorderFields={handleReorderFields}
                 sort={sort}
                 onSortField={handleSortField}
@@ -714,17 +759,13 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
       </div>
       </ViewLayoutContext.Provider>
 
-      <FieldsManagerDialog
+      <NewPropertyMenu
         open={fieldsOpen}
-        anchor={fieldsAnchor}
         onOpenChange={setFieldsOpen}
-        fields={fields}
-        initialFieldId={fieldsTarget.fieldId ?? null}
-        startNew={fieldsTarget.startNew ?? false}
+        anchor={fieldsAnchor}
+        kinds={CHANGE_TYPE_KINDS}
+        kindIcon={KIND_ICON}
         onCreate={handleCreateField}
-        onUpdate={handleUpdateField}
-        onDelete={handleDeleteField}
-        noun="record"
       />
     </div>
   );
@@ -892,88 +933,157 @@ function NewViewButton({ onCreate }: { onCreate: (name: string, layout: 'table' 
   );
 }
 
-/** One field per filterable kind, behind a single icon button — the showcase's "list-filter" toolbar icon (line 607). */
+/**
+ * Filter records (showcase 727–738): choose a column, "contains", type a value. The column is
+ * the title or any field; a select or multi-select matches on its option names.
+ */
 function FilterButton({
-  fields, fieldFilters, onChange,
-}: { fields: FieldDef[]; fieldFilters: Record<string, string[]>; onChange: (fieldId: string, choices: string[]) => void }) {
-  const filterable = fields.filter((f) => f.kind === 'select' || f.kind === 'multi' || f.kind === 'checkbox');
-  const activeCount = filterable.filter((f) => (fieldFilters[f.id] ?? []).length > 0).length;
-  if (filterable.length === 0) return null;
+  open, onOpenChange, fields, titleLabel, filter, onFilterChange, matching, total, active,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  fields: FieldDef[];
+  titleLabel: string;
+  filter: { col: string; text: string };
+  onFilterChange: (filter: { col: string; text: string }) => void;
+  matching: number;
+  total: number;
+  active: boolean;
+}) {
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label={`Filter${activeCount ? ` (${activeCount} active)` : ''}`}
-          className={cn(
-            ICON_BUTTON,
-            activeCount ? 'bg-a-blue-tint text-a-accent' : ICON_BUTTON_IDLE,
-          )}
-        >
-          <ListFilter className="size-4" strokeWidth={1.75} />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="start" className="w-56 p-2">
-        <p className="px-2 pt-1 pb-1.5 text-[13px] font-semibold text-a-ink">Filter</p>
-        <div className="space-y-1">
-          {filterable.map((f) => (
-            <FieldFilterMenu key={f.id} field={f} chosen={fieldFilters[f.id] ?? []} onChange={(choices) => onChange(f.id, choices)} />
-          ))}
+    <Popover open={open} onOpenChange={onOpenChange}>
+      {TOOLBAR_RIGHT_ANCHOR}
+      <button
+        type="button"
+        data-toolbar-trigger
+        aria-label={`Filter${active ? ' (active)' : ''}`}
+        aria-expanded={open}
+        onClick={() => onOpenChange(!open)}
+        className={cn(ICON_BUTTON, active || open ? 'bg-a-blue-tint text-a-accent' : ICON_BUTTON_IDLE)}
+      >
+        <ListFilter className="size-4" strokeWidth={1.75} />
+      </button>
+      <PopoverContent role="dialog" aria-label="Filter" align="end" sideOffset={-2} onInteractOutside={ignoreOwnButton} className="w-[340px] gap-2.5 p-3">
+        <span className="font-semibold text-a-ink">Filter records</span>
+        <div className="grid grid-cols-2 gap-2">
+          <Select value={filter.col} onValueChange={(col) => onFilterChange({ ...filter, col })}>
+            <SelectTrigger size="sm" className="w-full" aria-label="Column">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="title">{titleLabel}</SelectItem>
+              {fields.map((f) => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <div className="flex h-7 items-center rounded-[4px] border border-a-line bg-a-bg px-2.5 text-a-muted">contains</div>
+        </div>
+        <Input
+          className="h-7 px-2"
+          value={filter.text}
+          onChange={(e) => onFilterChange({ ...filter, text: e.target.value })}
+          placeholder="Type a value…"
+          aria-label="Filter value"
+          autoFocus
+        />
+        <div className="flex items-center justify-between">
+          <span className="text-[12px] text-a-faint">{filter.text.trim() ? `${matching} of ${total} records` : `${total} record${total === 1 ? '' : 's'}`}</span>
+          <button type="button" className={topBarPill} onClick={() => onFilterChange({ ...filter, text: '' })}>Clear filter</button>
         </div>
       </PopoverContent>
     </Popover>
   );
 }
 
-/** Sets the same sort a column header's "Sort ascending/descending" does — the showcase's "arrow-up-down" toolbar icon (line 608). */
+/** The text a record shows in one column — what "contains" searches. */
+function cellText(row: ApiDatabaseRow, col: string, fields: FieldDef[], values: RecordValues): string {
+  if (col === 'title') return row.title;
+  const f = fields.find((x) => x.id === col);
+  const v = values[row.id]?.[col];
+  if (!f || v === undefined || v === null) return '';
+  if (f.kind === 'select' || f.kind === 'multi') {
+    const ids = Array.isArray(v) ? v : [String(v)];
+    return ids.map((id) => f.options.find((o) => o.id === id)?.label ?? '').join(' ');
+  }
+  if (f.kind === 'checkbox') return v ? 'Yes' : 'No';
+  return String(v);
+}
+
+/**
+ * A toolbar popover is controlled, with a plain button: Radix drops a custom anchor when the
+ * popover also has a PopoverTrigger, and these hang from the toolbar's right edge, not from the
+ * button. Clicks on the button itself must not count as "outside", or it could never close.
+ */
+const ignoreOwnButton = (e: Event) => {
+  if ((e.target as HTMLElement | null)?.closest?.('[data-toolbar-trigger]')) e.preventDefault();
+};
+
+/** The toolbar's right edge: Filter, Sort and Properties all hang from it (showcase `top:34px; right:0`). */
+const TOOLBAR_RIGHT_ANCHOR = <PopoverAnchor asChild><span aria-hidden className="pointer-events-none absolute right-0 bottom-0 h-px w-px" /></PopoverAnchor>;
+
+/** Sort by (showcase 716–726): each column with an ascending and a descending button. */
 function SortButton({
-  fields, sort, onSort, onClear,
-}: { fields: FieldDef[]; sort: { fieldId: string; dir: 1 | -1 } | null; onSort: (fieldId: string, dir: 1 | -1) => void; onClear: () => void }) {
+  fields, titleLabel, sort, onSort, onClear,
+}: { fields: FieldDef[]; titleLabel: string; sort: { fieldId: string; dir: 1 | -1 } | null; onSort: (fieldId: string, dir: 1 | -1) => void; onClear: () => void }) {
+  const [open, setOpen] = useState(false);
+  const rows = [{ id: 'title', name: titleLabel, Icon: Type }, ...fields.map((f) => ({ id: f.id, name: f.name, Icon: KIND_ICON[f.kind] }))];
   return (
-    <div className="flex items-center">
-      <Popover>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            aria-label="Sort"
-            className={cn(
-              ICON_BUTTON,
-              sort ? 'bg-a-blue-tint text-a-accent' : ICON_BUTTON_IDLE,
-            )}
-          >
-            <ArrowUpDown className="size-4" strokeWidth={1.75} />
-          </button>
-        </PopoverTrigger>
-        <PopoverContent align="start" className="w-56 p-2">
-          <p className="px-2 pt-1 pb-1.5 text-[13px] font-semibold text-a-ink">Sort by</p>
-          <div className="space-y-0.5">
-            {fields.map((f) => (
-              <button
-                key={f.id}
-                type="button"
-                onClick={() => onSort(f.id, sort?.fieldId === f.id && sort.dir === 1 ? -1 : 1)}
-                className="flex w-full items-center gap-2.5 rounded-[6px] px-2 py-1.5 text-left text-[14px] text-a-ink transition-colors duration-[120ms] hover:bg-a-row-hover"
-              >
-                <span className="flex-1">{f.name}</span>
-                {sort?.fieldId === f.id && <Check className="size-4 text-a-accent-700" strokeWidth={1.75} />}
-              </button>
-            ))}
+    <Popover open={open} onOpenChange={setOpen}>
+      {TOOLBAR_RIGHT_ANCHOR}
+      <button
+        type="button"
+        data-toolbar-trigger
+        aria-label="Sort"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className={cn(ICON_BUTTON, sort || open ? 'bg-a-blue-tint text-a-accent' : ICON_BUTTON_IDLE)}
+      >
+        <ArrowUpDown className="size-4" strokeWidth={1.75} />
+      </button>
+      <PopoverContent role="dialog" aria-label="Sort" align="end" sideOffset={-2} onInteractOutside={ignoreOwnButton} className="w-[270px] gap-0 p-1.5 text-[14px]">
+        <div className="px-2 py-1.5 font-semibold text-a-ink">Sort by</div>
+        {rows.map(({ id, name, Icon }) => (
+          <div key={id} className="flex min-h-[30px] items-center gap-2 px-2 py-0.5">
+            <Icon className="size-[15px] flex-shrink-0 text-a-faint" strokeWidth={1.75} aria-hidden />
+            <span className="flex-1 text-[13px] text-a-ink">{name}</span>
+            {([1, -1] as const).map((dir) => {
+              const on = sort?.fieldId === id && sort.dir === dir;
+              const Arrow = dir === 1 ? ArrowUp : ArrowDown;
+              return (
+                <button
+                  key={dir}
+                  type="button"
+                  aria-label={`${name} ${dir === 1 ? 'ascending' : 'descending'}`}
+                  aria-pressed={on}
+                  onClick={() => (on ? onClear() : onSort(id, dir))}
+                  className={cn(ICON_BUTTON, on ? 'bg-a-blue-tint text-a-accent' : ICON_BUTTON_IDLE)}
+                >
+                  <Arrow className="size-4" strokeWidth={1.75} />
+                </button>
+              );
+            })}
           </div>
-        </PopoverContent>
-      </Popover>
-    </div>
+        ))}
+      </PopoverContent>
+    </Popover>
   );
 }
 
 /** "Sorted by X ×" — showcase 604: a 24px pill in the brand tint. */
-function SortPill({ fields, sort, onClear }: { fields: FieldDef[]; sort: { fieldId: string; dir: 1 | -1 } | null; onClear: () => void }) {
-  const sortedField = sort ? fields.find((f) => f.id === sort.fieldId) : null;
-  if (!sortedField) return null;
-  return <ActivePill label={`Sorted by ${sortedField.name}`} removeLabel="Remove sort" onClear={onClear} />;
+function SortPill({ fields, titleLabel, sort, onClear }: { fields: FieldDef[]; titleLabel: string; sort: { fieldId: string; dir: 1 | -1 } | null; onClear: () => void }) {
+  const name = !sort ? null : sort.fieldId === 'title' ? titleLabel : fields.find((f) => f.id === sort.fieldId)?.name ?? null;
+  if (!name) return null;
+  return <ActivePill label={`Sorted by ${name}`} removeLabel="Remove sort" onClear={onClear} />;
 }
 
 /** The filter pill (showcase 605): what is filtering, and ×. */
-function FilterPill({ fields, fieldFilters, onClear }: { fields: FieldDef[]; fieldFilters: Record<string, string[]>; onClear: () => void }) {
+function FilterPill({ fields, fieldFilters, textFilter, onClear }: {
+  fields: FieldDef[]; fieldFilters: Record<string, string[]>; textFilter: { col: string; text: string }; onClear: () => void;
+}) {
+  const text = textFilter.text.trim();
+  if (text) {
+    const colName = textFilter.col === 'title' ? 'Title' : fields.find((f) => f.id === textFilter.col)?.name ?? 'Column';
+    return <ActivePill label={`${colName} contains “${text}”`} removeLabel="Remove filter" onClear={onClear} />;
+  }
   const active = fields.filter((f) => (fieldFilters[f.id] ?? []).length > 0);
   if (active.length === 0) return null;
   const first = active[0];
@@ -1024,42 +1134,51 @@ function SearchButton({ value, onChange }: { value: string; onChange: (value: st
   );
 }
 
-/** Show/hide every column — how a "Hide" from the column menu gets undone. */
+/** Properties (showcase 707–715): every column with an eye, and "Show all". */
 function PropertiesButton({
-  fields, hiddenFieldIds, onShow, onHide,
-}: { fields: FieldDef[]; hiddenFieldIds: string[]; onShow: (id: string) => void; onHide: (id: string) => void }) {
+  fields, titleLabel, hiddenFieldIds, onShow, onHide, onShowAll,
+}: { fields: FieldDef[]; titleLabel: string; hiddenFieldIds: string[]; onShow: (id: string) => void; onHide: (id: string) => void; onShowAll: () => void }) {
+  const [open, setOpen] = useState(false);
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          aria-label={`Show or hide columns${hiddenFieldIds.length ? ` (${hiddenFieldIds.length} hidden)` : ''}`}
-          className={cn(
-            ICON_BUTTON,
-            hiddenFieldIds.length ? 'bg-a-blue-tint text-a-accent' : ICON_BUTTON_IDLE,
-          )}
-        >
-          <SlidersHorizontal className="size-4" strokeWidth={1.75} />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-64 p-2">
-        <p className="px-2 pt-1 pb-1.5 text-[13px] font-semibold text-a-ink">Properties</p>
-        <div className="space-y-0.5">
-          {fields.map((f) => {
-            const hidden = hiddenFieldIds.includes(f.id);
-            return (
-              <button
-                key={f.id}
-                type="button"
-                onClick={() => (hidden ? onShow(f.id) : onHide(f.id))}
-                className="flex w-full items-center gap-2.5 rounded-[6px] px-2 py-1.5 text-left text-[14px] text-a-ink transition-colors duration-[120ms] hover:bg-a-row-hover"
-              >
-                <span className="flex-1">{f.name}</span>
-                {hidden ? <EyeOff className="size-4 text-a-faint" strokeWidth={1.75} /> : <Eye className="size-4 text-a-faint" strokeWidth={1.75} />}
-              </button>
-            );
-          })}
+    <Popover open={open} onOpenChange={setOpen}>
+      {TOOLBAR_RIGHT_ANCHOR}
+      <button
+        type="button"
+        data-toolbar-trigger
+        aria-label={`Show or hide columns${hiddenFieldIds.length ? ` (${hiddenFieldIds.length} hidden)` : ''}`}
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className={cn(ICON_BUTTON, hiddenFieldIds.length || open ? 'bg-a-blue-tint text-a-accent' : ICON_BUTTON_IDLE)}
+      >
+        <SlidersHorizontal className="size-4" strokeWidth={1.75} />
+      </button>
+      <PopoverContent role="dialog" aria-label="Properties" align="end" sideOffset={-2} onInteractOutside={ignoreOwnButton} className="w-[270px] gap-0 p-1.5 text-[14px]">
+        <div className="flex items-center px-2 py-1.5">
+          <span className="flex-1 font-semibold text-a-ink">Properties</span>
+          <button type="button" onClick={onShowAll} className="text-[13px] text-a-accent-600 hover:underline">Show all</button>
         </div>
+        {/* The title is always shown. */}
+        <div className="flex min-h-[30px] items-center gap-2.5 px-2 py-[5px] text-a-ink">
+          <Type className="size-[15px] flex-shrink-0 text-a-faint" strokeWidth={1.75} aria-hidden />
+          <span className="flex-1">{titleLabel}</span>
+          <Eye className="size-4 text-a-faint" strokeWidth={1.75} aria-hidden />
+        </div>
+        {fields.map((f) => {
+          const hidden = hiddenFieldIds.includes(f.id);
+          const Icon = KIND_ICON[f.kind];
+          return (
+            <button
+              key={f.id}
+              type="button"
+              onClick={() => (hidden ? onShow(f.id) : onHide(f.id))}
+              className="flex min-h-[30px] w-full items-center gap-2.5 rounded-[4px] px-2 py-[5px] text-left leading-[normal] text-a-ink transition-colors duration-[120ms] hover:bg-a-line-soft"
+            >
+              <Icon className="size-[15px] flex-shrink-0 text-a-faint" strokeWidth={1.75} aria-hidden />
+              <span className="flex-1">{f.name}</span>
+              {hidden ? <EyeOff className="size-4 text-a-faint" strokeWidth={1.75} /> : <Eye className="size-4 text-a-faint" strokeWidth={1.75} />}
+            </button>
+          );
+        })}
       </PopoverContent>
     </Popover>
   );

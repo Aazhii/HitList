@@ -577,11 +577,41 @@ Shared primitives now follow the DS, so every dialog inherits them:
 - **Deviations:** no URL column type — a text column that holds a URL renders as plain text, not a
   link; the prototype's "2 more…" overflow is not built (every view shows).
 
+### Databases: the popover family (T3.19–T3.26)
+
+- **One panel shell** — white, 1px `--border-default`, **6px** radius, `shadow-lg`, **6px** padding —
+  is now the base of `ui/popover` and `ui/dropdown-menu`, so every menu in the app has it. Menu rows
+  are **30px** (`5px 8px`, 4px radius, 14px, 10px gap, a 16px icon, `--gray-100` hover, line-height
+  normal); separators are `--border-subtle`; a destructive row is `#b83232` with the same wash.
+- **Column menu**: the header opens it on click (a cover button under the name; press-and-hold still
+  drags), hung 13px left of the header. Items in the prototype's order — property name field · Change
+  type · Edit options (select kinds) · — · Filter · Sort ascending / descending · Group · Calculate ·
+  Freeze · Hide · Wrap content · — · Insert left / right · Duplicate property · Delete property. Change
+  type (230px), Edit options (280px) and Calculate (220px) open as **side panels**, 12px away and hung
+  from the menu's top edge. Freeze and Wrap show DS `sm` switches. Delete keeps its second confirming
+  click ("Delete from every record"). The old "Edit column…" entry is gone.
+- **Change type** lists only the kinds the app has (text, text area, number, select, multi-select, date,
+  checkbox) — the prototype's Status, Person, Files, URL, Email, Phone, Formula, Relation, Created and
+  Edited have no backing yet, and dead rows are not shipped.
+- **Edit options** applies each change at once (rename on blur/Enter, colour cycles on click, new options
+  on Enter). Removing an option that records use asks first ("Remove from N?") — it clears that value.
+- **New property**: name field + type list; clicking a type creates the column (named after the type if
+  the field is empty). `FieldsManager` is now used only for task fields.
+- **Toolbar popovers** (Filter, Sort, Properties) hang from the toolbar's right edge (Radix loses a custom
+  anchor when a `PopoverTrigger` is present, so they are controlled with plain buttons).
+  Sort lists Title and every column; Properties lists Title (always on) and every column, with "Show all".
+- **Filter records** is the prototype's single rule — a column, "contains", a value — with a count and
+  Clear filter; a select matches on its option names. It applies **in addition to** the older per-field
+  choice filters that saved views carry (`filters.fields`), which still apply and clear from the pill but
+  no longer have their own editor.
+- **Option picker** is a listbox: caption ("Select an option" / "Select options"), each option as its tag
+  with a blue tick, and "Clear value". A single select closes on choosing; a multi stays open.
+
 ## 13. Standing rules for whoever executes a task
 
 1. **Verify before you change.** Every task quotes the current code. If what you find does not match the quote, **stop and report** — do not adapt silently. The file may have moved on.
 2. **Never invent a value.** If a task does not give you a number and this file does not either, ask. Guessing is what produced the current state.
 3. **One task, one commit.** Commit message: `design(T1.4): set every icon stroke to 1.75`.
-4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 368 tests.
+4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 371 tests.
 5. **Update `00-INDEX.md`** — set State and fill in "Verified by" with the actual command output or screenshot pair. A task with an empty "Verified by" is not done.
 6. **Do not delete the Automations or Reminders code.** It is being revived in Phase 4, not removed.

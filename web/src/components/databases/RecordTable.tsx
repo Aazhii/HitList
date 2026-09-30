@@ -27,8 +27,8 @@ import { restrictToHorizontalAxis } from '@dnd-kit/modifiers';
 import { CSS } from '@dnd-kit/utilities';
 import {
   AlignLeft, ArrowDown, File, ArrowLeftToLine, ArrowRightToLine, ArrowUp, Calendar, Check, ChevronDown,
-  ChevronRight, CircleChevronDown, Copy, EyeOff, Hash, List, MoreHorizontal, Pencil,
-  Pin, Plus, Repeat2, Rows3, Sigma, SquareCheck, Text as TextIcon, Trash2, WrapText, X,
+  ChevronRight, CircleChevronDown, Copy, Eraser, EyeOff, Hash, List, MoreHorizontal, Pencil,
+  Pin, Plus, Repeat2, Rows3, Sigma, SquareCheck, Text as TextIcon, Trash2, Type, WrapText, X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { topBarPill } from '@/components/shell/TopBar';
@@ -42,16 +42,17 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { FieldValueEditor } from '@/components/fields/FieldValueEditor';
 import { TextFieldCell } from '@/components/databases/TextFieldCell';
+import { ColumnMenu } from '@/components/databases/ColumnMenu';
 import { OPTION_CHIP_CLASS, selectedOptions } from '@/lib/fieldValues';
 import type { ApiDatabaseRow } from '@/lib/api';
 import { FIELD_KIND_LABELS, type FieldDef, type FieldKind, type FieldValue } from '@/types/fields';
 import type { DatabaseTaskLinking } from '@/pages/DatabasesPage';
 
 /** Every kind offered from "Change type" — same six as field creation, in the same order. */
-const CHANGE_TYPE_KINDS: readonly FieldKind[] = ['text', 'longtext', 'number', 'select', 'multi', 'date', 'checkbox'];
+export const CHANGE_TYPE_KINDS: readonly FieldKind[] = ['text', 'longtext', 'number', 'select', 'multi', 'date', 'checkbox'];
 
 /** The showcase's literal per-type icon (`TYPES` array, `HitList Notion x Zoho.dc.html` line 1389). */
-const KIND_ICON: Record<FieldDef['kind'], typeof AlignLeft> = {
+export const KIND_ICON: Record<FieldDef['kind'], typeof AlignLeft> = {
   text: AlignLeft,
   longtext: TextIcon,
   number: Hash,
@@ -124,7 +125,11 @@ export interface RecordTableProps {
   onRename: (recordId: string, title: string) => void;
   onDelete: (recordId: string) => void;
   onSetValue: (recordId: string, fieldId: string, value: FieldValue | null) => void;
-  onEditField: (fieldId: string) => void;
+  /** Rename a column, from its menu. */
+  onRenameField: (fieldId: string, name: string) => void;
+  onChangeFieldOptions: (fieldId: string, options: FieldDef['options']) => void;
+  /** "Filter" in a column menu: open the filter with this column chosen. */
+  onFilterField: (fieldId: string) => void;
   onDeleteField: (fieldId: string) => void;
   onCreateField: () => void;
   /** A column was dragged to a new position; `fieldIds` is the full new order. */
@@ -172,11 +177,16 @@ const CONTROL_ROW = cn(CONTROL, 'h-6');
 
 export function RecordTable({
   rows, fields, titleLabel, onRenameTitleLabel, values, loading,
-  onAdd, onRename, onDelete, onSetValue, onEditField, onDeleteField, onCreateField, onReorderFields, linking,
+  onAdd, onRename, onDelete, onSetValue, onRenameField, onChangeFieldOptions, onFilterField, onDeleteField, onCreateField, onReorderFields, linking,
   sort, onSortField, onClearSort, groupFieldId, onGroupField, calc, onCalcField,
   frozenFieldId, onFreezeField, wrapFieldIds, onWrapField, colWidths, onResizeField, onHideField, onInsertField, onDuplicateField, onChangeFieldKind,
 }: RecordTableProps) {
   const columnCount = 2 + fields.length;
+  /** How many records hold this option, for the remove guard in Edit options. */
+  const optionUsageFor = (fieldId: string, optionId: string) => rows.filter((r) => {
+    const v = values[r.id]?.[fieldId];
+    return v === optionId || (Array.isArray(v) && v.includes(optionId));
+  }).length;
   const tableWidth = TITLE_COL_WIDTH + fields.reduce((n, f) => n + colWidthOf(f, colWidths), 0) + 44;
   const hasCalc = Object.keys(calc).length > 0;
   const groupField = fields.find((f) => f.id === groupFieldId) ?? null;
@@ -282,7 +292,10 @@ export function RecordTable({
                     wrapped={wrapFieldIds.includes(field.id)}
                     width={colWidthOf(field, colWidths)}
                     onResize={(w) => onResizeField(field.id, w)}
-                    onEdit={() => onEditField(field.id)}
+                    optionUsage={(optionId) => optionUsageFor(field.id, optionId)}
+                    onRename={(name) => onRenameField(field.id, name)}
+                    onChangeOptions={(options) => onChangeFieldOptions(field.id, options)}
+                    onFilter={() => onFilterField(field.id)}
                     onDelete={() => onDeleteField(field.id)}
                     onSort={(dir) => onSortField(field.id, dir)}
                     onClearSort={onClearSort}
@@ -303,7 +316,7 @@ export function RecordTable({
                   type="button"
                   onClick={onCreateField}
                   className="flex size-7 items-center justify-center rounded-[4px] text-a-faint transition-colors duration-[120ms] hover:bg-a-line-soft hover:text-a-ink"
-                  aria-label="Add a column"
+                  aria-label="Add a property"
                 >
                   <Plus className="size-4" strokeWidth={1.75} />
                 </button>
@@ -389,7 +402,10 @@ interface FieldHeaderProps {
   wrapped: boolean;
   width: number;
   onResize: (width: number) => void;
-  onEdit: () => void;
+  optionUsage: (optionId: string) => number;
+  onRename: (name: string) => void;
+  onChangeOptions: (options: FieldDef['options']) => void;
+  onFilter: () => void;
   onDelete: () => void;
   onSort: (dir: 1 | -1) => void;
   onClearSort: () => void;
@@ -419,18 +435,22 @@ interface FieldHeaderProps {
  */
 function FieldHeader({
   field, filled, total, sortDir, grouped, calc, frozen, wrapped, width, onResize,
-  onEdit, onDelete, onSort, onClearSort, onGroup, onCalc, onFreeze, onHide, onWrap, onInsertLeft, onInsertRight, onDuplicate, onChangeKind,
+  optionUsage, onRename, onChangeOptions, onFilter, onDelete, onSort, onClearSort, onGroup, onCalc, onFreeze, onHide, onWrap, onInsertLeft, onInsertRight, onDuplicate, onChangeKind,
 }: FieldHeaderProps) {
-  const [confirm, setConfirm] = useState(false);
-  const [calcSub, setCalcSub] = useState(false);
-  const [typeSub, setTypeSub] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const lastDragEnd = useRef(0);
   const {
     attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging,
   } = useSortable({ id: field.id });
+  // A drag ends with a click on the name; that must not read as "open the menu".
+  const wasDragging = useRef(false);
+  useEffect(() => {
+    if (wasDragging.current && !isDragging) lastDragEnd.current = Date.now();
+    wasDragging.current = isDragging;
+  }, [isDragging]);
   const pct = total === 0 ? 0 : Math.round((filled / total) * 100);
 
   const Icon = KIND_ICON[field.kind];
-  const calcLabel = CALC_OPTIONS.find((o) => o.key === calc)?.label ?? 'None';
 
   return (
     <th
@@ -482,126 +502,44 @@ function FieldHeader({
           // No visible grip icon: press-and-hold anywhere on the name itself
           // starts the drag (see the PointerSensor's delay below), so nothing
           // needs to be hovered first to find a handle.
-          className="cursor-grab touch-none text-[13px] font-semibold whitespace-nowrap text-a-ink select-none active:cursor-grabbing"
+          onClick={() => { if (Date.now() - lastDragEnd.current > 250) setMenuOpen(true); }}
+          className="relative z-[1] cursor-grab touch-none text-[13px] font-semibold whitespace-nowrap text-a-ink select-none active:cursor-grabbing"
         >
           {field.name}
         </span>
         {frozen && <Pin className="size-3 flex-shrink-0 text-a-faint" strokeWidth={1.75} aria-hidden />}
         {sortDir && (sortDir === 1 ? <ArrowUp className="size-3.5 flex-shrink-0 text-a-accent" strokeWidth={1.75} /> : <ArrowDown className="size-3.5 flex-shrink-0 text-a-accent" strokeWidth={1.75} />)}
-        <DropdownMenu onOpenChange={(open) => { if (!open) { setConfirm(false); setCalcSub(false); setTypeSub(false); } }}>
-          <DropdownMenuTrigger asChild>
-            <button
-              type="button"
-              // Overlaid so it never widens the column: the prototype's header is just glyph + name.
-              className="absolute top-1/2 right-1 flex size-5 -translate-y-1/2 items-center justify-center rounded-[4px] bg-a-line-soft text-a-faint opacity-0 transition-opacity duration-[120ms] group-hover/head:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 hover:text-a-ink"
-              aria-label={`${field.name} column options`}
-            >
-              <ChevronDown className="size-3.5" strokeWidth={1.75} />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent
-            align="start"
-            className="w-56"
-            // "Edit column…"/"Insert left/right" open another popover
-            // (FieldsManagerDialog). Without this, Radix returns focus to this
-            // trigger once the menu's own close animation finishes — after
-            // that popover has already opened and focused its own input —
-            // which reads as focus leaving the popover and closes it within a
-            // couple hundred ms.
-            onCloseAutoFocus={(e) => e.preventDefault()}
-          >
-            {calcSub ? (
-              <>
-                <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setCalcSub(false); }}>
-                  <ChevronRight className="size-3.5 rotate-180" /> Calculate
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                {CALC_OPTIONS.filter((o) => !o.numberOnly || field.kind === 'number').map((o) => (
-                  <DropdownMenuItem key={o.key} onClick={() => { onCalc(o.key); setCalcSub(false); }}>
-                    {o.label === calcLabel && <Check className="size-3.5" />}
-                    <span className={o.label === calcLabel ? '' : 'pl-[19px]'}>{o.label}</span>
-                  </DropdownMenuItem>
-                ))}
-              </>
-            ) : typeSub ? (
-              <>
-                <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setTypeSub(false); }}>
-                  <ChevronRight className="size-3.5 rotate-180" /> Change type
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                {CHANGE_TYPE_KINDS.map((kind) => (
-                  <DropdownMenuItem key={kind} onClick={() => { onChangeKind(kind); setTypeSub(false); }}>
-                    {kind === field.kind && <Check className="size-3.5" />}
-                    <span className={kind === field.kind ? '' : 'pl-[19px]'}>{FIELD_KIND_LABELS[kind]}</span>
-                  </DropdownMenuItem>
-                ))}
-              </>
-            ) : (
-              <>
-                <DropdownMenuItem onClick={onEdit}>
-                  <Pencil className="size-3.5" /> Edit column…
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setTypeSub(true); }}>
-                  <Repeat2 className="size-3.5" /> <span className="flex-1">Change type</span>
-                  <span className="text-[12px] text-a-faint">{FIELD_KIND_LABELS[field.kind]}</span>
-                  <ChevronRight className="size-3.5 text-a-faint" />
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => onSort(1)}>
-                  <ArrowUp className="size-3.5" /> Sort ascending
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => onSort(-1)}>
-                  <ArrowDown className="size-3.5" /> Sort descending
-                </DropdownMenuItem>
-                {sortDir && (
-                  <DropdownMenuItem onClick={onClearSort}>
-                    <X className="size-3.5" /> Clear sort
-                  </DropdownMenuItem>
-                )}
-                <DropdownMenuItem onClick={onGroup}>
-                  <Rows3 className="size-3.5" /> <span className="flex-1">Group</span>
-                  {grouped && <span className="text-[12px] text-a-faint">On</span>}
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={(e) => { e.preventDefault(); setCalcSub(true); }}>
-                  <Sigma className="size-3.5" /> <span className="flex-1">Calculate</span>
-                  {calcLabel !== 'None' && <span className="text-[12px] text-a-faint">{calcLabel}</span>}
-                  <ChevronRight className="size-3.5 text-a-faint" />
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={onFreeze}>
-                  <Pin className="size-3.5" /> <span className="flex-1">Freeze</span>
-                  {frozen && <Check className="size-3.5" />}
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={onHide}>
-                  <EyeOff className="size-3.5" /> Hide
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={onWrap}>
-                  <WrapText className="size-3.5" /> <span className="flex-1">Wrap content</span>
-                  {wrapped && <Check className="size-3.5" />}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={onInsertLeft}>
-                  <ArrowLeftToLine className="size-3.5" /> Insert left
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={onInsertRight}>
-                  <ArrowRightToLine className="size-3.5" /> Insert right
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={onDuplicate}>
-                  <Copy className="size-3.5" /> Duplicate property
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                {confirm ? (
-                  <DropdownMenuItem variant="destructive" onClick={onDelete}>
-                    <Trash2 className="size-3.5" /> Delete from every record
-                  </DropdownMenuItem>
-                ) : (
-                  <DropdownMenuItem variant="destructive" onSelect={(e) => { e.preventDefault(); setConfirm(true); }}>
-                    <Trash2 className="size-3.5" /> Delete property…
-                  </DropdownMenuItem>
-                )}
-              </>
-            )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <ColumnMenu
+          field={field}
+          open={menuOpen}
+          onOpenChange={setMenuOpen}
+          kindIcon={KIND_ICON}
+          kinds={CHANGE_TYPE_KINDS}
+          calcOptions={CALC_OPTIONS}
+          calc={calc}
+          sortDir={sortDir}
+          grouped={grouped}
+          frozen={frozen}
+          wrapped={wrapped}
+          optionUsage={optionUsage}
+          onRename={onRename}
+          onChangeKind={onChangeKind}
+          onChangeOptions={onChangeOptions}
+          onFilter={onFilter}
+          onSort={onSort}
+          onGroup={onGroup}
+          onCalc={onCalc}
+          onFreeze={onFreeze}
+          onHide={onHide}
+          onWrap={onWrap}
+          onInsertLeft={onInsertLeft}
+          onInsertRight={onInsertRight}
+          onDuplicate={onDuplicate}
+          onDelete={onDelete}
+          // A cover over the whole header: clicking it opens the menu, and the menu hangs from
+          // the header's left edge (showcase 618). The name and resize handle sit above it.
+          trigger={<button type="button" aria-label={`${field.name} column options`} className="absolute inset-0 z-0 cursor-pointer" />}
+        />
       </span>
     </th>
   );
@@ -646,7 +584,7 @@ function TitleHeaderCell({ label, onCommit }: { label: string; onCommit: (label:
       aria-label={`Rename the ${label} column`}
       className="flex items-center gap-1.5 rounded-[6px] px-1 text-[13px] font-semibold text-a-ink transition-colors duration-[120ms] hover:bg-[color-mix(in_srgb,var(--a-ink)_6%,transparent)]"
     >
-      <AlignLeft className="size-[15px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
+      <Type className="size-[15px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
       {label}
     </button>
   );
@@ -934,14 +872,44 @@ function FieldCell({ def, value, recordId, recordName, onChange, linking }: Fiel
               ))}
             </button>
           </PopoverTrigger>
-          <PopoverContent align="start" className="w-64 p-3">
-            <p className="mb-2 text-[12px] font-semibold text-a-muted">{def.name}</p>
-            <FieldValueEditor
-              field={def}
-              value={value}
-              onChange={onChange}
-              onSelectOption={def.kind === 'multi' ? () => setPopoverOpen(false) : undefined}
-            />
+          {/* Showcase 739–748: a listbox — a caption, each option as its tag with a tick on the chosen
+              ones, and "Clear value". A single select closes on choosing; a multi stays open. */}
+          <PopoverContent role="listbox" aria-label="Options" align="start" className="w-60 gap-0 p-1.5 text-[14px]">
+            <div className="px-2 py-1 text-[12px] text-a-faint">{def.kind === 'multi' ? 'Select options' : 'Select an option'}</div>
+            {def.options.map((o) => {
+              const on = chosen.some((c) => c.id === o.id);
+              return (
+                <button
+                  key={o.id}
+                  type="button"
+                  role="option"
+                  aria-selected={on}
+                  onClick={() => {
+                    if (def.kind === 'multi') {
+                      const ids = chosen.map((c) => c.id);
+                      const next = on ? ids.filter((id) => id !== o.id) : [...ids, o.id];
+                      onChange(next.length ? next : null);
+                    } else {
+                      onChange(o.id);
+                      setPopoverOpen(false);
+                    }
+                  }}
+                  className="flex min-h-[30px] w-full items-center gap-2.5 rounded-[4px] px-2 py-[5px] text-left leading-[normal] transition-colors duration-[120ms] hover:bg-a-line-soft"
+                >
+                  <span className={cn('inline-flex h-[22px] items-center rounded-[3px] px-2 text-[13px] leading-none', OPTION_CHIP_CLASS[o.color])}>{o.label}</span>
+                  <span className="flex-1" />
+                  {on && <Check className="size-[15px] text-a-accent" strokeWidth={1.75} aria-hidden />}
+                </button>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => { onChange(null); setPopoverOpen(false); }}
+              className="flex min-h-[30px] w-full items-center gap-2.5 rounded-[4px] px-2 py-[5px] text-left leading-[normal] text-a-faint transition-colors duration-[120ms] hover:bg-a-line-soft"
+            >
+              <Eraser className="size-[15px]" strokeWidth={1.75} aria-hidden />
+              Clear value
+            </button>
           </PopoverContent>
         </Popover>
       );

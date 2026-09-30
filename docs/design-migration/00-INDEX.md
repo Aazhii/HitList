@@ -146,7 +146,7 @@ that one is fine where it is.
 | Visual | `node web/scripts/shoot.mjs <screen-id>` → a `.ref.png` / `.app.png` pair | every Phase 3 task |
 | Real build | `sh desktop/scripts/prepare-jar.sh` → copy to `api/target/hitlist.jar` → restart Electron → re-check its own port | every **phase** exit, not every task |
 
-Test baseline: **368 tests across 42 files.** This must not regress.
+Test baseline: **371 tests across 42 files.** This must not regress.
 
 ---
 
@@ -156,10 +156,10 @@ Test baseline: **368 tests across 42 files.** This must not regress.
 Phase 0  █████   5 / 5      done
 Phase 1  █████  11 / 11      foundations — the broken UI
 Phase 2  █████   5 / 5       shell exactness
-Phase 3  ███░░  17 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
+Phase 3  ███░░  25 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
 Phase 4  ░░░░░   1 / 12      missing features
 Phase 5  ░░░░░   0 / 7       proposals, unreviewed
-                39 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
+                47 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
 ```
 
 ### A note on "partially built"
@@ -250,14 +250,14 @@ on a description. Execution order is the section order below.
 |---|---|---|---|
 | T3.17 | `db-table` (+ the 3px data-quality header bar) | **done** | design:check PASS, tsc/lint clean, vitest 368/368; shots/db-table.{ref,app}.png — full-bleed grid, prototype column widths, 37px rows, tags, toolbar + New ▾; `cmp.mjs` leaves only same-text/row-offset noise |
 | T3.18 | `db-board` | todo | |
-| T3.19 | `db-colmenu` | todo — verify, don't rewrite | |
-| T3.20 | `db-type` — **chrome only, behaviour already works** | todo — verify, don't rewrite | |
-| T3.21 | `db-options` | todo | |
-| T3.22 | `db-newprop` | todo | |
-| T3.23 | `db-props` | todo — verify, don't rewrite | |
-| T3.24 | `db-sort` | todo — verify, don't rewrite | |
-| T3.25 | `db-filter` | todo — verify, don't rewrite | |
-| T3.26 | `db-picker` | todo | |
+| T3.19 | `db-colmenu` | **done** | shots/db-colmenu.{ref,app}.png — the prototype's item list and order, rename field on top, click-the-header to open, switch rows, side panels |
+| T3.20 | `db-type` — **chrome only, behaviour already works** | **done** | shots/db-type.{ref,app}.png — side panel with caption, blue tick on the current type; change-type behaviour untouched |
+| T3.21 | `db-options` | **done** | shots/db-options.{ref,app}.png — Edit options panel (colour swatch, name, remove, add field); edits apply at once |
+| T3.22 | `db-newprop` | **done** | shots/db-newprop.{ref,app}.png — name field + "Select type" list; picking a type creates the property |
+| T3.23 | `db-props` | **done** | shots/db-props.{ref,app}.png — Properties with a type glyph, eye and "Show all" |
+| T3.24 | `db-sort` | **done** | shots/db-sort.{ref,app}.png — every column (Title too) with ascending / descending buttons |
+| T3.25 | `db-filter` | **done** | shots/db-filter.{ref,app}.png — "Filter records": column · contains · value, count, Clear filter; pill in the toolbar |
+| T3.26 | `db-picker` | **done** | shots/db-picker.{ref,app}.png — listbox of tags with a tick and "Clear value" |
 | T3.27 | `db-peek` — **net-new** | todo | |
 | T3.28 | `db-freeze` | todo — verify, scroll-test it | |
 | T3.29 | `db-group` | todo — verify, don't rewrite | |
