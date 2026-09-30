@@ -158,7 +158,8 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
   };
   const [tableMemory, setTableMemory] = useLocalStorage<Record<string, TableControls>>('hitlist-db-table-controls-v1', {});
   const tableMemoryRef = useRef(tableMemory);
-  tableMemoryRef.current = tableMemory;
+  // Declared before the effect that reads it, so it is current when that one runs.
+  useEffect(() => { tableMemoryRef.current = tableMemory; });
   const memoryDbRef = useRef<string | null>(null);
   useEffect(() => {
     setActiveViewId(null); setFieldFilters({}); setSearch('');

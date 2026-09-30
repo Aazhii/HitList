@@ -146,4 +146,10 @@ describe('toRecords', () => {
   it('handles an empty inbox', () => {
     expect(toRecords([], [], new Set(), NOW)).toEqual([]);
   });
+
+  it('carries an automation\'s own wording as the record\'s detail', () => {
+    const auto = entry({ kind: 'automation', body: 'Due in 30 minutes · Nudge' });
+    expect(toRecord(auto, [], new Set(), NOW).detail).toBe('Due in 30 minutes · Nudge');
+    expect(toRecord(entry(), [], new Set(), NOW).detail).toBeUndefined();
+  });
 });

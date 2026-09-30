@@ -42,6 +42,7 @@ import { NotificationToast } from '@/components/NotificationToast';
 import { CommandPalette } from '@/components/CommandPalette';
 import { PageSections } from '@/components/shell/PageSections';
 import { LibraryPage } from '@/pages/LibraryPage';
+import { AutomationsPage } from '@/pages/AutomationsPage';
 import { usePageMarks } from '@/hooks/usePageMarks';
 import { pageKey, resolvePages, type PageInfo, type PageRef } from '@/lib/pages';
 import { RemindersSettingsPanel } from '@/components/RemindersSettingsPanel';
@@ -467,6 +468,8 @@ function UserScopedApp() {
   const [dbSidebarContext, setDbSidebarContext] = useState<ReactNode>(null);
   /** Calendar's "What's on it" section, reported up the same way. */
   const [calSidebarContext, setCalSidebarContext] = useState<ReactNode>(null);
+  /** Automations' filters and next trigger, reported up the same way. */
+  const [autoSidebarContext, setAutoSidebarContext] = useState<ReactNode>(null);
   /** Notes' own list, reported up the same way. */
   const [notesSidebarContext, setNotesSidebarContext] = useState<ReactNode>(null);
   /** Nav count badges — showcase hides a view's own count while it's active. */
@@ -659,7 +662,7 @@ function UserScopedApp() {
   );
 
   useEffect(() => {
-    if (activeView === 'tasks' || activeView === 'notes' || activeView === 'databases' || activeView === 'calendar' || activeView === 'library') {
+    if (activeView === 'tasks' || activeView === 'notes' || activeView === 'databases' || activeView === 'calendar' || activeView === 'automations' || activeView === 'library') {
       return;
     }
     setActiveView('tasks');
@@ -1230,17 +1233,20 @@ function UserScopedApp() {
   const reminders = useNotifications(todos);
   const [remindersOpen, setRemindersOpen] = useState(false);
   const [defaultMinutes, setDefaultMinutes] = useState<ReminderMinutes>(getDefaultReminderMinutes);
-  const reminderCounts = useMemo(() => {
+  const [reminderCounts, setReminderCounts] = useState({ active: 0, overdue: 0, soon: 0 });
+  /** Counted when the dialog opens: the numbers describe that moment. */
+  const openReminders = useCallback(() => {
     const now = Date.now();
     let active = 0, overdue = 0, soon = 0;
-    for (const t of todos) {
+    for (const t of todosRef.current) {
       if (t.status === 'done' || !t.reminderEnabled || !t.dueDate) continue;
       active += 1;
       const due = new Date(`${t.dueDate}T${t.dueTime || '23:59'}:00`).getTime();
       if (due < now) overdue += 1; else if (due - now <= 15 * 60000) soon += 1;
     }
-    return { active, overdue, soon };
-  }, [todos]);
+    setReminderCounts({ active, overdue, soon });
+    setRemindersOpen(true);
+  }, []);
 
   // ── ⌘K palette ─────────────────────────────────────────────────────────────
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -1428,8 +1434,8 @@ function UserScopedApp() {
     />
   );
 
-  const shellView = activeView === 'notes' || activeView === 'databases' || activeView === 'calendar' || activeView === 'library' ? activeView : 'tasks';
-  const crumb1 = shellView === 'notes' ? 'Notes' : shellView === 'databases' ? 'Databases' : shellView === 'calendar' ? 'Calendar' : shellView === 'library' ? 'Home' : 'Tasks';
+  const shellView = activeView === 'notes' || activeView === 'databases' || activeView === 'calendar' || activeView === 'automations' || activeView === 'library' ? activeView : 'tasks';
+  const crumb1 = shellView === 'notes' ? 'Notes' : shellView === 'databases' ? 'Databases' : shellView === 'calendar' ? 'Calendar' : shellView === 'automations' ? 'Automations' : shellView === 'library' ? 'Home' : 'Tasks';
   const crumb2 = shellView === 'tasks' ? activeList?.name : shellView === 'library' ? 'Library' : undefined;
   const syncStatus: { tone: 'success' | 'warning' | 'danger'; label: string } = server.error
     ? { tone: 'danger', label: 'Error' }
@@ -1523,7 +1529,7 @@ function UserScopedApp() {
                   loading={server.loading}
                 />
               </>
-            ) : shellView === 'databases' ? dbSidebarContext : shellView === 'calendar' ? calSidebarContext : shellView === 'notes' ? notesSidebarContext : null}
+            ) : shellView === 'databases' ? dbSidebarContext : shellView === 'calendar' ? calSidebarContext : shellView === 'automations' ? autoSidebarContext : shellView === 'notes' ? notesSidebarContext : null}
             contextFoot={shellView === 'tasks' ? (
               <>
                 {/* Momentum moved here from a card at the top of the page. */}
@@ -1556,7 +1562,7 @@ function UserScopedApp() {
               }}
             />
           }
-          account={<UserMenu onOpenReminders={() => setRemindersOpen(true)} />}
+          account={<UserMenu onOpenReminders={openReminders} />}
           onOpenSidebar={() => setSidebarOpen(true)}
         />
         {activeView === 'library' ? (
@@ -1594,6 +1600,13 @@ function UserScopedApp() {
             onSidebarContentChange={setDbSidebarContext}
             onOpenSidebar={() => setSidebarOpen(true)}
             onCountChange={setDbCount}
+          />
+        ) : activeView === 'automations' ? (
+          <AutomationsPage
+            todos={todos}
+            userId={getActiveUserId()}
+            onSidebarContentChange={setAutoSidebarContext}
+            onOpenSidebar={() => setSidebarOpen(true)}
           />
         ) : activeView === 'calendar' ? (
           <CalendarPage

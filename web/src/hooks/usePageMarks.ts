@@ -29,7 +29,7 @@ const recent = (m: ApiPageMark): Recent => ({ kind: m.kind, id: m.id, visitedAt:
 export function usePageMarks(online: boolean) {
   const [marks, setMarks] = useState<Marks>(readCache);
   const marksRef = useRef(marks);
-  marksRef.current = marks;
+  useEffect(() => { marksRef.current = marks; });
 
   const apply = useCallback((next: Marks) => {
     setMarks(next);

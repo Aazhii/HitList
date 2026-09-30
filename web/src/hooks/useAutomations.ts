@@ -99,6 +99,7 @@ function formValuesToInput(values: AutomationRuleFormValues): AutomationRuleInpu
     notifyInApp: values.notifyInApp,
     notifyBrowser: values.notifyBrowser,
     notifyEmail: values.notifyEmail,
+    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   };
 }
 

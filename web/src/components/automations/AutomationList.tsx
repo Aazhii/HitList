@@ -17,6 +17,7 @@ import {
 import { cn } from '@/lib/utils';
 import { summarise } from '@/lib/reminderSteps';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import type { AutomationRule, TriggerType, UrgencyLevel, AutomationStatus } from '@/types/automation';
 import { TRIGGER_TYPE_LABELS, URGENCY_LABELS } from '@/types/automation';
 import {
@@ -150,7 +151,7 @@ export function AutomationFilters({
 
   return (
     <>
-      <ContextSectionHeader label="Rules" />
+      <ContextSectionHeader label="Rule filters" />
       <ul className="space-y-0.5">
         {FILTER_OPTIONS.map((opt) => {
           const active = filter === opt.id;
@@ -162,17 +163,10 @@ export function AutomationFilters({
                 aria-current={active ? 'true' : undefined}
                 className={contextRowClass(active)}
               >
-                <span
-                  className={cn(
-                    'size-2 flex-shrink-0 rounded-full',
-                    opt.id === 'all' ? 'bg-a-accent' : STATUS_DOT[opt.id],
-                  )}
-                  aria-hidden
-                />
                 <span className={cn('min-w-0 flex-1 truncate text-[14px]', active ? 'font-semibold text-a-ink' : 'text-a-muted')}>
                   {opt.label}
                 </span>
-                <span className={cn('text-[12px] tabular-nums', active ? 'font-bold text-a-accent-700' : 'text-a-faint')}>
+                <span className="font-mono text-[11px] text-a-faint">
                   {counts[opt.id]}
                 </span>
               </button>
@@ -214,14 +208,15 @@ interface RuleCardProps {
   onRunNow?: (id: string) => void;
 }
 
-const ROW_ACTION = cn(
-  'flex size-7 items-center justify-center rounded-[8px] text-a-faint transition-[opacity,background-color,color] duration-[120ms]',
-  'opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
-  'hover:bg-[color-mix(in_srgb,var(--a-ink)_9%,transparent)] hover:text-a-ink',
-);
+const ROW_ACTION = 'flex size-7 items-center justify-center rounded-[4px] text-a-faint transition-colors duration-[120ms] hover:bg-a-line-soft hover:text-a-ink';
 
-const FOOT_BUTTON =
-  'flex items-center gap-1.5 rounded-[6px] px-3 py-1 text-[13px] font-medium transition-colors duration-[120ms]';
+
+/** The DS Badge, with a dot: 999px, 11px / 600 (showcase 893). */
+const STATUS_BADGE: Record<AutomationStatus, { pill: string; label: string }> = {
+  active: { pill: 'bg-a-green-tint text-a-green-ink', label: 'Active' },
+  paused: { pill: 'bg-a-line-soft text-a-muted', label: 'Paused' },
+  draft: { pill: 'bg-a-amber-tint text-a-amber', label: 'Draft' },
+};
 
 const RuleCard = memo(function RuleCard({
   rule,
@@ -232,108 +227,62 @@ const RuleCard = memo(function RuleCard({
 }: RuleCardProps) {
   const TriggerIcon = TRIGGER_ICONS[rule.triggerType];
   const isActive = rule.status === 'active';
-  const isPaused = rule.status === 'paused';
+  const badge = STATUS_BADGE[rule.status];
+  const channels = [rule.notifyInApp && 'In-app', rule.notifyBrowser && 'Browser'].filter(Boolean).join(', ') || 'No notifications';
+  // "1 hour before due, then when it falls due · In-app · High urgency", with the task first when linked.
+  const description = [rule.taskTitle, rule.description ?? formatOffset(rule), channels, `${URGENCY_LABELS[rule.urgency]} urgency`]
+    .filter(Boolean).join(' · ');
+  const next = rule.status === 'paused' ? 'Paused'
+    : rule.status === 'draft' ? 'Not scheduled'
+    : rule.nextTriggerAt ? `Next: ${formatNextTrigger(rule.nextTriggerAt)}` : 'Waiting for its moment';
 
   return (
-    <article
-      className={cn(
-        'group relative rounded-[12px] bg-a-bg px-4 pt-3.5 pb-2.5 transition-[box-shadow,opacity] duration-[180ms]',
-        'shadow-[inset_0_0_0_1px_var(--a-line)] hover:shadow-[inset_0_0_0_1px_var(--a-line),var(--a-shadow-sm)]',
-        !isActive && 'opacity-85 hover:opacity-100',
-      )}
-    >
-      <div className="flex items-start gap-3.5">
-        <div
-          className={cn(
-            'flex size-9 flex-shrink-0 items-center justify-center rounded-[12px] transition-colors duration-[180ms]',
-            isActive ? 'bg-a-accent-tint text-a-accent-700' : 'bg-a-surface text-a-faint',
-          )}
-          aria-hidden
-        >
-          <TriggerIcon className="size-4" strokeWidth={1.75} />
-        </div>
-
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="truncate text-[14px] font-semibold leading-tight text-a-ink">{rule.name}</h3>
-            <span className={cn(CHIP, STATUS_CHIP[rule.status], 'capitalize')}>{rule.status}</span>
-            <span className={cn(CHIP, URGENCY_CHIP[rule.urgency])}>{URGENCY_LABELS[rule.urgency]}</span>
-          </div>
-
-          {rule.description && (
-            <p className="mt-1 line-clamp-2 text-[14px] leading-relaxed text-a-muted">{rule.description}</p>
-          )}
-
-          <div className="mt-2.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px] text-a-faint">
-            <span className="flex items-center gap-1.5">
-              <Calendar className="size-3.5 flex-shrink-0" strokeWidth={1.75} aria-hidden />
-              {formatOffset(rule)}
-            </span>
-            {rule.taskTitle && (
-              <span className="flex min-w-0 items-center gap-1.5">
-                <ExternalLink className="size-3.5 flex-shrink-0" strokeWidth={1.75} aria-hidden />
-                <span className="max-w-[200px] truncate" title={rule.taskTitle}>{rule.taskTitle}</span>
-              </span>
-            )}
-            <span className="flex items-center gap-1.5">
-              <Bell className="size-3.5 flex-shrink-0" strokeWidth={1.75} aria-hidden />
-              {[rule.notifyInApp && 'In-app', rule.notifyBrowser && 'Browser'].filter(Boolean).join(' · ') || 'No notifications'}
-            </span>
-          </div>
-
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px]">
-            {rule.lastTriggeredAt && (
-              <span className="text-a-faint">Last triggered {formatRelativeTime(rule.lastTriggeredAt)}</span>
-            )}
-            {rule.nextTriggerAt && isActive && (
-              <span className="font-semibold text-a-sage-ink">Next {formatNextTrigger(rule.nextTriggerAt)}</span>
-            )}
-            {!rule.lastTriggeredAt && !rule.nextTriggerAt && (
-              <span className="text-a-faint/80">Never triggered</span>
-            )}
-          </div>
-        </div>
-
-        <div className="flex flex-shrink-0 items-center gap-0.5">
-          <button type="button" onClick={() => onEdit(rule)} aria-label="Edit rule" className={ROW_ACTION}>
-            <Pencil className="size-3.5" strokeWidth={1.75} />
-          </button>
-          <button type="button" onClick={() => onDelete(rule.id)} aria-label="Delete rule" className={cn(ROW_ACTION, 'hover:text-q-do')}>
-            <Trash2 className="size-3.5" strokeWidth={1.75} />
-          </button>
-        </div>
+    <article className="group flex items-center gap-4 rounded-[6px] border border-a-line bg-a-surface px-4 py-3.5">
+      <div className="flex size-9 flex-shrink-0 items-center justify-center rounded-[8px] bg-a-violet-tint text-a-violet-ink" aria-hidden>
+        <TriggerIcon className="size-[18px]" strokeWidth={1.75} />
       </div>
 
-      <div className="mt-3 flex items-center justify-between border-t border-a-line-soft pt-2">
-        <span className="text-[12px] text-a-faint">
-          {isActive ? 'Rule is active' : isPaused ? 'Rule is paused' : 'Draft — not active'}
-        </span>
-        <div className="flex items-center gap-1">
-          {onRunNow && isActive && (
-            <button
-              type="button"
-              onClick={() => onRunNow(rule.id)}
-              aria-label="Run rule now"
-              className={cn(FOOT_BUTTON, 'text-a-accent-700 hover:bg-a-accent-tint')}
-            >
-              <Play className="size-3.5" strokeWidth={1.75} /> Run now
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => onToggle(rule.id)}
-            aria-label={isActive ? 'Pause rule' : 'Activate rule'}
-            className={cn(
-              FOOT_BUTTON,
-              isActive ? 'text-q-delegate hover:bg-q-delegate-bg' : 'text-a-sage-ink hover:bg-a-sage-tint',
-            )}
-          >
-            {isActive
-              ? <><Pause className="size-3.5" strokeWidth={1.75} /> Pause</>
-              : <><Play className="size-3.5" strokeWidth={1.75} /> Activate</>}
-          </button>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <h3 className="truncate text-[14px] font-semibold text-a-ink">{rule.name}</h3>
+          {/* design-check-ignore: pill — the DS Badge is a pill. */}
+          <span className={cn('inline-flex flex-shrink-0 items-center gap-1 rounded-full border border-transparent px-2 py-[3px] text-[11px] leading-none font-semibold', badge.pill)}>
+            <span className="size-1.5 rounded-full bg-current" aria-hidden />
+            {badge.label}
+          </span>
         </div>
+        <p className="mt-1 line-clamp-2 text-[13px] leading-normal text-a-faint">{description}</p>
+        {rule.lastTriggeredAt && (
+          <p className="mt-0.5 text-[12px] text-a-faint">Last triggered {formatRelativeTime(rule.lastTriggeredAt)}</p>
+        )}
       </div>
+
+      {/* Not in the prototype's row; shown on hover so a rule can be opened or removed. */}
+      <div className="flex flex-shrink-0 items-center gap-0.5 opacity-0 transition-opacity duration-[120ms] group-hover:opacity-100 focus-within:opacity-100">
+        <button type="button" onClick={() => onEdit(rule)} aria-label="Edit rule" className={ROW_ACTION}>
+          <Pencil className="size-4" strokeWidth={1.75} />
+        </button>
+        <button type="button" onClick={() => onDelete(rule.id)} aria-label="Delete rule" className={cn(ROW_ACTION, 'hover:text-q-do')}>
+          <Trash2 className="size-4" strokeWidth={1.75} />
+        </button>
+      </div>
+
+      <span className="min-w-[110px] flex-shrink-0 text-right text-[12px] text-a-faint">{next}</span>
+      <button
+        type="button"
+        onClick={() => onRunNow?.(rule.id)}
+        disabled={!onRunNow || !isActive}
+        aria-label="Run rule now"
+        className="h-7 flex-shrink-0 rounded-[3px] border border-a-line-strong bg-a-surface px-3 text-[11px] font-semibold text-a-ink transition-colors duration-[120ms] hover:bg-a-bg disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        Run now
+      </button>
+      <Switch
+        size="sm"
+        checked={isActive}
+        onCheckedChange={() => onToggle(rule.id)}
+        aria-label={isActive ? 'Pause rule' : 'Activate rule'}
+      />
     </article>
   );
 });
@@ -393,7 +342,7 @@ export function AutomationList({
   }
 
   return (
-    <div className="space-y-2.5 animate-fade-in">
+    <div className="flex flex-col gap-2.5 animate-fade-in">
       {filtered.map((rule) => (
         <RuleCard
           key={rule.id}

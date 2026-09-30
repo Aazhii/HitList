@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react';
-import { Zap, Bell, Mail, Monitor, Info } from 'lucide-react';
+import { AlarmClock, Newspaper, Repeat, Repeat2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -24,10 +24,9 @@ import type {
   AutomationRuleFormValues,
   TriggerType,
   UrgencyLevel,
-  AutomationStatus,
   RecurrenceFrequency,
 } from '@/types/automation';
-import { TRIGGER_TYPE_LABELS, URGENCY_LABELS } from '@/types/automation';
+import { URGENCY_LABELS } from '@/types/automation';
 import { ReminderStepList } from '@/components/automations/ReminderStepList';
 import { MAX_STEPS, normaliseSteps, toMinutes } from '@/lib/reminderSteps';
 
@@ -112,43 +111,6 @@ function validate(values: AutomationRuleFormValues): FormErrors {
   return errors;
 }
 
-// ── Section label ─────────────────────────────────────────────────────────────
-
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground mb-1.5">
-      {children}
-    </p>
-  );
-}
-
-// ── Toggle chip ───────────────────────────────────────────────────────────────
-
-function ToggleChip({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        'flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium border transition-all duration-[120ms]',
-        active
-          ? 'border-primary/40 bg-primary/8 text-foreground ring-1 ring-primary/20'
-          : 'border-border bg-card text-muted-foreground hover:border-border/80 hover:text-foreground'
-      )}
-    >
-      {children}
-    </button>
-  );
-}
-
 // ── AutomationRuleForm ────────────────────────────────────────────────────────
 
 interface AutomationRuleFormProps {
@@ -184,13 +146,6 @@ function triggerOf(type: TriggerType): TriggerType {
 }
 
 const URGENCY_LEVELS: UrgencyLevel[] = ['low', 'medium', 'high', 'critical'];
-
-const URGENCY_CHIP_COLORS: Record<UrgencyLevel, string> = {
-  low:      'border-border bg-card text-muted-foreground',
-  medium:   'border-blue-500/30 bg-blue-500/8 text-blue-600 dark:text-blue-400',
-  high:     'border-amber-500/30 bg-amber-500/8 text-amber-600 dark:text-amber-400',
-  critical: 'border-rose-500/30 bg-rose-500/8 text-rose-600 dark:text-rose-400',
-};
 
 const DAYS_OF_WEEK = [
   { value: '0', label: 'Sunday' },
@@ -260,130 +215,107 @@ export function AutomationRuleForm({
   const showRecurrenceFields =
     values.triggerType === 'recurring' || values.triggerType === 'daily-digest';
 
+  /** The prototype's four trigger cards: icon, title, one line under it (showcase 996). */
+  const TRIGGER_CARDS: Record<TriggerType, { icon: typeof AlarmClock; title: string; sub: string }> = {
+    'due-date': { icon: AlarmClock, title: 'Due date', sub: 'Before or after a task is due' },
+    overdue: { icon: AlarmClock, title: 'Due date', sub: 'Before or after a task is due' },
+    recurring: { icon: Repeat, title: 'Recurring', sub: 'On a schedule' },
+    'daily-digest': { icon: Newspaper, title: 'Daily digest', sub: 'One summary a day' },
+    'status-change': { icon: Repeat2, title: 'Status change', sub: 'When a task moves' },
+  };
+  const LABEL = 'text-[13px] font-medium text-a-ink';
+  const noTasks = todos.length === 0;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto overflow-x-hidden">
-        <DialogHeader>
-          <DialogTitle className="text-base font-semibold flex items-center gap-2">
-            <Zap className="size-4 text-primary" />
-            {isEditing ? 'Edit automation rule' : 'New automation rule'}
-          </DialogTitle>
+      <DialogContent className="max-h-[90vh] gap-0 overflow-y-auto overflow-x-hidden sm:max-w-[720px]">
+        <DialogHeader className="mb-4">
+          <DialogTitle>{isEditing ? 'Edit automation rule' : 'New automation rule'}</DialogTitle>
+          <DialogDescription>Choose when it fires and how you’re told.</DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-5 pt-1">
-          {/* Rule name */}
-          <div className="space-y-1.5">
-            <SectionLabel>Rule name</SectionLabel>
+        <form onSubmit={handleSubmit} className="flex flex-col gap-[18px]">
+          <div className="flex flex-col gap-1.5">
+            <label htmlFor="rule-name" className={LABEL}>Rule name <span className="text-q-do" aria-hidden>*</span></label>
             <Input
+              id="rule-name"
               value={values.name}
               onChange={(e) => set('name', e.target.value)}
-              placeholder="e.g. Morning focus digest"
-              className={cn('rounded-xl text-sm', errors.name && 'border-destructive')}
+              placeholder="e.g. Escalate overdue contracts"
+              aria-invalid={!!errors.name}
               maxLength={100}
               autoFocus
             />
-            {errors.name && (
-              <p className="text-xs text-destructive animate-fade-in">{errors.name}</p>
-            )}
+            {errors.name && <p className="text-[12px] text-q-do">{errors.name}</p>}
           </div>
 
-          {/* Description */}
-          <div className="space-y-1.5">
-            <SectionLabel>Description <span className="normal-case font-normal">(optional)</span></SectionLabel>
-            <Textarea
-              value={values.description}
-              onChange={(e) => set('description', e.target.value)}
-              placeholder="What does this rule do?"
-              className="rounded-xl text-sm resize-none min-h-[64px]"
-              maxLength={300}
-            />
+          <div>
+            <div className={cn(LABEL, 'mb-1.5')}>Trigger</div>
+            <div role="radiogroup" aria-label="Trigger" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {TRIGGER_TYPES.map((type) => {
+                const { icon: Icon, title, sub } = TRIGGER_CARDS[type];
+                const on = triggerOf(values.triggerType) === type;
+                return (
+                  <button
+                    key={type}
+                    type="button"
+                    role="radio"
+                    aria-checked={on}
+                    // A stored 'overdue' rule keeps its own type rather than being rewritten to 'due-date' on save.
+                    onClick={() => set('triggerType', isTaskDriven(values.triggerType) && type === 'due-date' ? values.triggerType : type)}
+                    className={cn(
+                      'rounded-[8px] px-3 py-2.5 text-left transition-colors duration-[120ms]',
+                      on ? 'border-[1.5px] border-a-accent bg-a-blue-tint' : 'border border-a-line bg-a-surface hover:bg-a-bg',
+                    )}
+                  >
+                    <span className={cn('inline-flex', on ? 'text-a-accent' : 'text-a-muted')}>
+                      <Icon className="size-4" strokeWidth={1.75} aria-hidden />
+                    </span>
+                    <span className="mt-1.5 block text-[13px] font-semibold text-a-ink">{title}</span>
+                    <span className="block text-[12px] leading-[1.25] text-a-faint">{sub}</span>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
-          {/* Linked task */}
-          <div className="space-y-1.5">
-            <SectionLabel>Linked task <span className="normal-case font-normal">(optional)</span></SectionLabel>
-            <Select
-              value={values.taskId || '__none__'}
-              onValueChange={(v) => set('taskId', v === '__none__' ? '' : v)}
-            >
-              <SelectTrigger className="h-9 text-xs rounded-xl w-full">
-                <SelectValue placeholder="No task linked (global rule)" />
+          <div className="flex flex-col gap-1.5">
+            <span id="rule-task-label" className={LABEL}>Task</span>
+            <Select value={values.taskId || '__none__'} onValueChange={(v) => set('taskId', v === '__none__' ? '' : v)}>
+              <SelectTrigger className="w-full" aria-labelledby="rule-task-label">
+                <SelectValue placeholder="Any task" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="__none__">
-                  <span className="text-muted-foreground">No task linked (global rule)</span>
-                </SelectItem>
+                <SelectItem value="__none__"><span className="text-a-faint">{noTasks ? 'No tasks yet' : 'Any task (a global rule)'}</span></SelectItem>
                 {values.taskId && !todos.some((t) => t.id === values.taskId) && (
-                  // The rule's linked task was deleted elsewhere. Surfacing this
-                  // explicitly instead of silently falling back to the "none"
-                  // placeholder, which would misrepresent — and on save, erase —
-                  // that this rule is still pointed at a task that no longer exists.
-                  <SelectItem value={values.taskId}>
-                    <span className="text-q-do">⚠ Deleted task — pick another or clear this field</span>
-                  </SelectItem>
+                  // The linked task was deleted elsewhere. Say so rather than fall back to "none", which
+                  // would hide — and on save erase — that this rule still points at something gone.
+                  <SelectItem value={values.taskId}><span className="text-q-do">⚠ Deleted task — pick another or clear this field</span></SelectItem>
                 )}
                 {todos.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
-                    <span className="truncate max-w-[300px]">{t.text}</span>
-                  </SelectItem>
+                  <SelectItem key={t.id} value={t.id}><span className="max-w-[420px] truncate">{t.text}</span></SelectItem>
                 ))}
               </SelectContent>
             </Select>
           </div>
 
-          {/* Trigger type */}
-          <div className="space-y-1.5">
-            <SectionLabel>Trigger</SectionLabel>
-            <div className="grid grid-cols-2 gap-2">
-              {TRIGGER_TYPES.map((type) => (
-                <button
-                  key={type}
-                  type="button"
-                  // Keep a stored 'overdue' rule on its own type rather than
-                  // rewriting it to 'due-date' on save: the two behave the
-                  // same, and not churning the row is the safer default.
-                  onClick={() => set('triggerType', isTaskDriven(values.triggerType) && type === 'due-date' ? values.triggerType : type)}
-                  className={cn(
-                    'flex flex-col items-start rounded-xl px-3 py-2.5 text-left border transition-all duration-[120ms]',
-                    triggerOf(values.triggerType) === type
-                      ? 'border-primary/40 bg-primary/8 ring-1 ring-primary/20'
-                      : 'border-border bg-card hover:border-border/80'
-                  )}
-                >
-                  <span className="text-xs font-semibold text-foreground">
-                    {TRIGGER_TYPE_LABELS[type]}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Escalation steps (due-date trigger) */}
           {showOffsetFields && (
-            <div className="space-y-1.5 animate-fade-in">
-              <SectionLabel>Notify me</SectionLabel>
-              <ReminderStepList
-                steps={values.offsetMinutes}
-                onChange={(steps) => set('offsetMinutes', steps)}
-                error={errors.offsetMinutes}
-              />
+            <div>
+              <div className={cn(LABEL, 'mb-1.5')}>
+                Reminder steps <span className="font-normal text-a-faint">· up to {MAX_STEPS}</span>
+              </div>
+              <ReminderStepList steps={values.offsetMinutes} onChange={(steps) => set('offsetMinutes', steps)} error={errors.offsetMinutes} />
             </div>
           )}
 
-          {/* Recurrence schedule */}
           {showRecurrenceFields && (
-            <div className="space-y-3 animate-fade-in">
-              <SectionLabel>Schedule</SectionLabel>
+            <div className="flex flex-col gap-3">
+              <div className={LABEL}>Schedule</div>
               <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label className="text-[11px] font-medium text-muted-foreground">Frequency</Label>
-                  <Select
-                    value={values.recurrenceFrequency}
-                    onValueChange={(v) => set('recurrenceFrequency', v as RecurrenceFrequency)}
-                  >
-                    <SelectTrigger className="h-9 text-xs rounded-xl">
-                      <SelectValue />
-                    </SelectTrigger>
+                <div className="flex flex-col gap-1.5">
+                  <Label className="text-[12px] font-medium text-a-faint">Frequency</Label>
+                  <Select value={values.recurrenceFrequency} onValueChange={(v) => set('recurrenceFrequency', v as RecurrenceFrequency)}>
+                    <SelectTrigger className="w-full" aria-label="Frequency"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="daily">Daily</SelectItem>
                       <SelectItem value="weekdays">Weekdays (Mon–Fri)</SelectItem>
@@ -392,60 +324,28 @@ export function AutomationRuleForm({
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-[11px] font-medium text-muted-foreground">Time</Label>
-                  <Input
-                    type="time"
-                    value={values.recurrenceTime}
-                    onChange={(e) => set('recurrenceTime', e.target.value)}
-                    className={cn(
-                      'h-9 text-xs rounded-xl',
-                      errors.recurrenceTime && 'border-destructive'
-                    )}
-                  />
-                  {errors.recurrenceTime && (
-                    <p className="text-xs text-destructive">{errors.recurrenceTime}</p>
-                  )}
+                <div className="flex flex-col gap-1.5">
+                  <Label className="text-[12px] font-medium text-a-faint" htmlFor="rule-time">Time</Label>
+                  <Input id="rule-time" type="time" value={values.recurrenceTime} onChange={(e) => set('recurrenceTime', e.target.value)} aria-invalid={!!errors.recurrenceTime} />
+                  {errors.recurrenceTime && <p className="text-[12px] text-q-do">{errors.recurrenceTime}</p>}
                 </div>
               </div>
-
               {values.recurrenceFrequency === 'weekly' && (
-                <div className="space-y-1.5 animate-fade-in">
-                  <Label className="text-[11px] font-medium text-muted-foreground">Day of week</Label>
-                  <Select
-                    value={values.recurrenceDayOfWeek}
-                    onValueChange={(v) => set('recurrenceDayOfWeek', v)}
-                  >
-                    <SelectTrigger className="h-9 text-xs rounded-xl">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {DAYS_OF_WEEK.map((d) => (
-                        <SelectItem key={d.value} value={d.value}>
-                          {d.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
+                <div className="flex flex-col gap-1.5">
+                  <Label className="text-[12px] font-medium text-a-faint">Day of week</Label>
+                  <Select value={values.recurrenceDayOfWeek} onValueChange={(v) => set('recurrenceDayOfWeek', v)}>
+                    <SelectTrigger className="w-full" aria-label="Day of week"><SelectValue /></SelectTrigger>
+                    <SelectContent>{DAYS_OF_WEEK.map((d) => <SelectItem key={d.value} value={d.value}>{d.label}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
               )}
-
               {values.recurrenceFrequency === 'monthly' && (
-                <div className="space-y-1.5 animate-fade-in">
-                  <Label className="text-[11px] font-medium text-muted-foreground">Day of month</Label>
-                  <Select
-                    value={values.recurrenceDayOfMonth}
-                    onValueChange={(v) => set('recurrenceDayOfMonth', v)}
-                  >
-                    <SelectTrigger className="h-9 text-xs rounded-xl">
-                      <SelectValue />
-                    </SelectTrigger>
+                <div className="flex flex-col gap-1.5">
+                  <Label className="text-[12px] font-medium text-a-faint">Day of month</Label>
+                  <Select value={values.recurrenceDayOfMonth} onValueChange={(v) => set('recurrenceDayOfMonth', v)}>
+                    <SelectTrigger className="w-full" aria-label="Day of month"><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      {Array.from({ length: 28 }, (_, i) => String(i + 1)).map((day) => (
-                        <SelectItem key={day} value={day}>
-                          Day {day}
-                        </SelectItem>
-                      ))}
+                      {Array.from({ length: 28 }, (_, i) => String(i + 1)).map((day) => <SelectItem key={day} value={day}>Day {day}</SelectItem>)}
                     </SelectContent>
                   </Select>
                 </div>
@@ -453,108 +353,60 @@ export function AutomationRuleForm({
             </div>
           )}
 
-          {/* Urgency */}
-          <div className="space-y-1.5">
-            <SectionLabel>Urgency level</SectionLabel>
-            <div className="flex items-center gap-2 flex-wrap">
-              {URGENCY_LEVELS.map((level) => (
-                <button
-                  key={level}
-                  type="button"
-                  onClick={() => set('urgency', level)}
-                  className={cn(
-                    'rounded-xl px-3 py-1.5 text-xs font-medium border transition-all duration-[120ms]',
-                    values.urgency === level
-                      ? cn(URGENCY_CHIP_COLORS[level], 'ring-1 ring-current/30')
-                      : 'border-border bg-card text-muted-foreground hover:border-border/80 hover:text-foreground'
-                  )}
-                >
-                  {URGENCY_LABELS[level]}
-                </button>
-              ))}
+          <div className="grid gap-[18px] sm:grid-cols-2">
+            <div>
+              <div className={cn(LABEL, 'mb-1.5')}>Urgency</div>
+              <div role="radiogroup" aria-label="Urgency" className="flex flex-wrap gap-1.5">
+                {URGENCY_LEVELS.map((level) => {
+                  const on = values.urgency === level;
+                  return (
+                    <button
+                      key={level}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      onClick={() => set('urgency', level)}
+                      className={cn(
+                        'h-7 rounded-[4px] border px-2.5 text-[11px] font-medium transition-colors duration-[120ms]',
+                        on ? 'border-a-accent bg-a-blue-tint text-a-accent' : 'border-a-line-strong bg-a-surface text-a-muted hover:bg-a-bg',
+                      )}
+                    >
+                      {URGENCY_LABELS[level]}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div>
+              <div className={cn(LABEL, 'mb-1.5')}>Notify me by</div>
+              <div className="flex flex-col gap-1.5">
+                <Checkbox label="In-app" checked={values.notifyInApp} onChange={(e) => set('notifyInApp', e.target.checked)} />
+                <Checkbox label="Browser notification" checked={values.notifyBrowser} onChange={(e) => set('notifyBrowser', e.target.checked)} />
+                <Checkbox label="Email" checked={values.notifyEmail} onChange={(e) => set('notifyEmail', e.target.checked)} />
+              </div>
+              {values.notifyEmail && (
+                // Better to say so than to offer a switch that quietly does nothing.
+                <p className="mt-1.5 text-[12px] text-a-faint">Email is not set up on this server, so a rule that asks for it is recorded as skipped.</p>
+              )}
+              {errors.notifications && <p className="mt-1.5 text-[12px] text-q-do">{errors.notifications}</p>}
             </div>
           </div>
 
-          {/* Notification channels */}
-          <div className="space-y-1.5">
-            <SectionLabel>Notify via</SectionLabel>
-            <div className="flex items-center gap-2">
-              <ToggleChip
-                active={values.notifyInApp}
-                onClick={() => set('notifyInApp', !values.notifyInApp)}
-              >
-                <Bell className="size-3" />
-                In-app
-              </ToggleChip>
-              <ToggleChip
-                active={values.notifyBrowser}
-                onClick={() => set('notifyBrowser', !values.notifyBrowser)}
-              >
-                <Monitor className="size-3" />
-                Browser
-              </ToggleChip>
-              <ToggleChip
-                active={values.notifyEmail}
-                onClick={() => set('notifyEmail', !values.notifyEmail)}
-              >
-                <Mail className="size-3" />
-                Email
-              </ToggleChip>
-            </div>
-            {values.notifyEmail && (
-              // Better to say so than to offer a switch that quietly does
-              // nothing: the server skips email until a sender is configured.
-              <p className="text-[11px] text-muted-foreground">
-                Email needs a verified sender address on the server (NOTIFY_FROM_EMAIL).
-                Until then these arrive in-app and in the browser only.
-              </p>
-            )}
-            {errors.notifications && (
-              <p className="text-xs text-destructive animate-fade-in flex items-center gap-1">
-                <Info className="size-3" />
-                {errors.notifications}
-              </p>
-            )}
-          </div>
-
-          {/* Status */}
-          <div className="space-y-1.5">
-            <SectionLabel>Initial status</SectionLabel>
-            <div className="flex items-center gap-2">
-              {(['active', 'paused', 'draft'] as AutomationStatus[]).map((s) => (
-                <ToggleChip
-                  key={s}
-                  active={values.status === s}
-                  onClick={() => set('status', s)}
-                >
-                  <span
-                    className={cn(
-                      'size-1.5 rounded-full',
-                      s === 'active'
-                        ? 'bg-emerald-500'
-                        : s === 'paused'
-                        ? 'bg-amber-500'
-                        : 'bg-muted-foreground/40'
-                    )}
-                  />
-                  {s.charAt(0).toUpperCase() + s.slice(1)}
-                </ToggleChip>
-              ))}
-            </div>
-          </div>
-
-          <DialogFooter className="pt-2 gap-2">
-            <Button
+          <DialogFooter>
+            <button
               type="button"
-              variant="ghost"
-              className="rounded-xl"
               onClick={() => onOpenChange(false)}
+              className="h-7 rounded-[3px] px-3 text-[11px] font-semibold text-a-muted transition-colors duration-[120ms] hover:bg-a-line-soft"
             >
               Cancel
-            </Button>
-            <Button type="submit" className="rounded-xl flex-1">
-              {isEditing ? 'Save changes' : 'Create rule'}
-            </Button>
+            </button>
+            <button
+              type="submit"
+              className="h-7 rounded-[3px] bg-a-accent px-3 text-[11px] font-semibold text-white transition-colors duration-[120ms] hover:bg-a-accent-600"
+            >
+              {isEditing ? 'Save changes' : 'Save rule'}
+            </button>
           </DialogFooter>
         </form>
       </DialogContent>

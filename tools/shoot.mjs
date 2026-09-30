@@ -80,6 +80,8 @@ const APP_ROUTE = {
   'sh-account':   { then: ['@Account'] },
   'sh-pagemenu':  { nav: 'Notes', notes: true, then: ['^Onboarding plan', '@Options for Onboarding plan'] },
   'library':      { nav: 'Notes', notes: true, then: ['~Databases', '~Reading list', '~Tasks', '~View all'] },
+  'auto-list':    { nav: '~Automations' },
+  'auto-form':    { nav: '~Automations', then: ['@New rule'] },
   'cal-month':    { nav: 'Calendar' },
   'cal-add':      { nav: 'Calendar', then: ['Add on a day'] },
   'cal-offline':  { nav: 'Calendar' },

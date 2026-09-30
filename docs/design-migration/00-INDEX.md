@@ -146,7 +146,7 @@ that one is fine where it is.
 | Visual | `node web/scripts/shoot.mjs <screen-id>` → a `.ref.png` / `.app.png` pair | every Phase 3 task |
 | Real build | `sh desktop/scripts/prepare-jar.sh` → copy to `api/target/hitlist.jar` → restart Electron → re-check its own port | every **phase** exit, not every task |
 
-Test baseline: **403 tests across 47 files.** This must not regress.
+Test baseline: **413 tests across 50 files.** This must not regress.
 
 ---
 
@@ -159,7 +159,7 @@ Phase 2  █████   5 / 5       shell exactness
 Phase 3  ███░░  42 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
 Phase 4  ░░░░░   1 / 12      missing features
 Phase 5  ░░░░░   0 / 7       proposals, unreviewed
-                70 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
+                74 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
 ```
 
 ### A note on "partially built"
@@ -298,10 +298,10 @@ on a description. Execution order is the section order below.
 | T4.2 | ⌘K command palette — **net-new** | **done** | `CommandPalette.tsx`, `lib/paletteSearch.ts`; ⌘K / Ctrl-K and the sidebar Search row open it; `test/CommandPalette.test.tsx` (6) |
 | T4.3 | Notifications, made real — two hardcoded `false`s, one per side of the wire | **done** | server returns `notifications: true` and keeps a task's reminder (create/update/read; ApiContractTest covers keep / off / out-of-range); the client reads the server's answer (automations stay off until T4.4); task details gain a Reminder select; Account → Reminders opens the permission / default-lead-time panel; `useNotifications` is mounted so timers run |
 | T4.4a | Automations — feasibility write-up, **no code** | **done** | findings appended to 04-FEATURES.md: the prototype draws Automations as unavailable; engine options a/b; decision needed |
-| T4.4b | Automations — backend persistence + CRUD | blocked on T4.4a | |
-| T4.4c | Automations — backend execution | blocked on T4.4a | |
-| T4.4d | Automations — frontend un-stub and mount | blocked on T4.4b | |
-| T4.4e | Automations — fidelity to `auto-list` / `auto-form` | blocked on T4.4d | |
+| T4.4b | Automations — backend persistence + CRUD | **done** | `/api/automations` (rules, runs, Run now) on the generic store; ApiContractTest covers create / update / run / delete / bad steps / owner isolation |
+| T4.4c | Automations — backend execution | **done** | `AutomationEngine` + `AutomationScheduler` (sweep every 30 s while the app is open); 12 `AutomationEngineTest` cases: once, never early, never late, never for a done task, per owner |
+| T4.4d | Automations — frontend un-stub and mount | **done** | `automationApi` calls the server; Automations is in the sidebar and mounted in the shell; server notifications reach the bell (with the rule's own wording) and, once allowed, the browser (`browserNotify`) |
+| T4.4e | Automations — fidelity to `auto-list` / `auto-form` | **done** | shots/auto-list.{ref,app}.png, shots/auto-form.{ref,app}.png — one-row rule cards (icon tile, Badge, Next, Run now, Switch), 720px form with trigger cards and a step list; the unavailable banner is replaced by a truthful "rules run while HitList is open" notice |
 | T4.5 | Remaining dead controls: Help, workspace chevron | **done** | Help opens a menu → shortcuts dialog; the workspace chevron is removed; `design:check` gains `dead-control` (0 violations) |
 | T4.6 | Finish the half-wired view persistence | **done** | applied saved views already wrote all five keys through `persistTableControls`; the rest are now remembered per database in `hitlist-db-table-controls-v1` (sort survives switching database and back, checked in the browser) |
 | T4.7 | Fix the blank Board (may be closed by T3.4) | **done** | closed by T3.4: `BoardSetup` renders `BoardSkeleton` while fields load; test 'shows a loading skeleton, not a blank page' |

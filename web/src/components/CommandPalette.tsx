@@ -55,7 +55,8 @@ export function CommandPalette({ open, onOpenChange, getItems, onOpenItem }: Com
     if (e.key === 'Enter') { e.preventDefault(); choose(flat[index]); }
   };
 
-  let flatIndex = -1;
+  // Where each group's first row sits in the flat list, so a row knows its own index.
+  const starts = groups.reduce<number[]>((acc, g, i) => [...acc, i === 0 ? 0 : acc[i - 1] + groups[i - 1].items.length], []);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
@@ -87,12 +88,11 @@ export function CommandPalette({ open, onOpenChange, getItems, onOpenItem }: Com
               {query.trim() ? `Nothing matches “${query.trim()}”.` : 'Nothing to search yet.'}
             </p>
           )}
-          {groups.map((g) => (
+          {groups.map((g, gi) => (
             <div key={g.kind} role="group" aria-label={PALETTE_KIND_LABEL[g.kind]}>
               <p className="px-2.5 py-1.5 text-[12px] font-medium text-a-faint">{PALETTE_KIND_LABEL[g.kind]}</p>
-              {g.items.map((item) => {
-                flatIndex += 1;
-                const mine = flatIndex;
+              {g.items.map((item, ii) => {
+                const mine = starts[gi] + ii;
                 const Icon = KIND_ICON[item.kind];
                 return (
                   <button

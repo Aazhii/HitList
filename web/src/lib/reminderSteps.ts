@@ -18,7 +18,8 @@ export const UNIT_MINUTES: Record<StepUnit, number> = {
 };
 
 /** Matches the backend cap. Every step is a notification. */
-export const MAX_STEPS = 8;
+/** The prototype's "up to 5" (showcase 1003); the server refuses more. */
+export const MAX_STEPS = 5;
 export const MAX_STEP_MINUTES = 365 * 24 * 60;
 
 export interface StepParts {

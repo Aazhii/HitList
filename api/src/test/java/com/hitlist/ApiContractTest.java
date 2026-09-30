@@ -124,7 +124,7 @@ class ApiContractTest {
 
         mvc.perform(get("/api/trial-features").cookie(browser))
             .andExpect(jsonPath("$.notifications").value(true))
-            .andExpect(jsonPath("$.automations").value(false));
+            .andExpect(jsonPath("$.automations").value(true));
     }
 
     @Test

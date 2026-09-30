@@ -22,6 +22,7 @@ import { useState, useEffect, useCallback, useLayoutEffect, useRef } from 'react
 import type { Todo, NotificationRecord } from '@/types/todo';
 import { notificationApi, isNetworkError } from '@/lib/api';
 import { toRecords } from '@/lib/notificationMapping';
+import { raiseBrowserNotifications } from '@/lib/browserNotify';
 import {
   loadNotifications,
   saveNotifications,
@@ -106,6 +107,8 @@ export function useInAppNotifications(
       if (requestUserId !== userRef.current) return;
       setNotifications(toRecords(entries, todosRef.current, toastedRef.current));
       setOnline(true);
+      // A rule that asked for the browser channel: the server can only record that; this tab shows it.
+      raiseBrowserNotifications(entries);
     } catch (e) {
       if (requestUserId !== userRef.current) return;
       // A network failure means work offline. Anything else — a 401, a gateway

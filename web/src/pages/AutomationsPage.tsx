@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useState, useMemo, useEffect, useCallback, type ReactNode } from 'react';
 import {
   CheckCircle2,
   History,
@@ -7,13 +7,13 @@ import {
   RefreshCw,
   ServerCrash,
   SkipForward,
+  TriangleAlert,
   XCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useAutomations } from '@/hooks/useAutomations';
 import { useAutomationRuns } from '@/hooks/useAutomationRuns';
-import { AUTOMATIONS_UNAVAILABLE_REASON } from '@/lib/api';
 import {
   AutomationFilters,
   AutomationList,
@@ -21,7 +21,8 @@ import {
   type FilterStatus,
 } from '@/components/automations/AutomationList';
 import { AutomationRuleForm } from '@/components/automations/AutomationRuleForm';
-import { ViewLayout } from '@/components/shell/ViewLayout';
+import { ViewLayoutContext } from '@/components/shell/ViewLayout';
+import { EmptyState, ILL } from '@/components/EmptyState';
 import { TopBar, topBarPrimary } from '@/components/shell/TopBar';
 import {
   AlertDialog,
@@ -43,6 +44,10 @@ interface AutomationsPageProps {
   /** A task sent here from its detail panel; opens the rule form for it. */
   escalationTaskId?: string | null;
   onEscalationHandled?: () => void;
+  /** The sidebar (rendered by App) owns the filters and next-trigger card; they are reported up. */
+  onSidebarContentChange?: (context: ReactNode) => void;
+  /** Opens the app-level sidebar's mobile sheet. */
+  onOpenSidebar?: () => void;
 }
 
 /** Rules that hang off a task's due date, which is what "escalation" means here. */
@@ -98,10 +103,10 @@ interface RecentRunsPanelProps {
 
 function RecentRunsPanel({ runs, isLoading, error, lastChecked, onRefresh }: RecentRunsPanelProps) {
   return (
-    <section aria-labelledby="recent-runs-heading" className="overflow-hidden rounded-[12px] border border-a-line bg-a-bg">
+    <section aria-labelledby="recent-runs-heading" className="overflow-hidden rounded-[8px] border border-a-line bg-a-surface">
       <header className="flex items-center justify-between gap-3 border-b border-a-line-soft px-4 py-3">
         <div className="flex items-center gap-2">
-          <h2 id="recent-runs-heading" className="font-display text-[20px] leading-tight text-a-ink">Recent runs</h2>
+          <h2 id="recent-runs-heading" className="text-[18px] leading-tight font-semibold text-a-ink">Recent runs</h2>
           {runs.length > 0 && <span className="text-[13px] tabular-nums text-a-faint">{runs.length}</span>}
         </div>
         <div className="flex items-center gap-2">
@@ -130,12 +135,13 @@ function RecentRunsPanel({ runs, isLoading, error, lastChecked, onRefresh }: Rec
       )}
 
       {!error && runs.length === 0 && !isLoading && (
-        <div className="flex flex-col items-center justify-center gap-2 py-10 text-center">
-          <History className="size-7 text-a-faint/50" strokeWidth={1.75} aria-hidden />
-          <p className="text-[14px] text-a-muted">No runs yet</p>
-          <p className="text-[12px] text-a-faint">
-            Activate a rule and press <strong className="font-semibold">Run now</strong>, or wait for the scheduler.
-          </p>
+        <div className="p-2">
+          <EmptyState
+            image={ILL.schedule}
+            title="No runs yet"
+            description="Activate a rule and press Run now, or wait for the scheduler."
+            className="my-0"
+          />
         </div>
       )}
 
@@ -176,7 +182,7 @@ function RecentRunsPanel({ runs, isLoading, error, lastChecked, onRefresh }: Rec
 
 // ── AutomationsPage ───────────────────────────────────────────────────────────
 
-export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationHandled }: AutomationsPageProps) {
+export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationHandled, onSidebarContentChange, onOpenSidebar }: AutomationsPageProps) {
   const todoStubs = useMemo(
     () => todos.map((t) => ({ id: t.id, text: t.text })),
     [todos]
@@ -188,14 +194,8 @@ export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationH
   const { runs, lastChecked, isLoading: runsLoading, error: runsError, triggerRule, refresh: refreshRuns } =
     useAutomationRuns();
 
-  const automationsPaused = true;
-
   // Run Now handler
   const handleRunNow = useCallback(async (ruleId: string) => {
-    if (automationsPaused) {
-      toast.error(AUTOMATIONS_UNAVAILABLE_REASON, { duration: 3000 });
-      return;
-    }
     const rule = rules.find((r) => r.id === ruleId);
     const run = await triggerRule(ruleId);
     if (run) {
@@ -206,7 +206,7 @@ export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationH
     } else {
       toast.error('Trigger failed — backend may be unavailable', { duration: 3000 });
     }
-  }, [rules, triggerRule, automationsPaused]);
+  }, [rules, triggerRule]);
 
   // Form state
   const [formOpen, setFormOpen] = useState(false);
@@ -216,10 +216,6 @@ export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationH
 
   useEffect(() => {
     if (!escalationTaskId) return;
-    if (automationsPaused) {
-      onEscalationHandled?.();
-      return;
-    }
     // Its existing rule if it has one, so "Add escalation" edits rather than
     // silently creating a second rule beside the first.
     const existing = rules.find((r) => r.taskId === escalationTaskId && isTaskDriven(r));
@@ -227,7 +223,7 @@ export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationH
     setPrefillTaskId(existing ? null : escalationTaskId);
     setFormOpen(true);
     onEscalationHandled?.();
-  }, [automationsPaused, escalationTaskId, rules, onEscalationHandled]);
+  }, [escalationTaskId, rules, onEscalationHandled]);
 
   // Delete confirmation
   const [deleteTarget, setDeleteTarget] = useState<AutomationRule | null>(null);
@@ -263,28 +259,16 @@ export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationH
   // ── Handlers ───────────────────────────────────────────────────────────────
 
   const handleNew = () => {
-    if (automationsPaused) {
-      toast.error(AUTOMATIONS_UNAVAILABLE_REASON, { duration: 3000 });
-      return;
-    }
     setEditingRule(null);
     setFormOpen(true);
   };
 
   const handleEdit = (rule: AutomationRule) => {
-    if (automationsPaused) {
-      toast.error(AUTOMATIONS_UNAVAILABLE_REASON, { duration: 3000 });
-      return;
-    }
     setEditingRule(rule);
     setFormOpen(true);
   };
 
   const handleFormSubmit = async (values: AutomationRuleFormValues) => {
-    if (automationsPaused) {
-      toast.error(AUTOMATIONS_UNAVAILABLE_REASON, { duration: 3000 });
-      return;
-    }
     // Await before reporting. These calls used to be fire-and-forget with an
     // unconditional success toast, which told the user their rule was saved
     // whether or not it was.
@@ -307,10 +291,6 @@ export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationH
   };
 
   const handleToggle = async (id: string) => {
-    if (automationsPaused) {
-      toast.error(AUTOMATIONS_UNAVAILABLE_REASON, { duration: 3000 });
-      return;
-    }
     const rule = rules.find((r) => r.id === id);
     if (!rule) return;
     await toggleStatus(id);
@@ -322,20 +302,11 @@ export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationH
   };
 
   const handleDeleteRequest = (id: string) => {
-    if (automationsPaused) {
-      toast.error(AUTOMATIONS_UNAVAILABLE_REASON, { duration: 3000 });
-      return;
-    }
     const rule = rules.find((r) => r.id === id);
     if (rule) setDeleteTarget(rule);
   };
 
   const handleDeleteConfirm = async () => {
-    if (automationsPaused) {
-      setDeleteTarget(null);
-      toast.error(AUTOMATIONS_UNAVAILABLE_REASON, { duration: 3000 });
-      return;
-    }
     if (!deleteTarget) return;
     const name = deleteTarget.name;
     setDeleteTarget(null);
@@ -345,43 +316,38 @@ export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationH
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
+  // The sidebar (rendered by App) owns the rule filters and the Next trigger card.
+  useEffect(() => {
+    onSidebarContentChange?.(
+      <>
+        <AutomationFilters filter={filter} counts={counts} onChange={setFilter} />
+      </>,
+    );
+    return () => onSidebarContentChange?.(null);
+  }, [filter, counts, onSidebarContentChange]);
+
   return (
     <>
-      <ViewLayout
-        contextLabel="Rule filters"
-        context={<AutomationFilters filter={filter} counts={counts} onChange={setFilter} />}
-        contextFoot={
-          // The "Next trigger" stat card, now at the foot of the column.
-          <div className="px-3 pt-3 pb-1">
-            <p className="text-[13px] text-a-muted">Next trigger</p>
-            <p className="mt-0.5 font-display text-[20px] leading-tight text-a-ink">
-              {nextTrigger ? nextTrigger.when : '—'}
-            </p>
-            <p className="mt-0.5 truncate text-[12px] text-a-faint">
-              {nextTrigger ? nextTrigger.name : 'No active rule is scheduled'}
-            </p>
-          </div>
-        }
-        topBar={
+      <ViewLayoutContext.Provider value={{
+        openContext: () => onOpenSidebar?.(),
+        closeContext: () => {},
+        toggleCollapsed: () => {},
+        collapsible: false,
+        collapsed: false,
+      }}>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <TopBar
             title="Automations"
             subtitle={`${counts.all} rule${counts.all !== 1 ? 's' : ''} · ${counts.active} active`}
             actions={
-              <button
-                type="button"
-                onClick={handleNew}
-                className={topBarPrimary}
-                aria-label="New rule"
-                disabled={automationsPaused}
-              >
+              <button type="button" onClick={handleNew} className={topBarPrimary} aria-label="New rule">
                 <Plus className="size-[15px]" strokeWidth={1.75} aria-hidden />
                 <span className="hidden sm:inline">New rule</span>
               </button>
             }
           />
-        }
-      >
-        <div className="mx-auto max-w-[880px] space-y-7 px-4 pt-4 pb-12 md:px-12">
+          <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+        <div className="mx-auto max-w-[976px] space-y-4 px-4 pt-4 pb-12 md:px-12">
           {/* Rules cannot fire while the server is unreachable, and a page that
               stays silent about that is how this feature came to look like it
               worked. Say so plainly. */}
@@ -392,12 +358,14 @@ export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationH
             </div>
           )}
 
-          {automationsPaused && (
-            <div className="rounded-[8px] bg-q-delegate-bg px-4 py-3 text-[14px] text-q-delegate" role="status">
-              <strong>Automations are unavailable.</strong> Rules and reminders cannot run in the
-              PostgreSQL-only migration, so creating, editing, and triggering rules is disabled.
-            </div>
-          )}
+          {/* Prototype 876–879 warns that rules cannot run; here they can, with two limits worth saying. */}
+          <div role="status" className="flex gap-3 rounded-[8px] border border-a-amber-line bg-a-amber-tint px-4 py-3 text-a-amber-ink">
+            <TriangleAlert className="mt-0.5 size-[18px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
+            <span className="leading-normal">
+              <strong>Rules run while HitList is open.</strong> Nothing fires while the app is closed, and email is not set up,
+              so a rule that asks for it is recorded as skipped.
+            </span>
+          </div>
 
           {rulesError && (
             <div className="rounded-[8px] bg-q-do-bg px-4 py-3 text-[14px] text-q-do" role="alert">
@@ -424,7 +392,9 @@ export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationH
             onRefresh={refreshRuns}
           />
         </div>
-      </ViewLayout>
+          </div>
+        </div>
+      </ViewLayoutContext.Provider>
 
       {/* Create / edit form */}
       <AutomationRuleForm

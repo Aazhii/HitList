@@ -612,7 +612,7 @@ Shared primitives now follow the DS, so every dialog inherits them:
 1. **Verify before you change.** Every task quotes the current code. If what you find does not match the quote, **stop and report** — do not adapt silently. The file may have moved on.
 2. **Never invent a value.** If a task does not give you a number and this file does not either, ask. Guessing is what produced the current state.
 3. **One task, one commit.** Commit message: `design(T1.4): set every icon stroke to 1.75`.
-4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 403 tests.
+4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 413 tests.
 5. **Update `00-INDEX.md`** — set State and fill in "Verified by" with the actual command output or screenshot pair. A task with an empty "Verified by" is not done.
 6. **Do not delete the Automations or Reminders code.** It is being revived in Phase 4, not removed.
 
@@ -688,3 +688,13 @@ Shared primitives now follow the DS, so every dialog inherits them:
 - New page → Note / Database opens that view and makes an "Untitled" one; Task list makes "Untitled list".
 - The prototype's Notion-style Favorites row menu also offers Duplicate, Copy link, Rename, Move to Trash, Open in new tab; only Add/Remove Favorites and Remove from Recents are offered (see Shell overlays).
 - The API contract test `browserSessionsCannotReadEachOthersDataOrChooseAnOwnerHeader` no longer flips the last base64 character of the cookie (sometimes a no-op, so the test was flaky); it flips a middle one.
+
+### Phase 4: automations (T4.4b–e)
+
+- **The decision:** you chose a working engine over mirroring the prototype's disabled state, so the screens differ from `auto-list` / `auto-form` in three places on purpose: the banner says rules run while HitList is open (not "unavailable"), Run now and the Switch work, and Recent runs shows real rows.
+- **What fires, and when:** due-date rules at each signed offset from the due time (up to 5 steps; the server refuses more), recurring schedules (daily, weekdays, weekly, monthly), a daily digest ("N due today · M overdue"), and status changes (found by comparing with the statuses seen at the last sweep, so the first sweep only records). Each moment fires once, never before the rule was created, and a moment more than 2 hours old is dropped rather than delivered late. Times are read in the browser's zone, which the client sends with the rule (the server's zone if absent).
+- **Only while the app is open.** The sweep is a scheduled job inside the API; nothing fires while it is not running.
+- **Delivery:** in-app becomes a server notification the bell already reads; browser is recorded on it and raised by whichever tab is open, once, if permission was granted; email is not configured, so a rule that asks for it is recorded as SKIPPED with that reason.
+- The rule form has no Description or Initial status field (the prototype has neither): a new rule is active, an existing rule's description and status are kept when it is edited, and the list's Switch pauses and activates.
+- `MAX_STEPS` is 5, matching the prototype's "up to 5" and the server.
+- Two icons on a rule row (edit, delete) appear on hover; they are not in the prototype.

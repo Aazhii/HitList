@@ -79,6 +79,8 @@ export function toRecord(
     dismissed: entry.readAt > 0,
     ...(typeof minutesBefore === 'number' ? { minutesBefore } : {}),
     seenInToast: entry.readAt > 0 || toasted.has(entry.id),
+    // An automation's own wording ("Due in 30 minutes · Nudge", "3 due today · 1 overdue").
+    ...(entry.kind === 'automation' && entry.body ? { detail: entry.body } : {}),
   };
 }
 

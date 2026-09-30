@@ -102,7 +102,8 @@ public class AutomationEngine {
                         } else if (at >= floor && fired.add(key)) {
                             String taskId = EntityRepository.text(task.get("TaskId"));
                             delivery.deliver(owner, rule, taskId, EntityRepository.text(task.get("Title")),
-                                timing(offset) + " · " + EntityRepository.text(rule.get("Name")), "scheduler", key, now);
+                                timing(offset) + " · " + EntityRepository.text(rule.get("Name")), "scheduler", key, now,
+                                Map.of("dueAt", due, "minutesBefore", Math.max(0, -offset)));
                         }
                     }
                 }
@@ -115,7 +116,7 @@ public class AutomationEngine {
                     String title = digest ? "Daily digest" : EntityRepository.text(rule.get("Name"));
                     String taskId = EntityRepository.text(rule.get("TaskId"));
                     String body = digest ? digestText(tasks, zone, now) : "Recurring reminder";
-                    delivery.deliver(owner, rule, taskId, title, body, "scheduler", key, now);
+                    delivery.deliver(owner, rule, taskId, title, body, "scheduler", key, now, Map.of());
                 }
                 next = nextOccurrence(rule, now, zone);
             }
@@ -131,7 +132,7 @@ public class AutomationEngine {
                     if (!first && before != null && !before.equals(status)) {
                         delivery.deliver(owner, rule, taskId, EntityRepository.text(task.get("Title")),
                             label(before) + " → " + label(status) + " · " + EntityRepository.text(rule.get("Name")),
-                            "scheduler", "", now);
+                            "scheduler", "", now, Map.of());
                     }
                 }
                 seen = current;

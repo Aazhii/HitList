@@ -118,7 +118,7 @@ const BASE_URL: string = (import.meta.env.VITE_API_BASE_URL as string | undefine
 export const API_BASE_URL = BASE_URL;
 
 export const AUTOMATIONS_UNAVAILABLE_REASON =
-  'Reminders and automations are unavailable in the PostgreSQL-only migration.';
+  'Automations are switched off on this server.';
 export const ZOHO_CALENDAR_UNAVAILABLE_REASON =
   'Zoho Calendar import is unavailable in the PostgreSQL-only migration.';
 
@@ -449,6 +449,8 @@ export interface ApiAutomationRule {
   notifyInApp: boolean;
   notifyBrowser: boolean;
   notifyEmail: boolean;
+  /** IANA zone the schedule and due times are read in; the server falls back to its own. */
+  timezone?: string;
   createdAt: number;
   updatedAt: number;
   lastTriggeredAt?: number;
@@ -473,40 +475,20 @@ export interface ApiAutomationRun {
 }
 
 export const automationApi = {
-  listRules(): Promise<ApiAutomationRule[]> {
-    return Promise.resolve([]);
-  },
-
-  createRule(rule: AutomationRuleInput): Promise<ApiAutomationRule> {
-    void rule;
-    return Promise.reject(new Error(AUTOMATIONS_UNAVAILABLE_REASON));
-  },
-
-  updateRule(id: string, rule: AutomationRuleInput): Promise<ApiAutomationRule> {
-    void id;
-    void rule;
-    return Promise.reject(new Error(AUTOMATIONS_UNAVAILABLE_REASON));
-  },
-
-  deleteRule(id: string): Promise<void> {
-    void id;
-    return Promise.reject(new Error(AUTOMATIONS_UNAVAILABLE_REASON));
-  },
-
-  recentRuns(limit = 20): Promise<ApiAutomationRun[]> {
-    void limit;
-    return Promise.resolve([]);
-  },
-
-  runsForRule(ruleId: string): Promise<ApiAutomationRun[]> {
-    void ruleId;
-    return Promise.resolve([]);
-  },
-
-  trigger(ruleId: string): Promise<ApiAutomationRun> {
-    void ruleId;
-    return Promise.reject(new Error(AUTOMATIONS_UNAVAILABLE_REASON));
-  },
+  /** GET /api/automations */
+  listRules: () => get<ApiAutomationRule[]>('/automations'),
+  /** POST /api/automations */
+  createRule: (rule: AutomationRuleInput) => post<ApiAutomationRule>('/automations', rule),
+  /** PUT /api/automations/:id */
+  updateRule: (id: string, rule: AutomationRuleInput) => put<ApiAutomationRule>(`/automations/${id}`, rule),
+  /** DELETE /api/automations/:id */
+  deleteRule: (id: string) => del<void>(`/automations/${id}`),
+  /** GET /api/automations/runs?limit= — newest first, every rule. */
+  recentRuns: (limit = 20) => get<ApiAutomationRun[]>(`/automations/runs?limit=${limit}`),
+  /** GET /api/automations/:id/runs */
+  runsForRule: (ruleId: string) => get<ApiAutomationRun[]>(`/automations/${ruleId}/runs`),
+  /** POST /api/automations/:id/trigger — "Run now". */
+  trigger: (ruleId: string) => post<ApiAutomationRun>(`/automations/${ruleId}/trigger`, {}),
 };
 
 // ── Saved views ───────────────────────────────────────────────────────────────
@@ -749,9 +731,8 @@ export const trialFeatureApi = {
     const flags = await get<{ notifications: boolean; automations: boolean }>('/trial-features');
     return {
       notifications: !!flags.notifications,
-      // The rule engine has no backend yet (T4.4): whatever the server says, the client stays off.
-      automations: false,
-      unavailableReason: AUTOMATIONS_UNAVAILABLE_REASON,
+      automations: !!flags.automations,
+      unavailableReason: flags.automations ? undefined : AUTOMATIONS_UNAVAILABLE_REASON,
     };
   },
 };

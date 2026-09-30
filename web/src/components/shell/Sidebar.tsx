@@ -1,10 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { CalendarDays, Leaf, ListChecks, Search, StickyNote, Table2 } from 'lucide-react';
+import { CalendarDays, Leaf, ListChecks, Search, StickyNote, Table2, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { useIsDesktop } from '@/components/shell/ViewLayout';
 
-export type AppView = 'tasks' | 'notes' | 'databases' | 'calendar' | 'library';
+export type AppView = 'tasks' | 'notes' | 'databases' | 'calendar' | 'automations' | 'library';
 
 const VIEWS: ReadonlyArray<{ id: AppView; label: string; icon: typeof ListChecks }> = [
   { id: 'tasks', label: 'Tasks', icon: ListChecks },
@@ -12,6 +12,7 @@ const VIEWS: ReadonlyArray<{ id: AppView; label: string; icon: typeof ListChecks
   { id: 'databases', label: 'Databases', icon: Table2 },
   // One calendar for everything that has a date: tasks and database records.
   { id: 'calendar', label: 'Calendar', icon: CalendarDays },
+  { id: 'automations', label: 'Automations', icon: Zap },
 ];
 
 export interface SidebarProps {

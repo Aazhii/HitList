@@ -24,6 +24,7 @@ function formatRelativeTime(ms: number): string {
 
 /** "Missed · 2h ago", "Upcoming · due in 25 minutes". */
 function describe(record: NotificationRecord): string {
+  if (record.detail) return record.detail;
   if (record.type === 'missed') return `Missed · ${formatRelativeTime(record.triggeredAt)}`;
   return record.minutesBefore !== undefined
     ? `Upcoming · due in ${record.minutesBefore} minute${record.minutesBefore === 1 ? '' : 's'}`

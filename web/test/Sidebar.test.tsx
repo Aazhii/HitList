@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { Sidebar } from '@/components/shell/Sidebar';
 
 describe('Sidebar', () => {
-  it('shows supported views without advertising automations', () => {
+  it('shows every view, Automations included', () => {
     render(
       <Sidebar
         activeView="tasks"
@@ -18,7 +18,7 @@ describe('Sidebar', () => {
     expect(screen.getByRole('button', { name: 'Notes' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Databases' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Calendar' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Automations' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Automations' })).toBeInTheDocument();
   });
 
   it('marks the active view current and shows a count badge', () => {

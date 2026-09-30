@@ -201,6 +201,8 @@ export interface NotificationRecord {
   dismissed: boolean;
   minutesBefore?: number; // for 'upcoming' type
   seenInToast?: boolean;  // whether it has been shown in the toast stack
+  /** What an automation said, shown under the title in place of the generic line. */
+  detail?: string;
 }
 
 

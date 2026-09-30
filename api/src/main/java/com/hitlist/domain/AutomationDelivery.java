@@ -30,7 +30,8 @@ public class AutomationDelivery {
 
     /** Delivers one firing and returns the run row. `fireKey` (may be blank) is what makes a firing happen once. */
     public Map<String, Object> deliver(
-        String owner, Map<String, Object> rule, String taskId, String title, String body, String source, String fireKey, long now
+        String owner, Map<String, Object> rule, String taskId, String title, String body, String source, String fireKey, long now,
+        Map<String, Object> extra
     ) {
         boolean inApp = Values.bool(rule.get("NotifyInApp"));
         boolean browser = Values.bool(rule.get("NotifyBrowser"));
@@ -46,6 +47,8 @@ public class AutomationDelivery {
             payload.put("ruleId", EntityRepository.text(rule.get("RuleId")));
             payload.put("urgency", EntityRepository.text(rule.get("Urgency")));
             payload.put("channels", delivered);
+            if (!taskId.isBlank()) payload.put("taskId", taskId);
+            payload.putAll(extra);
             Map<String, Object> notification = new LinkedHashMap<>();
             notification.put("NotificationId", UUID.randomUUID().toString());
             notification.put("Title", title);

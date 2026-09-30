@@ -282,7 +282,7 @@ public class WorkspaceService {
             title = repository.find(StorageTables.TASKS, owner, taskId).map(task -> EntityRepository.text(task.get("Title"))).orElse(title);
         }
         Map<String, Object> run = new AutomationDelivery(repository, objectMapper)
-            .deliver(owner, rule, taskId, title, "Run by hand · " + EntityRepository.text(rule.get("Name")), "manual", "", System.currentTimeMillis());
+            .deliver(owner, rule, taskId, title, "Run by hand · " + EntityRepository.text(rule.get("Name")), "manual", "", System.currentTimeMillis(), Map.of());
         return runApi(run);
     }
 
