@@ -107,6 +107,12 @@ public class JdbcRowStore implements RowStore {
     }
 
     @Override
+    public List<String> owners(String table) {
+        StorageTables.primaryKey(table);
+        return jdbc.queryForList("SELECT DISTINCT owner_id FROM hitlist_storage_rows WHERE table_name = ?", String.class, table);
+    }
+
+    @Override
     public String mode() {
         return mode;
     }

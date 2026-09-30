@@ -272,19 +272,17 @@ public class WorkspaceService {
             .toList();
     }
 
+    /** "Run now": delivers the rule's notification straight away, whatever its schedule. */
     public Map<String, Object> triggerRule(String owner, String ruleId) {
+        Values.id(ruleId);
         Map<String, Object> rule = repository.require(StorageTables.RULES, owner, ruleId);
-        long now = System.currentTimeMillis();
-        Map<String, Object> run = new LinkedHashMap<>();
-        run.put("RunId", UUID.randomUUID().toString());
-        run.put("RuleId", ruleId);
-        run.put("RuleName", EntityRepository.text(rule.get("Name")));
-        run.put("TriggeredAt", now);
-        run.put("RunStatus", "SUCCESS");
-        run.put("TriggerSource", "manual");
-        run.put("Detail", "queued by hand; delivery requires the notification delivery module");
-        run.put("Channels", json(channels(rule)));
-        repository.insert(StorageTables.RUNS, owner, run);
+        String taskId = EntityRepository.text(rule.get("TaskId"));
+        String title = EntityRepository.text(rule.get("Name"));
+        if (!taskId.isBlank()) {
+            title = repository.find(StorageTables.TASKS, owner, taskId).map(task -> EntityRepository.text(task.get("Title"))).orElse(title);
+        }
+        Map<String, Object> run = new AutomationDelivery(repository, objectMapper)
+            .deliver(owner, rule, taskId, title, "Run by hand · " + EntityRepository.text(rule.get("Name")), "manual", "", System.currentTimeMillis());
         return runApi(run);
     }
 
@@ -443,6 +441,19 @@ public class WorkspaceService {
         return row;
     }
 
+    /** Up to five steps, each a whole number of minutes within a year either side of the due time. */
+    private static void validateOffsets(Object raw) {
+        if (!(raw instanceof List<?> steps) || steps.size() > 5) {
+            throw ApiException.invalid("offsetMinutes must be a list of at most 5 numbers");
+        }
+        for (Object step : steps) {
+            if (!(step instanceof Number number) || number.doubleValue() != Math.rint(number.doubleValue())
+                || Math.abs(number.doubleValue()) > 525_600) {
+                throw ApiException.invalid("each offset must be a whole number of minutes, within a year");
+            }
+        }
+    }
+
     private Map<String, Object> ruleRow(Map<String, Object> body, Map<String, Object> existing) {
         Map<String, Object> row = existing == null ? new LinkedHashMap<>() : new LinkedHashMap<>(existing);
         row.put("Name", body.containsKey("name") ? Values.required(body, "name", 255) : EntityRepository.text(row.get("Name")));
@@ -451,6 +462,7 @@ public class WorkspaceService {
         row.put("TriggerType", body.containsKey("triggerType") ? lowerEnum(body, "triggerType", List.of("due-date", "overdue", "recurring", "status-change", "daily-digest"), "due-date") : EntityRepository.text(row.getOrDefault("TriggerType", "due-date")));
         row.put("RuleStatus", body.containsKey("status") ? lowerEnum(body, "status", List.of("active", "paused", "draft"), "draft") : EntityRepository.text(row.getOrDefault("RuleStatus", "draft")));
         row.put("Urgency", body.containsKey("urgency") ? lowerEnum(body, "urgency", List.of("low", "medium", "high", "critical"), "medium") : EntityRepository.text(row.getOrDefault("Urgency", "medium")));
+        if (body.containsKey("offsetMinutes")) validateOffsets(body.get("offsetMinutes"));
         row.put("OffsetSteps", body.containsKey("offsetMinutes") ? json(body.get("offsetMinutes")) : EntityRepository.text(row.getOrDefault("OffsetSteps", "[]")));
         Map<String, Object> recurrence = body.get("recurrence") instanceof Map<?, ?> map ? mapOf(map) : Map.of();
         row.put("RecurrenceFreq", recurrence.containsKey("frequency") ? EntityRepository.text(recurrence.get("frequency")) : EntityRepository.text(row.getOrDefault("RecurrenceFreq", "daily")));
@@ -459,6 +471,7 @@ public class WorkspaceService {
         row.put("RecurrenceDayOfMonth", recurrence.getOrDefault("dayOfMonth", row.getOrDefault("RecurrenceDayOfMonth", 1)));
         row.put("NotifyInApp", body.containsKey("notifyInApp") ? Values.optionalBoolean(body, "notifyInApp", true) : Values.bool(row.getOrDefault("NotifyInApp", true)));
         row.put("NotifyBrowser", body.containsKey("notifyBrowser") ? Values.optionalBoolean(body, "notifyBrowser", false) : Values.bool(row.get("NotifyBrowser")));
+        row.put("Timezone", body.containsKey("timezone") ? Values.optional(body, "timezone", 64, "") : EntityRepository.text(row.getOrDefault("Timezone", "")));
         row.put("NotifyEmail", body.containsKey("notifyEmail") ? Values.optionalBoolean(body, "notifyEmail", false) : Values.bool(row.get("NotifyEmail")));
         return row;
     }
@@ -539,6 +552,8 @@ public class WorkspaceService {
         output.put("notifyEmail", Values.bool(row.get("NotifyEmail")));
         output.put("createdAt", Values.number(row.get("CreatedAt"), 0));
         output.put("updatedAt", Values.number(row.get("UpdatedAt"), 0));
+        if (Values.number(row.get("LastTriggeredAt"), 0) > 0) output.put("lastTriggeredAt", Values.number(row.get("LastTriggeredAt"), 0));
+        if (Values.number(row.get("NextTriggerAt"), 0) > 0) output.put("nextTriggerAt", Values.number(row.get("NextTriggerAt"), 0));
         return output;
     }
 

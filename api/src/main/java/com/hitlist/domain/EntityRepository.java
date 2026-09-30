@@ -59,6 +59,10 @@ public class EntityRepository {
         }
     }
 
+    public List<String> owners(String table) {
+        return store.owners(table);
+    }
+
     public String mode() {
         return store.mode();
     }

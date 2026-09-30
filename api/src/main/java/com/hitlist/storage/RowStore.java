@@ -12,5 +12,10 @@ public interface RowStore {
 
     void delete(String table, String rowId);
 
+    /** Every owner that has at least one row in the table (for background work that spans owners). */
+    default List<String> owners(String table) {
+        return List.of();
+    }
+
     String mode();
 }

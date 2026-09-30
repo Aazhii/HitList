@@ -164,6 +164,60 @@ class ApiContractTest {
     }
 
     @Test
+    void automationRulesAreStoredRunByHandAndRejectBadSteps() throws Exception {
+        MockCookie browser = browser();
+        mvc.perform(post("/api/tasks").cookie(browser).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"clientId\":\"t-auto\",\"title\":\"Send the report\",\"dueDate\":\"2030-01-02\",\"dueTime\":\"09:00\"}"))
+            .andExpect(status().isCreated());
+
+        String created = mvc.perform(post("/api/automations").cookie(browser).contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"name":"Before it is due","taskId":"t-auto","triggerType":"due-date","status":"active",
+                     "urgency":"high","offsetMinutes":[-60,-15],"notifyInApp":true,"notifyBrowser":false,"timezone":"Asia/Kolkata"}
+                    """))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.name").value("Before it is due"))
+            .andExpect(jsonPath("$.offsetMinutes.length()").value(2))
+            .andReturn().getResponse().getContentAsString();
+        String id = new ObjectMapper().readTree(created).get("id").asText();
+
+        mvc.perform(get("/api/automations").cookie(browser)).andExpect(jsonPath("$.length()").value(1));
+
+        mvc.perform(put("/api/automations/" + id).cookie(browser).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"status\":\"paused\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.status").value("paused"))
+            .andExpect(jsonPath("$.name").value("Before it is due"));
+
+        mvc.perform(post("/api/automations/" + id + "/trigger").cookie(browser))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.source").value("manual"))
+            .andExpect(jsonPath("$.status").value("SUCCESS"));
+        mvc.perform(get("/api/automations/" + id + "/runs").cookie(browser)).andExpect(jsonPath("$.length()").value(1));
+        mvc.perform(get("/api/automations/runs").cookie(browser)).andExpect(jsonPath("$[0].ruleName").value("Before it is due"));
+        // Run by hand raised an in-app notification the bell can read.
+        mvc.perform(get("/api/notifications").cookie(browser))
+            .andExpect(jsonPath("$.length()").value(1))
+            .andExpect(jsonPath("$[0].title").value("Send the report"));
+
+        mvc.perform(post("/api/automations").cookie(browser).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"Too many\",\"offsetMinutes\":[1,2,3,4,5,6]}"))
+            .andExpect(status().isBadRequest());
+        mvc.perform(post("/api/automations").cookie(browser).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"name\":\"Odd\",\"offsetMinutes\":[1.5]}"))
+            .andExpect(status().isBadRequest());
+
+        mvc.perform(get("/api/automations").cookie(other())).andExpect(jsonPath("$.length()").value(0));
+
+        mvc.perform(delete("/api/automations/" + id).cookie(browser)).andExpect(status().isNoContent());
+        mvc.perform(get("/api/automations").cookie(browser)).andExpect(jsonPath("$.length()").value(0));
+    }
+
+    private MockCookie other() throws Exception {
+        return browser();
+    }
+
+    @Test
     void notesListsAndWorkspaceRoutesRetainTheirApiShapes() throws Exception {
         MockCookie browser = browser();
         mvc.perform(post("/api/lists")

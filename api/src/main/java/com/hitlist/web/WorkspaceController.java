@@ -145,6 +145,42 @@ public class WorkspaceController {
         return workspace.calendar(owners.owner(request));
     }
 
+    @GetMapping("/automations")
+    List<Map<String, Object>> automations(HttpServletRequest request) {
+        return workspace.automationRules(owners.owner(request));
+    }
+
+    @PostMapping("/automations")
+    ResponseEntity<Map<String, Object>> createAutomation(@RequestBody Map<String, Object> body, HttpServletRequest request) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(workspace.createRule(owners.owner(request), body));
+    }
+
+    @GetMapping("/automations/runs")
+    List<Map<String, Object>> automationRuns(@RequestParam(defaultValue = "20") int limit, HttpServletRequest request) {
+        return workspace.runs(owners.owner(request), null, limit);
+    }
+
+    @PutMapping("/automations/{id}")
+    Map<String, Object> updateAutomation(@PathVariable String id, @RequestBody Map<String, Object> body, HttpServletRequest request) {
+        return workspace.updateRule(owners.owner(request), id, body);
+    }
+
+    @DeleteMapping("/automations/{id}")
+    ResponseEntity<Void> deleteAutomation(@PathVariable String id, HttpServletRequest request) {
+        workspace.deleteRule(owners.owner(request), id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @GetMapping("/automations/{id}/runs")
+    List<Map<String, Object>> runsForAutomation(@PathVariable String id, @RequestParam(defaultValue = "20") int limit, HttpServletRequest request) {
+        return workspace.runs(owners.owner(request), id, limit);
+    }
+
+    @PostMapping("/automations/{id}/trigger")
+    Map<String, Object> triggerAutomation(@PathVariable String id, HttpServletRequest request) {
+        return workspace.triggerRule(owners.owner(request), id);
+    }
+
     @GetMapping("/notifications")
     List<Map<String, Object>> notifications(HttpServletRequest request) {
         return workspace.notifications(owners.owner(request));
