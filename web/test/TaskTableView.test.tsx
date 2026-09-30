@@ -218,4 +218,51 @@ describe('TaskTableView — rows, columns and fields', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'Flag of Alpha' }));
     expect(props.onSetFieldValue).toHaveBeenCalledWith('a', 'flag', true);
   });
+
+  describe('bulk actions', () => {
+    it('has no selection without a bulk handler', () => {
+      setup();
+      expect(screen.queryByRole('checkbox', { name: 'Select Alpha' })).not.toBeInTheDocument();
+    });
+
+    it('selects rows, shows the bar, and hands the ids to the handler', () => {
+      const onBulkChange = vi.fn();
+      const onBulkDelete = vi.fn();
+      setup({ onBulkChange, onBulkDelete });
+      expect(screen.queryByRole('toolbar', { name: 'Bulk actions' })).not.toBeInTheDocument();
+
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select Alpha' }));
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select Beta' }));
+      const bar = screen.getByRole('toolbar', { name: 'Bulk actions' });
+      expect(bar).toHaveTextContent('2 selected');
+
+      fireEvent.change(screen.getByLabelText('Set due date'), { target: { value: '2030-05-01' } });
+      expect(onBulkChange).toHaveBeenCalledWith(['a', 'b'], { dueDate: '2030-05-01' });
+      fireEvent.click(screen.getByRole('button', { name: 'Clear date' }));
+      expect(onBulkChange).toHaveBeenLastCalledWith(['a', 'b'], { dueDate: '' });
+
+      fireEvent.click(screen.getByRole('button', { name: /^Delete$/ }));
+      expect(onBulkDelete).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+      expect(onBulkDelete).toHaveBeenCalledWith(['a', 'b']);
+      expect(screen.queryByRole('toolbar', { name: 'Bulk actions' })).not.toBeInTheDocument();
+    });
+
+    it('selects everything from the header and clears with Escape', () => {
+      setup({ onBulkChange: vi.fn() });
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select Alpha' }));
+      fireEvent.click(screen.getByRole('checkbox', { name: 'Select all tasks' }));
+      expect(screen.getByRole('toolbar', { name: 'Bulk actions' })).toHaveTextContent('2 selected');
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      expect(screen.queryByRole('toolbar', { name: 'Bulk actions' })).not.toBeInTheDocument();
+    });
+
+    it('Space selects the row under the keyboard cursor', () => {
+      setup({ onBulkChange: vi.fn() });
+      fireEvent.keyDown(document.body, { key: 'j' });
+      fireEvent.keyDown(document.body, { key: ' ' });
+      expect(screen.getByRole('toolbar', { name: 'Bulk actions' })).toHaveTextContent('1 selected');
+      expect(screen.getByRole('checkbox', { name: 'Select Alpha' })).toBeChecked();
+    });
+  });
 });

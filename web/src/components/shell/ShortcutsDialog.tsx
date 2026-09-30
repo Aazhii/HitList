@@ -14,6 +14,7 @@ const SHORTCUTS: Array<{ keys: string; does: string }> = [
   { keys: 'h l  /  ← →', does: 'In the table or board: move across cells or columns' },
   { keys: '↵  /  o', does: 'In the table or board: edit the cell, or open the task' },
   { keys: 'x', does: 'In the table or board: mark the task done, or open again' },
+  { keys: 'Space', does: 'In the table: select the row, for bulk actions' },
   { keys: '[  ]', does: 'In the table or board: move the task one quadrant' },
   { keys: '↑ ↓ ← →', does: 'In a menu: move; ↵ chooses, Esc closes' },
 ];

@@ -612,7 +612,7 @@ Shared primitives now follow the DS, so every dialog inherits them:
 1. **Verify before you change.** Every task quotes the current code. If what you find does not match the quote, **stop and report** — do not adapt silently. The file may have moved on.
 2. **Never invent a value.** If a task does not give you a number and this file does not either, ask. Guessing is what produced the current state.
 3. **One task, one commit.** Commit message: `design(T1.4): set every icon stroke to 1.75`.
-4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 469 tests.
+4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 477 tests.
 5. **Update `00-INDEX.md`** — set State and fill in "Verified by" with the actual command output or screenshot pair. A task with an empty "Verified by" is not done.
 6. **Do not delete the Automations or Reminders code.** It is being revived in Phase 4, not removed.
 
@@ -756,4 +756,9 @@ Everything below deliberately stops matching the prototype. Each entry says wher
 - Stored shape: one new optional key on a task row, `Recurrence` (DAILY / WEEKDAYS / WEEKLY / MONTHLY, absent or "" for none), plus `RecurredTo` (the id of the copy this task made). Rows written before this simply lack both and read as "does not repeat": additive, nothing migrated, nothing lost. The API gains `recurrence` on tasks (null when none) and accepts it on create and update ('' stops it).
 - Behaviour (server): finishing a repeating task that has a due date creates the next one — same title, note, quadrant, priority, category, list, time, reminder and custom-field values, status To do, due on the first occurrence after this one that is not in the past (so a task left for a month does not return as four overdue copies; monthly keeps the day of month, clamping to month end). It happens once per completed task (`RecurredTo`), so completing, undoing and completing again never doubles it. Undo on the completion toast takes the copy back if nobody has touched it; an edited or finished copy is left alone. A repeating task with no due date just completes; the detail panel disables Repeat until a date is set.
 - Spends: one "Repeat" select in Task details (same shape as Reminder) and a 12px repeat glyph beside the due text in the list row, matrix row and card — it sits inside the existing 120px due cell, so row geometry does not change. Offline (mock API) mode shows the glyph but does not create copies; repeating is a server feature.
+
+### P6.3 Bulk actions
+- The task table's "#" column: hovering a row swaps its number for a checkbox (it stays once anything is selected; the header then holds a select-all checkbox). Space selects the row under the keyboard cursor; Esc clears. Selection is on screen rows only — filtering a row away drops it from the selection.
+- A bar above the table while anything is selected: "N selected", Set status, Move to quadrant, a date input and "Clear date", Delete (asks "Delete N tasks? This cannot be undone." in the bar), and a clear-selection ×. Status/quadrant/date changes are one toast and one Undo for the whole batch (the Undo puts each task's own previous value back); tasks and momentum are re-read afterwards, since finishing a repeating task creates its next copy on the server. Bulk delete has no Undo, which the confirmation says.
+- Spends: one checkbox state in the row-number cell, one bar (8px radius, hairline, shadow-sm). No schema change. Only the table has selection; list, matrix and board do not.
 

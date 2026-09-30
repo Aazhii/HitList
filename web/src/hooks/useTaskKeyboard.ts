@@ -13,6 +13,8 @@ export interface TaskKeyHandlers {
   onOpen: (taskId: string) => void;
   onStatus: (taskId: string, status: TodoStatus) => void;
   onQuadrant?: (taskId: string, quadrant: Quadrant) => void;
+  /** Space: add or remove the task from the selection. */
+  onSelect?: (taskId: string) => void;
 }
 
 interface Lookup { statusOf: (id: string) => TodoStatus | undefined; quadrantOf: (id: string) => Quadrant | undefined }
@@ -26,6 +28,7 @@ function dispatchTaskAction(
       if (handlers.onEdit) handlers.onEdit(id, col); else handlers.onOpen(id);
       return true;
     case 'open': handlers.onOpen(id); return true;
+    case 'select': if (!handlers.onSelect) return false; handlers.onSelect(id); return true;
     case 'toggle': {
       const status = lookup.statusOf(id);
       if (status) handlers.onStatus(id, toggledStatus(status));
@@ -50,8 +53,8 @@ function useDocumentKeys(enabled: boolean, onAction: (action: KeyAction) => bool
     const onKey = (e: KeyboardEvent) => {
       if (e.defaultPrevented || isTypingTarget(document.activeElement) || isTypingTarget(e.target as Element | null)) return;
       const action = actionFor(e);
-      // Enter on a focused button or link is that control's own; it is not "edit the cell".
-      if (action === 'edit' && document.activeElement?.closest('button,a,[role="checkbox"]')) return;
+      // Enter or Space on a focused button, link or checkbox is that control's own; it is not "edit the cell".
+      if ((action === 'edit' || action === 'select') && document.activeElement?.closest('button,a,[role="checkbox"],input[type="checkbox"]')) return;
       if (action && ref.current(action)) e.preventDefault();
     };
     document.addEventListener('keydown', onKey);

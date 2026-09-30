@@ -15,12 +15,16 @@
  * compareAcrossQuadrants. With a group-by field set, rows are grouped under one
  * heading per option, and each group can add a task already carrying its value.
  */
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowDown, ArrowUp, Calendar, CheckSquare, ChevronDown, CircleDot, EyeOff, Hash, List, MoreHorizontal,
   PanelRightOpen, Pencil, Plus, Trash2, Type, type LucideIcon,
 } from 'lucide-react';
 import { useTableKeyboard } from '@/hooks/useTaskKeyboard';
+import { BulkBar, type BulkChange } from '@/components/tasks/BulkBar';
+import { Checkbox } from '@/components/ui/checkbox';
+import { selectAllState, toggleId, visibleSelection } from '@/lib/bulkSelection';
+import { isTypingTarget } from '@/lib/taskKeyboard';
 import { dueFill, fieldFill, fillRatio } from '@/lib/taskQuality';
 import { cn } from '@/lib/utils';
 import { topBarPill } from '@/components/shell/TopBar';
@@ -89,6 +93,9 @@ export interface TaskTableViewProps {
   onEditField?: (fieldId: string) => void;
   onDeleteField?: (fieldId: string) => void;
   onCreateField?: () => void;
+  /** Set a status, quadrant or due date on every selected task at once. Without it the table has no selection. */
+  onBulkChange?: (ids: string[], change: BulkChange) => void;
+  onBulkDelete?: (ids: string[]) => void;
 }
 
 const STATUS_OPTIONS: Array<{ value: TodoStatus; label: string }> = [
@@ -142,7 +149,7 @@ export function TaskTableView({
   todos, showDone, compare, sortBy, sortDir, onSortChange, groupField,
   fieldDefs, fieldValues, hiddenColumns = [], columnOrder = [], onHideColumn,
   onStatusChange, onUpdate, onSetFieldValue, onOpen, onDelete, onAddTask,
-  onEditField, onDeleteField, onCreateField,
+  onEditField, onDeleteField, onCreateField, onBulkChange, onBulkDelete,
 }: TaskTableViewProps) {
   const hidden = new Set(hiddenColumns.filter((id) => id !== 'title'));
   const shownFields = fieldDefs.filter((d) => !hidden.has(d.id));
@@ -193,7 +200,25 @@ export function TaskTableView({
     onStatus: onStatusChange,
     onQuadrant: (id: string, quadrant: Quadrant) => onUpdate(id, { quadrant }),
   }), [byId, onOpen, onStatusChange, onUpdate]);
-  const kb = useTableKeyboard(rowIds, columns.length + 1, lookup, keyHandlers);
+  // P6.3: rows are selected from the checkbox that replaces the row number on hover, or with Space.
+  const [selection, setSelection] = useState<ReadonlySet<string>>(new Set());
+  const selectedIds = useMemo(() => visibleSelection(selection, rowIds), [selection, rowIds]);
+  const selectable = !!onBulkChange;
+  const toggleRow = useCallback((id: string) => setSelection((s) => toggleId(s, id)), []);
+  const clearSelection = useCallback(() => setSelection(new Set()), []);
+  useEffect(() => {
+    if (selectedIds.length === 0) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !e.defaultPrevented && !isTypingTarget(document.activeElement)) clearSelection();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [selectedIds.length, clearSelection]);
+  const keyHandlersWithSelect = useMemo(
+    () => ({ ...keyHandlers, onSelect: selectable ? toggleRow : undefined }),
+    [keyHandlers, selectable, toggleRow],
+  );
+  const kb = useTableKeyboard(rowIds, columns.length + 1, lookup, keyHandlersWithSelect);
   useEffect(() => {
     if (kb.activeId) document.querySelector(`[data-row="${CSS.escape(kb.activeId)}"]`)?.scrollIntoView({ block: 'nearest' });
   }, [kb.activeId]);
@@ -209,13 +234,33 @@ export function TaskTableView({
     return ['order', 'asc'];
   };
 
+  const allState = selectAllState(selectedIds.length, rowIds.length);
+
   return (
     <div className="animate-fade-in">
+    {selectable && selectedIds.length > 0 && (
+      <BulkBar
+        count={selectedIds.length}
+        onChange={(change) => onBulkChange(selectedIds, change)}
+        onDelete={() => { if (onBulkDelete) onBulkDelete(selectedIds); clearSelection(); }}
+        onClear={clearSelection}
+      />
+    )}
     <div className="max-h-[calc(100vh-260px)] w-full overflow-auto rounded-[6px] border border-a-line bg-a-surface">
       <table className="w-full min-w-max border-separate border-spacing-0 text-[13px]">
         <thead>
           <tr>
-            <th scope="col" className="sticky top-0 left-0 z-[3] w-11 border-b border-a-line bg-a-line-soft px-3 py-2 text-right align-bottom text-[11px] font-bold text-a-faint">#</th>
+            <th scope="col" className="sticky top-0 left-0 z-[3] w-11 border-b border-a-line bg-a-line-soft px-3 py-2 text-right align-bottom text-[11px] font-bold text-a-faint">
+              {selectable && selectedIds.length > 0 ? (
+                <Checkbox
+                  label={null}
+                  aria-label={allState === 'all' ? 'Clear selection' : 'Select all tasks'}
+                  checked={allState === 'all'}
+                  onChange={() => setSelection(allState === 'all' ? new Set() : new Set(rowIds))}
+                  className="justify-end"
+                />
+              ) : '#'}
+            </th>
             <ColumnHeader
               label="Title"
               glyph={Type}
@@ -277,6 +322,9 @@ export function TaskTableView({
                 todo={todo}
                 columns={columns}
                 activeCol={kb.activeId === todo.id ? kb.activeCol : null}
+                selected={selection.has(todo.id)}
+                selecting={selectedIds.length > 0}
+                onToggleSelected={selectable ? toggleRow : undefined}
                 values={fieldValues[todo.id]}
                 onStatusChange={onStatusChange}
                 onUpdate={onUpdate}
@@ -441,6 +489,10 @@ interface TaskTableRowProps {
   columns: TableColumn[];
   /** The cell the keyboard cursor is on in this row (0 is the title), or null when the cursor is elsewhere. */
   activeCol: number | null;
+  /** Part of the selection; `selecting` is true while any row is, which keeps every row's checkbox showing. */
+  selected: boolean;
+  selecting: boolean;
+  onToggleSelected?: (id: string) => void;
   values: Record<string, FieldValue> | undefined;
   onStatusChange: TaskTableViewProps['onStatusChange'];
   onUpdate: TaskTableViewProps['onUpdate'];
@@ -449,7 +501,7 @@ interface TaskTableRowProps {
   onDelete: TaskTableViewProps['onDelete'];
 }
 
-function TaskTableRow({ rowNumber, todo, columns, activeCol, values, onStatusChange, onUpdate, onSetFieldValue, onOpen, onDelete }: TaskTableRowProps) {
+function TaskTableRow({ rowNumber, todo, columns, activeCol, selected, selecting, onToggleSelected, values, onStatusChange, onUpdate, onSetFieldValue, onOpen, onDelete }: TaskTableRowProps) {
   const isDone = todo.status === 'done';
   const quadrant = QUADRANTS.find((q) => q.id === todo.quadrant) ?? QUADRANTS[0];
 
@@ -458,7 +510,23 @@ function TaskTableRow({ rowNumber, todo, columns, activeCol, values, onStatusCha
 
   return (
     <tr className="group" data-row={todo.id}>
-      <td className="sticky left-0 z-[1] w-11 border-b border-a-line-soft bg-a-row-alt px-3 text-right text-[13px] tabular-nums text-a-ink">{rowNumber}</td>
+      <td className={cn(
+        'sticky left-0 z-[1] w-11 border-b border-a-line-soft px-3 text-right text-[13px] tabular-nums text-a-ink',
+        selected ? 'bg-a-blue-tint' : 'bg-a-row-alt',
+      )}>
+        {onToggleSelected ? (
+          <>
+            <span className={cn(selecting || selected ? 'hidden' : 'group-hover:hidden')}>{rowNumber}</span>
+            <Checkbox
+              label={null}
+              aria-label={`Select ${todo.text}`}
+              checked={selected}
+              onChange={() => onToggleSelected(todo.id)}
+              className={cn('justify-end', selecting || selected ? 'flex' : 'hidden group-hover:flex focus-within:flex')}
+            />
+          </>
+        ) : rowNumber}
+      </td>
       <td {...cell(0)} className={cn(CELL, 'sticky left-11 z-[1] bg-a-surface', CURSOR)}>
         <div className="flex items-start gap-1">
           <TitleCell

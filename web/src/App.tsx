@@ -42,6 +42,8 @@ import { NotificationBell } from '@/components/NotificationBell';
 import { NotificationToast } from '@/components/NotificationToast';
 import { CommandPalette } from '@/components/CommandPalette';
 import { toApiRecurrence, type Recurrence } from '@/lib/recurrence';
+import { taskCountLabel } from '@/lib/bulkSelection';
+import type { BulkChange } from '@/components/tasks/BulkBar';
 import { QuickCapture } from '@/components/QuickCapture';
 import { isTypingTarget } from '@/lib/taskKeyboard';
 import { PageSections } from '@/components/shell/PageSections';
@@ -1030,6 +1032,45 @@ function UserScopedApp() {
   );
 
   /**
+   * P6.3: one change to several tasks from the table's bulk bar. One toast and one Undo for the lot. Quiet
+   * per task; afterwards the tasks and momentum are read again, because finishing a repeating task creates
+   * its next copy on the server.
+   */
+  const handleBulkChange = useCallback((ids: string[], change: BulkChange) => {
+    const targets = todos.filter((t) => ids.includes(t.id));
+    if (targets.length === 0) return;
+    const apply: Partial<Todo> = {
+      ...(change.status && { status: change.status }),
+      ...(change.quadrant && { quadrant: change.quadrant }),
+      ...(change.dueDate !== undefined && { dueDate: change.dueDate }),
+    };
+    // Setting the date also takes a repeat and reminder off a task with no date to hang them on.
+    const run = async (changes: (t: Todo) => Partial<Todo>) => {
+      await Promise.all(targets.map((t) => handleUpdate(t.id, changes(t), { quiet: true })));
+      void server.refresh();
+    };
+    void run(() => apply);
+    toast.success(`Updated ${taskCountLabel(targets.length)}`, {
+      duration: 5000,
+      action: {
+        label: 'Undo',
+        onClick: () => {
+          void run((t) => ({
+            ...(apply.status && { status: t.status }),
+            ...(apply.quadrant && { quadrant: t.quadrant }),
+            ...(apply.dueDate !== undefined && { dueDate: t.dueDate ?? '' }),
+          }));
+        },
+      },
+    });
+  }, [todos, handleUpdate, server]);
+
+  const handleBulkDelete = useCallback((ids: string[]) => {
+    for (const id of ids) void handleDelete(id);
+    toast.success(`Deleted ${taskCountLabel(ids.length)}`, { duration: 3000 });
+  }, [handleDelete]);
+
+  /**
    * Writes back a drag in the list view.
    *
    * Not handleUpdate: that toasts on every call and maps neither `order` nor a
@@ -1875,6 +1916,8 @@ function UserScopedApp() {
                     undoable('Saved', () => { void taskFields.setValue(taskId, fieldId, value); },
                       () => { void taskFields.setValue(taskId, fieldId, before); });
                   }}
+                  onBulkChange={handleBulkChange}
+                  onBulkDelete={handleBulkDelete}
                   onOpen={handleOpenDetail}
                   onDelete={handleDelete}
                   onAddTask={(title, groupKey) => { void handleAddTaskInColumn(title, groupKey); }}

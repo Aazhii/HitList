@@ -7,11 +7,11 @@ import type { Quadrant, TodoStatus } from '@/types/todo';
 
 export type KeyAction =
   | 'down' | 'up' | 'left' | 'right'
-  | 'edit' | 'open' | 'toggle' | 'quadrant-prev' | 'quadrant-next' | 'escape';
+  | 'edit' | 'open' | 'toggle' | 'select' | 'quadrant-prev' | 'quadrant-next' | 'escape';
 
 /**
  * j/k and the arrows move, h/l and the arrows move sideways, Enter edits the cell (or opens the card),
- * o opens, x toggles done, [ and ] move the task one quadrant. Anything with a modifier is left to the browser.
+ * o opens, x toggles done, Space selects the row (table), [ and ] move the task one quadrant. Anything with a modifier is left to the browser.
  */
 export function actionFor(e: { key: string; metaKey: boolean; ctrlKey: boolean; altKey: boolean }): KeyAction | null {
   if (e.metaKey || e.ctrlKey || e.altKey) return null;
@@ -23,6 +23,7 @@ export function actionFor(e: { key: string; metaKey: boolean; ctrlKey: boolean; 
     case 'Enter': return 'edit';
     case 'o': return 'open';
     case 'x': return 'toggle';
+    case ' ': return 'select';
     case '[': return 'quadrant-prev';
     case ']': return 'quadrant-next';
     case 'Escape': return 'escape';
@@ -34,7 +35,9 @@ export function actionFor(e: { key: string; metaKey: boolean; ctrlKey: boolean; 
 export function isTypingTarget(el: Element | null): boolean {
   if (!el) return false;
   const tag = el.tagName;
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+  // A checkbox takes no text, so keys still belong to the table after one is clicked.
+  if (tag === 'INPUT') { const t = (el as HTMLInputElement).type; return t !== 'checkbox' && t !== 'radio'; }
+  if (tag === 'TEXTAREA' || tag === 'SELECT') return true;
   return el instanceof HTMLElement && (el.isContentEditable || !!el.closest('[role="menu"],[role="listbox"],[role="dialog"]'));
 }
 
