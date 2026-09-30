@@ -130,6 +130,9 @@
     --color-a-sage-tint: var(--a-sage-tint);
     --color-a-sage-ink: var(--a-sage-ink);
     --color-a-amber: var(--a-amber);
+    --color-a-amber-tint: var(--a-amber-tint);
+    --color-a-amber-line: var(--a-amber-line);
+    --color-a-amber-ink: var(--a-amber-ink);
     --color-a-attention: var(--a-attention);
     --color-a-row-alt: var(--a-row-alt);
     --color-a-rail: var(--a-rail);
@@ -567,6 +570,10 @@ html.login-locked body {
 
   /* Amber — DS --amber-600, the streak colour on the momentum card (showcase 94). */
   --a-amber: #c0741a;
+  /* The offline bar (showcase 146–154): DS --amber-50, its border and ink literals. */
+  --a-amber-tint: #fdf3e4;
+  --a-amber-line: #f2d6a8;
+  --a-amber-ink: #7a4a0e;
   /* The showcase's attention/overdue red (line 123). Distinct from --destructive:
      this is text that warns, not a control that destroys. */
   --a-attention: #b83232;
@@ -733,6 +740,9 @@ html.login-locked body {
   --a-line: rgba(245, 234, 216, 0.12);
   --a-line-soft: rgba(245, 234, 216, 0.07);
   --a-line-strong: rgba(245, 234, 216, 0.22);
+  --a-amber-tint: rgba(232, 145, 42, 0.14);
+  --a-amber-line: rgba(232, 145, 42, 0.35);
+  --a-amber-ink: #f0c48a;
   --a-row-hover: rgba(245, 234, 216, 0.045);
 
   --a-accent: #d98552;

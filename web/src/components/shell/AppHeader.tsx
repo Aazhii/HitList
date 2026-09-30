@@ -17,10 +17,11 @@ interface AppHeaderProps {
   onOpenSidebar: () => void;
 }
 
-const SYNC_DOT_CLASS: Record<AppHeaderProps['sync']['tone'], string> = {
-  success: 'bg-a-sage',
-  warning: 'bg-a-tag-yellow',
-  danger: 'bg-a-tag-red',
+/** The DS Badge's tones (showcase 111): a tint, its ink, and a dot in the ink. */
+const SYNC_TONE_CLASS: Record<AppHeaderProps['sync']['tone'], { pill: string; dot: string }> = {
+  success: { pill: 'bg-a-sage-tint text-a-sage', dot: 'bg-a-sage' },
+  warning: { pill: 'bg-a-amber-tint text-a-amber', dot: 'bg-a-amber' },
+  danger: { pill: 'bg-q-do-bg text-q-do', dot: 'bg-q-do' },
 };
 
 /**
@@ -58,8 +59,8 @@ export function AppHeader({ crumb1, crumb2, sync, bell, account, onOpenSidebar }
       <div className="flex-1" />
 
       {/* design-check-ignore: pill — the DS Badge is a pill; showcase 111 uses it for sync. */}
-      <span className="flex flex-shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)]">
-        <span className={cn('size-[6px] rounded-full', SYNC_DOT_CLASS[sync.tone])} aria-hidden />
+      <span className={cn('flex flex-shrink-0 items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] font-medium', SYNC_TONE_CLASS[sync.tone].pill)}>
+        <span className={cn('size-[6px] rounded-full', SYNC_TONE_CLASS[sync.tone].dot)} aria-hidden />
         {sync.label}
       </span>
 

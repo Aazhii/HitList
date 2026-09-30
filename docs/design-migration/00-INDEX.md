@@ -77,8 +77,20 @@ Data is scoped to a `hitlist_owner_v1` cookie, so curl-seeded tasks are invisibl
 fresh browser; `shoot.mjs` reads that cookie from `/tmp/hitlist-seed-jar.txt` (path is
 hard-coded in the tool). Using the jar needs no rebuild, so it works while Colima/VPN is
 broken, and it shoots the **dev** frontend, not the jar's older bundled one. Kill the
-java + vite afterwards. Seeded tasks carry no due dates/fields, so row-level comparison
-against the prototype's 12 sample rows is approximate.
+java + vite afterwards. 
+
+**Shooting states the seeded backend can't produce.** Each is a separate vite on its own
+port, passed to `shoot.mjs` with `--app-url=`:
+
+| State | Backend behind vite's `/api` proxy | Env |
+|---|---|---|
+| empty list (`tasks-empty`) | a second scratch backend, **unseeded** (same `OWNER_COOKIE_SECRET`, so the seed cookie is valid but owns nothing) | `VITE_API_PROXY_TARGET=http://localhost:3003` |
+| offline (`tasks-offline`) | a port nothing listens on → 502s | `…=http://localhost:3999` |
+| loading (`tasks-loading`) | `node -e "require('http').createServer(()=>{}).listen(3998)"` — accepts, never answers | `…=http://localhost:3998` |
+
+Offline mode shows the app's built-in sample data ("Work Focus", 10 tasks) plus a few
+due-soon toasts — that is the app's own offline fallback, not seed data.
+`tasks-nomatch` needs the seeded backend; its route types a search nothing matches.
 
 ## Tooling note
 
@@ -112,7 +124,7 @@ that one is fine where it is.
 | Visual | `node web/scripts/shoot.mjs <screen-id>` → a `.ref.png` / `.app.png` pair | every Phase 3 task |
 | Real build | `sh desktop/scripts/prepare-jar.sh` → copy to `api/target/hitlist.jar` → restart Electron → re-check its own port | every **phase** exit, not every task |
 
-Test baseline: **341 tests across 39 files.** This must not regress.
+Test baseline: **343 tests across 39 files.** This must not regress.
 
 ---
 
@@ -122,10 +134,10 @@ Test baseline: **341 tests across 39 files.** This must not regress.
 Phase 0  █████   5 / 5      done
 Phase 1  █████  11 / 11      foundations — the broken UI
 Phase 2  █████   5 / 5       shell exactness
-Phase 3  █░░░░   4 / 42      per-screen fidelity (T3.1–T3.4 done)
+Phase 3  ██░░░   8 / 42      per-screen fidelity (3A Tasks done: T3.1–T3.8)
 Phase 4  ░░░░░   1 / 12      missing features
 Phase 5  ░░░░░   0 / 7       proposals, unreviewed
-                26 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
+                30 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
 ```
 
 ### A note on "partially built"
@@ -190,10 +202,10 @@ on a description. Execution order is the section order below.
 | T3.2 | `tasks-list` | **done** | design:check PASS, tsc/vitest/lint clean; shots/tasks-list.{ref,app}.png — shell/tabs/header confirmed live; row-level pixel proof blocked by a hung dev backend (infra, not this change) — re-shoot once it's back |
 | T3.3 | `tasks-table` (+ retire `ViewTabs`' duplicate layout chips) | **done** | design:check PASS, tsc clean, vitest 339/339; shots/tasks-table.{ref,app}.png — saved-view chip row matches showcase 251–258 (Default table chip, `+ New`, Columns + Fields); built-in Table/Board chips gone. Table grid itself deliberately not reshaped (see note below) |
 | T3.4 | `tasks-board` (+ fix the blank-on-load) | **done** | design:check PASS, tsc/lint clean, vitest 341/341 (+2 new); shots/tasks-board.{ref,app}.png — group-by bar, grey lanes, white bordered cards, dashed empty lane, `+ Add a Stage option`; blank-on-load now a skeleton. Deviations in CONVENTIONS §12a |
-| T3.5 | `tasks-empty` | todo | |
-| T3.6 | `tasks-nomatch` | todo | |
-| T3.7 | `tasks-loading` | todo | |
-| T3.8 | `tasks-offline` (+ resolve the double sync indicator) | todo | |
+| T3.5 | `tasks-empty` | **done** | design:check PASS, tsc/lint clean, vitest 343/343; shots/tasks-empty.{ref,app}.png — EmptyState rebuilt to the DS component's 180px art / 20px title / 16px body / 34px button |
+| T3.6 | `tasks-nomatch` | **done** | shots/tasks-nomatch.{ref,app}.png — copy now names the hiding filters and count (`describeActiveFilters`, unit-tested); primary 34px Clear filters |
+| T3.7 | `tasks-loading` | **done** | shots/tasks-loading.{ref,app}.png — 2×2 white-card skeleton grid + "Loading tasks from the server…" caption |
+| T3.8 | `tasks-offline` (+ resolve the double sync indicator) | **done** | shots/tasks-offline.{ref,app}.png — amber strip + tinted header pill agree; sidebar's third offline line and the bar's own loading line removed |
 
 ### 3B · Task dialogs
 

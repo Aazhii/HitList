@@ -40,14 +40,15 @@ interface EmptyStateProps {
 }
 
 export function EmptyState({ image, title, description, action, className }: EmptyStateProps) {
+  // The showcase wraps the DS EmptyState and its button in a 520px, 16px-gap
+  // column with a 48px margin (e.g. line 176); the DS component itself is a
+  // 420px, 40/24-padded column with a 180px illustration, an h2 and a 16px body.
   return (
-    <div className={cn('mx-auto flex max-w-[520px] flex-col items-center gap-4 py-12 text-center animate-fade-in', className)}>
-      <img src={`/ill/${image}`} alt="" aria-hidden className="h-[132px] w-auto select-none" draggable={false} />
-      <div className="flex flex-col gap-1.5">
-        <h3 className="text-[16px] font-semibold text-a-ink">{title}</h3>
-        {description && (
-          <p className="text-[14px] leading-relaxed text-a-muted">{description}</p>
-        )}
+    <div className={cn('mx-auto my-12 flex max-w-[520px] flex-col items-center gap-4 animate-fade-in', className)}>
+      <div className="flex w-full max-w-[420px] flex-col items-center gap-4 px-6 py-10 text-center">
+        <img src={`/ill/${image}`} alt="" aria-hidden className="mb-1 h-auto w-[180px] max-w-[60%] select-none" draggable={false} />
+        <h3 className="text-[20px] font-semibold leading-[1.35] text-a-ink">{title}</h3>
+        {description && <p className="text-[16px] leading-[1.65] text-a-muted">{description}</p>}
       </div>
       {action}
     </div>

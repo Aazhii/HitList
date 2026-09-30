@@ -385,11 +385,33 @@ been declared in `ViewDisplay` and left unused since it was written.
 - **New token `--a-line-strong: #d3d1cb`** (= `--border-strong`, §2) for dashed drop
   targets; `design:check` bans hex outside `index.css`, so it had to live there.
 
+### Empty, loading and offline states (T3.5–T3.8)
+
+- **One offline strip, one pill.** The design has exactly two offline signals: the
+  header badge and the amber bar (showcase 146–154). The app had three — the sidebar
+  foot also said "Offline — using local data" — so that one is gone. `SyncStatusBar`
+  shows the bar whenever `!serverOnline` (the pill's own condition), except while the
+  first load is in flight; it no longer owns saving, loading, or the old
+  `backendUnavailable` case. Its `loading`/`saving`/`backendUnavailable` props are
+  removed.
+- **The header pill is tone-tinted** (green Saved, amber Offline/Syncing, red Error) as
+  the DS `Badge` is, not a neutral outline.
+- **New amber tokens**, all literals from the showcase/DS: `--a-amber-tint` `#fdf3e4`
+  (DS `--amber-50`), `--a-amber-line` `#f2d6a8` (showcase 147 border), `--a-amber-ink`
+  `#7a4a0e` (showcase 147 text). Dark theme gets translucent equivalents.
+- **`EmptyState` follows the DS component**, not the earlier smaller rebuild: 180px art
+  (max 60%), h2 20px/600, body 16px/1.65, 420px column with 40/24 padding inside the
+  showcase's 520px / 16px-gap / 48px-margin wrapper. The action sits outside the 420px
+  column, as in showcase 176.
+- **No-match copy is computed**, not fixed: "Your tasks are safe — N are hidden by
+  <clauses>." from `describeActiveFilters` (search, status, quadrant, due, custom
+  fields; sort and grouping hide nothing so are omitted).
+
 ## 13. Standing rules for whoever executes a task
 
 1. **Verify before you change.** Every task quotes the current code. If what you find does not match the quote, **stop and report** — do not adapt silently. The file may have moved on.
 2. **Never invent a value.** If a task does not give you a number and this file does not either, ask. Guessing is what produced the current state.
 3. **One task, one commit.** Commit message: `design(T1.4): set every icon stroke to 1.75`.
-4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 341 tests.
+4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 343 tests.
 5. **Update `00-INDEX.md`** — set State and fill in "Verified by" with the actual command output or screenshot pair. A task with an empty "Verified by" is not done.
 6. **Do not delete the Automations or Reminders code.** It is being revived in Phase 4, not removed.

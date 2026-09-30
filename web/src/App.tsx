@@ -42,7 +42,7 @@ import { NotificationToast } from '@/components/NotificationToast';
 import { useInAppNotifications } from '@/hooks/useInAppNotifications';
 import { loadAppState, saveAppState, setActiveUserId, getActiveUserId } from '@/lib/storage';
 import {
-  applyTaskFilters, compareAcrossQuadrants, compareForFilters, countNarrowingFilters, FIELD_EMPTY,
+  applyTaskFilters, compareAcrossQuadrants, compareForFilters, countNarrowingFilters, describeActiveFilters, FIELD_EMPTY,
   groupFieldFor, isGroupableField, normaliseFilters, sameFilters,
 } from '@/lib/taskFilters';
 import type { TaskLayout, ViewDisplay } from '@/lib/api';
@@ -285,14 +285,16 @@ function getTodayKeyFor(ts: number) {
 
 // ── No tasks match the filters ─────────────────────────────────────────────
 
-function NoMatchingTasks({ onClear }: { onClear: () => void }) {
+function NoMatchingTasks({ hidden, clauses, onClear }: { hidden: number; clauses: string[]; onClear: () => void }) {
+  // Showcase 179–181: say what is hiding the tasks and that they are safe.
+  const because = clauses.length > 0 ? ` by ${clauses.join(' and ')}` : '';
   return (
     <EmptyState
       image={ILL.noFilteredData}
       title="No tasks match these filters"
-      description="Nothing in this list fits. Loosen a filter, or clear them all."
+      description={`Your tasks are safe — ${hidden} ${hidden === 1 ? 'is' : 'are'} hidden${because}. Loosen a filter or clear them all.`}
       action={
-        <button type="button" onClick={onClear} className={topBarPill}>
+        <button type="button" onClick={onClear} className={cn(topBarPrimary, 'h-[34px] px-3.5 text-[14px]')}>
           Clear filters
         </button>
       }
@@ -350,14 +352,14 @@ function LoadingSkeleton({ layout }: { layout: TaskLayout }) {
     );
   }
 
+  // Showcase 162–171: four white bordered cards in a 2-up grid, each a heading bar
+  // over three row bars.
   return (
-    <div className="mx-auto grid max-w-6xl grid-cols-1 gap-4 md:grid-cols-2 animate-fade-in" aria-hidden>
+    <div className="mx-auto grid max-w-[1200px] grid-cols-1 gap-4 md:grid-cols-2 animate-fade-in" aria-hidden>
       {[0, 1, 2, 3].map((i) => (
-        <div key={i} className="space-y-2.5 rounded-[12px] bg-a-surface px-5 py-[18px]">
-          <Skeleton className="h-5 w-28 bg-a-bg" />
-          {[0, 1].map((j) => (
-            <Skeleton key={j} className="h-11 w-full rounded-[8px] bg-a-bg" />
-          ))}
+        <div key={i} className="flex flex-col gap-3 rounded-[8px] border border-a-line bg-a-surface p-4">
+          <div className="h-3.5 w-[120px] animate-pulse rounded-[4px] bg-a-line-soft" />
+          {[0, 1, 2].map((j) => <div key={j} className="h-9 animate-pulse rounded-[6px] bg-a-bg" />)}
         </div>
       ))}
     </div>
@@ -1431,12 +1433,6 @@ function UserScopedApp() {
             ) : shellView === 'databases' ? dbSidebarContext : shellView === 'calendar' ? calSidebarContext : shellView === 'notes' ? notesSidebarContext : null}
             contextFoot={shellView === 'tasks' ? (
               <>
-                {!server.loading && !server.serverOnline && (
-                  <p className="flex items-center gap-1.5 px-3 pt-2 text-[12px] text-q-delegate" role="status">
-                    <WifiOff className="size-3.5" strokeWidth={1.75} aria-hidden />
-                    Offline — using local data
-                  </p>
-                )}
                 {/* Momentum moved here from a card at the top of the page. */}
                 <MomentumBar
                   stats={stats}
@@ -1520,11 +1516,9 @@ function UserScopedApp() {
             <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
             {/* Sync status: shows only while saving, offline, or erroring — with Retry. */}
             <SyncStatusBar
-              loading={server.loading}
-              saving={server.saving}
               error={server.error}
-              serverOnline={server.serverOnline}
-              backendUnavailable={server.backendUnavailable}
+              // Not "offline" until the first response is in — the skeleton owns that wait.
+              serverOnline={server.serverOnline || server.loading}
               onRetry={server.refresh}
               onDismissError={server.clearError}
             />
@@ -1578,7 +1572,10 @@ function UserScopedApp() {
                 />
               )}
               {server.loading ? (
-                <LoadingSkeleton layout={tasksMode} />
+                <div aria-busy="true">
+                  <LoadingSkeleton layout={tasksMode} />
+                  <p className="mt-4 text-center text-[14px] text-a-muted" role="status">Loading tasks from the server…</p>
+                </div>
               ) : listTodos.length === 0 ? (
                 <EmptyState
                   image={ILL.noData}
@@ -1588,7 +1585,7 @@ function UserScopedApp() {
                     <button
                       type="button"
                       onClick={() => { setDefaultQuadrant('do'); setDialogOpen(true); }}
-                      className={topBarPrimary}
+                      className={cn(topBarPrimary, 'h-[34px] px-3.5 text-[14px]')}
                     >
                       <Plus className="size-[15px]" strokeWidth={1.75} aria-hidden />
                       Add task
@@ -1596,7 +1593,11 @@ function UserScopedApp() {
                   }
                 />
               ) : visibleTodos.length === 0 ? (
-                <NoMatchingTasks onClear={() => setFilterState(DEFAULT_FILTERS)} />
+                <NoMatchingTasks
+                  hidden={listTodos.length}
+                  clauses={describeActiveFilters(filterState, taskFields.fields)}
+                  onClear={() => setFilterState(DEFAULT_FILTERS)}
+                />
               ) : tasksMode === 'list' ? (
                 <TaskListView
                   todos={visibleTodos}

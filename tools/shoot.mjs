@@ -40,7 +40,13 @@ const APP_ROUTE = {
   'tasks-list':   { nav: 'Tasks', tab: 'List' },
   'tasks-table':  { nav: 'Tasks', tab: 'Table' },
   'tasks-board':  { nav: 'Tasks', tab: 'Board', then: ['~Stage'] },
+  // Needs an UNSEEDED backend (see 00-INDEX.md) — the empty state only shows for an empty list.
   'tasks-empty':  { nav: 'Tasks', tab: 'Matrix' },
+  // Needs the seeded backend; types a search nothing matches.
+  'tasks-nomatch': { nav: 'Tasks', tab: 'Matrix', then: ['~Filter'], type: ['Search tasks', 'zzzz-no-such-task'] },
+  // Need a dead / hanging /api behind vite (see 00-INDEX.md "Shooting offline and loading").
+  'tasks-offline': { nav: 'Tasks', tab: 'Matrix' },
+  'tasks-loading': { nav: 'Tasks' },
   'notes-editor': { nav: 'Notes' },
   'notes-empty':  { nav: 'Notes' },
   'db-table':     { nav: 'Databases' },
@@ -144,6 +150,13 @@ async function shootApp(browser, screenId, url) {
   if (route.nav) { await clickText(route.nav); await new Promise((r) => setTimeout(r, 900)); }
   if (route.tab) { await clickText(route.tab); await new Promise((r) => setTimeout(r, 800)); }
   for (const t of route.then ?? []) { await clickText(t); await new Promise((r) => setTimeout(r, 800)); }
+  if (route.type) {
+    const [label, text] = route.type;
+    await page.type(`[aria-label="${label}"]`, text);
+    await new Promise((r) => setTimeout(r, 500));
+    await page.keyboard.press('Escape'); // close the popover the field lives in
+    await new Promise((r) => setTimeout(r, 500));
+  }
 
   const out = join(SHOTS, `${screenId}.app.png`);
   await page.screenshot({ path: out });

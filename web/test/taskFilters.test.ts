@@ -9,6 +9,7 @@ import {
   groupItemsByField,
   countActiveFilters,
   countNarrowingFilters,
+  describeActiveFilters,
   normaliseFilters,
   sameFilters,
   FIELD_EMPTY,
@@ -374,5 +375,34 @@ describe('groupItemsByField — the generic core', () => {
     const many: TaskFieldValues = { r1: { stage: 'idea' }, r2: { stage: 'idea' }, r3: { stage: 'idea' } };
     const groups = groupItemsByField(items, byTitle, stage, many);
     expect(groups[0].items.map((i) => i.title)).toEqual(['alpha', 'beta', 'gamma']);
+  });
+});
+
+describe('describeActiveFilters', () => {
+  const stage: FieldDef = {
+    id: 'stage', name: 'Stage', kind: 'select',
+    options: [{ id: 'idea', label: 'Idea', color: 'sage' }],
+    fieldOrder: 0, showOnCard: false, createdAt: 1, updatedAt: 1,
+  };
+  const done: FieldDef = { id: 'done', name: 'Shipped', kind: 'checkbox', options: [], fieldOrder: 1, showOnCard: false, createdAt: 1, updatedAt: 1 };
+
+  it('says nothing when no filter hides tasks, even with a sort or grouping set', () => {
+    expect(describeActiveFilters(DEFAULT_FILTERS)).toEqual([]);
+    expect(describeActiveFilters({ ...DEFAULT_FILTERS, sortBy: 'title', groupBy: 'stage' }, [stage])).toEqual([]);
+  });
+
+  it('names each filter as a clause, in the words the filter menu uses', () => {
+    expect(describeActiveFilters({
+      ...DEFAULT_FILTERS,
+      search: ' roadmap ', status: 'IN_PROGRESS', quadrant: 'DO', due: 'next7',
+      fields: { stage: ['idea', FIELD_EMPTY], done: [FIELD_SET], gone: ['x'], blank: [] },
+    }, [stage, done])).toEqual([
+      'Search is “roadmap”',
+      'Status is In progress',
+      'Quadrant is Do first',
+      'Due is In the next 7 days',
+      'Stage is Idea or empty',
+      'Shipped is checked',
+    ]);
   });
 });

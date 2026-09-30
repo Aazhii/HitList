@@ -2,53 +2,28 @@
  * SyncStatusBar — non-intrusive sync status indicator
  *
  * Renders:
- *  - A subtle pulsing dot + "Syncing…" label while saving
  *  - An error banner with Retry + Dismiss when error is set
- *  - A soft "Working offline" notice when backend is unavailable
- *  - Nothing when idle and online
+ *  - The amber offline strip (showcase 146–154) while the server is unreachable
+ *  - Nothing otherwise: saving / saved live in AppHeader's pill, loading in the
+ *    page's own skeleton
  */
 
-import { AlertCircle, CheckCircle2, Loader2, RefreshCw, WifiOff, X } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { AlertCircle, RefreshCw, WifiOff, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
 
 interface SyncStatusBarProps {
-  loading: boolean;
-  saving: boolean;
   error: string | null;
   serverOnline: boolean;
-  /** True when the backend went offline mid-session (silent fallback active) */
-  backendUnavailable?: boolean;
   onRetry: () => void;
   onDismissError: () => void;
 }
 
 export function SyncStatusBar({
-  loading,
-  saving,
   error,
   serverOnline,
-  backendUnavailable = false,
   onRetry,
   onDismissError,
 }: SyncStatusBarProps) {
-  // Show a brief "Saved" confirmation after saving completes
-  const [showSaved, setShowSaved] = useState(false);
-  // Use a ref so the effect always sees the latest previous value without
-  // triggering an extra render cycle that would miss the transition.
-  const prevSavingRef = useRef(false);
-
-  useEffect(() => {
-    const wasSaving = prevSavingRef.current;
-    prevSavingRef.current = saving;
-    if (wasSaving && !saving && !error) {
-      setShowSaved(true);
-      const t = setTimeout(() => setShowSaved(false), 1800);
-      return () => clearTimeout(t);
-    }
-  }, [saving, error]);
-
   // Error state — most prominent
   if (error) {
     return (
@@ -80,39 +55,25 @@ export function SyncStatusBar({
     );
   }
 
-  // Loading state (initial fetch)
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center gap-2 py-2 animate-fade-in">
-        <Loader2 className="size-3 text-muted-foreground animate-spin" />
-        <span className="text-[11px] text-muted-foreground">
-          {serverOnline ? 'Loading from server…' : 'Loading…'}
-        </span>
-      </div>
-    );
-  }
-
-  // Backend went offline mid-session — non-blocking offline notice
-  if (backendUnavailable && !serverOnline) {
+  // The header pill says "Offline" under this same condition, so the two agree.
+  if (!serverOnline) {
     return (
       <div
         role="status"
         aria-live="polite"
-        className="mx-4 md:mx-6 mt-3 rounded-xl border border-amber-500/20 bg-amber-500/8 px-4 py-2 flex items-center gap-2.5 animate-fade-in"
+        className="flex items-center gap-2.5 border-b border-a-amber-line bg-a-amber-tint px-6 py-2 text-[14px] text-a-amber-ink animate-fade-in"
       >
-        <WifiOff className="size-3.5 text-amber-500 flex-shrink-0" />
-        <p className="text-xs text-amber-600 dark:text-amber-400 flex-1 min-w-0 font-medium">
-          Working offline — changes saved locally
-        </p>
-        <Button
-          variant="ghost"
-          size="sm"
+        <WifiOff className="size-[15px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
+        <span className="font-semibold">Offline — using local data.</span>
+        <span className="min-w-0">Changes are kept on this device and sync when the server is reachable.</span>
+        <div className="flex-1" />
+        <button
+          type="button"
           onClick={onRetry}
-          className="h-6 px-2 text-[11px] gap-1 text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 hover:bg-amber-500/10 flex-shrink-0 rounded-lg"
+          className="h-7 flex-shrink-0 rounded-[6px] bg-a-surface px-2.5 text-[12px] font-medium text-a-ink shadow-[inset_0_0_0_1px_var(--a-line-strong)] transition-colors duration-[120ms] hover:bg-a-row-hover"
         >
-          <RefreshCw className="size-2.5" />
-          Reconnect
-        </Button>
+          Retry
+        </button>
       </div>
     );
   }

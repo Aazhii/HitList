@@ -71,6 +71,38 @@ export const DEFAULT_FILTERS: FilterState = {
   groupBy: '',
 };
 
+const STATUS_FILTER_LABELS: Record<string, string> = { TODO: 'To do', IN_PROGRESS: 'In progress', DONE: 'Done' };
+const DUE_FILTER_LABELS: Record<string, string> = {
+  overdue: 'Overdue', today: 'Today', next7: 'In the next 7 days', none: 'No date',
+};
+
+/**
+ * The filters hiding tasks, each as a short clause — "Status is In progress" —
+ * for copy like the no-matches message. Sort and grouping hide nothing, so they are left out.
+ */
+export function describeActiveFilters(filters: FilterState, fieldDefs: FieldDef[] = []): string[] {
+  const clauses: string[] = [];
+  if (filters.search.trim()) clauses.push(`Search is “${filters.search.trim()}”`);
+  if (filters.status) clauses.push(`Status is ${STATUS_FILTER_LABELS[filters.status] ?? filters.status}`);
+  if (filters.quadrant) {
+    clauses.push(`Quadrant is ${QUADRANTS.find((q) => q.id.toUpperCase() === filters.quadrant)?.label ?? filters.quadrant}`);
+  }
+  if (filters.due) clauses.push(`Due is ${DUE_FILTER_LABELS[filters.due] ?? filters.due}`);
+  if (filters.dueAfter) clauses.push(`Due on or after ${filters.dueAfter}`);
+  if (filters.dueBefore) clauses.push(`Due on or before ${filters.dueBefore}`);
+  for (const [fieldId, choices] of Object.entries(filters.fields)) {
+    const field = fieldDefs.find((f) => f.id === fieldId);
+    if (!field || choices.length === 0) continue;
+    const named = choices.map((c) => {
+      if (c === FIELD_SET) return field.kind === 'checkbox' ? 'checked' : 'set';
+      if (c === FIELD_EMPTY) return field.kind === 'checkbox' ? 'unchecked' : 'empty';
+      return field.options.find((o) => o.id === c)?.label ?? c;
+    });
+    clauses.push(`${field.name} is ${named.join(' or ')}`);
+  }
+  return clauses;
+}
+
 /**
  * Filters that actually hide tasks — what the Filter pill's badge counts.
  *
