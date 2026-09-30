@@ -58,6 +58,30 @@ cd desktop && nohup pnpm start > /tmp/hitlist-restart.log 2>&1 & disown
 # then find the new java pid's LISTEN port and curl its /api/health
 ```
 
+### Getting a populated app to shoot (no Docker needed)
+
+`shoot.mjs` against an empty backend proves nothing — ViewTabs, the table, etc. only
+render when a list has tasks — and the desktop app's own DB is the user's real data,
+so don't seed into it. Run a throwaway backend from the existing jar instead:
+
+```
+S=<scratchpad>
+STORAGE_MODE=sqlite SQLITE_PATH=$S/scratch.db SERVER_PORT=3001 \
+  OWNER_COOKIE_SECRET=<any 32+ chars> nohup java -jar api/target/hitlist.jar &
+cd web && nohup pnpm exec vite --port 9000 &          # proxies /api -> :3001 by default
+J=/tmp/hitlist-seed-jar.txt; curl -s -c $J -b $J localhost:3001/api/health
+curl -s -c $J -b $J -X POST localhost:3001/api/tasks -H 'Content-Type: application/json' \
+  -d '{"title":"Prepare Q4 roadmap review","quadrant":"do"}'     # title, not text
+node tools/shoot.mjs tasks-table --app
+```
+
+Data is scoped to a `hitlist_owner_v1` cookie, so curl-seeded tasks are invisible to a
+fresh browser; `shoot.mjs` reads that cookie from `/tmp/hitlist-seed-jar.txt` (path is
+hard-coded in the tool). Using the jar needs no rebuild, so it works while Colima/VPN is
+broken, and it shoots the **dev** frontend, not the jar's older bundled one. Kill the
+java + vite afterwards. Seeded tasks carry no due dates/fields, so row-level comparison
+against the prototype's 12 sample rows is approximate.
+
 ## Tooling note
 
 `tools/` is a separate npm package from `web/` **on purpose** — it holds
@@ -89,7 +113,7 @@ that one is fine where it is.
 | Visual | `node web/scripts/shoot.mjs <screen-id>` → a `.ref.png` / `.app.png` pair | every Phase 3 task |
 | Real build | `sh desktop/scripts/prepare-jar.sh` → copy to `api/target/hitlist.jar` → restart Electron → re-check its own port | every **phase** exit, not every task |
 
-Test baseline: **335 tests across 39 files.** This must not regress.
+Test baseline: **339 tests across 39 files.** This must not regress.
 
 ---
 
@@ -99,10 +123,10 @@ Test baseline: **335 tests across 39 files.** This must not regress.
 Phase 0  █████   5 / 5      done
 Phase 1  █████  11 / 11      foundations — the broken UI
 Phase 2  █████   5 / 5       shell exactness
-Phase 3  █░░░░   2 / 42      per-screen fidelity (T3.1 due tones, T3.2 list rows)
+Phase 3  █░░░░   3 / 42      per-screen fidelity (T3.1 due tones, T3.2 list rows, T3.3 table chrome)
 Phase 4  ░░░░░   0 / 12      missing features
 Phase 5  ░░░░░   0 / 7       proposals, unreviewed
-                23 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
+                24 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
 ```
 
 ### A note on "partially built"
@@ -165,7 +189,7 @@ on a description. Execution order is the section order below.
 |---|---|---|---|
 | T3.1 | `tasks-matrix` | **done** | shots/tasks-matrix.{ref,app}.png; due labels now plain coloured text with the prototype's own wording |
 | T3.2 | `tasks-list` | **done** | design:check PASS, tsc/vitest/lint clean; shots/tasks-list.{ref,app}.png — shell/tabs/header confirmed live; row-level pixel proof blocked by a hung dev backend (infra, not this change) — re-shoot once it's back |
-| T3.3 | `tasks-table` (+ retire `ViewTabs`' duplicate layout chips) | todo | |
+| T3.3 | `tasks-table` (+ retire `ViewTabs`' duplicate layout chips) | **done** | design:check PASS, tsc clean, vitest 339/339; shots/tasks-table.{ref,app}.png — saved-view chip row matches showcase 251–258 (Default table chip, `+ New`, Columns + Fields); built-in Table/Board chips gone. Table grid itself deliberately not reshaped (see note below) |
 | T3.4 | `tasks-board` (+ fix the blank-on-load) | todo | |
 | T3.5 | `tasks-empty` | todo | |
 | T3.6 | `tasks-nomatch` | todo | |

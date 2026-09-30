@@ -1,8 +1,9 @@
 /**
  * The tabs above the tasks in Table, Board and Calendar.
  *
- * Three built-in tabs — Table, Board, Calendar — then one tab per saved view of
- * those layouts, then "+ New". That is how a named board is made: New asks for a
+ * One default chip ("Default table" / "Default board" — the layout itself is
+ * chosen in the page header's tabs), then one chip per saved view of those
+ * layouts, then "+ New". That is how a named board is made: New asks for a
  * name, a layout, and for a board the field its columns come from, and saves a
  * view. Before this, a board existed only as "Save as view" at the foot of the
  * filter popover, and the Views list stayed empty.
@@ -67,10 +68,10 @@ export interface ViewTabsProps {
 }
 
 const TAB = cn(
-  'flex h-7 flex-shrink-0 items-center gap-1.5 rounded-[6px] px-3 text-[14px] whitespace-nowrap transition-colors duration-[120ms] sm:px-3.5',
+  'flex h-6 flex-shrink-0 items-center gap-1.5 rounded-[6px] px-2 text-[12px] whitespace-nowrap transition-colors duration-[120ms]',
 );
-const TAB_ACTIVE = 'bg-a-bg font-semibold text-a-ink shadow-[0_1px_2px_rgba(46,43,37,0.14)]';
-const TAB_IDLE = 'text-a-muted hover:text-a-ink';
+const TAB_ACTIVE = 'bg-a-accent-tint font-medium text-a-accent-700 shadow-[inset_0_0_0_1px_var(--a-accent)]';
+const TAB_IDLE = 'text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)] hover:text-a-ink';
 
 export function ViewTabs({
   layout, views, appliedViewId, dirty, listId, listName, online, groupFields,
@@ -95,27 +96,21 @@ export function ViewTabs({
   };
 
   return (
-    <div className="mb-4 flex items-center gap-2">
+    <div className="mb-3 flex items-center gap-2">
       <div
         role="tablist"
         aria-label="Task views"
-        className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto rounded-[6px] bg-[color-mix(in_srgb,var(--a-ink)_7%,transparent)] p-[3px]"
+        className="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto"
       >
-        {TAB_LAYOUTS.map((l) => {
-          const active = !appliedViewId && layout === l.value;
-          return (
-            <button
-              key={l.value}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => onSelectLayout(l.value)}
-              className={cn(TAB, active ? TAB_ACTIVE : TAB_IDLE)}
-            >
-              {l.label}
-            </button>
-          );
-        })}
+        <button
+          type="button"
+          role="tab"
+          aria-selected={!appliedViewId}
+          onClick={() => onSelectLayout(layout)}
+          className={cn(TAB, !appliedViewId ? TAB_ACTIVE : TAB_IDLE)}
+        >
+          {`Default ${layout}`}
+        </button>
 
         {tabViews.map((view) => {
           const active = view.id === appliedViewId;
@@ -134,7 +129,7 @@ export function ViewTabs({
                   if (e.key === 'Escape') setRenamingId(null);
                 }}
                 aria-label={`Rename ${view.name}`}
-                className={cn(TAB, TAB_ACTIVE, 'w-[130px] border-b border-a-accent bg-a-bg outline-none')}
+                className={cn(TAB, TAB_ACTIVE, 'w-[130px] bg-a-bg outline-none')}
               />
             );
           }
@@ -257,7 +252,7 @@ function NewViewButton({ layout, listName, groupFields, online, onCreate, onMana
       <PopoverTrigger asChild>
         <button
           type="button"
-          className={cn(TAB, TAB_IDLE, 'gap-1 px-2.5')}
+          className={cn(TAB, TAB_IDLE, 'gap-1')}
           aria-label="New view"
           disabled={!online}
           title={online ? undefined : 'Saved views need the server'}

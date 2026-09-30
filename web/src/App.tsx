@@ -1550,6 +1550,7 @@ function UserScopedApp() {
                   onResetChanges={handleApplyView}
                   onManageFields={() => { setFieldsAnchor(activeAnchor()); setFieldsManagerOpen(true); }}
                   trailing={tasksMode === 'table' ? (
+                    <div className="flex flex-shrink-0 items-center gap-2">
                     <ColumnsMenu
                       columns={tableColumnChoices}
                       hidden={tableDisplay.hidden}
@@ -1564,6 +1565,15 @@ function UserScopedApp() {
                       }))}
                       onReset={() => updateTableDisplay(() => EMPTY_DISPLAY)}
                     />
+                    <button
+                      type="button"
+                      onClick={() => { setFieldsAnchor(activeAnchor()); setFieldsManagerOpen(true); }}
+                      className="flex h-7 flex-shrink-0 items-center gap-1.5 rounded-[6px] px-2.5 text-[12px] text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)] transition-colors duration-[120ms] hover:text-a-ink"
+                    >
+                      <SlidersHorizontal className="size-3.5" strokeWidth={1.75} aria-hidden />
+                      Fields
+                    </button>
+                    </div>
                   ) : undefined}
                 />
               )}

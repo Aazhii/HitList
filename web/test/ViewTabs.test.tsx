@@ -48,10 +48,12 @@ function setup(over: Partial<ViewTabsProps> = {}) {
 }
 
 describe('ViewTabs', () => {
-  it('shows the built-in tabs and the saved views that open in this list', () => {
+  it('shows one default chip and the saved views that open in this list', () => {
     setup();
-    expect(screen.getByRole('tab', { name: 'Table' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('tab', { name: 'Board' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Default table' })).toHaveAttribute('aria-selected', 'true');
+    // Layouts live in the page header now; no duplicate Table / Board chips here.
+    expect(screen.queryByRole('tab', { name: 'Table' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('tab', { name: 'Board' })).not.toBeInTheDocument();
     // The calendar is its own view in the rail now, across tasks and databases.
     expect(screen.queryByRole('tab', { name: 'Calendar' })).not.toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Stages' })).toBeInTheDocument();
@@ -59,9 +61,9 @@ describe('ViewTabs', () => {
     expect(screen.queryByRole('tab', { name: 'Other list' })).not.toBeInTheDocument();
   });
 
-  it('switches layout and opens a saved view', () => {
-    const props = setup();
-    fireEvent.click(screen.getByRole('tab', { name: 'Board' }));
+  it('returns to the default view and opens a saved view', () => {
+    const props = setup({ layout: 'board' });
+    fireEvent.click(screen.getByRole('tab', { name: 'Default board' }));
     expect(props.onSelectLayout).toHaveBeenCalledWith('board');
     fireEvent.click(screen.getByRole('tab', { name: 'Stages' }));
     expect(props.onApplyView).toHaveBeenCalledWith(expect.objectContaining({ id: 'v1' }));
@@ -70,7 +72,7 @@ describe('ViewTabs', () => {
   it('marks the open view as a tab, not a layout', () => {
     setup({ appliedViewId: 'v1', layout: 'board' });
     expect(screen.getByRole('tab', { name: 'Stages' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('tab', { name: 'Board' })).toHaveAttribute('aria-selected', 'false');
+    expect(screen.getByRole('tab', { name: 'Default board' })).toHaveAttribute('aria-selected', 'false');
   });
 
   it('offers Save and Reset only when the screen no longer matches the open view', () => {

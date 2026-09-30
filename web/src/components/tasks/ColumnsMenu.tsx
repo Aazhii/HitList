@@ -40,7 +40,7 @@ export function ColumnsMenu({ columns, hidden, onToggle, onMove, onReset }: Colu
         <button
           type="button"
           className={cn(
-            'flex h-8 flex-shrink-0 items-center gap-1.5 rounded-[6px] px-3 text-[14px] transition-colors duration-[120ms]',
+            'flex h-7 flex-shrink-0 items-center gap-1.5 rounded-[6px] px-2.5 text-[12px] transition-colors duration-[120ms]',
             'shadow-[inset_0_0_0_1px_var(--a-line)]',
             changed ? 'text-a-ink' : 'text-a-muted hover:text-a-ink',
           )}

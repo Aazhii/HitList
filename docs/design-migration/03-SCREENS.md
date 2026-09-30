@@ -71,6 +71,16 @@ built-in layout chips and update `web/test/ViewTabs.test.tsx:65`, which currentl
 asserts `onSelectLayout` is called with `'board'`. A deliberate change with a test
 update, not a drive-by deletion.
 
+**Done (T3.3).** ViewTabs now renders one `Default table` / `Default board` chip (selecting
+it clears the applied view via `onSelectLayout`), saved-view chips, `+ New`; chips are 24px /
+12px / 6px-radius bordered tags, selected = accent tint + accent border, no grey tray. A
+`Fields` button now sits beside `Columns` (both 28px / 12px), opening the existing
+FieldsManager. **Not done, deliberately:** the prototype's DS `Table` shows row numbers,
+per-column type glyphs + type sub-labels and a `#` gutter; the app's richer table was left
+as-is per the "do not downgrade it" instruction, so those grid-level differences remain and
+are not covered by this task's pair. The `Due this week` sample chip is a prototype
+saved-view, not a built-in — the app shows whatever views the user saved.
+
 ### T3.4 — `tasks-board`
 Showcase **264–299**. → `web/src/components/tasks/TaskBoardView.tsx`
 
