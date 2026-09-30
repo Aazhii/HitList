@@ -3,6 +3,7 @@
  * Covers: render, state-sync when todo changes, delete flow
  */
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { TaskDetailPanel } from '@/components/TaskDetailPanel';
 import type { Todo } from '@/types/todo';
@@ -48,11 +49,26 @@ describe('TaskDetailPanel', () => {
     expect(screen.getByDisplayValue('Some important note')).toBeInTheDocument();
   });
 
-  it('does not render reminder or escalation controls', () => {
-    const todo = makeTodo({ dueDate: '2026-09-30', dueTime: '09:00', reminderEnabled: true });
+  it('offers a reminder for a task with a due date, and no escalation', () => {
+    const todo = makeTodo({ dueDate: '2026-09-30', dueTime: '09:00', reminderEnabled: true, reminderMinutesBefore: 30 });
     render(<TaskDetailPanel {...defaultProps} todo={todo} />);
-    expect(screen.queryByText('Reminder')).not.toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Reminder' })).toHaveTextContent('30 min before');
     expect(screen.queryByText('Set up escalation')).not.toBeInTheDocument();
+  });
+
+  it('cannot set a reminder without a due date', () => {
+    render(<TaskDetailPanel {...defaultProps} todo={makeTodo({ dueDate: undefined })} />);
+    expect(screen.getByRole('combobox', { name: 'Reminder' })).toBeDisabled();
+  });
+
+  it('saves the reminder with the task', async () => {
+    const onUpdate = vi.fn();
+    const todo = makeTodo({ dueDate: '2026-09-30', dueTime: '09:00' });
+    render(<TaskDetailPanel {...defaultProps} todo={todo} onUpdate={onUpdate} />);
+    await userEvent.click(screen.getByRole('combobox', { name: 'Reminder' }));
+    await userEvent.click(await screen.findByRole('option', { name: '1 hour before' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(onUpdate).toHaveBeenCalledWith(todo.id, expect.objectContaining({ reminderEnabled: true, reminderMinutesBefore: 60 }));
   });
 
   it('syncs state when a different todo is passed (state-sync regression)', async () => {

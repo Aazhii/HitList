@@ -612,7 +612,7 @@ Shared primitives now follow the DS, so every dialog inherits them:
 1. **Verify before you change.** Every task quotes the current code. If what you find does not match the quote, **stop and report** — do not adapt silently. The file may have moved on.
 2. **Never invent a value.** If a task does not give you a number and this file does not either, ask. Guessing is what produced the current state.
 3. **One task, one commit.** Commit message: `design(T1.4): set every icon stroke to 1.75`.
-4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 392 tests.
+4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 394 tests.
 5. **Update `00-INDEX.md`** — set State and fill in "Verified by" with the actual command output or screenshot pair. A task with an empty "Verified by" is not done.
 6. **Do not delete the Automations or Reminders code.** It is being revived in Phase 4, not removed.
 
@@ -671,3 +671,11 @@ Shared primitives now follow the DS, so every dialog inherits them:
 - ⌘K searches lists, databases, notes and tasks by title (every word must appear; a title starting with the query ranks first; six per group). Notes are read from local storage, databases from the API when it opens. It is a Dialog, 560px, 12px radius, 28px rows.
 - The header Help button opens a menu with Keyboard shortcuts; the shortcuts list now includes ⌘K. The sidebar's workspace chevron is gone until there is more than one workspace.
 - `design:check` rule `dead-control`: a `<button aria-label>` with no `onClick`/`type="submit"`/prop spread fails, except as a Radix `Trigger` child or a menu's `trigger` prop.
+
+### Phase 4: reminders (T4.3)
+
+- A task stores `reminderEnabled` and `reminderMinutesBefore` (0–1440). An update that does not mention them leaves them alone; only an explicit `reminderEnabled: false` switches one off. Rows written before this all hold false/0, so nothing needs migrating. The importer still refuses reminder data (unchanged).
+- The task detail panel has a Reminder select (Off, 5 min … 1 hour, from `REMINDER_OPTIONS`), disabled until the task has a due date; it starts at the default lead time set in Account → Reminders. This control is not in the prototype: reminders there live in the Automations rule form (T4.4).
+- Account → Reminders opens the existing `RemindersSettingsPanel` in a dialog (browser permission, default lead time). Its own styling is still the older look; restyle it if it is kept.
+- `useNotifications` is mounted in `App`, so browser notification timers now run for tasks with a reminder once permission is granted.
+- The API's contract tests are flaky on `browserSessionsCannotReadEachOthersDataOrChooseAnOwnerHeader` (it flips the last base64 character of a cookie, which is sometimes a no-op); it passed on three full reruns.

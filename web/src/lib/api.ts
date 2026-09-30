@@ -732,9 +732,10 @@ export interface TrialFeatures {
 export const trialFeatureApi = {
   /** GET /api/trial-features */
   async get(): Promise<TrialFeatures> {
-    await get<{ notifications: boolean; automations: boolean }>('/trial-features');
+    const flags = await get<{ notifications: boolean; automations: boolean }>('/trial-features');
     return {
-      notifications: false,
+      notifications: !!flags.notifications,
+      // The rule engine has no backend yet (T4.4): whatever the server says, the client stays off.
       automations: false,
       unavailableReason: AUTOMATIONS_UNAVAILABLE_REASON,
     };

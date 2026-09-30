@@ -10,7 +10,7 @@ describe('migration availability contracts', () => {
     vi.restoreAllMocks();
   });
 
-  it('forces reminder and automation flags off in the client contract', async () => {
+  it('takes notifications from the server and keeps automations off until they have a backend', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ notifications: true, automations: true }), {
         status: 200,
@@ -19,7 +19,7 @@ describe('migration availability contracts', () => {
     );
 
     await expect(trialFeatureApi.get()).resolves.toEqual({
-      notifications: false,
+      notifications: true,
       automations: false,
       unavailableReason: AUTOMATIONS_UNAVAILABLE_REASON,
     });

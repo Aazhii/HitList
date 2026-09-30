@@ -41,6 +41,8 @@ interface RemindersSettingsPanelProps {
   overdueCount: number;
   /** Count of tasks due within 15 min */
   dueSoonCount: number;
+  /** Open the settings body from the start (when the panel is the whole dialog). */
+  defaultExpanded?: boolean;
 }
 
 // ── Permission badge ─────────────────────────────────────────────────────────
@@ -93,8 +95,9 @@ export function RemindersSettingsPanel({
   activeReminderCount,
   overdueCount,
   dueSoonCount,
+  defaultExpanded = false,
 }: RemindersSettingsPanelProps) {
-  const [expanded, setExpanded] = React.useState(false);
+  const [expanded, setExpanded] = React.useState(defaultExpanded);
   const [requesting, setRequesting] = React.useState(false);
   const supported = isNotificationSupported();
 

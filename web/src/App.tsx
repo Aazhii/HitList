@@ -40,6 +40,9 @@ import { UserMenu } from '@/components/shell/UserMenu';
 import { NotificationBell } from '@/components/NotificationBell';
 import { NotificationToast } from '@/components/NotificationToast';
 import { CommandPalette } from '@/components/CommandPalette';
+import { RemindersSettingsPanel } from '@/components/RemindersSettingsPanel';
+import { useNotifications } from '@/hooks/useNotifications';
+import { getDefaultReminderMinutes, setDefaultReminderMinutes, type ReminderMinutes } from '@/lib/notifications';
 import type { PaletteItem } from '@/lib/paletteSearch';
 import { notesStorageKey } from '@/lib/notesStorage';
 import { databaseApi } from '@/lib/api';
@@ -1219,6 +1222,22 @@ function UserScopedApp() {
     handleOpenDetail(t);
   }, [activeListId, handleSelectList, handleOpenDetail]);
 
+  // ── Reminders: browser permission, timers, and the settings dialog ──────────
+  const reminders = useNotifications(todos);
+  const [remindersOpen, setRemindersOpen] = useState(false);
+  const [defaultMinutes, setDefaultMinutes] = useState<ReminderMinutes>(getDefaultReminderMinutes);
+  const reminderCounts = useMemo(() => {
+    const now = Date.now();
+    let active = 0, overdue = 0, soon = 0;
+    for (const t of todos) {
+      if (t.status === 'done' || !t.reminderEnabled || !t.dueDate) continue;
+      active += 1;
+      const due = new Date(`${t.dueDate}T${t.dueTime || '23:59'}:00`).getTime();
+      if (due < now) overdue += 1; else if (due - now <= 15 * 60000) soon += 1;
+    }
+    return { active, overdue, soon };
+  }, [todos]);
+
   // ── ⌘K palette ─────────────────────────────────────────────────────────────
   const [paletteOpen, setPaletteOpen] = useState(false);
   useEffect(() => {
@@ -1379,6 +1398,25 @@ function UserScopedApp() {
         onMarkSeen={inAppNotifications.markToastSeen}
       />
 
+      <Dialog open={remindersOpen} onOpenChange={setRemindersOpen}>
+        <DialogContent className="sm:max-w-[480px]">
+          <DialogHeader>
+            <DialogTitle>Reminders</DialogTitle>
+            <DialogDescription>Set a reminder on a task from its details. Alerts show in the bell and, once allowed, as browser notifications.</DialogDescription>
+          </DialogHeader>
+          <RemindersSettingsPanel
+            permission={reminders.permission}
+            defaultMinutes={defaultMinutes}
+            onRequestPermission={reminders.requestPermission}
+            onDefaultMinutesChange={(m) => { setDefaultMinutes(m); setDefaultReminderMinutes(m); }}
+            activeReminderCount={reminderCounts.active}
+            overdueCount={reminderCounts.overdue}
+            dueSoonCount={reminderCounts.soon}
+            defaultExpanded
+          />
+        </DialogContent>
+      </Dialog>
+
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} getItems={getPaletteItems} onOpenItem={handleOpenPaletteItem} />
 
       <AppShell
@@ -1455,7 +1493,7 @@ function UserScopedApp() {
               }}
             />
           }
-          account={<UserMenu />}
+          account={<UserMenu onOpenReminders={() => setRemindersOpen(true)} />}
           onOpenSidebar={() => setSidebarOpen(true)}
         />
         {activeView === 'notes' ? (

@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Keyboard } from 'lucide-react';
+import { Bell, Keyboard } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -11,9 +11,9 @@ import { ShortcutsDialog } from '@/components/shell/ShortcutsDialog';
 /**
  * The account menu, in the top header's right corner (showcase 1108–1111): the workspace and its
  * store, then the entries. There is no sign-in in this app — data is tied to the browser — so the
- * prototype's "Sign out" is not offered; the reminders entry point lands here with T4.3.
+ * prototype's "Sign out" is not offered; Reminders (browser permission, default lead time) opens from here.
  */
-export function UserMenu() {
+export function UserMenu({ onOpenReminders }: { onOpenReminders?: () => void }) {
   const [shortcuts, setShortcuts] = useState(false);
 
   return (
@@ -51,6 +51,12 @@ export function UserMenu() {
           </div>
 
           <div className="flex flex-col p-1.5">
+            {onOpenReminders && (
+              <DropdownMenuItem onSelect={onOpenReminders} className="gap-2.5 px-2.5 py-2 text-[14px] text-a-muted">
+                <Bell className="size-[15px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
+                Reminders
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem onSelect={() => setShortcuts(true)} className="gap-2.5 px-2.5 py-2 text-[14px] text-a-muted">
               <Keyboard className="size-[15px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
               Keyboard shortcuts

@@ -19,6 +19,20 @@ export type ReminderMinutes = typeof REMINDER_OPTIONS[number]['value'];
 
 export const DEFAULT_REMINDER_MINUTES: ReminderMinutes = 15;
 
+const DEFAULT_MINUTES_KEY = 'hitlist-reminder-default-minutes';
+
+/** The lead time a task's reminder starts with, as chosen in Reminders settings. */
+export function getDefaultReminderMinutes(): ReminderMinutes {
+  try {
+    const n = Number(localStorage.getItem(DEFAULT_MINUTES_KEY));
+    return REMINDER_OPTIONS.find((o) => o.value === n)?.value ?? DEFAULT_REMINDER_MINUTES;
+  } catch { return DEFAULT_REMINDER_MINUTES; }
+}
+
+export function setDefaultReminderMinutes(minutes: ReminderMinutes): void {
+  try { localStorage.setItem(DEFAULT_MINUTES_KEY, String(minutes)); } catch { /* not saved: this visit only */ }
+}
+
 // ── Internal state ───────────────────────────────────────────────────────────
 
 /**

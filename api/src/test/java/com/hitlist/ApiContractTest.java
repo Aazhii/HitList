@@ -82,6 +82,48 @@ class ApiContractTest {
     }
 
     @Test
+    void aTasksReminderIsKeptAndNotSwitchedOffByAnUnawareUpdate() throws Exception {
+        MockCookie browser = browser();
+        mvc.perform(post("/api/tasks")
+                .cookie(browser)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"clientId":"task-reminder","title":"Call the bank","dueDate":"2030-01-02","dueTime":"09:00",
+                     "reminderEnabled":true,"reminderMinutesBefore":30}
+                    """))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.reminderEnabled").value(true))
+            .andExpect(jsonPath("$.reminderMinutesBefore").value(30));
+
+        // An update that does not mention the reminder leaves it alone.
+        mvc.perform(post("/api/tasks/task-reminder?_method=PUT")
+                .cookie(browser)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"title\":\"Call the bank today\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.reminderEnabled").value(true))
+            .andExpect(jsonPath("$.reminderMinutesBefore").value(30));
+
+        mvc.perform(post("/api/tasks/task-reminder?_method=PUT")
+                .cookie(browser)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"reminderEnabled\":false}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.reminderEnabled").value(false))
+            .andExpect(jsonPath("$.reminderMinutesBefore").isEmpty());
+
+        mvc.perform(post("/api/tasks")
+                .cookie(browser)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"title\":\"Too early\",\"reminderEnabled\":true,\"reminderMinutesBefore\":99999}"))
+            .andExpect(status().isBadRequest());
+
+        mvc.perform(get("/api/trial-features").cookie(browser))
+            .andExpect(jsonPath("$.notifications").value(true))
+            .andExpect(jsonPath("$.automations").value(false));
+    }
+
+    @Test
     void notesListsAndWorkspaceRoutesRetainTheirApiShapes() throws Exception {
         MockCookie browser = browser();
         mvc.perform(post("/api/lists")

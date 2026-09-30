@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { CircleAlert, Clock, FileText, Trash2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { getDefaultReminderMinutes, REMINDER_OPTIONS } from '@/lib/notifications';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -94,6 +95,8 @@ export function TaskDetailPanel({
   const [category, setCategory] = useState(todo?.category ?? '');
   const [quadrant, setQuadrant] = useState<Quadrant>(todo?.quadrant ?? 'schedule');
   const [status, setStatus] = useState<TodoStatus>(todo?.status ?? 'todo');
+  /** 'off', or the minutes before the due time the reminder fires. */
+  const [reminder, setReminder] = useState<string>(todo?.reminderEnabled ? String(todo.reminderMinutesBefore ?? getDefaultReminderMinutes()) : 'off');
   const [isDirty, setIsDirty] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -109,6 +112,7 @@ export function TaskDetailPanel({
     setCategory(todo.category ?? '');
     setQuadrant(todo.quadrant ?? 'schedule');
     setStatus(todo.status ?? 'todo');
+    setReminder(todo.reminderEnabled ? String(todo.reminderMinutesBefore ?? getDefaultReminderMinutes()) : 'off');
     setIsDirty(false);
     setConfirmDelete(false);
   }, [todoId]);
@@ -124,6 +128,8 @@ export function TaskDetailPanel({
       dueTime: dueTime || undefined,
       category: category || undefined,
       quadrant,
+      reminderEnabled: reminder !== 'off' && !!dueDate,
+      ...(reminder !== 'off' ? { reminderMinutesBefore: Number(reminder) } : {}),
     };
     // Handle status change separately (for streak tracking)
     if (status !== todo.status) {
@@ -131,7 +137,7 @@ export function TaskDetailPanel({
     }
     onUpdate(todo.id, changes);
     setIsDirty(false);
-  }, [todo, text, note, dueDate, dueTime, category, quadrant, status, onUpdate, onStatusChange]);
+  }, [todo, text, note, dueDate, dueTime, category, quadrant, status, reminder, onUpdate, onStatusChange]);
 
   // Auto-save on close if dirty
   const handleClose = useCallback(() => {
@@ -260,6 +266,21 @@ export function TaskDetailPanel({
                 disabled={!dueDate}
               />
             </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label className={LABEL}>Reminder</Label>
+            <Select value={reminder} onValueChange={(v) => { setReminder(v); markDirty(); }} disabled={!dueDate}>
+              <SelectTrigger className="w-full" aria-label="Reminder">
+                <SelectValue placeholder="Off" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="off"><span className="text-a-faint">Off</span></SelectItem>
+                {REMINDER_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={String(o.value)}>{o.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="flex flex-col gap-2">

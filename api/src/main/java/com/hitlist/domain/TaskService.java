@@ -61,8 +61,7 @@ public class TaskService {
         task.put("Category", Values.optional(body, "category", 100, ""));
         task.put("ListId", listId);
         task.put("TaskOrder", Values.optionalLong(body, "taskOrder", 0, Long.MIN_VALUE));
-        task.put("ReminderEnabled", false);
-        task.put("ReminderMinutesBefore", 0);
+        applyReminder(body, task, false, 0);
         task.put("CompletedAt", completionTime(body, status, now));
         task.put("CreatedAt", now);
         task.put("UpdatedAt", now);
@@ -171,12 +170,26 @@ public class TaskService {
         if (body.containsKey("category")) task.put("Category", Values.optional(body, "category", 100, text(task, "Category")));
         if (body.containsKey("listId")) task.put("ListId", Values.optional(body, "listId", 64, text(task, "ListId")));
         if (body.containsKey("taskOrder")) task.put("TaskOrder", Values.optionalLong(body, "taskOrder", Values.number(task.get("TaskOrder"), 0), Long.MIN_VALUE));
-        task.put("ReminderEnabled", false);
-        task.put("ReminderMinutesBefore", 0);
+        applyReminder(body, task, Values.bool(task.get("ReminderEnabled")), (int) Values.number(task.get("ReminderMinutesBefore"), 0));
         if (body.containsKey("sourceNoteId")) task.put("SourceNoteId", optionalId(body, "sourceNoteId", text(task, "SourceNoteId")));
         if (body.containsKey("sourceBlockId")) task.put("SourceBlockId", optionalId(body, "sourceBlockId", text(task, "SourceBlockId")));
         if (body.containsKey("sourceRecordId")) task.put("SourceRecordId", optionalId(body, "sourceRecordId", text(task, "SourceRecordId")));
         if (body.containsKey("sourceFieldId")) task.put("SourceFieldId", optionalId(body, "sourceFieldId", text(task, "SourceFieldId")));
+    }
+
+    /**
+     * Keeps a task's in-app reminder: on/off and how many minutes before it is due (0 to one day).
+     * A body that does not mention them leaves the stored values alone, so an older client cannot
+     * switch a reminder off by not knowing about it.
+     */
+    private void applyReminder(Map<String, Object> body, Map<String, Object> task, boolean enabled, int minutes) {
+        boolean nextEnabled = Values.optionalBoolean(body, "reminderEnabled", enabled);
+        long nextMinutes = Values.optionalLong(body, "reminderMinutesBefore", minutes, 0);
+        if (nextMinutes > 1440) {
+            throw ApiException.invalid("reminderMinutesBefore must be between 0 and 1440");
+        }
+        task.put("ReminderEnabled", nextEnabled);
+        task.put("ReminderMinutesBefore", (int) nextMinutes);
     }
 
     private Predicate<Map<String, Object>> filter(Map<String, String> query) {
@@ -271,8 +284,9 @@ public class TaskService {
         output.put("category", nullable(task, "Category"));
         output.put("listId", nullable(task, "ListId"));
         output.put("taskOrder", Values.number(task.get("TaskOrder"), 0));
-        output.put("reminderEnabled", false);
-        output.put("reminderMinutesBefore", null);
+        boolean reminder = Values.bool(task.get("ReminderEnabled"));
+        output.put("reminderEnabled", reminder);
+        output.put("reminderMinutesBefore", reminder ? Values.number(task.get("ReminderMinutesBefore"), 0) : null);
         output.put("completedAt", Values.iso(Values.number(task.get("CompletedAt"), 0)));
         output.put("createdAt", Values.iso(Values.number(task.get("CreatedAt"), 0)));
         output.put("updatedAt", Values.iso(Values.number(task.get("UpdatedAt"), 0)));

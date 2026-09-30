@@ -50,6 +50,6 @@ public class PlatformController {
     @GetMapping("/api/trial-features")
     Map<String, Object> trialFeatures(HttpServletRequest request) {
         owners.owner(request);
-        return Map.of("notifications", false, "automations", false);
+        return Map.of("notifications", true, "automations", false);
     }
 }
