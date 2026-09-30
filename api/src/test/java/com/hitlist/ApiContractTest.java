@@ -128,6 +128,39 @@ class ApiContractTest {
     }
 
     @Test
+    void finishingARepeatingTaskCreatesTheNextOnceAndUndoTakesItBack() throws Exception {
+        MockCookie browser = browser();
+        mvc.perform(post("/api/tasks").cookie(browser).contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"clientId":"rec-1","title":"Water plants","dueDate":"2030-01-02","dueTime":"08:00",
+                     "quadrant":"DO","recurrence":"WEEKLY"}
+                    """))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.recurrence").value("WEEKLY"));
+
+        mvc.perform(post("/api/tasks/rec-1?_method=PUT").cookie(browser).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"status\":\"DONE\"}"))
+            .andExpect(status().isOk());
+        String listed = mvc.perform(get("/api/tasks").cookie(browser)).andReturn().getResponse().getContentAsString();
+        org.assertj.core.api.Assertions.assertThat(listed).contains("\"dueDate\":\"2030-01-09\"", "\"dueTime\":\"08:00\"");
+        org.assertj.core.api.Assertions.assertThat(listed.split("Water plants", -1).length - 1).isEqualTo(2);
+
+        // Undo: the untouched copy goes away, and finishing again makes exactly one.
+        mvc.perform(post("/api/tasks/rec-1?_method=PUT").cookie(browser).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"status\":\"TODO\"}"))
+            .andExpect(status().isOk());
+        listed = mvc.perform(get("/api/tasks").cookie(browser)).andReturn().getResponse().getContentAsString();
+        org.assertj.core.api.Assertions.assertThat(listed.split("Water plants", -1).length - 1).isEqualTo(1);
+        mvc.perform(post("/api/tasks/rec-1/complete?_method=PATCH").cookie(browser)).andReturn();
+        listed = mvc.perform(get("/api/tasks").cookie(browser)).andReturn().getResponse().getContentAsString();
+        org.assertj.core.api.Assertions.assertThat(listed.split("Water plants", -1).length - 1).isEqualTo(2);
+
+        mvc.perform(post("/api/tasks").cookie(browser).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"title\":\"Bad\",\"recurrence\":\"HOURLY\"}"))
+            .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void favoritesAndRecentsAreKeptPerOwnerAndTrimmed() throws Exception {
         MockCookie browser = browser();
         MockCookie other = browser();

@@ -37,6 +37,14 @@ describe('parseQuickCapture', () => {
     expect(p('Midnight 12am').dueTime).toBe('00:00');
   });
 
+  it('reads a repeat, and starts it today when no date is given', () => {
+    expect(p('Water plants every week')).toEqual({ title: 'Water plants', dueDate: '2026-09-30', recurrence: 'weekly' });
+    expect(p('Standup every weekday 9:30')).toEqual({ title: 'Standup', dueDate: '2026-09-30', dueTime: '09:30', recurrence: 'weekdays' });
+    expect(p('Pay rent oct 5 monthly')).toEqual({ title: 'Pay rent', dueDate: '2026-10-05', recurrence: 'monthly' });
+    expect(p('Stretch daily').recurrence).toBe('daily');
+    expect(p('Weekly review')).toEqual({ title: 'Weekly review' });
+  });
+
   it('reads a quadrant tag anywhere in the line', () => {
     expect(p('!do Fix the build')).toEqual({ title: 'Fix the build', quadrant: 'do' });
     expect(p('Plan Q4 !schedule next mon')).toEqual({ title: 'Plan Q4', quadrant: 'schedule', dueDate: '2026-10-05' });

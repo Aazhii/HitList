@@ -1,3 +1,5 @@
+import type { Recurrence } from '@/lib/recurrence';
+
 export type TodoStatus = 'todo' | 'in-progress' | 'done';
 
 /** Eisenhower Matrix quadrant */
@@ -120,6 +122,8 @@ export interface Todo {
   quadrant: Quadrant;    // Eisenhower Matrix quadrant
   reminderEnabled?: boolean;       // whether reminder is active
   reminderMinutesBefore?: number;  // minutes before due to fire (5/15/30/60)
+  /** Finishing the task creates the next one. '' (or absent) means it does not repeat. */
+  recurrence?: Recurrence | '';
   /** Set when added from a note block via the @ menu. Optional: stored state predates it. */
   sourceNoteId?: string;
   sourceBlockId?: string;

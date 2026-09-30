@@ -1,16 +1,18 @@
 /**
  * Quick capture (P6.1): one line in, a task out. The line may carry a due date ("tomorrow", "fri",
- * "in 3 days", "oct 5", "2026-10-05"), a time ("3pm", "15:30", "at 9") and a quadrant ("!do",
+ * "in 3 days", "oct 5", "2026-10-05"), a time ("3pm", "15:30", "at 9"), a repeat ("every week", "every weekday", or "daily" / "weekly" / "monthly" as the last word) and a quadrant ("!do",
  * "!schedule", "!delegate", "!eliminate"). What is recognised is taken out of the title; everything
  * else stays as typed. Pure: `now` is passed in.
  */
 import type { Quadrant } from '@/types/todo';
+import type { Recurrence } from '@/lib/recurrence';
 
 export interface CapturedTask {
   title: string;
   quadrant?: Quadrant;
   dueDate?: string;
   dueTime?: string;
+  recurrence?: Recurrence;
 }
 
 const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
@@ -79,6 +81,14 @@ function parseDate(text: string, now: Date): [string | undefined, string] {
   return [undefined, text];
 }
 
+function parseRecurrence(text: string): [Recurrence | undefined, string] {
+  const [m, rest] = take(text, /(?:^|\s)(every\s+(?:day|weekday|week|month)\b|(?:daily|weekly|monthly)$)/i);
+  if (!m) return [undefined, text];
+  const w = m[1].toLowerCase().replace(/^every\s+/, '');
+  const kind: Recurrence = w.startsWith('weekday') ? 'weekdays' : w.startsWith('day') || w === 'daily' ? 'daily' : w.startsWith('week') ? 'weekly' : 'monthly';
+  return [kind, rest];
+}
+
 export function parseQuickCapture(input: string, now: Date): CapturedTask {
   const original = input.replace(/\s+/g, ' ').trim();
   let text = original;
@@ -87,6 +97,9 @@ export function parseQuickCapture(input: string, now: Date): CapturedTask {
   const [q, afterQ] = take(text, /(?:^|\s)!(do|schedule|delegate|eliminate)\b/i);
   if (q) { quadrant = QUADRANT_WORDS[q[1].toLowerCase()]; text = afterQ; }
 
+  const [recurrence, afterRecurrence] = parseRecurrence(text);
+  text = afterRecurrence;
+
   const [dueTime, afterTime] = parseTime(text);
   text = afterTime;
   const [parsedDate, afterDate] = parseDate(text, now);
@@ -94,8 +107,10 @@ export function parseQuickCapture(input: string, now: Date): CapturedTask {
   text = afterDate;
   // A time on its own means today.
   if (dueTime && !dueDate) dueDate = iso(now);
+  // A repeat needs a date to repeat from: "water plants every week" starts today.
+  if (recurrence && !dueDate) dueDate = iso(now);
 
   // Nothing left to call it: keep the line as typed rather than make an empty task.
   const title = text || original;
-  return { title, ...(quadrant && { quadrant }), ...(dueDate && { dueDate }), ...(dueTime && { dueTime }) };
+  return { title, ...(quadrant && { quadrant }), ...(dueDate && { dueDate }), ...(dueTime && { dueTime }), ...(recurrence && { recurrence }) };
 }

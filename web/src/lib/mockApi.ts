@@ -54,6 +54,7 @@ function todoToApiTask(t: Todo): ApiTask {
     taskOrder: t.order,
     reminderEnabled: t.reminderEnabled ?? false,
     reminderMinutesBefore: t.reminderMinutesBefore ?? null,
+    recurrence: t.recurrence ? t.recurrence.toUpperCase() : null,
     completedAt: t.completedAt ? new Date(t.completedAt).toISOString() : null,
     createdAt: new Date(t.createdAt).toISOString(),
     updatedAt: new Date(t.createdAt).toISOString(),

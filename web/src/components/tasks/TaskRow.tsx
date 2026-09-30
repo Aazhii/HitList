@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { FileText, GripVertical, MoreHorizontal, PanelRightOpen, Trash2 } from 'lucide-react';
+import { RepeatMark } from '@/components/RepeatMark';
 import { cn } from '@/lib/utils';
 import { StatusIcon } from '@/components/ui/status-icon';
 import {
@@ -165,7 +166,7 @@ export function TaskRow({
 
       {/* Fixed 120px, right-aligned — showcase 238. */}
       <span className={cn('w-[120px] flex-shrink-0 whitespace-nowrap text-right text-[12px]', due ? DUE_TONE_CLASS[dueTone(due)] : '')}>
-        {due?.label}
+        {due?.label}{due && <RepeatMark recurrence={todo.recurrence} />}
       </span>
 
       <DropdownMenu>

@@ -146,7 +146,7 @@ that one is fine where it is.
 | Visual | `node web/scripts/shoot.mjs <screen-id>` → a `.ref.png` / `.app.png` pair | every Phase 3 task |
 | Real build | `sh desktop/scripts/prepare-jar.sh` → copy to `api/target/hitlist.jar` → restart Electron → re-check its own port | every **phase** exit, not every task |
 
-Test baseline: **466 tests across 61 files.** This must not regress.
+Test baseline: **469 tests across 62 files.** This must not regress.
 
 ---
 
@@ -334,7 +334,7 @@ Proposed after Phase 5 and accepted by the user: P6.1–P6.4. Each is additive; 
 | ID | Proposal | Status |
 |---|---|---|
 | P6.1 | Quick capture | **built** — `lib/quickCapture.ts`, `components/QuickCapture.tsx`; `c` or ⌘⇧N anywhere; reads a date, time and `!quadrant` from the line, shows what it read before saving |
-| P6.2 | Recurring tasks | accepted |
+| P6.2 | Recurring tasks | **built** — `Recurrence` on tasks (server `TaskService.spawnNext`, `lib/recurrence.ts`); Task details → Repeat; a repeat glyph beside the due date; quick capture reads "every week" etc.; Java `RecurrenceTest` (4) + `ApiContractTest` case |
 | P6.3 | Bulk actions in the task table | accepted |
 | P6.4 | Export and import | accepted |
 

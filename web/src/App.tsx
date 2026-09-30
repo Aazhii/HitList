@@ -41,6 +41,7 @@ import { UserMenu } from '@/components/shell/UserMenu';
 import { NotificationBell } from '@/components/NotificationBell';
 import { NotificationToast } from '@/components/NotificationToast';
 import { CommandPalette } from '@/components/CommandPalette';
+import { toApiRecurrence, type Recurrence } from '@/lib/recurrence';
 import { QuickCapture } from '@/components/QuickCapture';
 import { isTypingTarget } from '@/lib/taskKeyboard';
 import { PageSections } from '@/components/shell/PageSections';
@@ -793,7 +794,7 @@ function UserScopedApp() {
   // ── Mutations (server-first, optimistic local update) ─────────────────────
 
   const handleAddTask = useCallback(
-    async (text: string, quadrant: Quadrant, category?: string, dueDate?: string, dueTime?: string) => {
+    async (text: string, quadrant: Quadrant, category?: string, dueDate?: string, dueTime?: string, recurrence?: Recurrence) => {
       const maxOrder = listTodos.reduce((m, t) => Math.max(m, t.order), -1);
 
       // Optimistic local update — shown immediately while async save runs
@@ -807,6 +808,7 @@ function UserScopedApp() {
         category,
         dueDate,
         dueTime,
+        recurrence,
         listId: activeListId,
         order: maxOrder + 1,
         quadrant,
@@ -825,6 +827,7 @@ function UserScopedApp() {
         category,
         dueDate,
         dueTime,
+        ...(recurrence && { recurrence: toApiRecurrence(recurrence) }),
         listId: activeListId,
         taskOrder: maxOrder + 1,
       });
@@ -937,6 +940,8 @@ function UserScopedApp() {
       } else if (result) {
         // Sync server response (has accurate completedAt)
         setTodos((prev) => prev.map((t) => t.id === id ? apiTaskToTodo(result) : t));
+        // Finishing a repeating task made the next one on the server, and undoing it took that copy back.
+        if (result.recurrence && (status === 'done' || undoingCompletion)) void server.refresh();
         // Refresh momentum from server/mock
         const m = server.momentum;
         if (m) {
@@ -1005,6 +1010,7 @@ function UserScopedApp() {
       if (changes.category !== undefined) req.category = changes.category;
       if (changes.quadrant !== undefined) req.quadrant = quadrantMap[changes.quadrant];
       if (changes.status !== undefined)   req.status   = statusMap[changes.status];
+      if (changes.recurrence !== undefined) req.recurrence = toApiRecurrence(changes.recurrence);
       if (changes.reminderEnabled !== undefined)       req.reminderEnabled = changes.reminderEnabled;
       if (changes.reminderMinutesBefore !== undefined) req.reminderMinutesBefore = changes.reminderMinutesBefore;
 
@@ -1908,7 +1914,7 @@ function UserScopedApp() {
         open={captureOpen}
         onOpenChange={setCaptureOpen}
         listName={activeList?.name}
-        onAdd={(t) => { void handleAddTask(t.title, t.quadrant ?? 'do', undefined, t.dueDate, t.dueTime); }}
+        onAdd={(t) => { void handleAddTask(t.title, t.quadrant ?? 'do', undefined, t.dueDate, t.dueTime, t.recurrence); }}
       />
 
       {/* Add task dialog */}

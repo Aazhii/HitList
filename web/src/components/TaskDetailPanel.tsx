@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { CircleAlert, Clock, FileText, Trash2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { RECURRENCE_OPTIONS, type Recurrence } from '@/lib/recurrence';
 import { getDefaultReminderMinutes, REMINDER_OPTIONS } from '@/lib/notifications';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -97,6 +98,7 @@ export function TaskDetailPanel({
   const [status, setStatus] = useState<TodoStatus>(todo?.status ?? 'todo');
   /** 'off', or the minutes before the due time the reminder fires. */
   const [reminder, setReminder] = useState<string>(todo?.reminderEnabled ? String(todo.reminderMinutesBefore ?? getDefaultReminderMinutes()) : 'off');
+  const [recurrence, setRecurrence] = useState<Recurrence | ''>(todo?.recurrence ?? '');
   const [isDirty, setIsDirty] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -113,6 +115,7 @@ export function TaskDetailPanel({
     setQuadrant(todo.quadrant ?? 'schedule');
     setStatus(todo.status ?? 'todo');
     setReminder(todo.reminderEnabled ? String(todo.reminderMinutesBefore ?? getDefaultReminderMinutes()) : 'off');
+    setRecurrence(todo.recurrence ?? '');
     setIsDirty(false);
     setConfirmDelete(false);
   }, [todoId]);
@@ -128,6 +131,8 @@ export function TaskDetailPanel({
       dueTime: dueTime || undefined,
       category: category || undefined,
       quadrant,
+      // A repeat needs a date to repeat from.
+      recurrence: dueDate ? recurrence : '',
       reminderEnabled: reminder !== 'off' && !!dueDate,
       ...(reminder !== 'off' ? { reminderMinutesBefore: Number(reminder) } : {}),
     };
@@ -137,7 +142,7 @@ export function TaskDetailPanel({
     }
     onUpdate(todo.id, changes);
     setIsDirty(false);
-  }, [todo, text, note, dueDate, dueTime, category, quadrant, status, reminder, onUpdate, onStatusChange]);
+  }, [todo, text, note, dueDate, dueTime, category, quadrant, status, reminder, recurrence, onUpdate, onStatusChange]);
 
   // Auto-save on close if dirty
   const handleClose = useCallback(() => {
@@ -281,6 +286,22 @@ export function TaskDetailPanel({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label className={LABEL}>Repeat</Label>
+            <Select value={recurrence || 'none'} onValueChange={(v) => { setRecurrence(v === 'none' ? '' : (v as Recurrence)); markDirty(); }} disabled={!dueDate}>
+              <SelectTrigger className="w-full" aria-label="Repeat">
+                <SelectValue placeholder="Does not repeat" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none"><span className="text-a-faint">Does not repeat</span></SelectItem>
+                {RECURRENCE_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {!dueDate && <p className="text-[12px] text-a-faint">Set a due date to repeat a task.</p>}
           </div>
 
           <div className="flex flex-col gap-2">

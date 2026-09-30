@@ -3,7 +3,8 @@
  * quadrant are read as you type and shown under the box, so there is no surprise about what gets saved.
  */
 import { useMemo, useState } from 'react';
-import { CalendarDays, Clock, Plus } from 'lucide-react';
+import { CalendarDays, Clock, Plus, Repeat } from 'lucide-react';
+import { recurrenceLabel } from '@/lib/recurrence';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { parseQuickCapture, type CapturedTask } from '@/lib/quickCapture';
 import { getQuadrantConfig } from '@/types/todo';
@@ -71,6 +72,9 @@ function CaptureBody({ listName, onAdd }: { listName?: string; onAdd: (task: Cap
             )}
             {parsed.dueTime && (
               <span className="inline-flex items-center gap-1"><Clock className="size-[14px]" strokeWidth={1.75} aria-hidden />{timeLabel(parsed.dueTime)}</span>
+            )}
+            {parsed.recurrence && (
+              <span className="inline-flex items-center gap-1"><Repeat className="size-[14px]" strokeWidth={1.75} aria-hidden />{recurrenceLabel(parsed.recurrence)}</span>
             )}
             <span className={cn('rounded-[3px] px-1.5 py-0.5 font-semibold', getQuadrantConfig(parsed.quadrant ?? 'do').badgeClass)}>
               {getQuadrantConfig(parsed.quadrant ?? 'do').label}

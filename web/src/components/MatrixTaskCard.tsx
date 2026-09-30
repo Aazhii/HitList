@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { FileText, Trash2 } from 'lucide-react';
+import { RepeatMark } from '@/components/RepeatMark';
 import { cn } from '@/lib/utils';
 import { StatusIcon } from '@/components/ui/status-icon';
 import { getCategoryConfig, getQuadrantConfig } from '@/types/todo';
@@ -103,7 +104,7 @@ export function MatrixTaskCard({
         </div>
         <div className="flex flex-wrap items-center gap-2 text-[12px]">
           <span className={cn('size-2 flex-shrink-0 rounded-full', getQuadrantConfig(todo.quadrant).dotClass)} aria-hidden />
-          {dueInfo && <span className={cn('whitespace-nowrap', DUE_TONE_CLASS[dueTone(dueInfo)])}>{dueInfo.label}</span>}
+          {dueInfo && <span className={cn('whitespace-nowrap', DUE_TONE_CLASS[dueTone(dueInfo)])}>{dueInfo.label}<RepeatMark recurrence={todo.recurrence} /></span>}
           {categoryConfig && (
             <span className={cn(CHIP, 'border-a-line text-a-muted')}>
               <span className={cn('size-2 flex-shrink-0 rounded-[3px]', categoryConfig.swatchClass)} aria-hidden />
@@ -193,7 +194,7 @@ export function MatrixTaskCard({
         <div className="flex flex-wrap items-center gap-1.5 pl-[30px]">
           {dueInfo && (
             <span className={cn("inline-flex items-center gap-1 whitespace-nowrap", DUE_TONE_CLASS[dueTone(dueInfo)])}>
-              {dueInfo.label}
+              {dueInfo.label}<RepeatMark recurrence={todo.recurrence} />
             </span>
           )}
 

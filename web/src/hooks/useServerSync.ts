@@ -11,6 +11,7 @@
  * integration surface is minimal.
  */
 
+import { fromApiRecurrence } from '@/lib/recurrence';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ApiList,
@@ -417,6 +418,7 @@ export function apiTaskToTodo(t: ApiTask) {
     order:                 t.taskOrder,
     reminderEnabled:       t.reminderEnabled,
     reminderMinutesBefore: t.reminderMinutesBefore ?? undefined,
+    recurrence:            fromApiRecurrence(t.recurrence),
     sourceNoteId:          t.sourceNoteId || undefined,
     sourceBlockId:         t.sourceBlockId || undefined,
     sourceRecordId:        t.sourceRecordId || undefined,

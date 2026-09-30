@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { Plus } from 'lucide-react';
+import { RepeatMark } from '@/components/RepeatMark';
 import { StatusIcon } from '@/components/ui/status-icon';
 import { QUADRANT_EMPTY } from '@/lib/emptyStates';
 import { cn } from '@/lib/utils';
@@ -194,7 +195,7 @@ function MatrixRow({ todo, isNext, index, onStatusChange, onDelete, onOpen, onOp
           <div className="mt-[3px] flex flex-wrap items-center gap-2 text-[12px]">
             {dueInfo && (
               <span className={cn("whitespace-nowrap", DUE_TONE_CLASS[dueTone(dueInfo)])}>
-                {dueInfo.label}
+                {dueInfo.label}<RepeatMark recurrence={todo.recurrence} />
               </span>
             )}
             {category && <CategoryTag category={category} />}

@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 public class TaskService {
     private static final Set<String> STATUSES = Set.of("TODO", "IN_PROGRESS", "DONE");
     private static final Set<String> QUADRANTS = Set.of("DO", "SCHEDULE", "DELEGATE", "ELIMINATE");
+    private static final Set<String> RECURRENCES = Set.of("DAILY", "WEEKDAYS", "WEEKLY", "MONTHLY");
     private static final Set<String> PRIORITIES = Set.of("LOW", "MEDIUM", "HIGH");
     private final EntityRepository repository;
 
@@ -62,6 +63,7 @@ public class TaskService {
         task.put("ListId", listId);
         task.put("TaskOrder", Values.optionalLong(body, "taskOrder", 0, Long.MIN_VALUE));
         applyReminder(body, task, false, 0);
+        task.put("Recurrence", recurrence(body, ""));
         task.put("CompletedAt", completionTime(body, status, now));
         task.put("CreatedAt", now);
         task.put("UpdatedAt", now);
@@ -83,6 +85,8 @@ public class TaskService {
             throw ApiException.notFound();
         }
         updated.put("UpdatedAt", System.currentTimeMillis());
+        if (becameDone(existing, updated)) spawnNext(owner, updated);
+        else if ("DONE".equals(text(existing, "Status")) && !"DONE".equals(text(updated, "Status"))) retractNext(owner, updated);
         repository.replace(StorageTables.TASKS, owner, id, updated);
         return api(updated);
     }
@@ -98,6 +102,7 @@ public class TaskService {
         updated.put("Status", "DONE");
         updated.put("CompletedAt", System.currentTimeMillis());
         updated.put("UpdatedAt", System.currentTimeMillis());
+        if (becameDone(existing, updated)) spawnNext(owner, updated);
         repository.replace(StorageTables.TASKS, owner, id, updated);
         return api(updated);
     }
@@ -171,10 +176,103 @@ public class TaskService {
         if (body.containsKey("listId")) task.put("ListId", Values.optional(body, "listId", 64, text(task, "ListId")));
         if (body.containsKey("taskOrder")) task.put("TaskOrder", Values.optionalLong(body, "taskOrder", Values.number(task.get("TaskOrder"), 0), Long.MIN_VALUE));
         applyReminder(body, task, Values.bool(task.get("ReminderEnabled")), (int) Values.number(task.get("ReminderMinutesBefore"), 0));
+        if (body.containsKey("recurrence")) task.put("Recurrence", recurrence(body, text(task, "Recurrence")));
         if (body.containsKey("sourceNoteId")) task.put("SourceNoteId", optionalId(body, "sourceNoteId", text(task, "SourceNoteId")));
         if (body.containsKey("sourceBlockId")) task.put("SourceBlockId", optionalId(body, "sourceBlockId", text(task, "SourceBlockId")));
         if (body.containsKey("sourceRecordId")) task.put("SourceRecordId", optionalId(body, "sourceRecordId", text(task, "SourceRecordId")));
         if (body.containsKey("sourceFieldId")) task.put("SourceFieldId", optionalId(body, "sourceFieldId", text(task, "SourceFieldId")));
+    }
+
+    /** DAILY, WEEKDAYS, WEEKLY, MONTHLY, or "" for a task that does not repeat. Null or "" clears it. */
+    private String recurrence(Map<String, Object> body, String fallback) {
+        if (!body.containsKey("recurrence") || body.get("recurrence") == null || "".equals(body.get("recurrence"))) {
+            return body.containsKey("recurrence") ? "" : fallback;
+        }
+        return Values.enumValue(body, "recurrence", RECURRENCES, fallback);
+    }
+
+    private boolean becameDone(Map<String, Object> before, Map<String, Object> after) {
+        return !"DONE".equals(text(before, "Status")) && "DONE".equals(text(after, "Status"));
+    }
+
+    /**
+     * Finishing a repeating task creates the next one. The next due date is the first occurrence after this
+     * one that is not already in the past, so a task left undone for a month does not come back as four
+     * overdue copies. `RecurredTo` on the finished task makes this happen once: completing, un-completing and
+     * completing again does not add a second copy. A repeating task with no due date has nothing to repeat
+     * from, so it just completes.
+     */
+    private void spawnNext(String owner, Map<String, Object> done) {
+        String recurrence = text(done, "Recurrence");
+        String dueDate = text(done, "DueDate");
+        if (recurrence.isBlank() || dueDate.isBlank() || !text(done, "RecurredTo").isBlank()) return;
+        LocalDate next = nextOccurrence(recurrence, LocalDate.parse(dueDate), LocalDate.now());
+
+        long now = System.currentTimeMillis();
+        Map<String, Object> copy = new LinkedHashMap<>();
+        String newId = UUID.randomUUID().toString();
+        copy.put("TaskId", newId);
+        for (String key : List.of("Title", "Quadrant", "TaskPriority", "Note", "DueTime", "Category", "ListId", "TaskOrder",
+                "ReminderEnabled", "ReminderMinutesBefore", "Recurrence")) {
+            copy.put(key, done.get(key));
+        }
+        copy.put("Status", "TODO");
+        copy.put("DueDate", next.toString());
+        copy.put("CompletedAt", 0L);
+        copy.put("CreatedAt", now);
+        copy.put("UpdatedAt", now);
+        for (String key : List.of("SourceNoteId", "SourceBlockId", "SourceRecordId", "SourceFieldId")) copy.put(key, "");
+        repository.insert(StorageTables.TASKS, owner, copy);
+
+        String oldId = text(done, "TaskId");
+        for (Map<String, Object> value : repository.list(StorageTables.FIELD_VALUES, owner)) {
+            if (!oldId.equals(text(value, "TaskId"))) continue;
+            Map<String, Object> cloned = new LinkedHashMap<>(value);
+            cloned.put("PropId", UUID.randomUUID().toString());
+            cloned.put("TaskId", newId);
+            repository.insert(StorageTables.FIELD_VALUES, owner, cloned);
+        }
+        done.put("RecurredTo", newId);
+    }
+
+    /**
+     * Un-completing a repeating task (the Undo on the completion toast) takes back the copy it made, as long
+     * as nobody has touched that copy since. If it has been edited or finished, it is left alone.
+     */
+    private void retractNext(String owner, Map<String, Object> reopened) {
+        String nextId = text(reopened, "RecurredTo");
+        if (nextId.isBlank()) return;
+        repository.find(StorageTables.TASKS, owner, nextId).ifPresent(next -> {
+            boolean untouched = "TODO".equals(text(next, "Status"))
+                && Values.number(next.get("UpdatedAt"), 0) == Values.number(next.get("CreatedAt"), 0);
+            if (untouched) {
+                repository.deleteRows(StorageTables.FIELD_VALUES, owner, row -> nextId.equals(text(row, "TaskId")));
+                repository.delete(StorageTables.TASKS, owner, nextId);
+                reopened.put("RecurredTo", "");
+            }
+        });
+    }
+
+    /** The first occurrence strictly after `due` that is on or after `today`. */
+    static LocalDate nextOccurrence(String recurrence, LocalDate due, LocalDate today) {
+        LocalDate next = step(recurrence, due, due, 1);
+        for (int n = 2; next.isBefore(today) && n < 100_000; n++) next = step(recurrence, due, next, n);
+        return next;
+    }
+
+    private static LocalDate step(String recurrence, LocalDate origin, LocalDate from, int n) {
+        return switch (recurrence) {
+            case "DAILY" -> from.plusDays(1);
+            case "WEEKLY" -> from.plusWeeks(1);
+            // From the original date each time, so the 31st lands on month ends and then returns to the 31st.
+            case "MONTHLY" -> origin.plusMonths(n);
+            case "WEEKDAYS" -> {
+                LocalDate d = from.plusDays(1);
+                while (d.getDayOfWeek().getValue() > 5) d = d.plusDays(1);
+                yield d;
+            }
+            default -> throw new IllegalStateException(recurrence);
+        };
     }
 
     /**
@@ -287,6 +385,7 @@ public class TaskService {
         boolean reminder = Values.bool(task.get("ReminderEnabled"));
         output.put("reminderEnabled", reminder);
         output.put("reminderMinutesBefore", reminder ? Values.number(task.get("ReminderMinutesBefore"), 0) : null);
+        output.put("recurrence", nullable(task, "Recurrence"));
         output.put("completedAt", Values.iso(Values.number(task.get("CompletedAt"), 0)));
         output.put("createdAt", Values.iso(Values.number(task.get("CreatedAt"), 0)));
         output.put("updatedAt", Values.iso(Values.number(task.get("UpdatedAt"), 0)));

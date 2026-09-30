@@ -29,6 +29,8 @@ export interface ApiTask {
   taskOrder: number;
   reminderEnabled: boolean;
   reminderMinutesBefore: number | null;
+  /** DAILY, WEEKDAYS, WEEKLY or MONTHLY; null for a task that does not repeat. Absent from older servers. */
+  recurrence?: string | null;
   completedAt: string | null;  // ISO-8601 instant
   createdAt: string;
   updatedAt: string;
@@ -70,6 +72,8 @@ export interface TaskCreateRequest {
   taskOrder?: number;
   reminderEnabled?: boolean;
   reminderMinutesBefore?: number;
+  /** DAILY, WEEKDAYS, WEEKLY or MONTHLY; '' on update stops it repeating. */
+  recurrence?: string;
   /** Completion time retained when importing an already completed local task. */
   completedAt?: string;
   /** The note block this task was added from; '' clears on update. */
