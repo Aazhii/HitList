@@ -59,13 +59,13 @@ Test baseline: **335 tests across 39 files.** This must not regress.
 ## Progress
 
 ```
-Phase 0  ██▌░░   2 / 5      design:check + shoot built; T0.1/T0.2/T0.3 left
+Phase 0  █████   5 / 5      done
 Phase 1  █████  11 / 11      foundations — the broken UI
 Phase 2  █████   5 / 5       shell exactness
-Phase 3  ▎░░░░   1 / 42      per-screen fidelity (T3.1 due labels + tones)
+Phase 3  █░░░░   2 / 42      per-screen fidelity (T3.1 due tones, T3.2 list rows)
 Phase 4  ░░░░░   0 / 12      missing features
 Phase 5  ░░░░░   0 / 7       proposals, unreviewed
-                19 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
+                23 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
 ```
 
 ### A note on "partially built"
@@ -82,9 +82,9 @@ assume they are right. Shoot the pair and see.
 
 | ID | Title | State | Verified by |
 |---|---|---|---|
-| T0.1 | Confirm local bundle matches the live design project | todo | |
-| T0.2 | Commit pending work — `web/public/fonts/` is untracked but referenced (ship-blocker) | todo | |
-| T0.3 | Create the tracking scaffold | todo | |
+| T0.1 | Confirm local bundle matches the live design project | **done** | DesignSync get_file vs local: byte-identical (md5 5b930c36a0bf1d7e8dabfd9d08967b17) |
+| T0.2 | Commit pending work — `web/public/fonts/` is untracked but referenced (ship-blocker) | **done** | git log eaaa288..a22d237 — 5 commits, working tree clean |
+| T0.3 | Create the tracking scaffold | **done** | docs/design-migration/ committed in a22d237 |
 | T0.4 | Build `design:check`, the conformance script | **done** | `pnpm design:check` -> PASS (7 rules: size, radius, pill, stroke, motion, accent, colour) |
 | T0.5 | Build `shoot.mjs` + `sample-pixels.mjs`, the visual proof tools | **done** | `node tools/shoot.mjs tasks-matrix` writes both PNGs into docs/design-migration/shots/ |
 
@@ -127,7 +127,7 @@ on a description. Execution order is the section order below.
 | ID | Screen | State | Verified by |
 |---|---|---|---|
 | T3.1 | `tasks-matrix` | **done** | shots/tasks-matrix.{ref,app}.png; due labels now plain coloured text with the prototype's own wording |
-| T3.2 | `tasks-list` | todo | |
+| T3.2 | `tasks-list` | **done** | design:check PASS, tsc/vitest/lint clean; shots/tasks-list.{ref,app}.png — shell/tabs/header confirmed live; row-level pixel proof blocked by a hung dev backend (infra, not this change) — re-shoot once it's back |
 | T3.3 | `tasks-table` (+ retire `ViewTabs`' duplicate layout chips) | todo | |
 | T3.4 | `tasks-board` (+ fix the blank-on-load) | todo | |
 | T3.5 | `tasks-empty` | todo | |

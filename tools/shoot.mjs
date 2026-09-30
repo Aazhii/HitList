@@ -132,7 +132,7 @@ async function shootApp(browser, screenId, url) {
   const errors = [];
   page.on('pageerror', (e) => errors.push(e.message));
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text().slice(0, 160)); });
-  await page.goto(url, { waitUntil: 'networkidle2' });
+  await page.goto(url, { waitUntil: 'domcontentloaded' });
   await new Promise((r) => setTimeout(r, 1400));
 
   const clickText = async (text) => {

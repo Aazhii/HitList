@@ -145,6 +145,12 @@ export function TaskListView({
             fieldValues={fieldValues}
           />
         ))}
+
+        {/* Showcase 244 — a standing caption, not conditional on filters. */}
+        <p className="text-center text-[12px] text-a-muted">
+          Drag rows to reorder or move between quadrants.
+          {dragDisabled && ' Reordering is off while filters are active.'}
+        </p>
       </div>
     </DndContext>
   );
@@ -229,20 +235,39 @@ function QuadrantGroup({
 
   return (
     <section aria-labelledby={headingId}>
-      <header className="mb-1.5 flex items-center gap-2.5 px-1">
-        <span className={cn('size-[9px] flex-shrink-0 rounded-full', q.dotClass)} aria-hidden />
-        <h2 id={headingId} className={cn('font-display text-[16px] leading-tight', q.inkClass)}>{q.label}</h2>
-        <span className="hidden text-[12px] text-a-faint sm:inline">{q.subtitle}</span>
-        <span className={cn('text-[12px] font-bold tabular-nums', q.inkClass)}>
+      {/* A tinted label pill, not a heading row — showcase 222-224. */}
+      <header className="mb-2 flex items-center gap-2 px-1">
+        <h2
+          id={headingId}
+          className={cn('rounded-[3px] px-2 py-[1px] text-[14px] font-medium', q.tintClass, q.inkClass)}
+        >
+          {q.label}
+        </h2>
+        <span className="text-[14px] text-a-muted">{q.subtitle}</span>
+        <span className="font-mono text-[11px] text-a-muted tabular-nums">
           {openCount}
           <span className="sr-only"> open</span>
         </span>
-        <span className="h-px flex-1 bg-a-line-soft" aria-hidden />
+        <span className="flex-1" />
+        <button
+          type="button"
+          onClick={() => onAddToQuadrant(q.id)}
+          aria-label={`Add task to ${q.label}`}
+          className="flex h-7 items-center gap-1.5 rounded-[6px] px-2.5 text-[13px] text-a-muted transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
+        >
+          <Plus className="size-3.5" strokeWidth={1.75} aria-hidden />
+          Add here
+        </button>
       </header>
 
+      {/* White bordered container, 8px radius, rows inside as hairline-separated
+          flat rows — showcase 229. */}
       <div
         ref={setNodeRef}
-        className={cn('rounded-[12px] transition-colors duration-[120ms]', isOver && 'bg-a-row-hover')}
+        className={cn(
+          'overflow-hidden rounded-[8px] border border-a-line bg-a-surface transition-colors duration-[120ms]',
+          isOver && 'bg-a-row-hover',
+        )}
       >
         <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
           {tasks.map((todo, i) => (
@@ -264,17 +289,11 @@ function QuadrantGroup({
           ))}
         </SortableContext>
 
-        <button
-          type="button"
-          onClick={() => onAddToQuadrant(q.id)}
-          aria-label={`Add task to ${q.label}`}
-          className="flex w-full items-center gap-[11px] rounded-[8px] px-3 py-2 text-left text-[14px] text-a-faint transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
-        >
-          <span className="flex size-5 flex-shrink-0 items-center justify-center" aria-hidden>
-            <Plus className="size-3.5" strokeWidth={1.75} />
-          </span>
-          {tasks.length === 0 ? 'Nothing here yet — add a task' : 'Add task'}
-        </button>
+        {tasks.length === 0 && (
+          <p className="px-3.5 py-3.5 text-center text-[13px] text-a-faint">
+            Nothing in {q.label} yet.
+          </p>
+        )}
       </div>
     </section>
   );

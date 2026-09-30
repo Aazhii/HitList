@@ -47,7 +47,7 @@ export interface TaskRowProps {
 const CHIP = 'inline-flex items-center rounded-[3px] px-[11px] py-1 text-[12px] leading-none whitespace-nowrap';
 
 const HOVER_BUTTON = cn(
-  'flex size-5 items-center justify-center rounded-[6px] text-a-faint transition-[opacity,background-color,color] duration-[120ms]',
+  'flex size-5 flex-shrink-0 items-center justify-center rounded-[6px] text-a-faint transition-[opacity,background-color,color] duration-[120ms]',
   'opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100',
   'hover:bg-[color-mix(in_srgb,var(--a-ink)_9%,transparent)] hover:text-a-ink',
 );
@@ -91,7 +91,7 @@ export function TaskRow({
         animationFillMode: 'both',
       }}
       className={cn(
-        'group relative flex items-start gap-[11px] rounded-[8px] px-3 py-2.5 animate-slide-up',
+        'group relative flex min-h-11 items-center gap-2.5 border-b border-a-line-soft px-3 animate-slide-up last:border-b-0',
         'transition-[background-color,box-shadow,opacity,scale] duration-[260ms]',
         isDragging
           ? 'z-10 bg-a-bg shadow-[var(--a-shadow-md)]'
@@ -101,6 +101,8 @@ export function TaskRow({
         deleting && 'scale-[0.98] opacity-0',
       )}
     >
+      {/* Always visible, --gray-300 — showcase 231. Not a hover-reveal: the
+          design shows the grip on every row, all the time. */}
       {canDrag ? (
         <button
           ref={setActivatorNodeRef}
@@ -108,79 +110,80 @@ export function TaskRow({
           {...attributes}
           {...listeners}
           aria-label={`Reorder “${todo.text}”`}
-          className={cn(HOVER_BUTTON, 'mt-0.5 flex-shrink-0 cursor-grab active:cursor-grabbing')}
+          className="flex flex-shrink-0 cursor-grab items-center justify-center text-a-line active:cursor-grabbing"
         >
           <GripVertical className="size-3.5" strokeWidth={1.75} />
         </button>
       ) : (
-        <span className="size-5 flex-shrink-0" aria-hidden />
+        <span className="size-3.5 flex-shrink-0" aria-hidden />
       )}
 
-      <span className="mt-[2px] flex flex-shrink-0">
-        <StatusBox
-          state={todo.status}
-          label={todo.text}
-          disabled={!next}
-          onClick={() => { if (next) onStatusChange(todo.id, next); }}
-          className={cn(!next && 'cursor-default')}
-        />
-      </span>
+      <StatusBox
+        state={todo.status}
+        label={todo.text}
+        disabled={!next}
+        onClick={() => { if (next) onStatusChange(todo.id, next); }}
+        className={cn('flex-shrink-0', !next && 'cursor-default')}
+      />
 
       <button
         type="button"
         onClick={() => onOpen(todo)}
         className={cn(
-          'min-w-0 flex-1 text-left text-[14px] leading-[1.5] break-words',
+          'min-w-0 flex-1 truncate text-left text-[14px] font-medium',
           isDone ? 'text-a-faint line-through decoration-[1.5px]' : 'text-a-ink',
         )}
       >
         {todo.text}
       </button>
 
-      <div className="flex flex-shrink-0 flex-wrap items-center justify-end gap-2 self-center">
-        {isNext && !isDone && (
-          <span className="text-[11px] font-bold uppercase tracking-[0.06em] text-a-accent-700">Next</span>
-        )}
+      {isNext && !isDone && (
+        <span className="flex-shrink-0 rounded-[3px] bg-a-accent-tint px-2 py-[3px] text-[11px] font-bold text-a-accent-700">
+          Next up
+        </span>
+      )}
 
-        {due && <span className={cn("whitespace-nowrap", DUE_TONE_CLASS[dueTone(due)])}>{due.label}</span>}
+      {todo.sourceNoteId && onOpenNote && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onOpenNote(todo.sourceNoteId!); }}
+          title="Open the note this came from"
+          aria-label={`Open the note “${todo.text}” came from`}
+          className="flex flex-shrink-0 items-center gap-1 text-[12px] text-a-accent-700"
+        >
+          <FileText className="size-3" strokeWidth={1.75} aria-hidden /> Note
+        </button>
+      )}
 
-        {todo.sourceNoteId && onOpenNote && (
-          <button
-            type="button"
-            onClick={() => onOpenNote(todo.sourceNoteId!)}
-            title="Open the note this came from"
-            aria-label={`Open the note “${todo.text}” came from`}
-            className={cn(CHIP, 'gap-1 text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)] transition-colors duration-[120ms] hover:text-a-ink')}
-          >
-            <FileText className="size-3" strokeWidth={1.75} aria-hidden /> Note
+      {category && (
+        <span className={cn(CHIP, 'flex-shrink-0 text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)]')}>
+          {category.label}
+        </span>
+      )}
+
+      {fieldDefs && <FieldChips fields={fieldDefs} values={fieldValues} chipClass={CHIP} />}
+
+      {/* Fixed 120px, right-aligned — showcase 238. */}
+      <span className={cn('w-[120px] flex-shrink-0 whitespace-nowrap text-right text-[12px]', due ? DUE_TONE_CLASS[dueTone(due)] : '')}>
+        {due?.label}
+      </span>
+
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button type="button" className={HOVER_BUTTON} aria-label={`Options for “${todo.text}”`}>
+            <MoreHorizontal className="size-3.5" strokeWidth={1.75} />
           </button>
-        )}
-
-        {category && (
-          <span className={cn(CHIP, 'text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)]')}>
-            {category.label}
-          </span>
-        )}
-
-        {fieldDefs && <FieldChips fields={fieldDefs} values={fieldValues} chipClass={CHIP} />}
-
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <button type="button" className={HOVER_BUTTON} aria-label={`Options for “${todo.text}”`}>
-              <MoreHorizontal className="size-3.5" strokeWidth={1.75} />
-            </button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            <DropdownMenuItem onClick={() => onOpen(todo)}>
-              <PanelRightOpen className="size-3.5" /> Open details
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onClick={handleDelete}>
-              <Trash2 className="size-3.5" /> Delete task
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-48">
+          <DropdownMenuItem onClick={() => onOpen(todo)}>
+            <PanelRightOpen className="size-3.5" /> Open details
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem variant="destructive" onClick={handleDelete}>
+            <Trash2 className="size-3.5" /> Delete task
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }
