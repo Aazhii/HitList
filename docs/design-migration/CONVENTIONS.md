@@ -615,3 +615,10 @@ Shared primitives now follow the DS, so every dialog inherits them:
 4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 371 tests.
 5. **Update `00-INDEX.md`** — set State and fill in "Verified by" with the actual command output or screenshot pair. A task with an empty "Verified by" is not done.
 6. **Do not delete the Automations or Reminders code.** It is being revived in Phase 4, not removed.
+
+### Databases: board, new database, empty, offline (T3.18, T3.30–T3.32)
+
+- Board lanes are `--a-line-soft` 8px blocks with an ink-colour dot, 13px/600 name and mono count. The lane's "+" composer is not in the prototype, so it shows only on lane hover.
+- A board view remembers its lane field in `filters.groupBy`; Properties gets a "Board columns come from" section for it.
+- New database: a "+" icon in the sidebar "Databases" header opens a 280px panel (name, optional emoji, Create database), replacing the old header button.
+- Empty state uses `sample_data.png` and the prototype copy. Offline matched without changes.

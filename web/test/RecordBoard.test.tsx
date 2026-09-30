@@ -54,22 +54,17 @@ describe('RecordBoard', () => {
     expect(within(screen.getByRole('region', { name: /No Stage/ })).getByText('Ubik')).toBeInTheDocument();
   });
 
-  it('says which field the columns come from, and switches to another', async () => {
-    const props = setup();
-    await userEvent.click(screen.getByRole('button', { name: 'Columns from Stage' }));
-    await userEvent.click(await screen.findByRole('menuitem', { name: /Tags/ }));
-    expect(props.onGroupFieldChange).toHaveBeenCalledWith('tags');
+  it('has no toolbar of its own: the lane field is chosen from Properties (page level)', () => {
+    setup();
+    expect(screen.queryByRole('button', { name: /Columns from/ })).not.toBeInTheDocument();
   });
 
-  it('goes back to choosing, and offers to create a column', async () => {
-    const props = setup();
-    await userEvent.click(screen.getByRole('button', { name: 'Columns from Stage' }));
-    await userEvent.click(await screen.findByRole('menuitem', { name: 'Choose later' }));
-    expect(props.onGroupFieldChange).toHaveBeenCalledWith('');
-
-    await userEvent.click(screen.getByRole('button', { name: 'Columns from Stage' }));
-    await userEvent.click(await screen.findByRole('menuitem', { name: /Create a column/ }));
-    expect(props.onManageFields).toHaveBeenCalled();
+  it('says on a card the card fields other than the lane field, comma-separated', () => {
+    setup({ values: { r1: { stage: 'idea', tags: ['home'] }, r2: {} } });
+    const card = within(screen.getByRole('region', { name: /Idea/ })).getByText('Dune').closest('article')!;
+    // "Stage" is the lane, so it is not repeated; "Tags" is.
+    expect(card).toHaveTextContent('Home');
+    expect(card).not.toHaveTextContent('Idea');
   });
 
   it('adds a record straight into a column', () => {

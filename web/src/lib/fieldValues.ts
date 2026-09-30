@@ -46,6 +46,13 @@ export const OPTION_DOT_CLASS: Record<OptionColor, string> = {
   red: 'bg-dot-red',
 };
 
+/** The tag's own ink as a dot — what a database board's lane header uses (showcase 754). */
+export const OPTION_INK_DOT_CLASS: Record<OptionColor, string> = {
+  accent: 'bg-a-accent', sage: 'bg-a-sage', do: 'bg-q-do', schedule: 'bg-q-schedule', delegate: 'bg-q-delegate', eliminate: 'bg-q-eliminate',
+  gray: 'bg-tag-gray', brown: 'bg-tag-brown', orange: 'bg-tag-orange', yellow: 'bg-tag-yellow', green: 'bg-tag-green',
+  blue: 'bg-tag-blue', purple: 'bg-tag-purple', pink: 'bg-tag-pink', red: 'bg-tag-red',
+};
+
 /** The dot for "no value" — the showcase's "No Stage" swatch (#D0D5DD). */
 export const NO_VALUE_DOT_CLASS = 'bg-dot-none';
 

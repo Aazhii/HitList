@@ -22,11 +22,11 @@ call('POST', '/databases', {'name': 'Clients', 'icon': '🤝'})
 call('POST', '/databases', {'name': 'Recipes', 'icon': '🍜'})
 db = books['id']
 
-def field(name, kind, options=None, show=True):
+def field(name, kind, options=None, show=False):
     return call('POST', '/fields', {'name': name, 'kind': kind, 'databaseId': db, 'showOnCard': show, **({'options': options} if options else {})})
 
 status = field('Status', 'select', [{'label': 'To read', 'color': 'gray'}, {'label': 'Reading', 'color': 'blue'}, {'label': 'Finished', 'color': 'green'}, {'label': 'Abandoned', 'color': 'orange'}])
-genre = field('Genre', 'multi', [{'label': 'Fiction', 'color': 'purple'}, {'label': 'Software', 'color': 'blue'}, {'label': 'Product', 'color': 'pink'}, {'label': 'Business', 'color': 'yellow'}])
+genre = field('Genre', 'multi', [{'label': 'Fiction', 'color': 'purple'}, {'label': 'Software', 'color': 'blue'}, {'label': 'Product', 'color': 'pink'}, {'label': 'Business', 'color': 'yellow'}], show=True)
 rating = field('Rating', 'number')
 finished = field('Finished', 'date')
 read = field('Read', 'checkbox')
@@ -50,4 +50,13 @@ for title, st, gs, rt, fin, rd, lk in rows:
     if fin: put(finished, fin)
     put(read, rd)
     if lk: put(link, lk)
+# Saved views the prototype's chip row shows: a board grouped by Status, and a filtered table.
+base_filters = {'search': '', 'status': '', 'quadrant': '', 'category': '', 'due': '', 'dueAfter': '', 'dueBefore': '',
+                'sortBy': 'order', 'sortDir': 'asc', 'fields': {}, 'groupBy': ''}
+call('POST', '/views', {'name': 'By status board', 'layout': 'board', 'scopeListId': '', 'scopeDatabaseId': db,
+                        'filters': {**base_filters, 'groupBy': status['id']}, 'showDone': False,
+                        'display': {'hidden': [], 'order': [], 'widths': {}}})
+call('POST', '/views', {'name': 'Needs revisit', 'layout': 'table', 'scopeListId': '', 'scopeDatabaseId': db,
+                        'filters': {**base_filters, 'fields': {status['id']: [opt(status, 'To read'), opt(status, 'Abandoned')]}}, 'showDone': False,
+                        'display': {'hidden': [], 'order': [], 'widths': {}}})
 print(f'seeded database "Reading list" ({len(rows)} rows) plus Clients and Recipes')

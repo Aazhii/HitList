@@ -1,40 +1,47 @@
 /**
- * One record on a board: its title, and chips for the fields marked "show on
- * card".
+ * One record on a board (showcase 755): a white bordered card with the title and one grey line of
+ * the fields marked "show on card", joined with commas — not chips.
  *
- * Deliberately not MatrixTaskCard. That card is a status box, a due chip, a
- * reminder bell, a category and a link back to a note — a task has all of those
- * and a record has none of them. What they share is FieldChips, which already
- * filters on showOnCard, so a field looks the same wherever it appears.
+ * Deliberately not MatrixTaskCard: a task has a status, a due date and a note link; a record has
+ * none of them.
  */
 import { cn } from '@/lib/utils';
-import { FieldChips } from '@/components/fields/FieldChips';
 import type { ApiDatabaseRow } from '@/lib/api';
 import type { FieldDef, FieldValue } from '@/types/fields';
-
-const CHIP = 'inline-flex items-center rounded-[3px] px-2.5 py-[3px] text-[12px] leading-none whitespace-nowrap';
 
 export interface RecordCardProps {
   record: ApiDatabaseRow;
   fields: FieldDef[];
   values: Record<string, FieldValue> | undefined;
+  /** The field the board's lanes come from: already said by the lane, so not repeated. */
+  laneFieldId?: string;
   className?: string;
 }
 
-export function RecordCard({ record, fields, values, className }: RecordCardProps) {
-  return (
-    <article
-      className={cn(
-        'flex flex-col gap-[7px] rounded-[8px] bg-a-bg px-[14px] py-[10px]',
-        'shadow-[inset_0_0_0_1px_var(--a-line-soft)]',
-        className,
-      )}
-    >
-      <p className="text-[14px] leading-snug text-a-ink">{record.title}</p>
+/** "Software, Product" — what a card's second line says. */
+export function cardMeta(fields: FieldDef[], values: Record<string, FieldValue> | undefined, laneFieldId?: string): string {
+  if (!values) return '';
+  return fields
+    .filter((f) => f.showOnCard && f.id !== laneFieldId && values[f.id] !== undefined && values[f.id] !== null)
+    .map((f) => {
+      const v = values[f.id];
+      if (f.kind === 'select' || f.kind === 'multi') {
+        const ids = Array.isArray(v) ? v : [String(v)];
+        return ids.map((id) => f.options.find((o) => o.id === id)?.label).filter(Boolean).join(', ');
+      }
+      if (f.kind === 'checkbox') return v === true ? f.name : '';
+      return String(v);
+    })
+    .filter(Boolean)
+    .join(', ');
+}
 
-      <div className="flex flex-wrap items-center gap-1.5 empty:hidden">
-        <FieldChips fields={fields} values={values} chipClass={CHIP} />
-      </div>
+export function RecordCard({ record, fields, values, laneFieldId, className }: RecordCardProps) {
+  const meta = cardMeta(fields, values, laneFieldId);
+  return (
+    <article className={cn('rounded-[8px] border border-a-line bg-a-surface px-3 py-2.5', className)}>
+      <div className="text-[13px] font-medium text-a-ink">{record.title}</div>
+      {meta && <div className="mt-1 text-[12px] text-a-faint">{meta}</div>}
     </article>
   );
 }

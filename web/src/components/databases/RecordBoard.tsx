@@ -34,7 +34,7 @@ import {
   BOARD_COLUMN_PREFIX, boardCardId, boardDrop, parseBoardCardId,
 } from '@/components/tasks/TaskBoardView';
 import { groupItemsByField, isGroupableField, type FieldGroup } from '@/lib/taskFilters';
-import { NO_VALUE_DOT_CLASS, OPTION_DOT_CLASS } from '@/lib/fieldValues';
+import { NO_VALUE_DOT_CLASS, OPTION_INK_DOT_CLASS } from '@/lib/fieldValues';
 import { FIELD_KIND_LABELS, type FieldDef, type FieldValue, type TaskFieldValues } from '@/types/fields';
 import type { ApiDatabaseRow } from '@/lib/api';
 
@@ -59,26 +59,11 @@ export function RecordBoard({
   rows, fields, values, groupField, onGroupFieldChange, onManageFields, onSetValue, onAdd,
 }: RecordBoardProps) {
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [canScrollRight, setCanScrollRight] = useState(false);
 
   const columns = useMemo<Array<FieldGroup<ApiDatabaseRow>>>(
     () => (groupField ? groupItemsByField(rows, byOrder, groupField, values, { includeEmpty: true }) : []),
     [rows, groupField, values],
   );
-
-  // The right-edge fade is a "there's more" hint, not decoration — it must
-  // disappear once scrolled to the actual end, or it lies about the last column.
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) { setCanScrollRight(false); return; }
-    const update = () => setCanScrollRight(el.scrollWidth - el.clientWidth - el.scrollLeft > 1);
-    update();
-    el.addEventListener('scroll', update);
-    const observer = new ResizeObserver(update);
-    observer.observe(el);
-    return () => { el.removeEventListener('scroll', update); observer.disconnect(); };
-  }, [columns]);
 
   const sensors = useSensors(
     // A small distance, so a click on a card is not mistaken for a drag.
@@ -116,45 +101,8 @@ export function RecordBoard({
       onDragEnd={handleDragEnd}
     >
       <div className="animate-fade-in">
-        <div className="mb-3 flex items-center gap-2">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                className="flex h-8 items-center gap-1.5 rounded-[6px] px-3 text-[14px] text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)] transition-colors duration-[120ms] hover:text-a-ink"
-                aria-label={`Columns from ${groupField.name}`}
-              >
-                <Columns3 className="size-3.5" strokeWidth={1.75} aria-hidden />
-                Columns: <span className="font-semibold text-a-ink">{groupField.name}</span>
-                <ChevronDown className="size-3" strokeWidth={1.75} aria-hidden />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="start"
-              className="w-56"
-              // "Create a column…" opens another popover (FieldsManagerDialog);
-              // see RecordTable's FieldHeader for why this prevents it closing itself.
-              onCloseAutoFocus={(e) => e.preventDefault()}
-            >
-              {groupable.map((f) => (
-                <DropdownMenuItem key={f.id} onClick={() => onGroupFieldChange(f.id)}>
-                  <Check className={cn('size-3.5', f.id !== groupField.id && 'opacity-0')} aria-hidden />
-                  {f.name}
-                </DropdownMenuItem>
-              ))}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={onManageFields}>
-                <Plus className="size-3.5" aria-hidden /> Create a column…
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => onGroupFieldChange('')}>
-                Choose later
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-
         <div className="relative">
-          <div ref={scrollRef} className="w-full overflow-x-auto pb-3">
+          <div className="w-full overflow-x-auto pb-3">
             <div className="flex min-w-max items-start gap-4">
               {columns.map((column) => (
                 <BoardColumn
@@ -163,24 +111,19 @@ export function RecordBoard({
                   column={column}
                   fields={fields}
                   values={values}
+                  laneFieldId={groupField.id}
                   onAdd={onAdd}
                 />
               ))}
             </div>
           </div>
-          {canScrollRight && (
-            <div
-              className="pointer-events-none absolute inset-y-0 right-0 w-8 bg-gradient-to-l from-a-bg to-transparent"
-              aria-hidden
-            />
-          )}
         </div>
       </div>
 
       <DragOverlay dropAnimation={null}>
         {active && (
           <div className="w-[272px] rotate-[1.5deg] cursor-grabbing shadow-lg">
-            <RecordCard record={active} fields={fields} values={values[active.id]} />
+            <RecordCard record={active} fields={fields} values={values[active.id]} laneFieldId={groupField.id} />
           </div>
         )}
       </DragOverlay>
@@ -190,34 +133,50 @@ export function RecordBoard({
 
 interface BoardColumnProps {
   fieldId: string;
+  laneFieldId: string;
   column: FieldGroup<ApiDatabaseRow>;
   fields: FieldDef[];
   values: TaskFieldValues;
   onAdd?: (title: string, columnKey: string) => void;
 }
 
-function BoardColumn({ fieldId, column, fields, values, onAdd }: BoardColumnProps) {
+function BoardColumn({ fieldId, column, fields, values, laneFieldId, onAdd }: BoardColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: `${BOARD_COLUMN_PREFIX}${column.key}` });
+  const [composing, setComposing] = useState(false);
   const headingId = `record-board-${fieldId}-${column.key}`;
 
+  // Showcase 752–759: a --gray-100 lane, 8px radius/padding/gap; header dot (the tag's ink) +
+  // name + mono count; the empty lane is a dashed drop target.
   return (
     <section
       aria-labelledby={headingId}
-      className="flex w-[292px] flex-shrink-0 flex-col rounded-[12px] bg-[color-mix(in_srgb,var(--a-ink)_4%,transparent)] p-2.5"
+      className="group/lane relative flex w-[292px] flex-shrink-0 flex-col gap-2 rounded-[8px] bg-a-line-soft p-2"
     >
-      <header className="mb-2 flex items-center gap-2 px-1.5 pt-0.5">
+      <header className="flex items-center gap-2 px-1.5 py-1">
         <span
-          className={cn('size-[9px] flex-shrink-0 rounded-full', column.color ? OPTION_DOT_CLASS[column.color] : NO_VALUE_DOT_CLASS)}
+          className={cn('size-2 flex-shrink-0 rounded-full', column.color ? OPTION_INK_DOT_CLASS[column.color] : NO_VALUE_DOT_CLASS)}
           aria-hidden
         />
-        <h2 id={headingId} className="min-w-0 truncate font-display text-[16px] leading-tight text-a-ink">{column.label}</h2>
-        <span className="text-[12px] font-bold tabular-nums text-a-muted">{column.items.length}</span>
+        <h2 id={headingId} className="min-w-0 truncate text-[13px] font-semibold text-a-ink">{column.label}</h2>
+        <span className="font-mono text-[11px] tabular-nums text-a-faint">{column.items.length}</span>
+        <div className="flex-1" />
+        {onAdd && (
+          // Not in the prototype's lane, so it stays out of sight until the lane is hovered.
+          <button
+            type="button"
+            onClick={() => setComposing(true)}
+            aria-label={`Add record to ${column.label}`}
+            className="flex size-6 items-center justify-center rounded-[4px] text-a-muted opacity-0 transition-opacity duration-[120ms] group-hover/lane:opacity-100 focus-visible:opacity-100 hover:bg-a-line hover:text-a-ink"
+          >
+            <Plus className="size-4" strokeWidth={1.75} aria-hidden />
+          </button>
+        )}
       </header>
 
       <div
         ref={setNodeRef}
         className={cn(
-          'flex min-h-[96px] flex-col gap-2 rounded-[8px] p-0.5 transition-[background-color,box-shadow] duration-[120ms]',
+          'flex flex-col gap-2 rounded-[8px] transition-[background-color,box-shadow] duration-[120ms]',
           isOver && 'bg-a-row-hover shadow-[inset_0_0_0_1.5px_var(--a-accent)]',
         )}
       >
@@ -228,23 +187,26 @@ function BoardColumn({ fieldId, column, fields, values, onAdd }: BoardColumnProp
             record={record}
             fields={fields}
             values={values}
+            laneFieldId={laneFieldId}
           />
         ))}
         {column.items.length === 0 && (
-          <p className="flex flex-1 items-center justify-center px-3 py-6 text-center text-[13px] text-a-faint">
-            Drop a record here
-          </p>
+          <div className="rounded-[8px] border border-dashed border-a-line-strong px-3 py-5 text-center text-[12px] leading-normal text-a-faint">
+            Drop a record here.
+          </div>
         )}
       </div>
 
-      {onAdd && <ColumnComposer columnLabel={column.label} onAdd={(title) => onAdd(title, column.key)} />}
+      {onAdd && composing && (
+        <ColumnComposer columnLabel={column.label} onDone={() => setComposing(false)} onAdd={(title) => onAdd(title, column.key)} />
+      )}
     </section>
   );
 }
 
 function DraggableRecord({
-  columnKey, record, fields, values,
-}: { columnKey: string; record: ApiDatabaseRow; fields: FieldDef[]; values: TaskFieldValues }) {
+  columnKey, record, fields, values, laneFieldId,
+}: { columnKey: string; record: ApiDatabaseRow; fields: FieldDef[]; values: TaskFieldValues; laneFieldId: string }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: boardCardId(columnKey, record.id) });
 
   return (
@@ -255,36 +217,21 @@ function DraggableRecord({
       aria-roledescription="Draggable record"
       className={cn('cursor-grab touch-none rounded-[8px] outline-none focus-visible:ring-2 focus-visible:ring-a-accent', isDragging && 'opacity-40')}
     >
-      <RecordCard record={record} fields={fields} values={values[record.id]} />
+      <RecordCard record={record} fields={fields} values={values[record.id]} laneFieldId={laneFieldId} />
     </div>
   );
 }
 
-/** "+ Add" at the foot of a column: type a title, Enter creates it in that column. */
-function ColumnComposer({ columnLabel, onAdd }: { columnLabel: string; onAdd: (title: string) => void }) {
-  const [open, setOpen] = useState(false);
+/** The lane header's "+" opens this: type a title, Enter creates it in that lane. */
+function ColumnComposer({ columnLabel, onAdd, onDone }: { columnLabel: string; onAdd: (title: string) => void; onDone: () => void }) {
   const [title, setTitle] = useState('');
 
   const commit = () => {
     const trimmed = title.trim();
     if (trimmed) onAdd(trimmed);
     setTitle('');
-    setOpen(false);
+    onDone();
   };
-
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="mt-1.5 flex items-center gap-1.5 rounded-[8px] px-2 py-1.5 text-left text-[13px] text-a-faint transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
-        aria-label={`Add record to ${columnLabel}`}
-      >
-        <Plus className="size-3.5" strokeWidth={1.75} aria-hidden />
-        Add
-      </button>
-    );
-  }
 
   return (
     <input
@@ -295,11 +242,11 @@ function ColumnComposer({ columnLabel, onAdd }: { columnLabel: string; onAdd: (t
       onBlur={commit}
       onKeyDown={(e) => {
         if (e.key === 'Enter') { e.preventDefault(); commit(); }
-        if (e.key === 'Escape') { setTitle(''); setOpen(false); }
+        if (e.key === 'Escape') { setTitle(''); onDone(); }
       }}
       placeholder="What is it?"
       aria-label={`New record in ${columnLabel}`}
-      className="mt-1.5 h-9 w-full rounded-[12px] bg-a-bg px-2.5 text-[14px] text-a-ink shadow-[inset_0_0_0_1px_var(--a-line)] outline-none focus-visible:shadow-[inset_0_0_0_1.5px_var(--a-accent)]"
+      className="h-9 w-full rounded-[8px] bg-a-surface px-2.5 text-[14px] text-a-ink shadow-[inset_0_0_0_1px_var(--a-line)] outline-none focus-visible:shadow-[inset_0_0_0_1.5px_var(--a-accent)]"
     />
   );
 }

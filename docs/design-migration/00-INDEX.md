@@ -156,10 +156,10 @@ Test baseline: **371 tests across 42 files.** This must not regress.
 Phase 0  █████   5 / 5      done
 Phase 1  █████  11 / 11      foundations — the broken UI
 Phase 2  █████   5 / 5       shell exactness
-Phase 3  ███░░  25 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
+Phase 3  ███░░  29 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
 Phase 4  ░░░░░   1 / 12      missing features
 Phase 5  ░░░░░   0 / 7       proposals, unreviewed
-                47 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
+                51 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
 ```
 
 ### A note on "partially built"
@@ -249,7 +249,7 @@ on a description. Execution order is the section order below.
 | ID | Screen | State | Verified by |
 |---|---|---|---|
 | T3.17 | `db-table` (+ the 3px data-quality header bar) | **done** | design:check PASS, tsc/lint clean, vitest 368/368; shots/db-table.{ref,app}.png — full-bleed grid, prototype column widths, 37px rows, tags, toolbar + New ▾; `cmp.mjs` leaves only same-text/row-offset noise |
-| T3.18 | `db-board` | todo | |
+| T3.18 | `db-board` | **done** | shots/db-board.{ref,app}.png — grey 8px lanes, ink dots, 13px names + mono count, white meta cards, lane field remembered per board view |
 | T3.19 | `db-colmenu` | **done** | shots/db-colmenu.{ref,app}.png — the prototype's item list and order, rename field on top, click-the-header to open, switch rows, side panels |
 | T3.20 | `db-type` — **chrome only, behaviour already works** | **done** | shots/db-type.{ref,app}.png — side panel with caption, blue tick on the current type; change-type behaviour untouched |
 | T3.21 | `db-options` | **done** | shots/db-options.{ref,app}.png — Edit options panel (colour swatch, name, remove, add field); edits apply at once |
@@ -261,9 +261,9 @@ on a description. Execution order is the section order below.
 | T3.27 | `db-peek` — **net-new** | todo | |
 | T3.28 | `db-freeze` | todo — verify, scroll-test it | |
 | T3.29 | `db-group` | todo — verify, don't rewrite | |
-| T3.30 | `db-new` | todo | |
-| T3.31 | `db-empty` | todo | |
-| T3.32 | `db-offline` | todo | |
+| T3.30 | `db-new` | **done** | shots/db-new.{ref,app}.png — "+" in the Databases header opens the 280px panel |
+| T3.31 | `db-empty` | **done** | shots/db-empty.{ref,app}.png — sample_data illustration and prototype copy |
+| T3.32 | `db-offline` | **done** | shots/db-offline.{ref,app}.png — already matched; verified |
 
 ### 3D · Notes
 

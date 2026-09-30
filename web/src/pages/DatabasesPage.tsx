@@ -399,7 +399,12 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
     setFrozenFieldId(v.display.frozenFieldId ?? null);
     setWrapFieldIds(v.display.wrapFieldIds ?? []);
     setColWidths(v.display.widths ?? {});
-  }, []);
+    // A board view remembers which column its lanes come from (older ones do not: they keep the
+    // database's last choice).
+    const lanes = v.layout === 'board' ? v.filters.groupBy : '';
+    const dbId = v.scopeDatabaseId ?? openId;
+    if (lanes && dbId) setBoardFieldByDatabase((prev) => ({ ...prev, [dbId]: lanes }));
+  }, [openId, setBoardFieldByDatabase]);
 
   const handleClearView = useCallback(() => {
     setActiveViewId(null);
@@ -419,7 +424,11 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
       layout,
       scopeListId: null,
       scopeDatabaseId: openId,
-      filters: { ...DEFAULT_FILTERS, fields: fieldFilters },
+      filters: {
+        ...DEFAULT_FILTERS,
+        fields: fieldFilters,
+        groupBy: layout === 'board' ? (boardField?.id ?? fields.find(isGroupableField)?.id ?? '') : '',
+      },
       showDone: false,
       display: {
         hidden: hiddenFieldIds, order: [], widths: colWidths,
@@ -429,7 +438,7 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
     if (!created) return;
     setActiveViewId(created.id);
     toast.success(`Created "${created.name}"`, { duration: 2000 });
-  }, [openId, savedViews, fieldFilters, hiddenFieldIds, sort, groupFieldId, calc, frozenFieldId, wrapFieldIds, colWidths]);
+  }, [openId, savedViews, fieldFilters, hiddenFieldIds, sort, groupFieldId, calc, frozenFieldId, wrapFieldIds, colWidths, boardField, fields]);
 
   /** These table controls changed while a saved view is applied: persist them
    * back to that view immediately, matching how picking a tag or filter
@@ -641,9 +650,9 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
             />
           ) : loading ? null : databases.length === 0 ? (
             <EmptyNote
-              image={ILL.noData}
+              image={ILL.sampleData}
               title="No databases yet"
-              body="A database keeps records that are not tasks — a reading list, clients, anything with its own columns. Make one in the column on the left."
+              body="A database keeps records that are not tasks — a reading list, clients, anything with its own columns. Make one from the list on the left."
             />
           ) : !open ? null : (
             <>
@@ -660,7 +669,7 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
                   onCreate={handleCreateView}
                   onDelete={handleDeleteView}
                 />
-                {view === 'table' && (
+                {(
                   <>
                     <SortPill fields={fields} titleLabel={open.titleLabel} sort={sort} onClear={handleClearSort} />
                     <FilterPill
@@ -686,7 +695,8 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
                     />
                     <SortButton fields={fields} titleLabel={open.titleLabel} sort={sort} onSort={handleSortField} onClear={handleClearSort} />
                     <SearchButton value={search} onChange={setSearch} />
-                    <PropertiesButton fields={fields} titleLabel={open.titleLabel} hiddenFieldIds={hiddenFieldIds} onShow={handleShowField} onHide={handleHideField} onShowAll={() => hiddenFieldIds.forEach((id) => handleShowField(id))} />
+                    <PropertiesButton fields={fields} titleLabel={open.titleLabel} hiddenFieldIds={hiddenFieldIds} onShow={handleShowField} onHide={handleHideField} onShowAll={() => hiddenFieldIds.forEach((id) => handleShowField(id))}
+                      lanes={view === 'board' ? { fields: fields.filter(isGroupableField), value: boardField?.id ?? '', onChange: (fieldId) => setBoardFieldByDatabase((prev) => ({ ...prev, [open.id]: fieldId })) } : undefined} />
                     <button
                       type="button"
                       onClick={() => { void createRow({ title: 'Untitled' }); }}
@@ -701,7 +711,7 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
 
               {view === 'board' ? (
                 <RecordBoard
-                  rows={visibleRows}
+                  rows={sortedVisibleRows}
                   fields={fields}
                   values={values}
                   groupField={boardField}
@@ -1136,8 +1146,12 @@ function SearchButton({ value, onChange }: { value: string; onChange: (value: st
 
 /** Properties (showcase 707–715): every column with an eye, and "Show all". */
 function PropertiesButton({
-  fields, titleLabel, hiddenFieldIds, onShow, onHide, onShowAll,
-}: { fields: FieldDef[]; titleLabel: string; hiddenFieldIds: string[]; onShow: (id: string) => void; onHide: (id: string) => void; onShowAll: () => void }) {
+  fields, titleLabel, hiddenFieldIds, onShow, onHide, onShowAll, lanes,
+}: {
+  fields: FieldDef[]; titleLabel: string; hiddenFieldIds: string[]; onShow: (id: string) => void; onHide: (id: string) => void; onShowAll: () => void;
+  /** Board layout only: which column the lanes come from (the prototype fixes this per view; here it can change). */
+  lanes?: { fields: FieldDef[]; value: string; onChange: (fieldId: string) => void };
+}) {
   const [open, setOpen] = useState(false);
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -1179,6 +1193,23 @@ function PropertiesButton({
             </button>
           );
         })}
+        {lanes && lanes.fields.length > 0 && (
+          <>
+            <div className="my-1 h-px bg-a-line-soft" />
+            <div className="px-2 py-1.5 text-[12px] text-a-faint">Board columns come from</div>
+            {lanes.fields.map((f) => (
+              <button
+                key={f.id}
+                type="button"
+                onClick={() => lanes.onChange(f.id)}
+                className="flex min-h-[30px] w-full items-center gap-2.5 rounded-[4px] px-2 py-[5px] text-left leading-[normal] text-a-ink transition-colors duration-[120ms] hover:bg-a-line-soft"
+              >
+                <span className="flex-1">{f.name}</span>
+                {lanes.value === f.id && <Check className="size-[15px] text-a-accent" strokeWidth={1.75} aria-hidden />}
+              </button>
+            ))}
+          </>
+        )}
       </PopoverContent>
     </Popover>
   );
@@ -1206,7 +1237,7 @@ function DatabaseList({ databases, openId, online, loading, onOpen, onCreate, on
 
   return (
     <div className="mb-5">
-      <ContextSectionHeader label="Databases" />
+      <ContextSectionHeader label="Databases" action={online ? <NewDatabaseButton onCreate={onCreate} onCreated={onOpen} /> : undefined} />
 
       {databases.length === 0 && !loading && (
         <p className="px-3 pb-1 text-[12px] leading-relaxed text-a-faint">
@@ -1288,7 +1319,6 @@ function DatabaseList({ databases, openId, online, loading, onOpen, onCreate, on
         })}
       </ul>
 
-      {online && <NewDatabaseButton onCreate={onCreate} onCreated={onOpen} />}
     </div>
   );
 }
@@ -1313,47 +1343,56 @@ function NewDatabaseButton({
     toast.success(`Created "${created.name}"`, { duration: 2000 });
   };
 
+  // Showcase 1124–1131: the "+" beside the Databases label opens a 280px panel at the sidebar's
+  // edge — a name, an optional emoji, and Create database.
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button
-          type="button"
-          className="mt-1.5 flex w-full items-center gap-1.5 rounded-[8px] px-3 py-1.5 text-left text-[14px] text-a-faint transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
-        >
-          <Plus className="size-3.5" strokeWidth={1.75} aria-hidden />
-          New database
+        <button type="button" className={contextIconButton} aria-label="New database" title="New database">
+          <Plus className="size-3.5" strokeWidth={1.75} />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-[260px] p-3">
-        <div className="space-y-2.5">
+      <PopoverContent
+        role="dialog"
+        aria-label="New database"
+        side="right"
+        align="start"
+        sideOffset={3}
+        alignOffset={-7}
+        className="w-[280px] gap-3 rounded-[12px] p-3.5 shadow-[var(--a-shadow-xl)]"
+      >
+        <div className="flex flex-col gap-2">
+          <label htmlFor="new-db-name" className="text-[13px] font-medium leading-[1.35] text-a-ink">Database name</label>
           <Input
+            id="new-db-name"
             autoFocus
+            className="h-7 px-2"
             value={name}
             maxLength={100}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') void submit(); }}
             placeholder="e.g. Reading list"
-            aria-label="Database name"
-            className="h-8 rounded-[4px] text-[14px]"
           />
+        </div>
+        <div className="flex flex-col gap-2">
+          <label htmlFor="new-db-emoji" className="text-[13px] font-medium leading-[1.35] text-a-ink">Emoji (optional)</label>
           <Input
+            id="new-db-emoji"
+            className="h-7 px-2"
             value={icon}
             maxLength={4}
             onChange={(e) => setIcon(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') void submit(); }}
-            placeholder="Emoji (optional)"
-            aria-label="Emoji"
-            className="h-8 w-[130px] rounded-[4px] text-[14px]"
           />
-          <button
-            type="button"
-            onClick={() => void submit()}
-            disabled={!name.trim() || saving}
-            className="h-8 w-full rounded-[6px] bg-a-accent text-[14px] font-semibold text-a-surface transition-colors duration-[120ms] hover:bg-a-accent-600 disabled:opacity-50"
-          >
-            {saving ? 'Creating…' : 'Create database'}
-          </button>
         </div>
+        <button
+          type="button"
+          onClick={() => void submit()}
+          aria-disabled={!name.trim() || saving}
+          className={cn(topBarPrimary, 'w-full justify-center')}
+        >
+          {saving ? 'Creating…' : 'Create database'}
+        </button>
       </PopoverContent>
     </Popover>
   );
