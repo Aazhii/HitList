@@ -62,7 +62,7 @@ export function SyncStatusBar({
       <div
         role="status"
         aria-live="polite"
-        className="flex items-center gap-2.5 border-b border-a-amber-line bg-a-amber-tint px-6 py-2 text-[14px] text-a-amber-ink animate-fade-in"
+        className="flex items-center gap-2.5 border-b border-a-amber-line bg-a-amber-tint px-6 py-2 text-[13px] text-a-amber-ink animate-fade-in"
       >
         <WifiOff className="size-[15px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
         <span className="font-semibold">Offline — using local data.</span>

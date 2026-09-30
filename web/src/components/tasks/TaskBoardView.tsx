@@ -208,7 +208,7 @@ export function TaskBoardView({
               <button
                 type="button"
                 onClick={onManageFields}
-                className="w-[200px] flex-shrink-0 rounded-[8px] border border-dashed border-a-line-strong bg-transparent p-3 text-left text-[14px] text-a-muted transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
+                className="w-[200px] flex-shrink-0 rounded-[8px] border border-dashed border-a-line-strong bg-transparent p-3 text-left text-[13px] text-a-muted transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
               >
                 + Add a {groupField.name} option
               </button>
@@ -249,7 +249,7 @@ interface BoardToolbarProps {
 function BoardToolbar({ field, groupableFields, onGroupFieldChange, onManageFields }: BoardToolbarProps) {
   return (
     <div className="mb-3.5 flex flex-wrap items-center gap-2.5">
-      <span className="text-[14px] text-a-muted">Group by</span>
+      <span className="text-[13px] text-a-muted">Group by</span>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
@@ -325,7 +325,7 @@ function BoardColumn({ fieldId, column, fieldDefs, fieldValues, onAddTask, ...ha
           className={cn('size-2 flex-shrink-0 rounded-full', column.color ? OPTION_DOT_CLASS[column.color] : 'shadow-[inset_0_0_0_1.5px_var(--a-line-strong)]')}
           aria-hidden
         />
-        <h2 id={headingId} className="min-w-0 truncate text-[14px] font-semibold leading-tight text-a-ink">{column.label}</h2>
+        <h2 id={headingId} className="min-w-0 truncate text-[13px] font-semibold leading-tight text-a-ink">{column.label}</h2>
         <span className="font-mono text-[11px] tabular-nums text-a-faint">
           {taskCount}
           <span className="sr-only"> tasks</span>

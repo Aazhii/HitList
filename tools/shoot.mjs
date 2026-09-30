@@ -43,7 +43,7 @@ const APP_ROUTE = {
   // Needs an UNSEEDED backend (see 00-INDEX.md) — the empty state only shows for an empty list.
   'tasks-empty':  { nav: 'Tasks', tab: 'Matrix' },
   // Needs the seeded backend; types a search nothing matches.
-  'tasks-nomatch': { nav: 'Tasks', tab: 'Matrix', then: ['~Filter'], type: ['Search tasks', 'zzzz-no-such-task'] },
+  'tasks-nomatch': { nav: 'Tasks', tab: 'Table', then: ['~Filter'], type: ['Search tasks', 'zzzz-no-such-task'] },
   // Need a dead / hanging /api behind vite (see 00-INDEX.md "Shooting offline and loading").
   'tasks-offline': { nav: 'Tasks', tab: 'Matrix' },
   'tasks-loading': { nav: 'Tasks' },

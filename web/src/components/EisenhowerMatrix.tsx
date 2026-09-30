@@ -1,5 +1,6 @@
-import { useMemo, type MouseEvent } from 'react';
-import { Circle, CircleCheck, Loader, Plus } from 'lucide-react';
+import { useMemo } from 'react';
+import { Plus } from 'lucide-react';
+import { StatusIcon } from '@/components/ui/status-icon';
 import { cn } from '@/lib/utils';
 import { getCategoryConfig, QUADRANTS } from '@/types/todo';
 import type { Todo, TodoStatus, Quadrant } from '@/types/todo';
@@ -228,41 +229,5 @@ function CategoryTag({ category }: { category: NonNullable<ReturnType<typeof get
       <span className={cn('size-2 flex-shrink-0 rounded-[3px]', category.swatchClass)} aria-hidden />
       {category.label}
     </span>
-  );
-}
-
-interface StatusIconProps {
-  status: TodoStatus;
-  label: string;
-  disabled?: boolean;
-  onClick: (e: MouseEvent) => void;
-}
-
-/**
- * The reference's per-row status glyph — `circle` / `loader` / `circle-check`,
- * colored `#9b9a97` / `#006eb9` / `--a-dq-valid` — not the shared squircle
- * `StatusBox` used by note to-dos. Still clickable: advances to the next
- * status, same as before.
- */
-function StatusIcon({ status, label, disabled, onClick }: StatusIconProps) {
-  const Icon = status === 'done' ? CircleCheck : status === 'in-progress' ? Loader : Circle;
-  return (
-    <button
-      type="button"
-      role="checkbox"
-      aria-checked={status === 'done' ? true : status === 'in-progress' ? 'mixed' : false}
-      aria-label={label}
-      disabled={disabled}
-      onClick={onClick}
-      className={cn('flex flex-shrink-0 items-center justify-center', disabled ? 'cursor-default' : 'cursor-pointer')}
-    >
-      <Icon
-        className={cn(
-          'size-[17px]',
-          status === 'done' ? 'text-a-dq-valid' : status === 'in-progress' ? 'text-a-accent' : 'text-a-faint',
-        )}
-        strokeWidth={1.75}
-      />
-    </button>
   );
 }

@@ -30,6 +30,7 @@ import {
 import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
 import { Plus } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { topBarPill } from '@/components/shell/TopBar';
 import { QUADRANTS } from '@/types/todo';
 import type { Quadrant, QuadrantConfig, Todo, TodoStatus } from '@/types/todo';
 import { bucketByQuadrant, compareTasks } from '@/lib/quadrantBuckets';
@@ -110,7 +111,7 @@ export function TaskListView({
       modifiers={[restrictToVerticalAxis]}
       onDragEnd={handleDragEnd}
     >
-      <div className="mx-auto w-full max-w-[880px] space-y-7 animate-fade-in">
+      <div className="mx-auto w-full max-w-[880px] space-y-5 animate-fade-in">
         {fieldGroups && fieldGroups.map((group) => (
           <FieldGroup
             key={group.key}
@@ -147,7 +148,7 @@ export function TaskListView({
         ))}
 
         {/* Showcase 244 — a standing caption, not conditional on filters. */}
-        <p className="text-center text-[12px] text-a-muted">
+        <p className="text-center text-[12px] text-a-faint">
           Drag rows to reorder or move between quadrants.
           {dragDisabled && ' Reordering is off while filters are active.'}
         </p>
@@ -239,12 +240,12 @@ function QuadrantGroup({
       <header className="mb-2 flex items-center gap-2 px-1">
         <h2
           id={headingId}
-          className={cn('rounded-[3px] px-2 py-[1px] text-[14px] font-medium', q.tintClass, q.inkClass)}
+          className={cn('rounded-[3px] px-2 py-[1px] text-[13px] font-medium', q.tintClass, q.inkClass)}
         >
           {q.label}
         </h2>
-        <span className="text-[14px] text-a-muted">{q.subtitle}</span>
-        <span className="font-mono text-[11px] text-a-muted tabular-nums">
+        <span className="text-[13px] text-a-faint">{q.subtitle}</span>
+        <span className="font-mono text-[11px] text-a-faint tabular-nums">
           {openCount}
           <span className="sr-only"> open</span>
         </span>
@@ -253,7 +254,7 @@ function QuadrantGroup({
           type="button"
           onClick={() => onAddToQuadrant(q.id)}
           aria-label={`Add task to ${q.label}`}
-          className="flex h-7 items-center gap-1.5 rounded-[6px] px-2.5 text-[13px] text-a-muted transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
+          className={topBarPill}
         >
           <Plus className="size-3.5" strokeWidth={1.75} aria-hidden />
           Add here
@@ -290,7 +291,7 @@ function QuadrantGroup({
         </SortableContext>
 
         {tasks.length === 0 && (
-          <p className="px-3.5 py-3.5 text-center text-[13px] text-a-faint">
+          <p className="p-3.5 text-center text-[13px] text-a-faint">
             Nothing in {q.label} yet.
           </p>
         )}

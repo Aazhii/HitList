@@ -371,19 +371,30 @@ been declared in `ViewDisplay` and left unused since it was written.
 
 ### Board (T3.4)
 
-- **Status box and delete stay on board cards.** The prototype's card (showcase
-  282–293) is click-to-open only. Ours keeps the status checkbox and hover delete, since
-  a board column is a custom field, not status — removing them would leave no way to
-  complete a task from the board. `MatrixTaskCard` gains `variant="board"` for the
-  white/bordered surface and 12px meta row.
-- **The saved-view chip row stays above the board.** The prototype's board screen has
-  none, but named boards (`+ New` → a saved view with its own group-by field) live in
-  that row; hiding it would orphan them.
-- **No right-edge fade.** The old scroll hint was a gradient (forbidden, §2) and now
-  fades to the wrong colour on a white page. Lanes are simply cut off at the edge, as
-  in the prototype.
-- **New token `--a-line-strong: #d3d1cb`** (= `--border-strong`, §2) for dashed drop
-  targets; `design:check` bans hex outside `index.css`, so it had to live there.
+- **Cards are the prototype's** (showcase 282–293): title, then a 12px row of quadrant
+  dot, due, Tag. **No status glyph and no hover delete** — the prototype's card has
+  neither. Status and delete are in the detail panel (T3.10). Reversing this earlier
+  "keep them" call was deliberate: the brief is the design, not our additions.
+- **No estimate ("N pts") on cards.** The prototype's Estimate is a sample custom
+  number field; the app has no built-in estimate, so there is nothing to show.
+- **The saved-view chip row appears on the board only once a board has been saved as a
+  view** (Filter → Save as view still creates one); the prototype's Board screen has no
+  chip row. It also hides while a filter leaves no visible tasks (showcase 179: the
+  no-matches screen is the whole block).
+- **No right-edge fade** (gradients are forbidden, §2).
+- **New token `--a-line-strong: #d3d1cb`** (= `--border-strong`) for dashed drop targets.
+
+### List and matrix (T3.1, T3.2)
+
+- Status glyphs are the circle icons the design specifies (`circle`/`loader`/
+  `circle-check`, 17px) — `ui/status-icon.tsx`, shared by matrix, list and board. The
+  checkbox-style `StatusBox` remains only in the note editor's to-do block.
+- List rows: grip `--gray-300`, 13px/500 title, Badge "Next up", DS Tag with swatch, due
+  column 120px flush right; the row menu is overlaid on hover so it never offsets the
+  due column. The "next task" accent ring is gone (the design marks it with the badge
+  only). Group spacing 20px; subtitle/count tertiary; "Add here" is the ghost `sm` button.
+- Breadcrumb `Tasks` is tertiary and its `/` is `--gray-300`; sidebar list counts are
+  11px tertiary, including the active row.
 
 ### Empty, loading and offline states (T3.5–T3.8)
 

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { FileText, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { StatusBox } from '@/components/ui/status-box';
+import { StatusIcon } from '@/components/ui/status-icon';
 import { getCategoryConfig, getQuadrantConfig } from '@/types/todo';
 import type { Todo, TodoStatus } from '@/types/todo';
 import { DUE_TONE_CLASS, dueTone, getDueInfo } from '@/lib/dueInfo';
@@ -29,10 +29,8 @@ interface MatrixTaskCardProps {
   fieldDefs?: FieldDef[];
   fieldValues?: Record<string, FieldValue>;
   /**
-   * 'board' is the Board lane card (showcase 282–293): white with a 1px border,
-   * a quadrant dot ahead of the 12px meta row. The status box and delete stay —
-   * the prototype's card has neither, but dropping them would take away the only
-   * way to complete a task from the board (CONVENTIONS §12a).
+   * 'board' is the Board lane card (showcase 282–293): title and one 12px meta row,
+   * no status glyph, no hover controls. Status and delete are in the detail panel.
    */
   variant?: 'matrix' | 'board';
 }
@@ -81,6 +79,54 @@ export function MatrixTaskCard({
     setTimeout(() => onDelete(todo.id), 300);
   };
 
+  if (board) {
+    // Showcase 282–293: title, then one 12px row — quadrant dot, due, Tag. No status
+    // glyph and no hover controls; status and delete live in the detail panel.
+    return (
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={() => onOpen(todo)}
+        onKeyDown={(e) => {
+          if (e.target !== e.currentTarget) return;
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(todo); }
+        }}
+        className={cn(
+          'flex cursor-pointer flex-col gap-2 rounded-[8px] border border-a-line bg-a-surface px-3 py-2.5',
+          'transition-shadow duration-[120ms] hover:shadow-[var(--a-shadow-md)]',
+          isDone && 'opacity-60',
+        )}
+        aria-label={`Open task: ${todo.text}`}
+      >
+        <div className={cn('text-[13px] font-medium leading-[1.4]', isDone ? 'text-a-faint line-through' : 'text-a-ink')}>
+          {todo.text}
+        </div>
+        <div className="flex flex-wrap items-center gap-2 text-[12px]">
+          <span className={cn('size-2 flex-shrink-0 rounded-full', getQuadrantConfig(todo.quadrant).dotClass)} aria-hidden />
+          {dueInfo && <span className={cn('whitespace-nowrap', DUE_TONE_CLASS[dueTone(dueInfo)])}>{dueInfo.label}</span>}
+          {categoryConfig && (
+            <span className={cn(CHIP, 'text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)]')}>
+              <span className={cn('size-2 flex-shrink-0 rounded-[3px]', categoryConfig.swatchClass)} aria-hidden />
+              {categoryConfig.label}
+            </span>
+          )}
+          {fieldDefs && <FieldChips fields={fieldDefs} values={fieldValues} chipClass={CHIP} />}
+          {fromNote && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onOpenNote!(todo.sourceNoteId!); }}
+              title="Open the note this came from"
+              aria-label={`Open the note “${todo.text}” came from`}
+              className="inline-flex items-center gap-1 text-a-accent-600"
+            >
+              <FileText className="size-3" strokeWidth={1.75} aria-hidden /> Note
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       role="button"
@@ -97,7 +143,7 @@ export function MatrixTaskCard({
       style={{ animationDelay: `${index * 50}ms`, animationFillMode: 'both' }}
       className={cn(
         'group relative flex cursor-pointer flex-col gap-1.5 rounded-[8px] px-3.5 py-2.5 animate-slide-up',
-        board ? 'border border-a-line bg-a-surface' : 'bg-a-bg',
+        'bg-a-bg',
         'transition-[box-shadow,opacity,scale] duration-[260ms] hover:shadow-[var(--a-shadow-sm)]',
         isDone && 'opacity-60',
         !isDone && dueInfo?.isOverdue
@@ -109,15 +155,14 @@ export function MatrixTaskCard({
     >
       <div className="flex items-start gap-[11px]">
         <span className="mt-[1px] flex flex-shrink-0">
-          <StatusBox
-            state={todo.status}
+          <StatusIcon
+            status={todo.status}
             label={todo.text}
             disabled={!next}
             onClick={(e) => {
               e.stopPropagation();
               if (next) onStatusChange(todo.id, next);
             }}
-            className={cn(!next && 'cursor-default')}
           />
         </span>
 
@@ -130,7 +175,7 @@ export function MatrixTaskCard({
           {todo.text}
         </p>
 
-        {isNext && !isDone && !board && (
+        {isNext && !isDone && (
           <span className="mt-[3px] flex-shrink-0 text-[11px] font-bold uppercase tracking-[0.06em] text-a-accent-700">
             Next
           </span>
@@ -145,8 +190,7 @@ export function MatrixTaskCard({
 
       {hasMeta && (
         // Indented to sit under the text, past the 19px status box and its gap.
-        <div className={cn('flex flex-wrap items-center gap-1.5 pl-[30px]', board && 'text-[12px]')}>
-          {board && <span className={cn('size-2 flex-shrink-0 rounded-full', getQuadrantConfig(todo.quadrant).dotClass)} aria-hidden />}
+        <div className="flex flex-wrap items-center gap-1.5 pl-[30px]">
           {dueInfo && (
             <span className={cn("inline-flex items-center gap-1 whitespace-nowrap", DUE_TONE_CLASS[dueTone(dueInfo)])}>
               {dueInfo.label}

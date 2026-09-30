@@ -46,11 +46,11 @@ export function AppHeader({ crumb1, crumb2, sync, bell, account, onOpenSidebar }
 
       {/* --text-tertiary for the trail, --gray-300 for the separator, and the
           current page in --text-primary at 500 — showcase 109. */}
-      <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-[14px] text-a-muted">
+      <nav aria-label="Breadcrumb" className="flex min-w-0 items-center gap-1.5 text-[14px] text-a-faint">
         <span className="truncate">{crumb1}</span>
         {crumb2 && (
           <>
-            <span className="text-a-faint" aria-hidden>/</span>
+            <span className="text-a-line-strong" aria-hidden>/</span>
             <span className="truncate font-medium text-a-ink">{crumb2}</span>
           </>
         )}

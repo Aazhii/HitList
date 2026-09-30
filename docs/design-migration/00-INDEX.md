@@ -218,6 +218,8 @@ on a description. Execution order is the section order below.
 
 ### 3A · Tasks
 
+*Every 3A screen was re-verified with `tools/cmp.mjs` (measured fonts, colours, positions), not just screenshots. Residual differences are sample data, Phase 4 features (Favorites, Recents, Automations, nav counts) and the prototype's hardcoded note titles.*
+
 | ID | Screen | State | Verified by |
 |---|---|---|---|
 | T3.1 | `tasks-matrix` | **done** | shots/tasks-matrix.{ref,app}.png; due labels now plain coloured text with the prototype's own wording |

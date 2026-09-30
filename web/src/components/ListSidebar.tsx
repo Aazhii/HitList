@@ -177,9 +177,9 @@ export function ListSidebar({
                 {counts.active > 0 && (
                   <span
                     className={cn(
-                      'text-[12px] tabular-nums transition-opacity duration-[120ms]',
+                      // Showcase nav counts: 11px, tertiary, the same on the active row.
+                      'text-[11px] tabular-nums text-a-faint transition-opacity duration-[120ms]',
                       'group-hover:opacity-0 group-focus-within:opacity-0',
-                      isActive ? 'font-bold text-a-accent-700' : 'text-a-faint',
                     )}
                   >
                     {counts.active}

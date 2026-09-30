@@ -11,7 +11,7 @@ import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { FileText, GripVertical, MoreHorizontal, PanelRightOpen, Trash2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { StatusBox } from '@/components/ui/status-box';
+import { StatusIcon } from '@/components/ui/status-icon';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -44,12 +44,15 @@ export interface TaskRowProps {
   fieldValues?: Record<string, FieldValue>;
 }
 
-const CHIP = 'inline-flex items-center rounded-[3px] px-[11px] py-1 text-[12px] leading-none whitespace-nowrap';
+// DS Tag: 11px / 500, 3px 8px, 6px radius.
+const CHIP = 'inline-flex items-center gap-1.5 rounded-[6px] px-2 py-[3px] text-[11px] font-medium whitespace-nowrap';
 
+// Overlaid on the row's right edge, not in the flow: the design's due column is
+// flush right (showcase 238) and this appears only on hover.
 const HOVER_BUTTON = cn(
-  'flex size-5 flex-shrink-0 items-center justify-center rounded-[6px] text-a-faint transition-[opacity,background-color,color] duration-[120ms]',
+  'absolute top-1/2 right-1 flex size-6 -translate-y-1/2 items-center justify-center rounded-[4px] bg-a-surface text-a-faint transition-[opacity,background-color,color] duration-[120ms]',
   'opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100',
-  'hover:bg-[color-mix(in_srgb,var(--a-ink)_9%,transparent)] hover:text-a-ink',
+  'hover:bg-a-line-soft hover:text-a-ink',
 );
 
 export function TaskRow({
@@ -93,11 +96,7 @@ export function TaskRow({
       className={cn(
         'group relative flex min-h-11 items-center gap-2.5 border-b border-a-line-soft px-3 animate-slide-up last:border-b-0',
         'transition-[background-color,box-shadow,opacity,scale] duration-[260ms]',
-        isDragging
-          ? 'z-10 bg-a-bg shadow-[var(--a-shadow-md)]'
-          : isNext && !isDone
-            ? 'bg-a-bg shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--a-accent)_35%,transparent)]'
-            : 'hover:bg-a-row-hover',
+        isDragging ? 'z-10 bg-a-bg shadow-[var(--a-shadow-md)]' : 'hover:bg-a-bg',
         deleting && 'scale-[0.98] opacity-0',
       )}
     >
@@ -110,7 +109,7 @@ export function TaskRow({
           {...attributes}
           {...listeners}
           aria-label={`Reorder “${todo.text}”`}
-          className="flex flex-shrink-0 cursor-grab items-center justify-center text-a-line active:cursor-grabbing"
+          className="flex flex-shrink-0 cursor-grab items-center justify-center text-a-line-strong active:cursor-grabbing"
         >
           <GripVertical className="size-3.5" strokeWidth={1.75} />
         </button>
@@ -118,19 +117,18 @@ export function TaskRow({
         <span className="size-3.5 flex-shrink-0" aria-hidden />
       )}
 
-      <StatusBox
-        state={todo.status}
+      <StatusIcon
+        status={todo.status}
         label={todo.text}
         disabled={!next}
         onClick={() => { if (next) onStatusChange(todo.id, next); }}
-        className={cn('flex-shrink-0', !next && 'cursor-default')}
       />
 
       <button
         type="button"
         onClick={() => onOpen(todo)}
         className={cn(
-          'min-w-0 flex-1 truncate text-left text-[14px] font-medium',
+          'min-w-0 flex-1 truncate text-left text-[13px] font-medium',
           isDone ? 'text-a-faint line-through decoration-[1.5px]' : 'text-a-ink',
         )}
       >
@@ -138,7 +136,8 @@ export function TaskRow({
       </button>
 
       {isNext && !isDone && (
-        <span className="flex-shrink-0 rounded-[3px] bg-a-accent-tint px-2 py-[3px] text-[11px] font-bold text-a-accent-700">
+        // design-check-ignore: pill — the DS Badge is a pill (showcase 235).
+        <span className="flex-shrink-0 rounded-full bg-a-blue-tint px-2 py-[3px] text-[11px] font-semibold leading-none text-a-accent-700">
           Next up
         </span>
       )}
@@ -149,7 +148,7 @@ export function TaskRow({
           onClick={(e) => { e.stopPropagation(); onOpenNote(todo.sourceNoteId!); }}
           title="Open the note this came from"
           aria-label={`Open the note “${todo.text}” came from`}
-          className="flex flex-shrink-0 items-center gap-1 text-[12px] text-a-accent-700"
+          className="flex flex-shrink-0 items-center gap-1 text-[12px] text-a-accent-600"
         >
           <FileText className="size-3" strokeWidth={1.75} aria-hidden /> Note
         </button>
@@ -157,6 +156,7 @@ export function TaskRow({
 
       {category && (
         <span className={cn(CHIP, 'flex-shrink-0 text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)]')}>
+          <span className={cn('size-2 flex-shrink-0 rounded-[3px]', category.swatchClass)} aria-hidden />
           {category.label}
         </span>
       )}

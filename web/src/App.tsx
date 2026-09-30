@@ -1524,7 +1524,10 @@ function UserScopedApp() {
             />
 
             <div className="px-4 pt-4 pb-12 md:px-12">
-              {!server.loading && listTodos.length > 0 && (tasksMode === 'table' || tasksMode === 'board') && (
+              {/* The prototype's Board screen has no chip row; it appears there only once a board
+                  has been saved as a view (Filter → Save as view still creates one). */}
+              {!server.loading && visibleTodos.length > 0 && (tasksMode === 'table' || (tasksMode === 'board'
+                && savedViews.views.some((v) => v.layout === 'board' && (!v.scopeListId || v.scopeListId === activeListId)))) && (
                 <ViewTabs
                   layout={tasksMode}
                   views={savedViews.views}
@@ -1574,7 +1577,7 @@ function UserScopedApp() {
               {server.loading ? (
                 <div aria-busy="true">
                   <LoadingSkeleton layout={tasksMode} />
-                  <p className="mt-4 text-center text-[14px] text-a-muted" role="status">Loading tasks from the server…</p>
+                  <p className="mt-4 text-center text-[13px] text-a-faint" role="status">Loading tasks from the server…</p>
                 </div>
               ) : listTodos.length === 0 ? (
                 <EmptyState
