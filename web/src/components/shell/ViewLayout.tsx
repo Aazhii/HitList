@@ -167,7 +167,7 @@ export function contextRowClass(active: boolean): string {
 /** The column's small uppercase section label, with an optional action beside it. */
 export function ContextSectionHeader({ label, action }: { label: string; action?: ReactNode }) {
   return (
-    <div className="flex items-center justify-between px-2.5 py-1.5">
+    <div className="mt-3 flex items-center justify-between px-2.5 py-1.5">
       <p className="text-[12px] font-medium text-a-faint">{label}</p>
       {action}
     </div>

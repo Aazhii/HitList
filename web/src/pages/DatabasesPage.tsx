@@ -216,7 +216,7 @@ function DatabaseList({ databases, openId, online, loading, onOpen, onCreate, on
         </p>
       )}
 
-      <ul className="space-y-0.5">
+      <ul>
         {databases.map((database) => {
           const active = database.id === openId;
 

@@ -3,7 +3,7 @@ import type { KeyboardEvent } from 'react';
 import {
   Plus, Trash2, AlignLeft, AlignCenter, AlignRight,
   ChevronDown, ArrowLeft, ArrowRight, ArrowUp, ArrowDown,
-  GripVertical,
+  GripVertical, Type,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { NoteBlock, TableData, ColumnAlign } from '@/types/notes';
@@ -450,6 +450,8 @@ export function TableBlock({ block, isFocused, onUpdateTable, onFocus }: TableBl
                           aria-hidden
                         />
 
+                        {/* The header reads like a database column's: a type glyph before the name, the type under it. */}
+                        {isHeader && <Type className="pointer-events-none absolute top-3 left-3.5 size-3 text-a-faint" strokeWidth={1.75} aria-hidden />}
                         <textarea
                           ref={(el) => {
                             if (el) {
@@ -474,7 +476,7 @@ export function TableBlock({ block, isFocused, onUpdateTable, onFocus }: TableBl
                             // Header and body share one size and line height; weight
                             // alone marks the header, with no band behind it.
                             'text-[13px] leading-[1.5] text-a-ink',
-                            isHeader && 'font-semibold',
+                            isHeader && 'pl-[31px] font-semibold',
                             // Leave room for the column menu on first-row cells.
                             isFirstRow && 'pr-8',
                             align === 'center' && 'text-center',
@@ -484,6 +486,7 @@ export function TableBlock({ block, isFocused, onUpdateTable, onFocus }: TableBl
                           aria-label={`Row ${rowIdx + 1}, ${getColLabel(colIdx)}`}
                           style={{ height: 'auto', minHeight: '34px' }}
                         />
+                        {isHeader && <div className="px-3.5 pb-2.5 text-[11px] leading-none text-a-faint" aria-hidden>text</div>}
                       </td>
                     );
                   })}

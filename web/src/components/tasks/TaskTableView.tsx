@@ -115,7 +115,8 @@ const CONTROL = cn(
   'transition-colors duration-[120ms] hover:bg-[color-mix(in_srgb,var(--a-ink)_6%,transparent)]',
   'focus-visible:bg-[color-mix(in_srgb,var(--a-ink)_6%,transparent)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-a-accent',
 );
-const CONTROL_ROW = cn(CONTROL, 'h-8 [&_svg]:opacity-0 hover:[&_svg]:opacity-100 focus-visible:[&_svg]:opacity-100');
+// The prototype's Status and Quadrant cells read as plain 13px text; the select only shows itself on hover.
+const CONTROL_ROW = cn(CONTROL, 'h-8 data-[size=sm]:text-[13px] [&_svg]:opacity-0 hover:[&_svg]:opacity-100 focus-visible:[&_svg]:opacity-100');
 
 /** "Sep 20", or "Sep 20, 2027" in another year — the same shape as a card's due chip. */
 function formatDue(key: string): string {
@@ -587,7 +588,7 @@ function TaskTableRow({ rowNumber, todo, columns, activeCol, selected, selecting
             <td key={column.id} {...cell(ci + 1)} className={cn(CELL, 'min-w-[140px]', CURSOR)}>
               <Select value={quadrant.id} onValueChange={(v) => onUpdate(todo.id, { quadrant: v as Quadrant })}>
                 <SelectTrigger size="sm" className={cn(CONTROL_ROW, 'shadow-none')} aria-label={`Quadrant of ${todo.text}`}>
-                  <SelectValue />
+                  <SelectValue>{quadrant.label}</SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {QUADRANTS.map((q) => (

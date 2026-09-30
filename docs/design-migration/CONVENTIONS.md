@@ -769,3 +769,11 @@ Everything below deliberately stops matching the prototype. Each entry says wher
 - Also fixed on the way: two "recents" opened in the same millisecond tied, so the order was not guaranteed; a visit is now always strictly newer than the last.
 - Spends: two rows in the Account menu. No new tokens.
 
+## Fidelity pass after Phase 6 (2026-10-01)
+
+A re-shoot of every screen found small drifts that the 2px comparison tolerance had hidden. Fixed: sidebar rows were a 30px pitch (28px rows plus a 2px gap) against the prototype's 28px, and sections now have the prototype's 12px above each header; the task table's Status and Quadrant cells read as plain 13px text (they were 11px with a dot); the note title is 34px (the prototype's size; 34 joins the allowed sizes); a note table's header shows a type glyph and a "text" line like the database table's; the breadcrumb carries its second crumb on Calendar (the month), Notes (the open note) and Databases (the open database); the Notes sidebar's extra search box is gone now that ⌘K exists.
+
+Also learned: the app opens on Today now, so `shoot.mjs` routes must click their nav row (it now falls back to a starts-with match, because a row reads "Tasks8" with its count). Anything shot before this pass with no `nav` was silently photographing Today.
+
+Known gaps that remain, on purpose or for lack of support: a Link/URL column kind (the prototype renders underlined links; the server has no `url` kind); the prototype's Status/Quadrant/Stage headers say "text" with a T glyph, the app says what the column is; the Zoho Calendar notice and the extra Account-menu rows are the app's, not the prototype's.
+

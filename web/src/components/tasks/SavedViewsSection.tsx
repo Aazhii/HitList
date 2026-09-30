@@ -61,7 +61,7 @@ export function SavedViewsSection({
           Set a filter, then use <span className="font-semibold">Save as view</span> to keep it here.
         </p>
       ) : (
-        <ul className="space-y-0.5">
+        <ul>
           {views.map((view) => {
             const active = view.id === activeViewId;
             const list = view.scopeListId ? lists.find((l) => l.id === view.scopeListId) : undefined;

@@ -13,7 +13,7 @@
  * The grid arithmetic (monthWeeks, the day and tray drop targets) is shared with
  * nothing else now — it lives in lib/calendar.ts and is reused unchanged.
  */
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   DndContext,
   DragOverlay,
@@ -69,6 +69,8 @@ export interface UnifiedCalendarProps {
   /** The + on a day. The caller asks what to create. */
   onAddOnDate: (dateKey: string, anchor: HTMLElement) => void;
   loading?: boolean;
+  /** Told the month on show ('September 2026'), for the page's breadcrumb. */
+  onMonthLabelChange?: (label: string) => void;
   /** Today, for tests. */
   today?: Date;
 }
@@ -95,7 +97,7 @@ function withinDay(a: CalendarItem, b: CalendarItem): number {
 }
 
 export function UnifiedCalendar({
-  items, sources, hiddenSources, onMove, onOpen, onAddOnDate, loading, today,
+  items, sources, hiddenSources, onMove, onOpen, onAddOnDate, loading, onMonthLabelChange, today,
 }: UnifiedCalendarProps) {
   const now = today ?? new Date();
   const todayKey = localDateKey(now);
@@ -132,6 +134,7 @@ export function UnifiedCalendar({
 
   const active = activeId ? items.find((i) => `${i.kind}:${i.id}` === activeId) : undefined;
   const monthLabel = new Date(month.year, month.month, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  useEffect(() => { onMonthLabelChange?.(monthLabel); }, [monthLabel, onMonthLabelChange]);
 
   const handleDragEnd = ({ active: dragged, over }: DragEndEvent) => {
     setActiveId(null);

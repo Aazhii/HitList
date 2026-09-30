@@ -22,7 +22,7 @@ const ROOT = new URL('..', import.meta.url).pathname;
 const SRC = join(ROOT, 'src');
 
 // ── the closed sets ─────────────────────────────────────────────────────────
-const FONT_SIZES = new Set([11, 12, 13, 14, 16, 18, 20, 24, 32]);
+const FONT_SIZES = new Set([11, 12, 13, 14, 16, 18, 20, 24, 32, 34]);
 const RADII = new Set([3, 4, 6, 8, 12]);
 const DURATIONS = new Set([120, 180, 260]);
 const STROKE = '1.75';

@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect, type ReactNode } from 'react';
 import {
-  Plus, Search, Pin, PinOff, Trash2, FileText, MoreHorizontal,
+  Plus, Pin, PinOff, Trash2, FileText, MoreHorizontal,
   Loader2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -235,7 +235,7 @@ function NoteDetail({
               className={cn(
                 'w-full resize-none border-none bg-transparent p-0 outline-none field-sizing-content',
                 // Showcase 313: 34px/1.15, 700, -0.02em; 32 here, the top of the type scale.
-                'block text-[32px] leading-[1.22] font-bold tracking-[-0.02em] text-a-ink',
+                'block text-[34px] leading-[1.22] font-bold tracking-[-0.02em] text-a-ink',
                 'placeholder:text-a-line-strong',
               )}
               aria-label="Note title"
@@ -488,7 +488,7 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
       {pinned.length > 0 && (
         <>
           <ContextSectionHeader label="Pinned" />
-          <ul className="space-y-0.5">{pinned.map(renderRow)}</ul>
+          <ul>{pinned.map(renderRow)}</ul>
         </>
       )}
 
@@ -501,27 +501,11 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
         }
       />
 
-      {notes.length > 0 && <div className="relative mb-3 px-1">
-        <Search className="pointer-events-none absolute top-1/2 left-4 size-3.5 -translate-y-1/2 text-a-faint" strokeWidth={1.75} aria-hidden />
-        <input
-          type="search"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search notes"
-          aria-label="Search notes"
-          className={cn(
-            'h-9 w-full rounded-[4px] bg-a-bg pr-3 pl-8 text-[14px] text-a-ink outline-none',
-            'shadow-[inset_0_0_0_1px_var(--a-line)] placeholder:text-a-faint',
-            'focus-visible:shadow-[inset_0_0_0_1.5px_var(--a-accent)]',
-          )}
-        />
-      </div>}
-
       {notes.length === 0 && <p className="px-2.5 py-1 text-[12px] text-a-faint">No notes yet.</p>}
 
       {unpinned.length > 0 && (
         <>
-          <ul className="space-y-0.5">{unpinned.map(renderRow)}</ul>
+          <ul>{unpinned.map(renderRow)}</ul>
         </>
       )}
 

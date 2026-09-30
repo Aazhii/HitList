@@ -38,11 +38,13 @@ export interface CalendarPageProps {
   /** The sidebar (rendered by App) now owns "What's on it" — reports it up
    * instead of rendering its own context column. */
   onSidebarContentChange?: (context: ReactNode) => void;
+  /** The month on show, for the breadcrumb ("Calendar / September 2026"). */
+  onMonthLabelChange?: (label: string) => void;
   /** Opens the app-level sidebar's mobile sheet. */
   onOpenSidebar?: () => void;
 }
 
-export function CalendarPage({ lists, onOpenTask, onOpenDatabase, onSidebarContentChange, onOpenSidebar }: CalendarPageProps) {
+export function CalendarPage({ lists, onOpenTask, onOpenDatabase, onSidebarContentChange, onMonthLabelChange, onOpenSidebar }: CalendarPageProps) {
   const [tasks, setTasks] = useState<CalendarTask[]>([]);
   const [records, setRecords] = useState<CalendarRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -173,7 +175,7 @@ export function CalendarPage({ lists, onOpenTask, onOpenDatabase, onSidebarConte
           {ZOHO_CALENDAR_UNAVAILABLE_REASON}
         </p>
         <ContextSectionHeader label="Sources" />
-        <ul className="space-y-0.5 px-1">
+        <ul className="px-1">
           {sources.map((source) => {
             const on = !hiddenSources.includes(source.id);
             return (
@@ -246,6 +248,7 @@ export function CalendarPage({ lists, onOpenTask, onOpenDatabase, onSidebarConte
               items={items}
               sources={sources}
               hiddenSources={hiddenSources}
+              onMonthLabelChange={onMonthLabelChange}
               onMove={(item, date) => { void handleMove(item, date); }}
               onOpen={handleOpen}
               onAddOnDate={(dateKey, anchor) => setAddOn({ dateKey, anchor })}

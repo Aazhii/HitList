@@ -132,7 +132,7 @@ export function ListSidebar({
         </div>
       )}
 
-      <ul className="space-y-0.5">
+      <ul>
         {lists.map((list) => {
           const isActive = list.id === activeListId;
           const counts = todoCounts[list.id] ?? { active: 0, done: 0 };

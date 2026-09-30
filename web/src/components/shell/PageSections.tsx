@@ -68,13 +68,13 @@ export function PageSections({
       {favorites.length > 0 && (
         <>
           <ContextSectionHeader label="Favorites" />
-          <ul className="space-y-0.5 px-1">{favorites.map((p) => row(p, 'fav'))}</ul>
+          <ul className="px-1">{favorites.map((p) => row(p, 'fav'))}</ul>
         </>
       )}
       {shown.length > 0 && (
         <>
           <ContextSectionHeader label="Recents" />
-          <ul className="space-y-0.5 px-1">
+          <ul className="px-1">
             {shown.map((p) => row(p, 'rec'))}
             <li>
               <button type="button" onClick={onViewAll} className={contextRowClass(false)}>

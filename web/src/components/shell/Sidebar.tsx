@@ -140,7 +140,8 @@ function SidebarBody({ activeView, onViewChange, counts, context, contextFoot, p
       </nav>
 
       {/* This view's own contextual sections. */}
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-3">{context}{pages}</div>
+      {/* Each section header carries 12px above it (the prototype's rhythm); -mt-2 takes back the nav's own bottom padding for the first. */}
+      <div className="-mt-1.5 min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-3">{context}{pages}</div>
 
       {contextFoot && (
         <div className="flex-shrink-0 border-t border-a-line-soft p-3">{contextFoot}</div>

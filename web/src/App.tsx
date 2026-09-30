@@ -1322,6 +1322,7 @@ function UserScopedApp() {
 
   // ── Quick capture (P6.1): `c` or ⌘⇧N, anywhere nothing is being typed into ──
   const [captureOpen, setCaptureOpen] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState('');
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const chord = (e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === 'n';
@@ -1528,7 +1529,11 @@ function UserScopedApp() {
 
   const shellView = activeView === 'today' || activeView === 'notes' || activeView === 'databases' || activeView === 'calendar' || activeView === 'automations' || activeView === 'library' ? activeView : 'tasks';
   const crumb1 = shellView === 'today' ? 'Today' : shellView === 'notes' ? 'Notes' : shellView === 'databases' ? 'Databases' : shellView === 'calendar' ? 'Calendar' : shellView === 'automations' ? 'Automations' : shellView === 'library' ? 'Home' : 'Tasks';
-  const crumb2 = shellView === 'tasks' ? activeList?.name : shellView === 'library' ? 'Library' : undefined;
+  const openPageName = (kind: 'note' | 'database', id: string | null) =>
+    id ? pageDirectory.find((p) => p.kind === kind && p.id === id)?.name : undefined;
+  const crumb2 = shellView === 'notes' ? openPageName('note', activeNoteId)
+    : shellView === 'databases' ? openPageName('database', activeDatabaseId)
+    : shellView === 'calendar' ? calendarMonth || undefined : shellView === 'tasks' ? activeList?.name : shellView === 'library' ? 'Library' : undefined;
   const syncStatus: { tone: 'success' | 'warning' | 'danger'; label: string } = server.error
     ? { tone: 'danger', label: 'Error' }
     : !server.serverOnline
@@ -1719,6 +1724,7 @@ function UserScopedApp() {
             }}
             onOpenDatabase={(databaseId) => { setPendingDatabaseId(databaseId); setActiveView('databases'); }}
             onSidebarContentChange={setCalSidebarContext}
+            onMonthLabelChange={setCalendarMonth}
             onOpenSidebar={() => setSidebarOpen(true)}
           />
         ) : (

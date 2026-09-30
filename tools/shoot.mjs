@@ -76,8 +76,8 @@ const APP_ROUTE = {
   'db-sort':      { nav: 'Databases', then: ['~Reading list', '@Sort'] },
   'db-filter':    { nav: 'Databases', then: ['~Reading list', '@Filter'] },
   'db-picker':    { nav: 'Databases', then: ['~Reading list', '@Status of Dune'] },
-  'sh-notif':     { then: ['@Notifications'] },
-  'sh-account':   { then: ['@Account'] },
+  'sh-notif':     { nav: 'Tasks', tab: 'Matrix', then: ['@Notifications'] },
+  'sh-account':   { nav: 'Tasks', tab: 'Matrix', then: ['@Account'] },
   'sh-pagemenu':  { nav: 'Notes', notes: true, then: ['^Onboarding plan', '@Options for Onboarding plan'] },
   'library':      { nav: 'Notes', notes: true, then: ['~Databases', '~Reading list', '~Tasks', '~View all'] },
   'auto-list':    { nav: '~Automations' },
@@ -278,7 +278,12 @@ async function shootApp(browser, screenId, url) {
   }
 
   const clickText = (text) => runStep(page, text);
-  if (route.nav) { await clickText(route.nav); await new Promise((r) => setTimeout(r, 900)); }
+  if (route.nav) {
+    // A nav row carries a count badge ("Tasks8"), so fall back to starts-with; and the app now opens on Today,
+    // so this click is what moves it, not a no-op.
+    if (!(await clickText(route.nav))) await clickText('~' + route.nav);
+    await new Promise((r) => setTimeout(r, 900));
+  }
   if (route.tab) { await clickText(route.tab); await new Promise((r) => setTimeout(r, 800)); }
   if (route.focusLast) {
     // Focus the last note block (an empty paragraph) and type into it, leaving any menu it opens showing.
