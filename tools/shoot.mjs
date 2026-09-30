@@ -58,7 +58,7 @@ const APP_ROUTE = {
   'ov-progress': { nav: 'Tasks', tab: 'Matrix', then: ['Weekly progress'] },
   'notes-editor': { nav: 'Notes' },
   'notes-empty':  { nav: 'Notes' },
-  'db-table':     { nav: 'Databases' },
+  'db-table':     { nav: 'Databases', then: ['~Reading list'] },
   'db-empty':     { nav: 'Databases' },
   'cal-month':    { nav: 'Calendar' },
 };
@@ -108,6 +108,8 @@ async function dumpDom(page) {
 
 /** A real mouse click at the element's centre. `.click()` does not work here. */
 async function realClick(page, handle) {
+  // The switcher panel scrolls; an entry below the fold has no clickable box until it is shown.
+  await handle?.asElement?.()?.evaluate?.((el) => el.scrollIntoView({ block: 'center' }));
   const box = await handle?.asElement?.()?.boundingBox?.();
   if (!box) return false;
   await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
@@ -138,12 +140,15 @@ async function shootRef(browser, screenId) {
 
   // The switcher labels a screen by its `label`, not its id — read the
   // screens[] array out of the page so an id maps to the right entry.
-  const label = await page.evaluate((wanted) => {
+  const { label, nth } = await page.evaluate((wanted) => {
     const src = Array.from(document.querySelectorAll('script'))
       .map((s) => s.textContent || '').find((t) => t.includes("id: '") && t.includes('g:'));
-    if (!src) return null;
-    const re = new RegExp(`\\{\\s*id:\\s*'${wanted}'[^}]*?label:\\s*(['"])(.+?)\\1`);
-    return re.exec(src)?.[2] ?? null;
+    if (!src) return { label: null, nth: 0 };
+    // Every screen in order, so a label shared by two groups ("Table" under Tasks and
+    // Databases) resolves to the right one by its position among same-labelled screens.
+    const all = [...src.matchAll(/\{\s*id:\s*'([^']+)'[^}]*?label:\s*(['"])(.+?)\2/g)].map((m) => ({ id: m[1], label: m[3] }));
+    const hit = all.find((x) => x.id === wanted);
+    return { label: hit?.label ?? null, nth: hit ? all.filter((x) => x.label === hit.label).findIndex((x) => x.id === wanted) : 0 };
   }, screenId);
   if (!label) throw new Error(`no screen with id "${screenId}" in the prototype`);
 
@@ -151,7 +156,7 @@ async function shootRef(browser, screenId) {
   await new Promise((r) => setTimeout(r, 400));
   const entries = await page.evaluateHandle((l) => Array.from(document.querySelectorAll('button'))
     .filter((n) => n.textContent?.trim() === l && n.getAttribute('role') !== 'tab'), label);
-  const first = await page.evaluateHandle((a) => a[0], entries);
+  const first = await page.evaluateHandle((a, i) => a[i] ?? a[0], entries, nth);
   if (!(await realClick(page, first))) throw new Error(`could not click "${label}"`);
   await new Promise((r) => setTimeout(r, 1200));
 

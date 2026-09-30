@@ -555,6 +555,28 @@ Shared primitives now follow the DS, so every dialog inherits them:
   `#D0D5DD`. Board lanes, list/table group headers and the editor all use them.
 - Board "Manage fields" opens the list (first field selected), not a new blank field.
 
+### Database table and toolbar (T3.17)
+
+- **Full-bleed grid** under a hairline (the table breaks out of the 48px content padding and its
+  first column starts where the page content does), `table-layout: fixed` with the prototype's
+  widths — Title 260, select 140, multi-select 190, number 90, date 130, checkbox 80, text 170 —
+  plus a 44px "+" column. A stored column width still wins. Headers 36px, `--gray-50`, glyph +
+  13px/600 name, the 3px data-quality bar (the Title column's is always full); the column menu's
+  chevron is overlaid so it never widens a column.
+- **Rows 37px** (6px 8px padding around 24px content; 1px hairline). Cell editors have no inner
+  padding. Title = a 16px page glyph then the title on **one line** (ellipsis; full title as its
+  tooltip), 14px/400. Number 13px mono. Date **13px mono, "Aug 14, 2026"** — a button that opens a
+  date popover. Tags: 22px tall, 3px radius, 13px/400, a dot on a **single select** only.
+  Empty cells are blank (the tasks table's "—" is tasks-only). Checkbox: DS 16px, 1.5px border.
+- **Last row** is a full-width ghost "New record" (click, type a title). Below the table:
+  "N records" (12px tertiary) and the reminders note (12px tertiary).
+- **Toolbar (36px)**: view chips (32px, 8px radius, selected = brand tint / 600, others tertiary / 500),
+  the active "Sorted by X ×" and filter pills (24px, pill, brand tint), then Filter · Sort · Search ·
+  Properties as 28px icon buttons (4px radius, secondary ink; active = brand tint) and a primary
+  `New ▾` that adds an "Untitled" record.
+- **Deviations:** no URL column type — a text column that holds a URL renders as plain text, not a
+  link; the prototype's "2 more…" overflow is not built (every view shows).
+
 ## 13. Standing rules for whoever executes a task
 
 1. **Verify before you change.** Every task quotes the current code. If what you find does not match the quote, **stop and report** — do not adapt silently. The file may have moved on.

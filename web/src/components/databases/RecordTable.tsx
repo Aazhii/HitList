@@ -26,11 +26,12 @@ import {
 import { restrictToHorizontalAxis } from '@dnd-kit/modifiers';
 import { CSS } from '@dnd-kit/utilities';
 import {
-  AlignLeft, ArrowDown, ArrowLeftToLine, ArrowRightToLine, ArrowUp, Calendar, Check, ChevronDown,
+  AlignLeft, ArrowDown, File, ArrowLeftToLine, ArrowRightToLine, ArrowUp, Calendar, Check, ChevronDown,
   ChevronRight, CircleChevronDown, Copy, EyeOff, Hash, List, MoreHorizontal, Pencil,
   Pin, Plus, Repeat2, Rows3, Sigma, SquareCheck, Text as TextIcon, Trash2, WrapText, X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { topBarPill } from '@/components/shell/TopBar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   DropdownMenu,
@@ -153,15 +154,21 @@ export interface RecordTableProps {
 
 const CELL = 'px-2 py-1.5 align-top';
 
-/** Column sizing. The design gives every column an explicit width (showcase 619). */
-const DEFAULT_COL_WIDTH = 180;
-const MIN_COL_WIDTH = 96;
+/** Column sizing. The design gives every column an explicit width (showcase 619, 1539–1550). */
+const TITLE_COL_WIDTH = 260;
+const MIN_COL_WIDTH = 72;
+/** The showcase's widths per column type: status 140, multi 190, number 90, date 130, checkbox 80, url 170. */
+const KIND_COL_WIDTH: Record<FieldDef['kind'], number> = {
+  select: 140, multi: 190, number: 90, date: 130, checkbox: 80, text: 170, longtext: 260,
+};
+const colWidthOf = (field: FieldDef, widths: Record<string, number>) => widths[field.id] ?? KIND_COL_WIDTH[field.kind];
+// The cell already pads 8px; the prototype's content sits at that edge (showcase 634–640).
 const CONTROL = cn(
-  'w-full rounded-[8px] border-0 bg-transparent px-2 text-left text-[14px] text-a-ink',
+  'w-full rounded-[4px] border-0 bg-transparent px-0 text-left text-[14px] text-a-ink',
   'transition-colors duration-[120ms] hover:bg-[color-mix(in_srgb,var(--a-ink)_6%,transparent)]',
   'focus-visible:bg-[color-mix(in_srgb,var(--a-ink)_6%,transparent)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-a-accent',
 );
-const CONTROL_ROW = cn(CONTROL, 'h-8');
+const CONTROL_ROW = cn(CONTROL, 'h-6');
 
 export function RecordTable({
   rows, fields, titleLabel, onRenameTitleLabel, values, loading,
@@ -170,6 +177,7 @@ export function RecordTable({
   frozenFieldId, onFreezeField, wrapFieldIds, onWrapField, colWidths, onResizeField, onHideField, onInsertField, onDuplicateField, onChangeFieldKind,
 }: RecordTableProps) {
   const columnCount = 2 + fields.length;
+  const tableWidth = TITLE_COL_WIDTH + fields.reduce((n, f) => n + colWidthOf(f, colWidths), 0) + 44;
   const hasCalc = Object.keys(calc).length > 0;
   const groupField = fields.find((f) => f.id === groupFieldId) ?? null;
 
@@ -192,7 +200,7 @@ export function RecordTable({
 
   const renderRow = (row: ApiDatabaseRow) => (
     <tr key={row.id} className="group min-h-9 border-b border-a-line-soft hover:bg-a-row-alt">
-      <td className={cn(CELL, 'min-w-[280px] border-r border-a-line-soft')}>
+      <td className={cn(CELL, 'relative w-[260px] min-w-[260px] border-r border-a-line-soft')}>
         <div className="flex items-start gap-1">
           <TitleCell
             title={row.title}
@@ -205,10 +213,10 @@ export function RecordTable({
       {fields.map((field) => (
         <td
           key={field.id}
-          style={{ width: colWidths[field.id] ?? DEFAULT_COL_WIDTH }}
+          style={{ width: colWidthOf(field, colWidths) }}
           className={cn(
             CELL, 'border-r border-a-line-soft',
-            field.id === frozenFieldId && 'sticky left-[280px] z-[1] bg-a-surface',
+            field.id === frozenFieldId && 'sticky left-[260px] z-[1] bg-a-surface',
             // A text area always wraps — that is the kind's whole purpose — so
             // it does not wait on the column's own Wrap content toggle.
             (field.kind === 'longtext' || wrapFieldIds.includes(field.id)) && 'whitespace-normal',
@@ -230,7 +238,11 @@ export function RecordTable({
   );
 
   return (
-    <div className="w-full overflow-x-auto animate-fade-in">
+    <div className="animate-fade-in">
+    {/* Full-bleed (showcase 614): the grid runs edge to edge under a hairline, its first
+        column starting where the page content does. */}
+    <div className="-mx-4 overflow-x-auto border-t border-a-line md:-mx-12">
+    <div className="w-max px-4 md:px-12">
       {/* DndContext must wrap the table, not sit inside <thead>: it renders a
           hidden accessibility <div>, which HTML forbids as a <thead> child —
           the browser would otherwise silently relocate it, taking the table's
@@ -241,11 +253,20 @@ export function RecordTable({
         modifiers={[restrictToHorizontalAxis]}
         onDragEnd={handleDragEnd}
       >
-        <table className="w-full min-w-max border-collapse text-[14px]">
+        <table className="border-collapse text-[14px]" style={{ tableLayout: 'fixed', width: tableWidth }}>
+          <colgroup>
+            <col style={{ width: TITLE_COL_WIDTH }} />
+            {fields.map((f) => <col key={f.id} style={{ width: colWidthOf(f, colWidths) }} />)}
+            <col style={{ width: 44 }} />
+          </colgroup>
           <thead>
             <tr className="h-9 border-b border-a-line bg-a-bg">
-              <th scope="col" className="h-9 min-w-[280px] border-r border-a-line-soft px-2 text-left align-middle font-normal">
+              <th scope="col" className="relative h-9 w-[260px] min-w-[260px] border-r border-a-line-soft px-2 text-left align-middle font-normal">
                 <TitleHeaderCell label={titleLabel} onCommit={onRenameTitleLabel} />
+                {/* Every record has a title, so this bar is always full. */}
+                <span aria-hidden className="absolute inset-x-0 bottom-0 h-[3px] bg-a-dq-missing">
+                  <span className="block h-full bg-a-dq-valid" style={{ width: rows.length ? '100%' : '0%' }} />
+                </span>
               </th>
               <SortableContext items={fields.map((f) => f.id)} strategy={horizontalListSortingStrategy}>
                 {fields.map((field) => (
@@ -259,7 +280,7 @@ export function RecordTable({
                     calc={calc[field.id] ?? ''}
                     frozen={frozenFieldId === field.id}
                     wrapped={wrapFieldIds.includes(field.id)}
-                    width={colWidths[field.id] ?? DEFAULT_COL_WIDTH}
+                    width={colWidthOf(field, colWidths)}
                     onResize={(w) => onResizeField(field.id, w)}
                     onEdit={() => onEditField(field.id)}
                     onDelete={() => onDeleteField(field.id)}
@@ -281,7 +302,7 @@ export function RecordTable({
                 <button
                   type="button"
                   onClick={onCreateField}
-                  className="flex size-7 items-center justify-center rounded-[6px] text-a-faint transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
+                  className="flex size-7 items-center justify-center rounded-[4px] text-a-faint transition-colors duration-[120ms] hover:bg-a-line-soft hover:text-a-ink"
                   aria-label="Add a column"
                 >
                   <Plus className="size-4" strokeWidth={1.75} />
@@ -323,7 +344,7 @@ export function RecordTable({
                     key={field.id}
                     className={cn(
                       'border-r border-a-line-soft px-2 text-right text-[12px] text-a-faint',
-                      field.id === frozenFieldId && 'sticky left-[280px] z-[1] bg-a-bg',
+                      field.id === frozenFieldId && 'sticky left-[260px] z-[1] bg-a-bg',
                     )}
                   >
                     {calcText(calc[field.id] ?? '', field, rows, values)}
@@ -333,14 +354,20 @@ export function RecordTable({
               </tr>
             )}
 
-            <tr>
-              <td colSpan={columnCount} className="px-2 py-0.5">
+            <tr className="border-b border-a-line-soft">
+              <td colSpan={columnCount} className="p-0">
                 <NewRecordRow onAdd={onAdd} />
               </td>
             </tr>
           </tbody>
         </table>
       </DndContext>
+    </div>
+    </div>
+
+      {rows.length > 0 && (
+        <p className="py-1.5 text-[12px] text-a-faint">{rows.length} record{rows.length === 1 ? '' : 's'}</p>
+      )}
 
       {rows.length === 0 && !loading && (
         <p className="px-4 py-8 text-center text-[14px] text-a-faint">
@@ -414,7 +441,7 @@ function FieldHeader({
       className={cn(
         'group/head relative h-9 border-r border-a-line-soft px-2 text-left align-middle font-normal',
         isDragging && 'z-10 bg-a-bg shadow-[var(--a-shadow-md)]',
-        frozen && 'sticky left-[280px] z-[1] bg-a-bg',
+        frozen && 'sticky left-[260px] z-[1] bg-a-bg',
       )}
     >
       {/* DataPrep's signature data-quality fill bar: share of rows with a real value. */}
@@ -465,7 +492,8 @@ function FieldHeader({
           <DropdownMenuTrigger asChild>
             <button
               type="button"
-              className="flex size-6 items-center justify-center rounded-[6px] text-a-faint opacity-0 transition-opacity duration-[120ms] group-hover/head:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 hover:text-a-ink"
+              // Overlaid so it never widens the column: the prototype's header is just glyph + name.
+              className="absolute top-1/2 right-1 flex size-5 -translate-y-1/2 items-center justify-center rounded-[4px] bg-a-line-soft text-a-faint opacity-0 transition-opacity duration-[120ms] group-hover/head:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 hover:text-a-ink"
               aria-label={`${field.name} column options`}
             >
               <ChevronDown className="size-3.5" strokeWidth={1.75} />
@@ -658,22 +686,22 @@ function TitleCell({ title, onCommit }: { title: string; onCommit: (title: strin
           if (e.key === 'Escape') { setDraft(title); setEditing(false); }
         }}
         aria-label="Title"
-        className={cn(CONTROL, 'min-w-0 flex-1 resize-none py-1.5 leading-snug')}
+        className={cn(CONTROL, 'min-w-0 flex-1 resize-none py-0 pl-[22px] leading-6')}
       />
     );
   }
 
   return (
+    // The page glyph then the title on one line (showcase 634); the full title is its tooltip.
     <button
       type="button"
       onClick={() => setEditing(true)}
       aria-label={`Edit title of ${title}`}
-      // Not flex-1: a flex-1 button stretches to the column's full width even
-      // for a short title, pushing RecordMenu's "…" far past the text instead
-      // of right after it.
-      className={cn(CONTROL, 'w-auto min-w-0 max-w-full py-1.5 font-medium leading-snug')}
+      title={title}
+      className="flex h-6 min-w-0 flex-1 items-center gap-1.5 rounded-[4px] text-left text-[14px] text-a-ink"
     >
-      <span className="line-clamp-3 whitespace-pre-wrap">{title}</span>
+      <File className="size-4 flex-shrink-0 text-a-faint" strokeWidth={1.75} aria-hidden />
+      <span className="truncate">{title}</span>
     </button>
   );
 }
@@ -686,7 +714,7 @@ function RecordMenu({ title, onDelete }: { title: string; onDelete: () => void }
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="mt-0.5 flex size-7 flex-shrink-0 items-center justify-center rounded-[8px] text-a-faint opacity-0 transition-opacity duration-[120ms] group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 hover:text-a-ink"
+          className="absolute top-1.5 right-1 flex size-6 items-center justify-center rounded-[4px] bg-a-surface text-a-faint opacity-0 transition-opacity duration-[120ms] group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100 hover:bg-a-line-soft hover:text-a-ink"
           aria-label={`Options for ${title}`}
         >
           <MoreHorizontal className="size-3.5" strokeWidth={1.75} />
@@ -707,30 +735,47 @@ function RecordMenu({ title, onDelete }: { title: string; onDelete: () => void }
   );
 }
 
+/** The last row (showcase 641): a full-width ghost "New record"; click it and type a title. */
 function NewRecordRow({ onAdd }: { onAdd: (title: string) => void }) {
+  const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('');
 
   const commit = () => {
     const trimmed = title.trim();
     if (trimmed) onAdd(trimmed);
     setTitle('');
+    setOpen(false);
   };
 
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="flex h-9 w-full items-center gap-2 px-3.5 text-left text-[14px] text-a-faint transition-colors duration-[120ms] hover:bg-a-bg"
+      >
+        <Plus className="size-[15px]" strokeWidth={1.75} aria-hidden />
+        New record
+      </button>
+    );
+  }
+
   return (
-    <div className="flex items-center gap-1.5 text-a-faint">
-      <Plus className="size-3.5 flex-shrink-0" strokeWidth={1.75} aria-hidden />
+    <div className="flex h-9 items-center gap-2 px-3.5 text-a-faint">
+      <Plus className="size-[15px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
       <input
+        autoFocus
         value={title}
         maxLength={255}
         onChange={(e) => setTitle(e.target.value)}
         onBlur={commit}
         onKeyDown={(e) => {
           if (e.key === 'Enter') { e.preventDefault(); commit(); }
-          if (e.key === 'Escape') setTitle('');
+          if (e.key === 'Escape') { setTitle(''); setOpen(false); }
         }}
-        placeholder="New record"
+        placeholder="Title"
         aria-label="New record"
-        className="h-8 w-full max-w-[320px] rounded-[8px] bg-transparent px-1 text-[14px] text-a-ink outline-none placeholder:text-a-faint/70 focus-visible:bg-[color-mix(in_srgb,var(--a-ink)_6%,transparent)]"
+        className="h-7 w-full max-w-[320px] rounded-[4px] bg-transparent px-1 text-[14px] text-a-ink outline-none placeholder:text-a-faint focus-visible:bg-a-line-soft"
       />
     </div>
   );
@@ -787,7 +832,7 @@ function TextAreaCell({ value, ariaLabel, onCommit }: {
         if (e.key === 'Escape') { setDraft(value); e.currentTarget.blur(); }
       }}
       className="w-full resize-none bg-transparent py-1.5 text-[14px] leading-[1.5] text-a-ink outline-none placeholder:text-a-faint"
-      placeholder="Empty"
+      placeholder=""
     />
   );
 }
@@ -811,13 +856,13 @@ function FieldCell({ def, value, recordId, recordName, onChange, linking }: Fiel
         >
           <span
             className={cn(
-              'flex size-[17px] items-center justify-center rounded-[6px] transition-colors duration-[120ms]',
-              on ? 'bg-a-accent text-a-surface' : 'shadow-[inset_0_0_0_1.5px_var(--a-line)]',
+              'flex size-4 items-center justify-center rounded-[3px] border-[1.5px] transition-colors duration-[120ms]',
+              on ? 'border-a-accent bg-a-accent text-white' : 'border-a-line-strong bg-a-surface',
             )}
             aria-hidden
           >
             {on && (
-              <svg viewBox="0 0 12 12" className="size-2.5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <svg viewBox="0 0 12 12" className="size-2.5" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M2.5 6.5 4.75 8.75 9.5 3.5" />
               </svg>
             )}
@@ -851,24 +896,23 @@ function FieldCell({ def, value, recordId, recordName, onChange, linking }: Fiel
         />
       );
 
-    case 'number':
     case 'date':
+      return <DateCell value={typeof value === 'string' ? value : ''} ariaLabel={label} onChange={onChange} />;
+
+    case 'number':
       return (
         <CellInput
-          type={def.kind}
+          type="number"
           value={value === undefined ? '' : String(value)}
           ariaLabel={label}
+          className="font-mono text-[13px] tabular-nums"
           onCommit={(draft) => {
             const raw = draft.trim();
             if (raw === '') { if (value !== undefined) onChange(null); return ''; }
-            if (def.kind === 'number') {
-              const n = Number(raw);
-              if (!Number.isFinite(n)) return value === undefined ? '' : String(value);
-              if (n !== value) onChange(n);
-              return String(n);
-            }
-            if (raw !== value) onChange(raw);
-            return raw;
+            const n = Number(raw);
+            if (!Number.isFinite(n)) return value === undefined ? '' : String(value);
+            if (n !== value) onChange(n);
+            return String(n);
           }}
         />
       );
@@ -879,10 +923,12 @@ function FieldCell({ def, value, recordId, recordName, onChange, linking }: Fiel
       return (
         <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
           <PopoverTrigger asChild>
-            <button type="button" className={cn(CONTROL, 'flex min-h-8 flex-wrap items-center gap-1 py-1')} aria-label={label}>
-              {chosen.length === 0 && <span className="text-a-faint/60">Empty</span>}
+            <button type="button" className={cn(CONTROL, 'flex min-h-6 flex-wrap items-center gap-1.5 py-0')} aria-label={label}>
+              
               {chosen.map((o) => (
-                <span key={o.id} className={cn('rounded-[3px] px-2 py-0.5 text-[12px] font-medium', OPTION_CHIP_CLASS[o.color])}>
+                // Showcase 1500s: a 22px tag, 3px radius, 13px; a single select carries a dot.
+                <span key={o.id} className={cn('inline-flex h-[22px] items-center gap-1.5 rounded-[3px] px-2 text-[13px] leading-none whitespace-nowrap', OPTION_CHIP_CLASS[o.color])}>
+                  {def.kind === 'select' && <span className="size-2 rounded-full bg-current opacity-70" aria-hidden />}
                   {o.label}
                 </span>
               ))}
@@ -907,10 +953,46 @@ interface CellInputProps {
   value: string;
   type: 'text' | 'number' | 'date';
   ariaLabel: string;
+  className?: string;
   onCommit: (draft: string) => string;
 }
 
-function CellInput({ value, type, ariaLabel, onCommit }: CellInputProps) {
+/** "Aug 14, 2026" — a date cell reads as words (showcase `fmtDate`), in the tabular mono face. */
+function formatCellDate(key: string): string {
+  const [y, m, d] = key.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+/** A date shows as text; clicking it opens a date input in a popover. */
+function DateCell({ value, ariaLabel, onChange }: { value: string; ariaLabel: string; onChange: (value: FieldValue | null) => void }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button type="button" aria-label={ariaLabel} className={cn(CONTROL_ROW, 'flex items-center font-mono text-[13px] tabular-nums')}>
+          {value ? formatCellDate(value) : ''}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-auto p-3">
+        <div className="flex items-center gap-2">
+          <input
+            type="date"
+            autoFocus
+            value={value}
+            onChange={(e) => onChange(e.target.value || null)}
+            aria-label={`${ariaLabel} (date)`}
+            className="h-7 rounded-[3px] border border-a-line-strong bg-a-surface px-2 text-[13px] text-a-ink outline-none focus-visible:border-a-accent"
+          />
+          {value && (
+            <button type="button" className={topBarPill} onClick={() => { onChange(null); setOpen(false); }}>Clear</button>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+function CellInput({ value, type, ariaLabel, className, onCommit }: CellInputProps) {
   const [draft, setDraft] = useState(value);
   useEffect(() => { setDraft(value); }, [value]);
 
@@ -928,9 +1010,8 @@ function CellInput({ value, type, ariaLabel, onCommit }: CellInputProps) {
         if (e.key === 'Enter') { e.preventDefault(); commit(); (e.target as HTMLInputElement).blur(); }
         if (e.key === 'Escape') { setDraft(value); (e.target as HTMLInputElement).blur(); }
       }}
-      placeholder="Empty"
       aria-label={ariaLabel}
-      className={cn(CONTROL_ROW, 'placeholder:text-a-faint/60')}
+      className={cn(CONTROL_ROW, className)}
     />
   );
 }

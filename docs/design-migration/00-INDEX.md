@@ -156,10 +156,10 @@ Test baseline: **368 tests across 42 files.** This must not regress.
 Phase 0  █████   5 / 5      done
 Phase 1  █████  11 / 11      foundations — the broken UI
 Phase 2  █████   5 / 5       shell exactness
-Phase 3  ██░░░  16 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
+Phase 3  ███░░  17 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
 Phase 4  ░░░░░   1 / 12      missing features
 Phase 5  ░░░░░   0 / 7       proposals, unreviewed
-                38 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
+                39 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
 ```
 
 ### A note on "partially built"
@@ -248,7 +248,7 @@ on a description. Execution order is the section order below.
 
 | ID | Screen | State | Verified by |
 |---|---|---|---|
-| T3.17 | `db-table` (+ the 3px data-quality header bar) | todo — verify, don't rewrite | |
+| T3.17 | `db-table` (+ the 3px data-quality header bar) | **done** | design:check PASS, tsc/lint clean, vitest 368/368; shots/db-table.{ref,app}.png — full-bleed grid, prototype column widths, 37px rows, tags, toolbar + New ▾; `cmp.mjs` leaves only same-text/row-offset noise |
 | T3.18 | `db-board` | todo | |
 | T3.19 | `db-colmenu` | todo — verify, don't rewrite | |
 | T3.20 | `db-type` — **chrome only, behaviour already works** | todo — verify, don't rewrite | |

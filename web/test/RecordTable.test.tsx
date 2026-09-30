@@ -81,14 +81,19 @@ describe('RecordTable', () => {
 
   it('adds a record, and adds nothing for an empty title', () => {
     const props = setup();
+    // The last row is a ghost "New record" button (showcase 641); clicking it opens the title field.
+    fireEvent.click(screen.getByRole('button', { name: 'New record' }));
     const input = screen.getByRole('textbox', { name: 'New record' });
 
     fireEvent.change(input, { target: { value: '  ' } });
     fireEvent.keyDown(input, { key: 'Enter' });
     expect(props.onAdd).not.toHaveBeenCalled();
 
-    fireEvent.change(input, { target: { value: 'Neuromancer' } });
-    fireEvent.keyDown(input, { key: 'Enter' });
+    // A blank submit closes the field; open it again for a real one.
+    fireEvent.click(screen.getByRole('button', { name: 'New record' }));
+    const again = screen.getByRole('textbox', { name: 'New record' });
+    fireEvent.change(again, { target: { value: 'Neuromancer' } });
+    fireEvent.keyDown(again, { key: 'Enter' });
     expect(props.onAdd).toHaveBeenCalledWith('Neuromancer');
   });
 
@@ -187,8 +192,8 @@ describe('RecordTable', () => {
     fireEvent(document, new PointerEvent('pointermove', { clientX: 260 }));
     fireEvent(document, new PointerEvent('pointerup', {}));
 
-    // 180 default + 60 dragged
-    expect(props.onResizeField).toHaveBeenLastCalledWith('status', 240);
+    // 140 (a select's showcase width) + 60 dragged
+    expect(props.onResizeField).toHaveBeenLastCalledWith('status', 200);
   });
 
   it('shows a record with no values as empty cells', () => {

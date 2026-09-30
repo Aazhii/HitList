@@ -10,7 +10,7 @@
  * offering something that would quietly never fire.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { ArrowUpDown, Check, Columns3, Eye, EyeOff, ListFilter, MoreHorizontal, Pencil, Plus, Search, SlidersHorizontal, Table2, Trash2, X } from 'lucide-react';
+import { ArrowUpDown, Check, ChevronDown, Columns3, Eye, EyeOff, ListFilter, MoreHorizontal, Pencil, Plus, Search, SlidersHorizontal, Table2, Trash2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
@@ -622,10 +622,9 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
             />
           ) : !open ? null : (
             <>
-              {/* One toolbar row — view chips (each carrying its own table/board
-                  layout, like Notion's "Default view / By status board") plus
-                  filter chips, matching the showcase's single strip. */}
-              <div className="mb-3 flex flex-wrap items-center gap-2">
+              {/* One 36px row (showcase 601–612): view chips, the active sort / filter pills, then
+                  Filter · Sort · Search · Properties and a primary "New" that adds a record. */}
+              <div className="mb-2 flex h-9 items-center gap-1">
                 <DatabaseViewTabs
                   views={viewsForThisDb}
                   activeViewId={activeViewId}
@@ -638,12 +637,21 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
                 />
                 {view === 'table' && (
                   <>
-                    <div className="h-5 w-px bg-a-line" aria-hidden />
+                    <SortPill fields={fields} sort={sort} onClear={handleClearSort} />
+                    <FilterPill fields={fields} fieldFilters={fieldFilters} onClear={() => fields.forEach((f) => { if ((fieldFilters[f.id] ?? []).length) handleChangeFieldFilter(f.id, []); })} />
+                    <div className="flex-1" />
                     <FilterButton fields={fields} fieldFilters={fieldFilters} onChange={handleChangeFieldFilter} />
                     <SortButton fields={fields} sort={sort} onSort={handleSortField} onClear={handleClearSort} />
                     <SearchButton value={search} onChange={setSearch} />
-                    <div className="flex-1" />
                     <PropertiesButton fields={fields} hiddenFieldIds={hiddenFieldIds} onShow={handleShowField} onHide={handleHideField} />
+                    <button
+                      type="button"
+                      onClick={() => { void createRow({ title: 'Untitled' }); }}
+                      className={cn(topBarPrimary, 'ml-1')}
+                    >
+                      New
+                      <ChevronDown className="size-4" strokeWidth={1.75} aria-hidden />
+                    </button>
                   </>
                 )}
               </div>
@@ -696,7 +704,7 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
               />
               )}
 
-              <p className="mt-3 text-[11px] text-a-faint/80">
+              <p className="mt-[13px] text-[12px] text-a-faint">
                 No reminders or automations here — those live on tasks.
               </p>
             </>
@@ -734,6 +742,10 @@ interface DatabaseViewTabsProps {
   onDelete: (view: ApiSavedView) => void;
 }
 
+/** DS IconButton sm: 28px, 4px radius, secondary ink, a --gray-100 wash on hover. */
+const ICON_BUTTON = 'flex size-7 flex-shrink-0 items-center justify-center rounded-[4px] transition-colors duration-[120ms]';
+const ICON_BUTTON_IDLE = 'text-a-muted hover:bg-a-line-soft hover:text-a-ink';
+
 const TAB = cn(
   'flex h-8 flex-shrink-0 items-center gap-2 rounded-[8px] px-3 text-[14px] whitespace-nowrap transition-colors duration-[120ms]',
 );
@@ -752,13 +764,13 @@ function DatabaseViewTabs({ views, activeViewId, hasAdHocFilter, online, onApply
   const isDefault = activeViewId === null && !hasAdHocFilter;
 
   return (
-    <div className="flex flex-wrap items-center gap-1">
+    <div className="flex min-w-0 flex-shrink items-center gap-1">
       <button
         type="button"
         onClick={onClear}
         aria-current={isDefault ? 'true' : undefined}
         title={activeViewId === null && hasAdHocFilter ? 'A field filter below is narrowing this table — click to clear it' : undefined}
-        className={cn(TAB, isDefault ? 'bg-a-accent-tint font-semibold text-a-accent-700' : 'font-medium text-a-faint hover:bg-a-row-hover hover:text-a-ink')}
+        className={cn(TAB, isDefault ? 'bg-a-blue-tint font-semibold text-a-accent' : 'font-medium text-a-faint hover:bg-a-line-soft')}
       >
         <Table2 className="size-4" strokeWidth={1.75} aria-hidden />
         Default view
@@ -772,7 +784,7 @@ function DatabaseViewTabs({ views, activeViewId, hasAdHocFilter, online, onApply
               type="button"
               onClick={() => onApply(v)}
               aria-current={active ? 'true' : undefined}
-              className={cn(TAB, 'pr-6', active ? 'bg-a-accent-tint font-semibold text-a-accent-700' : 'font-medium text-a-faint hover:bg-a-row-hover hover:text-a-ink')}
+              className={cn(TAB, 'pr-6', active ? 'bg-a-blue-tint font-semibold text-a-accent' : 'font-medium text-a-faint hover:bg-a-line-soft')}
             >
               <LayoutIcon className="size-4" strokeWidth={1.75} aria-hidden />
               {v.name}
@@ -830,9 +842,9 @@ function NewViewButton({ onCreate }: { onCreate: (name: string, layout: 'table' 
         <button
           type="button"
           aria-label="Save the current filter as a new view"
-          className="flex size-7 flex-shrink-0 items-center justify-center rounded-[4px] text-a-faint transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
+          className={cn(ICON_BUTTON, ICON_BUTTON_IDLE)}
         >
-          <Plus className="size-3.5" strokeWidth={1.75} />
+          <Plus className="size-4" strokeWidth={1.75} />
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[260px] p-3">
@@ -894,11 +906,11 @@ function FilterButton({
           type="button"
           aria-label={`Filter${activeCount ? ` (${activeCount} active)` : ''}`}
           className={cn(
-            'flex size-7 flex-shrink-0 items-center justify-center rounded-[4px] transition-colors duration-[120ms]',
-            activeCount ? 'text-a-accent-700' : 'text-a-faint hover:bg-a-row-hover hover:text-a-ink',
+            ICON_BUTTON,
+            activeCount ? 'bg-a-blue-tint text-a-accent' : ICON_BUTTON_IDLE,
           )}
         >
-          <ListFilter className="size-3.5" strokeWidth={1.75} />
+          <ListFilter className="size-4" strokeWidth={1.75} />
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-56 p-2">
@@ -917,20 +929,19 @@ function FilterButton({
 function SortButton({
   fields, sort, onSort, onClear,
 }: { fields: FieldDef[]; sort: { fieldId: string; dir: 1 | -1 } | null; onSort: (fieldId: string, dir: 1 | -1) => void; onClear: () => void }) {
-  const sortedField = sort ? fields.find((f) => f.id === sort.fieldId) : null;
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center">
       <Popover>
         <PopoverTrigger asChild>
           <button
             type="button"
             aria-label="Sort"
             className={cn(
-              'flex size-7 flex-shrink-0 items-center justify-center rounded-[4px] transition-colors duration-[120ms]',
-              sort ? 'text-a-accent-700' : 'text-a-faint hover:bg-a-row-hover hover:text-a-ink',
+              ICON_BUTTON,
+              sort ? 'bg-a-blue-tint text-a-accent' : ICON_BUTTON_IDLE,
             )}
           >
-            <ArrowUpDown className="size-3.5" strokeWidth={1.75} />
+            <ArrowUpDown className="size-4" strokeWidth={1.75} />
           </button>
         </PopoverTrigger>
         <PopoverContent align="start" className="w-56 p-2">
@@ -950,16 +961,36 @@ function SortButton({
           </div>
         </PopoverContent>
       </Popover>
-      {sortedField && (
-        // design-check-ignore: pill — showcase 604 draws the sort pill at border-radius:99px.
-        <span className="flex h-6 flex-shrink-0 items-center gap-1.5 rounded-full bg-a-accent-tint pl-2.5 pr-1 text-[12px] font-medium text-a-accent-700 whitespace-nowrap">
-          Sorted by {sortedField.name}
-          <button type="button" aria-label="Remove sort" onClick={onClear} className="flex size-4 items-center justify-center rounded-full hover:bg-a-accent/20">
-            <X className="size-3" strokeWidth={1.75} />
-          </button>
-        </span>
-      )}
     </div>
+  );
+}
+
+/** "Sorted by X ×" — showcase 604: a 24px pill in the brand tint. */
+function SortPill({ fields, sort, onClear }: { fields: FieldDef[]; sort: { fieldId: string; dir: 1 | -1 } | null; onClear: () => void }) {
+  const sortedField = sort ? fields.find((f) => f.id === sort.fieldId) : null;
+  if (!sortedField) return null;
+  return <ActivePill label={`Sorted by ${sortedField.name}`} removeLabel="Remove sort" onClear={onClear} />;
+}
+
+/** The filter pill (showcase 605): what is filtering, and ×. */
+function FilterPill({ fields, fieldFilters, onClear }: { fields: FieldDef[]; fieldFilters: Record<string, string[]>; onClear: () => void }) {
+  const active = fields.filter((f) => (fieldFilters[f.id] ?? []).length > 0);
+  if (active.length === 0) return null;
+  const first = active[0];
+  const labels = (fieldFilters[first.id] ?? []).map((c) => first.options.find((o) => o.id === c)?.label ?? (c === FIELD_EMPTY ? 'Empty' : c)).join(', ');
+  const extra = active.length > 1 ? ` +${active.length - 1}` : '';
+  return <ActivePill label={`${first.name}: ${labels}${extra}`} removeLabel="Remove filter" onClear={onClear} />;
+}
+
+function ActivePill({ label, removeLabel, onClear }: { label: string; removeLabel: string; onClear: () => void }) {
+  return (
+    // design-check-ignore: pill — showcase 604 draws these at border-radius:99px.
+    <span className="inline-flex h-6 flex-shrink-0 items-center gap-1.5 rounded-full bg-a-blue-tint pr-1.5 pl-2 text-[12px] font-medium whitespace-nowrap text-a-accent-700">
+      {label}
+      <button type="button" aria-label={removeLabel} onClick={onClear} className="inline-flex p-0.5">
+        <X className="size-3" strokeWidth={1.75} />
+      </button>
+    </span>
   );
 }
 
@@ -972,11 +1003,11 @@ function SearchButton({ value, onChange }: { value: string; onChange: (value: st
           type="button"
           aria-label={`Search records${value ? ` (searching "${value}")` : ''}`}
           className={cn(
-            'flex size-7 flex-shrink-0 items-center justify-center rounded-[4px] transition-colors duration-[120ms]',
-            value ? 'text-a-accent-700' : 'text-a-faint hover:bg-a-row-hover hover:text-a-ink',
+            ICON_BUTTON,
+            value ? 'bg-a-blue-tint text-a-accent' : ICON_BUTTON_IDLE,
           )}
         >
-          <Search className="size-3.5" strokeWidth={1.75} />
+          <Search className="size-4" strokeWidth={1.75} />
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-64 p-2">
@@ -1004,11 +1035,11 @@ function PropertiesButton({
           type="button"
           aria-label={`Show or hide columns${hiddenFieldIds.length ? ` (${hiddenFieldIds.length} hidden)` : ''}`}
           className={cn(
-            'flex size-7 flex-shrink-0 items-center justify-center rounded-[4px] transition-colors duration-[120ms]',
-            hiddenFieldIds.length ? 'text-a-accent-700' : 'text-a-faint hover:bg-a-row-hover hover:text-a-ink',
+            ICON_BUTTON,
+            hiddenFieldIds.length ? 'bg-a-blue-tint text-a-accent' : ICON_BUTTON_IDLE,
           )}
         >
-          <SlidersHorizontal className="size-3.5" strokeWidth={1.75} />
+          <SlidersHorizontal className="size-4" strokeWidth={1.75} />
         </button>
       </PopoverTrigger>
       <PopoverContent align="end" className="w-64 p-2">

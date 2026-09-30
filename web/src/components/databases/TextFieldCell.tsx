@@ -129,7 +129,7 @@ export function TextFieldCell({ recordId, fieldId, value, ariaLabel, onChange, l
   };
 
   return (
-    <div className="flex min-h-8 flex-wrap items-center gap-1.5">
+    <div className="flex min-h-6 flex-wrap items-center gap-1.5">
       <input
         ref={inputRef}
         type="text"
@@ -147,7 +147,7 @@ export function TextFieldCell({ recordId, fieldId, value, ariaLabel, onChange, l
         }}
         onBlur={() => { commit(draft); setMention(null); }}
         onKeyDown={handleKeyDown}
-        placeholder="Empty"
+        placeholder=""
         aria-label={ariaLabel}
         className={cn(className, 'min-w-[80px] flex-1 placeholder:text-a-faint/60')}
       />

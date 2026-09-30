@@ -34,3 +34,4 @@ for t in "Send weekly status update|do" "Submit timesheet|schedule"; do
   curl -s -c $J -b $J -X PATCH "$B/tasks/$T/complete" >/dev/null
 done
 echo "seeded field $FID and 10 tasks on :$PORT"
+python3 "$(dirname "$0")/seed_db.py" "$PORT"
