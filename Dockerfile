@@ -21,4 +21,4 @@ COPY --from=backend /workspace/target/hitlist.jar ./hitlist.jar
 RUN useradd --system --uid 10001 hitlist
 USER hitlist
 EXPOSE 3001
-ENTRYPOINT ["java", "-jar", "/app/hitlist.jar"]
+ENTRYPOINT ["/opt/java/openjdk/bin/java", "-jar", "/app/hitlist.jar"]

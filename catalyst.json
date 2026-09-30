@@ -1,0 +1,11 @@
+{
+  "appsail": [
+    {
+      "source": "docker://hitlist-appsail-deploy:amd64",
+      "name": "hitlist",
+      "port": {
+        "http": 3001
+      }
+    }
+  ]
+}

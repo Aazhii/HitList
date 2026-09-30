@@ -1,0 +1,30 @@
+{
+  "defaults": {
+    "project": 1,
+    "env": 1
+  },
+  "actives": {
+    "project": 1,
+    "env": 1
+  },
+  "projects": [
+    {
+      "idx": 1,
+      "id": "75733000000013053",
+      "name": "HitList",
+      "domain": {
+        "id": "50046452030",
+        "name": "hitlist-60090109165.development"
+      },
+      "timezone": "Asia/Kolkata",
+      "env": [
+        {
+          "idx": 1,
+          "id": "60090109165",
+          "name": "Development",
+          "type": 3
+        }
+      ]
+    }
+  ]
+}

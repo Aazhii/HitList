@@ -1,0 +1,11 @@
+# Local `catalyst serve` only. Catalyst's local runner cannot pass environment variables to a Docker-image
+# AppSail, so this layers a throwaway SQLite store and a dev-only cookie secret on the real image.
+# Build the base first:  docker buildx build --platform linux/amd64 -t hitlist-appsail:amd64 --load .
+# Then:                  docker buildx build --platform linux/amd64 -f Dockerfile.catalyst-local -t hitlist-appsail-local:amd64 --load .
+# Deployed AppSails set DATABASE_URL and OWNER_COOKIE_SECRET in the Catalyst console instead; never use this image there.
+FROM hitlist-appsail:amd64
+# For a deploy, pass a random secret:  --build-arg COOKIE_SECRET=$(openssl rand -hex 32)
+ARG COOKIE_SECRET=local-catalyst-dev-secret-0123456789abcdef
+ENV STORAGE_MODE=sqlite \
+    SQLITE_PATH=/tmp/hitlist-local.db \
+    OWNER_COOKIE_SECRET=$COOKIE_SECRET
