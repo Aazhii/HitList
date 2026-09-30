@@ -12,6 +12,7 @@ import type { SaveStatus } from '@/hooks/useNotes';
 import { useSyncStatus } from '@/hooks/useSyncStatus';
 import type { SyncStatus } from '@/hooks/useSyncStatus';
 import { NoteEditor, type NoteTaskLinking } from '@/components/NoteEditor';
+import { noteTaskRollup, rollupLabel } from '@/lib/noteTaskRollup';
 import { EmptyState, ILL } from '@/components/EmptyState';
 import { RowMenuContent, RowMenuItem } from '@/components/shell/RowMenu';
 import { toast } from 'sonner';
@@ -201,7 +202,9 @@ function NoteDetail({
   // Exactly what is sent to the server (useNotes.noteToPayload), so the count
   // shown is the count the 10,000-character limit applies to.
   const syncSize = JSON.stringify(note.blocks).length;
-  const linkedCount = note.blocks.filter((b) => b.taskId).length;
+  // Read live from the tasks when they are available, so a note says how its tasks are getting on.
+  const rollup = linking ? noteTaskRollup(note.blocks, linking.todos) : { total: note.blocks.filter((b) => b.taskId).length, done: 0 };
+  const rollupText = rollupLabel(rollup);
 
   // Track first block id for Enter-from-title focus
   useEffect(() => {
@@ -254,10 +257,10 @@ function NoteDetail({
               <span>Edited {formatNoteEdited(note.updatedAt)}</span>
               <span aria-hidden>·</span>
               <span>{`${note.blocks.length} block${note.blocks.length !== 1 ? 's' : ''}`}</span>
-              {linkedCount > 0 && (
+              {rollupText && (
                 <>
                   <span aria-hidden>·</span>
-                  <span>{`${linkedCount} linked task${linkedCount !== 1 ? 's' : ''}`}</span>
+                  <span className={rollup.total > 0 && rollup.done === rollup.total ? 'text-a-green-ink' : undefined}>{rollupText}</span>
                 </>
               )}
               {syncSize > NOTE_SYNC_WARN && (

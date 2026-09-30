@@ -718,3 +718,6 @@ Everything below deliberately stops matching the prototype. Each entry says wher
 ### P5.3 Data quality on tasks
 - The task table's Due column and every custom-field column get the Databases fill bar (3px, valid over missing) with a tooltip "N of M have a value". Status and Quadrant always have a value, so they get none; the bar counts what the table shows (done tasks only with "show completed").
 - A quiet chip in the top bar, "N tasks have no due date" (open tasks only), applies the existing "No date" filter; it disappears once that filter is on or nothing is missing. It is not a banner and cannot be dismissed, because it goes away by itself. Spends: `tasks-table` header, every tasks top bar.
+
+### P5.6 Note ↔ task links
+- The chip already showed a task's quadrant, list, done state and (since the notes pass) due date, and a task already links back to its note. What was missing is what a note says about them: its meta line now reads "3 of 7 linked tasks done" (green when all are), counted live from the tasks; and a line whose task is done is struck through and faint like a done to-do, so the note stops looking unfinished. A task deleted elsewhere counts for nothing. Spends: `notes-editor` meta line, linked lines.

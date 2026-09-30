@@ -299,6 +299,8 @@ interface BlockRowProps {
   chip?: React.ReactNode;
   /** A database block's arrow. */
   onOpenDatabase?: (databaseId: string) => void;
+  /** The task this line became is done: the line reads as finished too, so the note does not go stale. */
+  linkedDone?: boolean;
 }
 
 /**
@@ -317,7 +319,7 @@ function BlockRow({
   onFocus, onChange, onToggleCheck, onKeyDown,
   onAddAfter, onDelete, onChangeType, onMoveUp, onMoveDown,
   onUpdateTable, textareaRef, onSlashOpen, onSelectionChange, onUpdateMeta,
-  onMentionCheck, chip, onOpenDatabase,
+  onMentionCheck, chip, onOpenDatabase, linkedDone,
 }: BlockRowProps) {
   const [hovered, setHovered] = useState(false);
   const isFocused = focusedId === block.id;
@@ -365,7 +367,7 @@ function BlockRow({
 
   const textClass = cn(
     getBlockTextClass(block.type),
-    block.type === 'todo' && block.checked && 'text-a-faint line-through decoration-[1.5px]',
+    (block.type === 'todo' && block.checked || linkedDone) && 'text-a-faint line-through decoration-[1.5px]',
     // Callout text on its tint: accent-700 and sage-ink both clear 4.5:1.
     block.type === 'callout' && (block.tone === 'sage' ? 'text-a-sage-ink' : 'text-a-ink'),
   );
@@ -1071,6 +1073,7 @@ export function NoteEditor({
             onUpdateMeta={onUpdateBlock}
             onMentionCheck={handleMentionCheck}
             onOpenDatabase={linking?.openDatabase}
+            linkedDone={!!block.taskId && todosById.get(block.taskId)?.status === 'done'}
             chip={
               linking && linking.tasksLoaded && (block.taskId || pendingLinks.has(block.id)) ? (
                 <LinkedTaskChip
