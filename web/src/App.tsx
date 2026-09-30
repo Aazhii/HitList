@@ -86,6 +86,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -103,7 +104,8 @@ interface AddTaskDialogProps {
   onAdd: (text: string, quadrant: Quadrant, category?: string, dueDate?: string, dueTime?: string) => void;
 }
 
-const FIELD_LABEL = 'text-[11px] font-bold uppercase tracking-[0.1em] text-a-faint';
+// DS field label (--font-label): 13px / 500, ink, sentence case.
+const FIELD_LABEL = 'text-[13px] font-medium leading-[1.35] text-a-ink';
 
 function AddTaskDialog({ open, defaultQuadrant, defaultDueDate, onOpenChange, onAdd }: AddTaskDialogProps) {
   const [text, setText] = useState('');
@@ -132,31 +134,30 @@ function AddTaskDialog({ open, defaultQuadrant, defaultDueDate, onOpenChange, on
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent>
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 font-display text-[20px] font-normal">
-            <Grid2x2 className="size-4 text-a-accent" strokeWidth={1.75} />
-            Add task
-          </DialogTitle>
+          <DialogTitle>Add task</DialogTitle>
+          <DialogDescription>Pick the quadrant that fits — you can change it any time.</DialogDescription>
         </DialogHeader>
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           {/* Task text */}
-          <div className="space-y-1.5">
-            <Label className={FIELD_LABEL}>Task</Label>
+          <div className="flex flex-col gap-2">
+            <Label className={cn(FIELD_LABEL, "gap-1")} htmlFor="add-task-text">Task<span className="text-a-red-line">*</span></Label>
             <Input
+              id="add-task-text"
               ref={inputRef}
               value={text}
               onChange={(e) => { setText(e.target.value); setError(''); }}
               placeholder="What needs to be done?"
-              className={cn('rounded-xl text-[14px]', error && 'border-destructive')}
+              aria-invalid={error ? true : undefined}
               maxLength={200}
             />
-            {error && <p className="text-xs text-destructive animate-fade-in">{error}</p>}
+            {error && <p className="text-[11px] text-q-do animate-fade-in">{error}</p>}
           </div>
 
-          {/* Quadrant */}
-          <div className="space-y-1.5">
-            <Label className={FIELD_LABEL}>Priority quadrant</Label>
+          {/* Quadrant — showcase 944–948 */}
+          <div>
+            <div className="mb-1.5 font-medium">Priority quadrant</div>
             <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Priority quadrant">
               {QUADRANTS.map((q) => {
                 const selected = quadrant === q.id;
@@ -168,14 +169,15 @@ function AddTaskDialog({ open, defaultQuadrant, defaultDueDate, onOpenChange, on
                     aria-checked={selected}
                     onClick={() => setQuadrant(q.id)}
                     className={cn(
-                      'flex flex-col items-start rounded-[8px] px-3 py-2.5 text-left transition-colors duration-[120ms]',
+                      'rounded-[6px] px-3 py-2 text-left leading-[normal] transition-colors duration-[120ms]',
+                      q.inkClass,
                       selected
-                        ? cn(q.tintClass, q.inkClass, 'shadow-[inset_0_0_0_1.5px_currentColor]')
-                        : 'bg-a-bg text-a-ink shadow-[inset_0_0_0_1px_var(--a-line)] hover:bg-a-row-hover',
+                        ? cn(q.tintClass, 'border-[1.5px] border-current')
+                        : 'border border-a-line bg-a-surface hover:bg-a-bg',
                     )}
                   >
-                    <span className="text-[13px] font-semibold">{q.label}</span>
-                    <span className="mt-0.5 text-[11px] opacity-75">{q.subtitle}</span>
+                    <div className="font-semibold">{q.label}</div>
+                    <div className="text-[12px] opacity-85">{q.subtitle}</div>
                   </button>
                 );
               })}
@@ -184,59 +186,40 @@ function AddTaskDialog({ open, defaultQuadrant, defaultDueDate, onOpenChange, on
 
           {/* Category + Due date row */}
           <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
+            <div className="flex flex-col gap-2">
               <Label className={FIELD_LABEL}>Category</Label>
               <Select value={category || '__none__'} onValueChange={(v) => setCategory(v === '__none__' ? '' : v)}>
-                <SelectTrigger className="h-9 w-full rounded-xl text-xs">
+                <SelectTrigger className="w-full" aria-label="Category">
                   <SelectValue placeholder="None" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__none__">
-                    <span className="text-muted-foreground">None</span>
+                    <span className="text-a-faint">None</span>
                   </SelectItem>
                   {CATEGORIES.map((cat) => (
-                    <SelectItem key={cat.id} value={cat.id}>
-                      <span className={cn('rounded-[3px] px-2 py-0.5 text-xs font-medium', cat.color)}>
-                        {cat.label}
-                      </span>
-                    </SelectItem>
+                    <SelectItem key={cat.id} value={cat.id}>{cat.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5">
-              <Label className={FIELD_LABEL}>Due date</Label>
-              <Input
-                type="date"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                className="h-9 rounded-xl text-xs"
-              />
+            <div className="flex flex-col gap-2">
+              <Label className={FIELD_LABEL} htmlFor="add-task-date">Due date</Label>
+              <Input id="add-task-date" type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
             </div>
           </div>
 
-          {/* Due time (only if date set) */}
-          {dueDate && (
-            <div className="space-y-1.5 animate-fade-in">
-              <Label className={FIELD_LABEL}>
-                Due time <span className="font-normal normal-case tracking-normal">(optional)</span>
-              </Label>
-              <Input
-                type="time"
-                value={dueTime}
-                onChange={(e) => setDueTime(e.target.value)}
-                className="h-9 w-36 rounded-xl text-xs"
-              />
-            </div>
-          )}
+          <div className="flex w-1/2 flex-col gap-2">
+            <Label className={FIELD_LABEL} htmlFor="add-task-time">Due time (optional)</Label>
+            <Input id="add-task-time" type="time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} />
+          </div>
 
-          <DialogFooter className="gap-2 pt-1">
-            <Button type="button" variant="ghost" className="rounded-[6px]" onClick={() => onOpenChange(false)}>
+          <DialogFooter>
+            <button type="button" className={cn(topBarPill, BTN_MD)} onClick={() => onOpenChange(false)}>
               Cancel
-            </Button>
-            <Button type="submit" className="flex-1 rounded-[6px]">
+            </button>
+            <button type="submit" className={cn(topBarPrimary, BTN_MD)}>
               Add task
-            </Button>
+            </button>
           </DialogFooter>
         </form>
       </DialogContent>

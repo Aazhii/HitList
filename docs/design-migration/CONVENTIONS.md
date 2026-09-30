@@ -465,6 +465,24 @@ These were wrong at the source and every screen inherited them.
 - **Deviation:** the saved-view strip's `+` is a 28px icon button like the prototype's,
   but still opens our name/layout/columns popover (a saved view needs those).
 
+### Dialogs and form controls (T3.9 onward)
+
+Shared primitives now follow the DS, so every dialog inherits them:
+
+- **Dialog** (`ui/dialog.tsx`): scrim `rgba(16,24,40,.45)` with no blur; white panel, **8px**
+  radius (the showcase's `--radius-xl`, not §4's 12), `shadow-xl`, `20px 24px` padding, 520px
+  wide (`sm` 400, `lg` 720 by className), children stacked 16px apart; title 20px/600 with a
+  13px secondary description 3px below; a 30px close button; `DialogFooter` = a hairline,
+  12px above right-aligned buttons. No header icon.
+- **Input / Select trigger / Textarea**: 34px (textarea min 72px), 1px `--border-strong`,
+  **3px** radius, 13px, `0 12px` padding, hover border `--gray-400`, focus border brand +
+  `0 0 0 3px rgba(0,110,185,.28)`; placeholder tertiary.
+- **Field label**: 13px / 500 ink, sentence case (no uppercase tracking); a required star
+  is `--red-500` (`--a-red-line`), 4px from the label.
+- Quadrant picker tile: 6px radius, `8px 12px`, ink text, `line-height: normal`; selected = the
+  quadrant tint with a **1.5px** ink border, otherwise white with a 1px default border.
+- "Due time (optional)" is always shown (half width), not only once a date is set.
+
 ## 13. Standing rules for whoever executes a task
 
 1. **Verify before you change.** Every task quotes the current code. If what you find does not match the quote, **stop and report** — do not adapt silently. The file may have moved on.

@@ -156,10 +156,10 @@ Test baseline: **343 tests across 39 files.** This must not regress.
 Phase 0  █████   5 / 5      done
 Phase 1  █████  11 / 11      foundations — the broken UI
 Phase 2  █████   5 / 5       shell exactness
-Phase 3  ██░░░   8 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
+Phase 3  ██░░░   9 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
 Phase 4  ░░░░░   1 / 12      missing features
 Phase 5  ░░░░░   0 / 7       proposals, unreviewed
-                30 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
+                31 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
 ```
 
 ### A note on "partially built"
@@ -235,7 +235,7 @@ on a description. Execution order is the section order below.
 
 | ID | Screen | State | Verified by |
 |---|---|---|---|
-| T3.9 | `ov-add` | todo | |
+| T3.9 | `ov-add` | **done** | design:check PASS, tsc/lint clean, vitest 343/343; shots/ov-add.{ref,app}.png; `cmp.mjs ov-add`: dialog box 520×519.6 both, every label/tile/control within 1.5px |
 | T3.10 | `ov-detail` | todo | |
 | T3.11 | `ov-delete` | todo | |
 | T3.12 | `ov-filter` | todo | |

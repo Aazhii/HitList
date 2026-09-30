@@ -47,6 +47,8 @@ const APP_ROUTE = {
   // Need a dead / hanging /api behind vite (see 00-INDEX.md "Shooting offline and loading").
   'tasks-offline': { nav: 'Tasks', tab: 'Matrix' },
   'tasks-loading': { nav: 'Tasks' },
+  // Task dialogs (3B): open each overlay from the matrix.
+  'ov-add': { nav: 'Tasks', tab: 'Matrix', then: ['New'] },
   'notes-editor': { nav: 'Notes' },
   'notes-empty':  { nav: 'Notes' },
   'db-table':     { nav: 'Databases' },

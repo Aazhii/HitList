@@ -682,6 +682,9 @@ html.login-locked body {
   --a-shadow-sm: 0 1px 3px rgba(15, 15, 15, 0.10);
   --a-shadow-md: 0 2px 4px rgba(15, 15, 15, 0.15);
   --a-shadow-lg: 0 4px 6px rgba(15, 15, 15, 0.10), 0 0 0 1px rgba(15, 15, 15, 0.05);
+  --a-shadow-xl: 0 10px 15px rgba(15, 15, 15, 0.10), 0 0 0 1px rgba(15, 15, 15, 0.05);
+  /* DS --surface-overlay: the modal scrim. No blur. */
+  --a-scrim: rgba(16, 24, 40, 0.45);
 
   /* Spacing — Zoho DataPrep's tokens/spacing.css 4px grid, verbatim. */
   --a-space-1: 2px;
