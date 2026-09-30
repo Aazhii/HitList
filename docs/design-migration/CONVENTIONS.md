@@ -483,11 +483,30 @@ Shared primitives now follow the DS, so every dialog inherits them:
   quadrant tint with a **1.5px** ink border, otherwise white with a 1px default border.
 - "Due time (optional)" is always shown (half width), not only once a date is set.
 
+### Task detail panel and delete confirmation (T3.10, T3.11)
+
+- The panel is a **non-modal `<aside>`** (440px, `top:52px`, right-anchored, 1px left border,
+  `shadow-xl`, **no scrim** — the page behind stays interactive), not a Radix `Sheet`.
+  Escape and the X close it (autosaving), and **Save now saves and closes**; it is never
+  disabled.
+- Removed because the design has none: the "Unsaved" marker and header Save, the
+  per-section icons and uppercase headings, the Info block (created/completed dates), the
+  clear-due-date button, the category chip under the select, and the inline "Yes, delete".
+- Status buttons carry no icons; the quadrant picker is the shared `QuadrantPicker`.
+- Custom fields: a hairline, then `CUSTOM FIELDS` (11px/600/.06em tertiary) and a ghost
+  "Manage fields", then each field as a label over a control.
+- **Delete** opens a danger `Dialog` (400px): "Delete this task?" — "“<task>” will be removed
+  from <list>." plus, only when the task came from a note, "Its chip in the note it came from
+  stays, and reads “Task removed”." (the prototype names the note; the panel does not know its
+  title). Buttons: ghost "Keep task", red-500 "Delete task". The panel is hidden while it is open.
+- **Deviation:** the linked-note row reads "Added from note · Open note" (the prototype shows
+  the note's title as the link).
+
 ## 13. Standing rules for whoever executes a task
 
 1. **Verify before you change.** Every task quotes the current code. If what you find does not match the quote, **stop and report** — do not adapt silently. The file may have moved on.
 2. **Never invent a value.** If a task does not give you a number and this file does not either, ask. Guessing is what produced the current state.
 3. **One task, one commit.** Commit message: `design(T1.4): set every icon stroke to 1.75`.
-4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 343 tests.
+4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 345 tests.
 5. **Update `00-INDEX.md`** — set State and fill in "Verified by" with the actual command output or screenshot pair. A task with an empty "Verified by" is not done.
 6. **Do not delete the Automations or Reminders code.** It is being revived in Phase 4, not removed.

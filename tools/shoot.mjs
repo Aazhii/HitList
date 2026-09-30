@@ -49,6 +49,12 @@ const APP_ROUTE = {
   'tasks-loading': { nav: 'Tasks' },
   // Task dialogs (3B): open each overlay from the matrix.
   'ov-add': { nav: 'Tasks', tab: 'Matrix', then: ['New'] },
+  'ov-detail': { nav: 'Tasks', tab: 'Matrix', then: ['~Reply to legal'] },
+  'ov-delete': { nav: 'Tasks', tab: 'Matrix', then: ['~Reply to legal', '~Delete'] },
+  'ov-filter': { nav: 'Tasks', tab: 'Matrix', then: ['~Filter'] },
+  'ov-fields': { nav: 'Tasks', tab: 'Matrix', then: ['~Reply to legal', '~Manage fields'] },
+  'ov-history': { nav: 'Tasks', tab: 'Matrix', then: ['Today'] },
+  'ov-progress': { nav: 'Tasks', tab: 'Matrix', then: ['Weekly progress'] },
   'notes-editor': { nav: 'Notes' },
   'notes-empty':  { nav: 'Notes' },
   'db-table':     { nav: 'Databases' },
@@ -184,7 +190,7 @@ async function shootApp(browser, screenId, url) {
   await new Promise((r) => setTimeout(r, 1400));
 
   const clickText = async (text) => {
-    const h = await page.evaluateHandle((t) => Array.from(document.querySelectorAll('button'))
+    const h = await page.evaluateHandle((t) => Array.from(document.querySelectorAll('button, [role="button"]'))
       .find((n) => { const x = n.textContent?.trim() ?? ''; return t.startsWith('~') ? x.startsWith(t.slice(1)) : x === t; }) ?? null, text);
     return realClick(page, h);
   };

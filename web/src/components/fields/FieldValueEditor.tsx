@@ -25,7 +25,7 @@ interface FieldValueEditorProps {
   onSelectOption?: () => void;
 }
 
-const INPUT = 'h-9 w-full rounded-xl border-0 bg-muted/30 text-xs focus-visible:ring-1 focus-visible:ring-primary/40';
+const INPUT = 'w-full';
 
 export function FieldValueEditor({ field, value, onChange, disabled, onSelectOption }: FieldValueEditorProps) {
   switch (field.kind) {

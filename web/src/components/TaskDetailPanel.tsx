@@ -1,20 +1,6 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import {
-  X,
-  Check,
-  Circle,
-  Loader2,
-  Trash2,
-  CalendarClock,
-  Clock,
-  AlertCircle,
-  ArrowRight,
-  FileText,
-  Tag,
-} from 'lucide-react';
+import { CircleAlert, Clock, FileText, Trash2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { FileText as FileTextIcon } from 'lucide-react';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -25,8 +11,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Sheet, SheetContent } from '@/components/ui/sheet';
-import { CATEGORIES, QUADRANTS, getCategoryConfig, getQuadrantConfig } from '@/types/todo';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { BTN_MD, topBarPill, topBarPrimary } from '@/components/shell/TopBar';
+import { QuadrantPicker } from '@/components/tasks/QuadrantPicker';
+import { CATEGORIES, getQuadrantConfig } from '@/types/todo';
 import type { Todo, TodoStatus, Quadrant } from '@/types/todo';
 import { getDueInfo } from '@/components/MatrixTaskCard';
 import { TaskFieldsSection } from '@/components/fields/TaskFieldsSection';
@@ -41,6 +35,8 @@ interface TaskDetailPanelProps {
   onStatusChange: (id: string, status: TodoStatus) => void;
   /** Opens the note a task was added from. */
   onOpenNote?: (noteId: string) => void;
+  /** The list the task is in, for the delete confirmation's wording. */
+  listName?: string;
   /** Custom fields. The section is left out when this is not given. */
   fields?: {
     defs: FieldDef[];
@@ -52,27 +48,34 @@ interface TaskDetailPanelProps {
   };
 }
 
-function getTodayStr() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+/** "Sun, Sep 27" — the wording of the overdue banner (showcase 1025). */
+function weekdayDate(key: string): string {
+  const [y, m, d] = key.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
-function formatCreated(ts: number): string {
-  return new Date(ts).toLocaleDateString('en-US', {
-    weekday: 'short',
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  });
-}
-
-const STATUS_OPTIONS: { value: TodoStatus; label: string; icon: React.ReactNode }[] = [
-  { value: 'todo', label: 'To do', icon: <Circle className="size-3.5 text-muted-foreground" /> },
-  { value: 'in-progress', label: 'In progress', icon: <Loader2 className="size-3.5 text-primary animate-spin" /> },
-  { value: 'done', label: 'Done', icon: <Check className="size-3.5 text-primary" /> },
+const STATUS_OPTIONS: { value: TodoStatus; label: string }[] = [
+  { value: 'todo', label: 'To do' },
+  { value: 'in-progress', label: 'In progress' },
+  { value: 'done', label: 'Done' },
 ];
 
+// Field labels are the DS label: 13px / 500 ink, sentence case.
+const LABEL = 'text-[13px] font-medium leading-[1.35] text-a-ink';
+
+/** Quadrant → the DS Badge tone the header uses (showcase 1019): Do first reads as danger. */
+const QUADRANT_BADGE: Record<Quadrant, string> = {
+  do: 'bg-a-red-tint text-a-red-ink',
+  schedule: 'bg-a-blue-tint text-a-accent-700',
+  delegate: 'bg-q-delegate-bg text-q-delegate',
+  eliminate: 'bg-q-eliminate-bg text-q-eliminate',
+};
+
+/**
+ * The task detail panel — a peek panel, not a modal: 440px, right-anchored under the
+ * 52px chrome, **no scrim**, and the page behind it stays interactive (showcase
+ * 1016–1045). Changes save when it closes; Save closes it too.
+ */
 export function TaskDetailPanel({
   todo,
   open,
@@ -81,6 +84,7 @@ export function TaskDetailPanel({
   onDelete,
   onStatusChange,
   onOpenNote,
+  listName,
   fields,
 }: TaskDetailPanelProps) {
   const [text, setText] = useState(todo?.text ?? '');
@@ -129,16 +133,6 @@ export function TaskDetailPanel({
     setIsDirty(false);
   }, [todo, text, note, dueDate, dueTime, category, quadrant, status, onUpdate, onStatusChange]);
 
-  const handleDelete = useCallback(() => {
-    if (!todo) return;
-    if (!confirmDelete) {
-      setConfirmDelete(true);
-      return;
-    }
-    onDelete(todo.id);
-    onClose();
-  }, [todo, confirmDelete, onDelete, onClose]);
-
   // Auto-save on close if dirty
   const handleClose = useCallback(() => {
     if (isDirty && todo && text.trim()) {
@@ -147,333 +141,219 @@ export function TaskDetailPanel({
     onClose();
   }, [isDirty, todo, text, handleSave, onClose]);
 
-  if (!todo) return null;
+  // Explicit Save saves and closes (showcase 1042).
+  const handleSaveAndClose = useCallback(() => {
+    if (isDirty) handleSave();
+    onClose();
+  }, [isDirty, handleSave, onClose]);
+
+  if (!todo || !open) return null;
 
   const isDone = status === 'done';
   const dueInfo = getDueInfo(dueDate || undefined, dueTime || undefined);
   const quadrantConfig = getQuadrantConfig(quadrant);
-  const categoryConfig = getCategoryConfig(category);
+  const banner = dueInfo && !isDone && (dueInfo.isOverdue || dueInfo.isUrgentSoon) ? dueInfo : null;
 
   return (
-    <Sheet open={open} onOpenChange={(v) => !v && handleClose()}>
-      <SheetContent
-        side="right"
-        showCloseButton={false}
-        className="w-full sm:max-w-md flex flex-col p-0 gap-0 overflow-hidden"
+    <>
+      {/* Opening the delete confirmation hides the panel; "Keep task" brings it back (showcase 962). */}
+      {!confirmDelete && <aside
+        role="dialog"
+        aria-label="Task details"
+        onKeyDown={(e) => { if (e.key === 'Escape') handleClose(); }}
+        className="fixed top-[52px] right-0 bottom-0 z-40 flex w-[440px] max-w-full flex-col border-l border-a-line bg-a-surface text-[13px] leading-normal text-a-ink shadow-[var(--a-shadow-xl)] animate-in slide-in-from-right duration-[260ms]"
       >
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border bg-card flex-shrink-0">
-          <div className="flex items-center gap-2 min-w-0">
-            {/* Quadrant badge */}
-            <span
+        <header className="flex flex-shrink-0 items-center gap-2 border-b border-a-line px-4 py-3">
+          {/* design-check-ignore: pill — the DS Badge is a pill (showcase 1019). */}
+          <span className={cn('rounded-full border border-transparent px-2 py-[3px] text-[11px] font-semibold leading-none', QUADRANT_BADGE[quadrant])}>
+            {quadrantConfig.label}
+          </span>
+          <span className="text-[12px] text-a-faint">Changes save when you close</span>
+          <div className="flex-1" />
+          <button
+            type="button"
+            onClick={handleClose}
+            aria-label="Close panel"
+            className="flex size-7 items-center justify-center rounded-[4px] text-a-muted transition-colors duration-[120ms] hover:bg-a-line-soft hover:text-a-ink active:bg-a-line"
+          >
+            <X className="size-4" strokeWidth={1.75} />
+          </button>
+        </header>
+
+        <div className="flex min-h-0 flex-1 flex-col gap-[18px] overflow-auto p-4">
+          {banner && (
+            <div
               className={cn(
-                'inline-flex items-center rounded-[3px] px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide flex-shrink-0',
-                quadrantConfig.badgeClass
+                'flex gap-2.5 rounded-[6px] border px-3 py-2.5 font-medium',
+                banner.isOverdue
+                  ? 'border-a-red-border bg-a-red-tint text-a-red-ink'
+                  : 'border-a-amber-line bg-a-amber-tint text-a-amber-ink',
               )}
+              role="status"
             >
-              {quadrantConfig.label}
-            </span>
-            {isDirty && (
-              <span className="text-[11px] text-muted-foreground animate-fade-in">Unsaved</span>
-            )}
+              {banner.isOverdue
+                ? <CircleAlert className="size-4 flex-shrink-0" strokeWidth={1.75} aria-hidden />
+                : <Clock className="size-4 flex-shrink-0" strokeWidth={1.75} aria-hidden />}
+              <span>
+                {banner.isOverdue && dueDate ? `Overdue — was due ${weekdayDate(dueDate)}` : `Due soon — ${banner.label}`}
+              </span>
+            </div>
+          )}
+
+          <div className="flex flex-col gap-2">
+            <Label className={LABEL} htmlFor="detail-task">Task</Label>
+            <Textarea
+              id="detail-task"
+              value={text}
+              onChange={(e) => { setText(e.target.value); markDirty(); }}
+              placeholder="What needs to be done?"
+              rows={2}
+              className={cn('min-h-[72px]', isDone && 'line-through text-a-faint')}
+              aria-label="Task title"
+            />
           </div>
-          <div className="flex items-center gap-1">
-            {isDirty && (
-              <Button
-                size="sm"
-                onClick={handleSave}
-                className="h-7 px-3 text-xs rounded-lg animate-fade-in"
-              >
-                Save
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={handleClose}
-              aria-label="Close panel"
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <X className="size-4" />
-            </Button>
-          </div>
-        </div>
 
-        {/* Scrollable body */}
-        <div className="flex-1 overflow-y-auto">
-          <div className="px-5 py-5 space-y-6">
-
-            {/* Due alert banner */}
-            {dueInfo && !isDone && (dueInfo.isOverdue || dueInfo.isUrgentSoon) && (
-              <div
-                className={cn(
-                  'flex items-center gap-2.5 rounded-xl px-3.5 py-2.5 text-sm font-medium animate-fade-in',
-                  dueInfo.isOverdue
-                    ? 'bg-destructive/10 text-destructive border border-destructive/20'
-                    : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
-                )}
-              >
-                {dueInfo.isOverdue ? (
-                  <AlertCircle className="size-4 flex-shrink-0" />
-                ) : (
-                  <Clock className="size-4 flex-shrink-0 animate-pulse" />
-                )}
-                <span>{dueInfo.isOverdue ? 'Overdue' : 'Due soon'} — {dueInfo.label}</span>
-              </div>
-            )}
-
-            {/* Task title */}
-            <div className="space-y-1.5">
-              <Label className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                Task
-              </Label>
-              <Textarea
-                value={text}
-                onChange={(e) => { setText(e.target.value); markDirty(); }}
-                placeholder="What needs to be done?"
-                className={cn(
-                  'resize-none text-sm font-medium leading-relaxed border-0 bg-muted/30 rounded-xl px-3 py-2.5 min-h-[72px]',
-                  'focus-visible:ring-1 focus-visible:ring-primary/40',
-                  isDone && 'line-through text-muted-foreground'
-                )}
-                aria-label="Task title"
-              />
-            </div>
-
-            {/* Status */}
-            <div className="space-y-1.5">
-              <Label className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                Status
-              </Label>
-              <div className="flex gap-2">
-                {STATUS_OPTIONS.map((opt) => (
-                  <button
-                    key={opt.value}
-                    onClick={() => { setStatus(opt.value); markDirty(); }}
-                    className={cn(
-                      'flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-medium border transition-all duration-[120ms]',
-                      status === opt.value
-                        ? 'border-primary/40 bg-primary/10 text-primary'
-                        : 'border-border bg-card text-muted-foreground hover:border-border/80 hover:text-foreground'
-                    )}
-                    aria-pressed={status === opt.value}
-                  >
-                    {opt.icon}
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Quadrant */}
-            <div className="space-y-1.5">
-              <Label className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
-                <ArrowRight className="size-3" />
-                Priority Quadrant
-              </Label>
-              <div className="grid grid-cols-2 gap-2">
-                {QUADRANTS.map((q) => (
-                  <button
-                    key={q.id}
-                    onClick={() => { setQuadrant(q.id); markDirty(); }}
-                    className={cn(
-                      'flex flex-col items-start rounded-xl px-3 py-2.5 text-left border transition-all duration-[120ms]',
-                      quadrant === q.id
-                        ? cn('border-primary/40 bg-primary/8 ring-1 ring-primary/20')
-                        : 'border-border bg-card hover:border-border/80'
-                    )}
-                    aria-pressed={quadrant === q.id}
-                  >
-                    <span className="text-xs font-semibold text-foreground">{q.label}</span>
-                    <span className="text-[11px] text-muted-foreground mt-0.5">{q.subtitle}</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Due date + time */}
-            <div className="space-y-1.5">
-              <Label className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
-                <CalendarClock className="size-3" />
-                Due Date & Time
-              </Label>
-              <div className="flex gap-2">
-                <div className="flex-1">
-                  <Input
-                    type="date"
-                    value={dueDate}
-                    min={getTodayStr()}
-                    onChange={(e) => { setDueDate(e.target.value); markDirty(); }}
-                    className="h-9 text-xs rounded-xl bg-muted/30 border-0 focus-visible:ring-1 focus-visible:ring-primary/40"
-                    aria-label="Due date"
-                  />
-                </div>
-                <div className="w-28">
-                  <Input
-                    type="time"
-                    value={dueTime}
-                    onChange={(e) => { setDueTime(e.target.value); markDirty(); }}
-                    className="h-9 text-xs rounded-xl bg-muted/30 border-0 focus-visible:ring-1 focus-visible:ring-primary/40"
-                    aria-label="Due time"
-                    disabled={!dueDate}
-                  />
-                </div>
-                {dueDate && (
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => { setDueDate(''); setDueTime(''); markDirty(); }}
-                    aria-label="Clear due date"
-                    className="text-muted-foreground hover:text-foreground flex-shrink-0"
-                  >
-                    <X className="size-3.5" />
-                  </Button>
-                )}
-              </div>
-              {dueInfo && !isDone && (
-                <p
+          <div>
+            <div className="mb-1.5 font-medium">Status</div>
+            <div className="flex gap-2">
+              {STATUS_OPTIONS.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => { setStatus(opt.value); markDirty(); }}
+                  aria-pressed={status === opt.value}
                   className={cn(
-                    'text-[11px] font-medium animate-fade-in',
-                    dueInfo.isOverdue ? 'text-destructive' : dueInfo.isUrgentSoon ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'
+                    'inline-flex h-[30px] items-center gap-1.5 rounded-[6px] border px-3 font-medium transition-colors duration-[120ms]',
+                    status === opt.value
+                      ? 'border-a-blue-line bg-a-blue-tint text-a-accent-700'
+                      : 'border-a-line bg-a-surface text-a-muted hover:bg-a-bg',
                   )}
                 >
-                  {dueInfo.label}
-                </p>
-              )}
-            </div>
-
-            {/* Category */}
-            <div className="space-y-1.5">
-              <Label className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
-                <Tag className="size-3" />
-                Category
-              </Label>
-              <Select
-                value={category || '__none__'}
-                onValueChange={(v) => { setCategory(v === '__none__' ? '' : v); markDirty(); }}
-              >
-                <SelectTrigger className="h-9 text-xs rounded-xl bg-muted/30 border-0 focus-visible:ring-1 focus-visible:ring-primary/40 w-full">
-                  <SelectValue placeholder="No category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">
-                    <span className="text-muted-foreground">No category</span>
-                  </SelectItem>
-                  {CATEGORIES.map((cat) => (
-                    <SelectItem key={cat.id} value={cat.id}>
-                      <span className={cn('inline-flex items-center rounded-[3px] px-2 py-0.5 text-[11px] font-medium', cat.color)}>
-                        {cat.label}
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {categoryConfig && (
-                <span className={cn('inline-flex items-center rounded-[3px] px-2 py-0.5 text-[11px] font-medium animate-fade-in', categoryConfig.color)}>
-                  {categoryConfig.label}
-                </span>
-              )}
-            </div>
-
-            {fields && (
-              <TaskFieldsSection
-                fields={fields.defs}
-                values={fields.values[todo.id]}
-                online={fields.online}
-                loading={fields.loading}
-                onSetValue={(fieldId, value) => fields.onSetValue(todo.id, fieldId, value)}
-                onManage={fields.onManage}
-              />
-            )}
-
-            {/* Notes */}
-            <div className="space-y-1.5">
-              <Label className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground flex items-center gap-1.5">
-                <FileText className="size-3" />
-                Notes
-              </Label>
-              <Textarea
-                value={note}
-                onChange={(e) => { setNote(e.target.value); markDirty(); }}
-                placeholder="Add context, links, or thoughts…"
-                className="resize-none text-sm leading-relaxed border-0 bg-muted/30 rounded-xl px-3 py-2.5 min-h-[120px] focus-visible:ring-1 focus-visible:ring-primary/40"
-                aria-label="Task notes"
-              />
-            </div>
-
-            {/* Metadata */}
-            <div className="rounded-xl bg-muted/30 px-3.5 py-3 space-y-1.5">
-              <p className="text-[11px] text-muted-foreground/60 uppercase tracking-widest font-semibold">Info</p>
-              <div className="space-y-1">
-                <p className="text-xs text-muted-foreground">
-                  <span className="text-muted-foreground/60">Created</span>{' '}
-                  {formatCreated(todo.createdAt)}
-                </p>
-                {todo.completedAt && (
-                  <p className="text-xs text-muted-foreground">
-                    <span className="text-muted-foreground/60">Completed</span>{' '}
-                    {formatCreated(todo.completedAt)}
-                  </p>
-                )}
-                {todo.sourceNoteId && onOpenNote && (
-                  <button
-                    type="button"
-                    onClick={() => onOpenNote(todo.sourceNoteId!)}
-                    className="flex items-center gap-1.5 text-xs text-a-accent-700 hover:underline"
-                  >
-                    <FileTextIcon className="size-3" aria-hidden /> Open the note this came from
-                  </button>
-                )}
-              </div>
+                  {opt.label}
+                </button>
+              ))}
             </div>
           </div>
-        </div>
 
-        {/* Footer */}
-        <div className="flex items-center justify-between px-5 py-4 border-t border-border bg-card flex-shrink-0">
           <div>
-            {confirmDelete ? (
-              <div className="flex items-center gap-2 animate-fade-in">
-                <span className="text-xs text-destructive font-medium">Delete this task?</span>
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  onClick={handleDelete}
-                  className="h-7 px-3 text-xs rounded-lg"
-                >
-                  Yes, delete
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setConfirmDelete(false)}
-                  className="h-7 px-3 text-xs rounded-lg"
-                >
-                  Cancel
-                </Button>
-              </div>
-            ) : (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={handleDelete}
-                className="h-7 px-3 text-xs rounded-lg text-muted-foreground hover:text-destructive gap-1.5"
-              >
-                <Trash2 className="size-3.5" />
-                Delete
-              </Button>
-            )}
+            <div className="mb-1.5 font-medium">Priority quadrant</div>
+            <QuadrantPicker value={quadrant} onChange={(q) => { setQuadrant(q); markDirty(); }} />
           </div>
-          <Button
-            size="sm"
-            onClick={handleSave}
-            disabled={!isDirty || !text.trim()}
-            className="h-7 px-4 text-xs rounded-lg"
-          >
-            Save changes
-          </Button>
+
+          <div className="grid grid-cols-[1fr_120px] gap-3">
+            <div className="flex flex-col gap-2">
+              <Label className={LABEL} htmlFor="detail-date">Due date</Label>
+              <Input
+                id="detail-date"
+                type="date"
+                value={dueDate}
+                onChange={(e) => { setDueDate(e.target.value); markDirty(); }}
+              />
+            </div>
+            <div className="flex flex-col gap-2">
+              <Label className={LABEL} htmlFor="detail-time">Time</Label>
+              <Input
+                id="detail-time"
+                type="time"
+                value={dueTime}
+                onChange={(e) => { setDueTime(e.target.value); markDirty(); }}
+                disabled={!dueDate}
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label className={LABEL}>Category</Label>
+            <Select
+              value={category || '__none__'}
+              onValueChange={(v) => { setCategory(v === '__none__' ? '' : v); markDirty(); }}
+            >
+              <SelectTrigger className="w-full" aria-label="Category">
+                <SelectValue placeholder="None" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__"><span className="text-a-faint">None</span></SelectItem>
+                {CATEGORIES.map((cat) => (
+                  <SelectItem key={cat.id} value={cat.id}>{cat.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {fields && (
+            <TaskFieldsSection
+              fields={fields.defs}
+              values={fields.values[todo.id]}
+              online={fields.online}
+              loading={fields.loading}
+              onSetValue={(fieldId, value) => fields.onSetValue(todo.id, fieldId, value)}
+              onManage={fields.onManage}
+            />
+          )}
+
+          <div className="flex flex-col gap-2">
+            <Label className={LABEL} htmlFor="detail-notes">Notes</Label>
+            <Textarea
+              id="detail-notes"
+              value={note}
+              onChange={(e) => { setNote(e.target.value); markDirty(); }}
+              placeholder="Add context, links, or thoughts…"
+              rows={4}
+              className="min-h-[96px]"
+              aria-label="Task notes"
+            />
+          </div>
+
+          {todo.sourceNoteId && onOpenNote && (
+            <div className="flex items-center gap-2 text-a-accent-600">
+              <FileText className="size-3.5" strokeWidth={1.75} aria-hidden />
+              Added from note
+              <button type="button" onClick={() => onOpenNote(todo.sourceNoteId!)} className="font-semibold hover:underline">
+                Open note
+              </button>
+            </div>
+          )}
         </div>
-      </SheetContent>
-    </Sheet>
+
+        <footer className="flex flex-shrink-0 items-center gap-2 border-t border-a-line px-4 py-3">
+          <button type="button" onClick={() => setConfirmDelete(true)} className={cn(topBarPill, BTN_MD)}>
+            <Trash2 className="size-4" strokeWidth={1.75} aria-hidden />
+            Delete
+          </button>
+          <div className="flex-1" />
+          <button type="button" onClick={handleSaveAndClose} disabled={!text.trim()} className={cn(topBarPrimary, BTN_MD, 'disabled:opacity-50')}>
+            Save
+          </button>
+        </footer>
+      </aside>}
+
+      {/* ov-delete — showcase 962–964 */}
+      <Dialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <DialogContent className="sm:max-w-[400px]">
+          <DialogHeader>
+            <DialogTitle>Delete this task?</DialogTitle>
+            <DialogDescription>
+              “{todo.text}” will be removed{listName ? ` from ${listName}` : ''}.
+              {todo.sourceNoteId && ' Its chip in the note it came from stays, and reads “Task removed”.'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center justify-end gap-2">
+            <button type="button" className={cn(topBarPill, BTN_MD)} onClick={() => setConfirmDelete(false)}>
+              Keep task
+            </button>
+            <button
+              type="button"
+              className={cn(
+                'flex flex-shrink-0 items-center gap-2 border border-transparent bg-a-red-line font-semibold whitespace-nowrap text-white transition-colors duration-[120ms] hover:bg-a-red-ink active:bg-a-red-ink',
+                BTN_MD,
+              )}
+              onClick={() => { onDelete(todo.id); setConfirmDelete(false); onClose(); }}
+            >
+              Delete task
+            </button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

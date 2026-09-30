@@ -87,13 +87,12 @@ describe('TaskDetailPanel', () => {
     const todo = makeTodo({ id: 'todo-abc', text: 'Delete me' });
     render(<TaskDetailPanel {...defaultProps} todo={todo} onDelete={onDelete} />);
 
-    // Click the delete button to show confirm state
-    const deleteBtn = screen.getByRole('button', { name: /delete/i });
-    fireEvent.click(deleteBtn);
+    // Delete opens a confirmation dialog (showcase 962–964), it does not delete by itself.
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(onDelete).not.toHaveBeenCalled();
+    expect(await screen.findByText('Delete this task?')).toBeInTheDocument();
 
-    // Confirm delete
-    const confirmBtn = await screen.findByRole('button', { name: /yes, delete/i });
-    fireEvent.click(confirmBtn);
+    fireEvent.click(screen.getByRole('button', { name: 'Delete task' }));
 
     await waitFor(() => {
       expect(onDelete).toHaveBeenCalledWith('todo-abc');
@@ -116,15 +115,32 @@ describe('TaskDetailPanel', () => {
     expect(container).toBeTruthy();
   });
 
-  it('calls onUpdate with changed text when Save is clicked', async () => {
+  it('keeps the task when the confirmation is dismissed', async () => {
+    const onDelete = vi.fn();
+    render(<TaskDetailPanel {...defaultProps} todo={makeTodo()} onDelete={onDelete} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Keep task' }));
+    expect(onDelete).not.toHaveBeenCalled();
+  });
+
+  it('is a peek panel: no scrim, and it names the list in the delete confirmation', async () => {
+    render(<TaskDetailPanel {...defaultProps} todo={makeTodo({ text: 'Ship it' })} listName="Work" />);
+    // Non-modal: the page behind stays interactive, so there is no dialog overlay.
+    expect(document.querySelector('[data-slot="dialog-overlay"]')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(await screen.findByText(/“Ship it” will be removed from Work\./)).toBeInTheDocument();
+  });
+
+  it('calls onUpdate with changed text when Save is clicked, and closes', async () => {
     const onUpdate = vi.fn();
+    const onClose = vi.fn();
     const todo = makeTodo({ id: 'todo-1', text: 'Original text' });
-    render(<TaskDetailPanel {...defaultProps} todo={todo} onUpdate={onUpdate} />);
+    render(<TaskDetailPanel {...defaultProps} todo={todo} onUpdate={onUpdate} onClose={onClose} />);
 
     const input = screen.getByDisplayValue('Original text');
     fireEvent.change(input, { target: { value: 'Updated text' } });
 
-    const saveBtn = screen.getByRole('button', { name: /save changes/i });
+    const saveBtn = screen.getByRole('button', { name: 'Save' });
     fireEvent.click(saveBtn);
 
     await waitFor(() => {
@@ -133,5 +149,6 @@ describe('TaskDetailPanel', () => {
         expect.objectContaining({ text: 'Updated text' })
       );
     });
+    expect(onClose).toHaveBeenCalled();
   });
 });

@@ -136,6 +136,7 @@
     --color-a-green-tint: var(--a-green-tint);
     --color-a-green-ink: var(--a-green-ink);
     --color-a-red-line: var(--a-red-line);
+    --color-a-red-border: var(--a-red-border);
     --color-a-red-tint: var(--a-red-tint);
     --color-a-red-ink: var(--a-red-ink);
     --color-a-amber-tint: var(--a-amber-tint);
@@ -600,6 +601,7 @@ html.login-locked body {
   --a-green-ink: #178049;
   --a-red-tint: #fcebec;
   --a-red-line: #e5484d;
+  --a-red-border: #f5c6c8; /* the overdue banner's border, showcase 1025 */
   --a-red-ink: #c63a3f;
   --a-amber-line: #f2d6a8;
   --a-amber-ink: #7a4a0e;

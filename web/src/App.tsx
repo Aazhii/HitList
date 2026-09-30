@@ -92,6 +92,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { QuadrantPicker } from '@/components/tasks/QuadrantPicker';
 import { CATEGORIES } from '@/types/todo';
 import { cn } from '@/lib/utils';
 
@@ -158,30 +159,7 @@ function AddTaskDialog({ open, defaultQuadrant, defaultDueDate, onOpenChange, on
           {/* Quadrant — showcase 944–948 */}
           <div>
             <div className="mb-1.5 font-medium">Priority quadrant</div>
-            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Priority quadrant">
-              {QUADRANTS.map((q) => {
-                const selected = quadrant === q.id;
-                return (
-                  <button
-                    key={q.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    onClick={() => setQuadrant(q.id)}
-                    className={cn(
-                      'rounded-[6px] px-3 py-2 text-left leading-[normal] transition-colors duration-[120ms]',
-                      q.inkClass,
-                      selected
-                        ? cn(q.tintClass, 'border-[1.5px] border-current')
-                        : 'border border-a-line bg-a-surface hover:bg-a-bg',
-                    )}
-                  >
-                    <div className="font-semibold">{q.label}</div>
-                    <div className="text-[12px] opacity-85">{q.subtitle}</div>
-                  </button>
-                );
-              })}
-            </div>
+            <QuadrantPicker value={quadrant} onChange={setQuadrant} />
           </div>
 
           {/* Category + Due date row */}
@@ -1720,6 +1698,7 @@ function UserScopedApp() {
         open={detailOpen}
         onClose={() => setDetailOpen(false)}
         onOpenNote={handleOpenSourceNote}
+        listName={activeList?.name}
         fields={taskPanelFields}
         onUpdate={handleUpdate}
         onDelete={handleDelete}
