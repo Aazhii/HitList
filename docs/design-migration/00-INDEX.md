@@ -35,6 +35,43 @@ on a command's output or a screenshot pair, and the proof goes in the table belo
 
 ---
 
+## Environment gotchas (read before rebuilding the jar)
+
+**The Docker build can fail with `Temporary failure in name resolution` /
+`Unknown host repo.maven.apache.org` — this is not a project or cache problem.**
+On this machine, Docker runs via **Colima** (`docker context ls` shows `colima`,
+not Docker Desktop), and its VM loses its entire outbound route whenever the
+**FortiClient VPN** is connected — confirmed by a raw `curl` to `1.1.1.1` by IP
+timing out from inside the VM, so it is not a DNS-only issue.
+
+- **Fix:** disconnect FortiClient, run the build, reconnect. That is the whole fix.
+- **Do not** restart Colima to try to work around it — it does not fix the routing, and it restarts every *other* container on the shared VM (this machine also runs an unrelated `telegram-modbot` stack and `n8n`; they recover on their own restart policy, but it is still a real disruption to someone else's running services). It was tried once this session; it did not help.
+- **Do not** try `docker build --network=host` — under BuildKit (which this Dockerfile requires, for its `--mount=type=cache` layers) that flag does not propagate to individual `RUN` steps.
+- Verify the fix worked before spending the ~90s on a full build: `docker run --rm alpine:latest sh -c "nslookup repo.maven.apache.org"` should resolve, not time out.
+
+The rebuild-and-redeploy sequence, once the network is confirmed working:
+```
+sh desktop/scripts/prepare-jar.sh
+cp desktop/resources/hitlist.jar api/target/hitlist.jar
+pkill -f "electron/cli.js"; pkill -f "java -jar .*api/target/hitlist.jar"
+cd desktop && nohup pnpm start > /tmp/hitlist-restart.log 2>&1 & disown
+# then find the new java pid's LISTEN port and curl its /api/health
+```
+
+## Tooling note
+
+`tools/` is a separate npm package from `web/` **on purpose** — it holds
+`shoot.mjs` (Puppeteer, for prototype-vs-app screenshots) and
+`probe-longtext.sh`. Puppeteer must never be a `web/` dependency: it was, once,
+briefly, and it broke the Docker frontend stage (`npm ci` inside the image
+tried to satisfy/download it). If a future task wants a new dev-only tool with
+its own heavy dependency, it goes in `tools/`, not `web/`.
+
+`web/scripts/design-check.mjs` has zero dependencies and stays in `web/` —
+that one is fine where it is.
+
+---
+
 ## Rules for whoever executes a task
 
 1. **Read `CONVENTIONS.md` first.** It contains every number you need. If a task does not give you a value and Conventions does not either, **ask** — do not guess. Guessing produced the current state.
