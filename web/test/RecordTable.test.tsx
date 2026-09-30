@@ -49,6 +49,8 @@ function setup(over: Partial<RecordTableProps> = {}) {
     onCalcField: vi.fn(),
     frozenFieldId: null,
     onFreezeField: vi.fn(),
+    showPageIcon: true,
+    onTogglePageIcon: vi.fn(),
     wrapFieldIds: [],
     onWrapField: vi.fn(),
     colWidths: {},
@@ -231,5 +233,38 @@ describe('RecordTable', () => {
     const row = screen.getByText('Ubik').closest('tr')!;
     expect(within(row).getByRole('checkbox', { name: 'Owned of Ubik' })).toHaveAttribute('aria-checked', 'false');
     expect(within(row).getByLabelText('Pages of Ubik')).toHaveValue(null);
+  });
+
+  it("gives Title its own menu: page icon, no change type / hide / delete", async () => {
+    const props = setup();
+    await userEvent.click(screen.getByRole('button', { name: 'Title column options' }));
+    expect(await screen.findByRole('menuitem', { name: /Show page icon/ })).toBeInTheDocument();
+    for (const gone of [/Change type/, /Hide/, /Duplicate/, /Delete/]) {
+      expect(screen.queryByRole('menuitem', { name: gone })).not.toBeInTheDocument();
+    }
+    await userEvent.click(screen.getByRole('menuitem', { name: /Freeze/ }));
+    expect(props.onFreezeField).toHaveBeenCalledWith('title');
+    await userEvent.click(screen.getByRole('menuitem', { name: /Sort descending/ }));
+    expect(props.onSortField).toHaveBeenCalledWith('title', -1);
+  });
+
+  it('pins Title and every column up to the frozen one, each after the widths before it', () => {
+    setup({ frozenFieldId: 'owned' });
+    const left = (name: RegExp) => screen.getByRole('columnheader', { name }).style.left;
+    expect(left(/Title/)).toBe('var(--tbl-inset)');
+    expect(left(/Status/)).toBe('calc(var(--tbl-inset) + 260px)');
+    expect(left(/Owned/)).toBe('calc(var(--tbl-inset) + 400px)');
+    expect(left(/Pages/)).toBe('');
+  });
+
+  it('pins only Title when Title is what is frozen', () => {
+    setup({ frozenFieldId: 'title' });
+    expect(screen.getByRole('columnheader', { name: /Title/ }).style.left).toBe('var(--tbl-inset)');
+    expect(screen.getByRole('columnheader', { name: /Status/ }).style.left).toBe('');
+  });
+
+  it('drops the page icon from the Title cell when it is turned off', () => {
+    setup({ showPageIcon: false });
+    expect(screen.getByRole('button', { name: 'Edit title of Dune' }).querySelector('svg')).toBeNull();
   });
 });

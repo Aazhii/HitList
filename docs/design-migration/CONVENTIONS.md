@@ -622,3 +622,10 @@ Shared primitives now follow the DS, so every dialog inherits them:
 - A board view remembers its lane field in `filters.groupBy`; Properties gets a "Board columns come from" section for it.
 - New database: a "+" icon in the sidebar "Databases" header opens a 280px panel (name, optional emoji, Create database), replacing the old header button.
 - Empty state uses `sample_data.png` and the prototype copy. Offline matched without changes.
+
+### Databases: Title menu, frozen columns, groups (T3.28, T3.29)
+
+- Title is a synthetic `title` id in sort/group/calc/freeze/wrap/filter/insert. Its menu drops Change type, Edit options, Hide, Duplicate and Delete, and adds "Show page icon".
+- "Show page icon" is a per-browser preference (`localStorage` `hitlist.db.hidePageIcon`), not a per-view setting.
+- Freeze no longer moves the column: Title and every column up to the frozen one stick at `--tbl-inset` (16px, 48px from md) plus the widths before them.
+- A text column holding a URL still renders as plain text (no URL column kind), so the prototype's blue "Link" cells differ.

@@ -11,7 +11,7 @@
 import { useState, type ReactNode } from 'react';
 import {
   ArrowDown, ArrowLeftToLine, ArrowRightToLine, ArrowUp, Check, Copy, EyeOff, ListFilter, ListPlus,
-  Pin, Repeat2, Rows3, Sigma, Trash2, WrapText, X,
+  Pin, Repeat2, Rows3, Sigma, Smile, Trash2, WrapText, X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Switch } from '@/components/ui/switch';
@@ -54,6 +54,13 @@ interface ColumnMenuProps {
   onDelete: () => void;
   /** The element the menu hangs from — the invisible cover over the header. */
   trigger: ReactNode;
+  /**
+   * 'title' is the Title column's menu (showcase, db-freeze): a "Show page icon" switch after the
+   * name, and none of Change type / Edit options / Hide / Duplicate / Delete — every record has a title.
+   */
+  variant?: 'field' | 'title';
+  showPageIcon?: boolean;
+  onTogglePageIcon?: () => void;
 }
 
 const ROW_RIGHT = 'text-[13px] text-a-faint';
@@ -79,7 +86,8 @@ export function ColumnMenu(p: ColumnMenuProps) {
   const { field } = p;
   const [confirm, setConfirm] = useState(false);
   const calcLabel = p.calcOptions.find((o) => o.key === p.calc)?.label ?? 'None';
-  const hasOptions = field.kind === 'select' || field.kind === 'multi';
+  const isTitle = p.variant === 'title';
+  const hasOptions = !isTitle && (field.kind === 'select' || field.kind === 'multi');
   // The prototype hangs every side panel from the menu's top edge (showcase 665, 681, 690),
   // not from the row that opened it: offset each by that row's distance from the top.
   const ROW = 30;
@@ -95,7 +103,9 @@ export function ColumnMenu(p: ColumnMenuProps) {
       <DropdownMenuTrigger asChild>{p.trigger}</DropdownMenuTrigger>
       <DropdownMenuContent
         align="start"
-        alignOffset={-13}
+        // Title's header has no padding cover to hang from: the prototype's menu sits flush under it.
+        alignOffset={isTitle ? 0 : -13}
+        sideOffset={isTitle ? 1 : undefined}
         role="menu"
         aria-label="Property"
         className="max-h-[70vh] w-[260px]"
@@ -119,6 +129,16 @@ export function ColumnMenu(p: ColumnMenuProps) {
           />
         </div>
 
+        {isTitle && (
+          <>
+            <DropdownMenuItem onSelect={(e) => { e.preventDefault(); p.onTogglePageIcon?.(); }}>
+              <Row icon={Smile} label="Show page icon"><SwitchRow on={!!p.showPageIcon} /></Row>
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
+
+        {!isTitle && (
         <DropdownMenuSub>
           <DropdownMenuSubTrigger>
             <Row icon={Repeat2} label="Change type" right={FIELD_KIND_LABELS[field.kind]} />
@@ -137,6 +157,7 @@ export function ColumnMenu(p: ColumnMenuProps) {
             })}
           </DropdownMenuSubContent>
         </DropdownMenuSub>
+        )}
 
         {hasOptions && (
           <DropdownMenuSub>
@@ -149,7 +170,7 @@ export function ColumnMenu(p: ColumnMenuProps) {
           </DropdownMenuSub>
         )}
 
-        <DropdownMenuSeparator />
+        {!isTitle && <DropdownMenuSeparator />}
         <DropdownMenuItem onClick={p.onFilter}><Row icon={ListFilter} label="Filter" /></DropdownMenuItem>
         <DropdownMenuItem onClick={() => p.onSort(1)} className={cn(p.sortDir === 1 && 'bg-a-line-soft')}><Row icon={ArrowUp} label="Sort ascending" /></DropdownMenuItem>
         <DropdownMenuItem onClick={() => p.onSort(-1)} className={cn(p.sortDir === -1 && 'bg-a-line-soft')}><Row icon={ArrowDown} label="Sort descending" /></DropdownMenuItem>
@@ -173,7 +194,7 @@ export function ColumnMenu(p: ColumnMenuProps) {
         <DropdownMenuItem onSelect={(e) => { e.preventDefault(); p.onFreeze(); }}>
           <Row icon={Pin} label="Freeze"><SwitchRow on={p.frozen} /></Row>
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={p.onHide}><Row icon={EyeOff} label="Hide" /></DropdownMenuItem>
+        {!isTitle && <DropdownMenuItem onClick={p.onHide}><Row icon={EyeOff} label="Hide" /></DropdownMenuItem>}
         <DropdownMenuItem onSelect={(e) => { e.preventDefault(); p.onWrap(); }}>
           <Row icon={WrapText} label="Wrap content"><SwitchRow on={p.wrapped} /></Row>
         </DropdownMenuItem>
@@ -181,9 +202,9 @@ export function ColumnMenu(p: ColumnMenuProps) {
         <DropdownMenuSeparator />
         <DropdownMenuItem onClick={p.onInsertLeft}><Row icon={ArrowLeftToLine} label="Insert left" /></DropdownMenuItem>
         <DropdownMenuItem onClick={p.onInsertRight}><Row icon={ArrowRightToLine} label="Insert right" /></DropdownMenuItem>
-        <DropdownMenuItem onClick={p.onDuplicate}><Row icon={Copy} label="Duplicate property" /></DropdownMenuItem>
+        {!isTitle && <DropdownMenuItem onClick={p.onDuplicate}><Row icon={Copy} label="Duplicate property" /></DropdownMenuItem>}
         {/* Deleting a column deletes its values in every record, so it asks once more. */}
-        {confirm ? (
+        {isTitle ? null : confirm ? (
           <DropdownMenuItem variant="destructive" onClick={p.onDelete}><Row icon={Trash2} label="Delete from every record" /></DropdownMenuItem>
         ) : (
           <DropdownMenuItem variant="destructive" onSelect={(e) => { e.preventDefault(); setConfirm(true); }}>

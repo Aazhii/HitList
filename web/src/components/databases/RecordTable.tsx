@@ -87,7 +87,7 @@ const CALC_OPTIONS: ReadonlyArray<{ key: string; label: string; numberOnly?: boo
 
 function calcText(key: string, field: FieldDef, rows: ApiDatabaseRow[], values: Record<string, Record<string, FieldValue>>): string {
   if (!key) return '';
-  const raw = rows.map((r) => values[r.id]?.[field.id]);
+  const raw = rows.map((r) => (field.id === TITLE_ID ? r.title : values[r.id]?.[field.id]));
   const filled = raw.filter((v) => v !== undefined && v !== null && v !== '' && !(Array.isArray(v) && v.length === 0));
   const nums = filled.map(Number).filter((n) => !Number.isNaN(n));
   const n = rows.length;
@@ -146,6 +146,9 @@ export interface RecordTableProps {
   onCalcField: (fieldId: string, key: string) => void;
   frozenFieldId: string | null;
   onFreezeField: (fieldId: string) => void;
+  /** Show the little page icon in the Title cell. */
+  showPageIcon: boolean;
+  onTogglePageIcon: () => void;
   wrapFieldIds: string[];
   onWrapField: (fieldId: string) => void;
   /** fieldId → px. Missing means DEFAULT_COL_WIDTH. */
@@ -158,6 +161,11 @@ export interface RecordTableProps {
 }
 
 const CELL = 'px-2 py-1.5 align-top';
+
+/** The Title column is not a field, but its menu, sort, group, calc, freeze and wrap speak in ids like one. */
+export const TITLE_ID = 'title';
+/** The table sits this far in from the scroll container's edge (16px, 48px from md): a pinned column's `left` starts there. */
+const INSET_VARS = '[--tbl-inset:1rem] md:[--tbl-inset:3rem]';
 
 /** Column sizing. The design gives every column an explicit width (showcase 619, 1539–1550). */
 const TITLE_COL_WIDTH = 260;
@@ -179,7 +187,7 @@ export function RecordTable({
   rows, fields, titleLabel, onRenameTitleLabel, values, loading,
   onAdd, onRename, onDelete, onSetValue, onRenameField, onChangeFieldOptions, onFilterField, onDeleteField, onCreateField, onReorderFields, linking,
   sort, onSortField, onClearSort, groupFieldId, onGroupField, calc, onCalcField,
-  frozenFieldId, onFreezeField, wrapFieldIds, onWrapField, colWidths, onResizeField, onHideField, onInsertField, onDuplicateField, onChangeFieldKind,
+  frozenFieldId, onFreezeField, showPageIcon, onTogglePageIcon, wrapFieldIds, onWrapField, colWidths, onResizeField, onHideField, onInsertField, onDuplicateField, onChangeFieldKind,
 }: RecordTableProps) {
   const columnCount = 2 + fields.length;
   /** How many records hold this option, for the remove guard in Edit options. */
@@ -189,7 +197,21 @@ export function RecordTable({
   }).length;
   const tableWidth = TITLE_COL_WIDTH + fields.reduce((n, f) => n + colWidthOf(f, colWidths), 0) + 44;
   const hasCalc = Object.keys(calc).length > 0;
-  const groupField = fields.find((f) => f.id === groupFieldId) ?? null;
+  const titleField: FieldDef = {
+    id: TITLE_ID, name: titleLabel, kind: 'text', options: [], fieldOrder: -1, showOnCard: false, createdAt: 0, updatedAt: 0,
+  };
+  const groupField = groupFieldId === TITLE_ID ? titleField : fields.find((f) => f.id === groupFieldId) ?? null;
+  // Freezing a column pins Title and every column up to and including it (showcase, db-freeze);
+  // freezing Title pins just Title. Each pinned column sticks at the table's inset plus the
+  // widths before it, on a solid background.
+  const frozenIndex = frozenFieldId === TITLE_ID ? -1 : fields.findIndex((f) => f.id === frozenFieldId);
+  const titlePinned = frozenFieldId !== null && (frozenFieldId === TITLE_ID || frozenIndex >= 0);
+  const pinnedLeft = (index: number): string | undefined => {
+    if (!titlePinned || index > frozenIndex) return undefined;
+    const before = fields.slice(0, index).reduce((n, f) => n + colWidthOf(f, colWidths), 0);
+    return `calc(var(--tbl-inset) + ${TITLE_COL_WIDTH + before}px)`;
+  };
+  const titleLeft = titlePinned ? 'var(--tbl-inset)' : undefined;
 
   const sensors = useSensors(
     // The whole column name is the drag target (no separate grip icon), so it
@@ -210,9 +232,17 @@ export function RecordTable({
 
   const renderRow = (row: ApiDatabaseRow) => (
     <tr key={row.id} className="group min-h-9 border-b border-a-line-soft hover:bg-a-row-alt">
-      <td className={cn(CELL, 'relative w-[260px] min-w-[260px] border-r border-a-line-soft')}>
+      <td
+        style={{ left: titleLeft }}
+        className={cn(
+          CELL, 'relative w-[260px] min-w-[260px] border-r border-a-line-soft',
+          titlePinned && 'sticky z-[1] bg-a-surface group-hover:bg-a-row-alt',
+        )}
+      >
         <div className="flex items-start gap-1">
           <TitleCell
+            showIcon={showPageIcon}
+            wrap={wrapFieldIds.includes(TITLE_ID)}
             title={row.title}
             onCommit={(title) => { if (title && title !== row.title) onRename(row.id, title); }}
           />
@@ -220,13 +250,13 @@ export function RecordTable({
         </div>
       </td>
 
-      {fields.map((field) => (
+      {fields.map((field, i) => (
         <td
           key={field.id}
-          style={{ width: colWidthOf(field, colWidths) }}
+          style={{ width: colWidthOf(field, colWidths), left: pinnedLeft(i) }}
           className={cn(
             CELL, 'border-r border-a-line-soft',
-            field.id === frozenFieldId && 'sticky left-[260px] z-[1] bg-a-surface',
+            pinnedLeft(i) && 'sticky z-[1] bg-a-surface group-hover:bg-a-row-alt',
             // A text area always wraps — that is the kind's whole purpose — so
             // it does not wait on the column's own Wrap content toggle.
             (field.kind === 'longtext' || wrapFieldIds.includes(field.id)) && 'whitespace-normal',
@@ -252,7 +282,7 @@ export function RecordTable({
     {/* Full-bleed (showcase 614): the grid runs edge to edge under a hairline, its first
         column starting where the page content does. */}
     <div className="-mx-4 overflow-x-auto border-t border-a-line md:-mx-12">
-    <div className="w-max px-4 md:px-12">
+    <div className={cn('w-max px-4 md:px-12', INSET_VARS)}>
       {/* DndContext must wrap the table, not sit inside <thead>: it renders a
           hidden accessibility <div>, which HTML forbids as a <thead> child —
           the browser would otherwise silently relocate it, taking the table's
@@ -271,17 +301,43 @@ export function RecordTable({
           </colgroup>
           <thead>
             <tr className="h-9 border-b border-a-line bg-a-bg">
-              <th scope="col" className="relative h-9 w-[260px] min-w-[260px] border-r border-a-line-soft px-2 text-left align-middle font-normal">
-                <TitleHeaderCell label={titleLabel} onCommit={onRenameTitleLabel} />
+              <th
+                scope="col"
+                style={{ left: titleLeft }}
+                className={cn(
+                  'relative h-9 w-[260px] min-w-[260px] border-r border-a-line-soft px-2 text-left align-middle font-normal',
+                  titlePinned && 'sticky z-[2] bg-a-bg',
+                )}
+              >
+                <TitleHeaderCell
+                  field={titleField}
+                  sortDir={sort?.fieldId === TITLE_ID ? sort.dir : null}
+                  grouped={groupFieldId === TITLE_ID}
+                  calc={calc[TITLE_ID] ?? ''}
+                  frozen={frozenFieldId === TITLE_ID}
+                  wrapped={wrapFieldIds.includes(TITLE_ID)}
+                  showPageIcon={showPageIcon}
+                  onTogglePageIcon={onTogglePageIcon}
+                  onRename={onRenameTitleLabel}
+                  onFilter={() => onFilterField(TITLE_ID)}
+                  onSort={(dir) => onSortField(TITLE_ID, dir)}
+                  onGroup={() => onGroupField(TITLE_ID)}
+                  onCalc={(key) => onCalcField(TITLE_ID, key)}
+                  onFreeze={() => onFreezeField(TITLE_ID)}
+                  onWrap={() => onWrapField(TITLE_ID)}
+                  onInsertLeft={() => onInsertField(TITLE_ID, 'left')}
+                  onInsertRight={() => onInsertField(TITLE_ID, 'right')}
+                />
                 {/* Every record has a title, so this bar is always full. */}
                 <span aria-hidden className="absolute inset-x-0 bottom-0 h-[3px] bg-a-dq-missing">
                   <span className="block h-full bg-a-dq-valid" style={{ width: rows.length ? '100%' : '0%' }} />
                 </span>
               </th>
               <SortableContext items={fields.map((f) => f.id)} strategy={horizontalListSortingStrategy}>
-                {fields.map((field) => (
+                {fields.map((field, i) => (
                   <FieldHeader
                     key={field.id}
+                    pinnedLeft={pinnedLeft(i)}
                     field={field}
                     filled={fillCount(field, rows, values)}
                     total={rows.length}
@@ -328,17 +384,29 @@ export function RecordTable({
             {groupField ? (
               Array.from(
                 rows.reduce((groups, row) => {
-                  const label = groupLabelFor(groupField, values[row.id]?.[groupField.id]);
+                  const label = groupField.id === TITLE_ID ? row.title : groupLabelFor(groupField, values[row.id]?.[groupField.id]);
                   (groups.get(label) ?? groups.set(label, []).get(label)!).push(row);
                   return groups;
                 }, new Map<string, ApiDatabaseRow[]>()),
               ).map(([label, groupRows]) => (
                 <Fragment key={`group-${label}`}>
-                  <tr className="border-b border-a-line-soft">
-                    <td colSpan={columnCount} className="px-2 py-1.5">
-                      <span className="inline-flex items-center gap-2 rounded-[3px] bg-a-surface-2 px-2 py-0.5 text-[13px] text-a-ink">
-                        {label}
-                        <span className="text-a-faint">{groupRows.length}</span>
+                  {/* Showcase group row: the option's own tag (22px, 3px radius, no dot), then a
+                      tertiary count outside it. */}
+                  <tr className="h-9 border-b border-a-line-soft">
+                    <td colSpan={columnCount} className="p-0 pl-1">
+                      <span className="inline-flex items-center gap-2">
+                        <span
+                          className={cn(
+                            'inline-flex h-[22px] items-center rounded-[3px] px-2 text-[13px] leading-none whitespace-nowrap',
+                            (() => {
+                              const color = groupField.options.find((o) => o.label === label)?.color;
+                              return color ? OPTION_CHIP_CLASS[color] : 'bg-a-line-soft text-a-ink';
+                            })(),
+                          )}
+                        >
+                          {label}
+                        </span>
+                        <span className="text-[13px] text-a-faint">{groupRows.length}</span>
                       </span>
                     </td>
                   </tr>
@@ -351,19 +419,25 @@ export function RecordTable({
 
             {hasCalc && (
               <tr className="h-8 border-b border-a-line-soft">
-                <td className="border-r border-a-line-soft" aria-hidden />
-                {fields.map((field) => (
+                <td
+                  style={{ left: titleLeft }}
+                  className={cn('px-2 text-right text-[12px] text-a-faint', titlePinned && 'sticky z-[1] bg-a-surface')}
+                >
+                  {calcText(calc[TITLE_ID] ?? '', titleField, rows, values)}
+                </td>
+                {fields.map((field, i) => (
                   <td
                     key={field.id}
+                    style={{ left: pinnedLeft(i) }}
                     className={cn(
-                      'border-r border-a-line-soft px-2 text-right text-[12px] text-a-faint',
-                      field.id === frozenFieldId && 'sticky left-[260px] z-[1] bg-a-bg',
+                      'px-2 text-right text-[12px] text-a-faint',
+                      pinnedLeft(i) && 'sticky z-[1] bg-a-surface',
                     )}
                   >
                     {calcText(calc[field.id] ?? '', field, rows, values)}
                   </td>
                 ))}
-                <td className="border-r border-a-line-soft" aria-hidden />
+                <td aria-hidden />
               </tr>
             )}
 
@@ -379,7 +453,7 @@ export function RecordTable({
     </div>
 
       {rows.length > 0 && (
-        <p className="py-1.5 text-[12px] text-a-faint">{rows.length} record{rows.length === 1 ? '' : 's'}</p>
+        <p className="py-1.5 text-[12px] text-a-faint">{`${rows.length} record${rows.length === 1 ? '' : 's'}`}</p>
       )}
 
       {rows.length === 0 && !loading && (
@@ -399,6 +473,8 @@ interface FieldHeaderProps {
   grouped: boolean;
   calc: string;
   frozen: boolean;
+  /** CSS `left` when this column is pinned by a freeze at or after it. */
+  pinnedLeft?: string;
   wrapped: boolean;
   width: number;
   onResize: (width: number) => void;
@@ -434,7 +510,7 @@ interface FieldHeaderProps {
  * behavior, not a lossy one-way conversion.
  */
 function FieldHeader({
-  field, filled, total, sortDir, grouped, calc, frozen, wrapped, width, onResize,
+  field, filled, total, sortDir, grouped, calc, frozen, pinnedLeft, wrapped, width, onResize,
   optionUsage, onRename, onChangeOptions, onFilter, onDelete, onSort, onClearSort, onGroup, onCalc, onFreeze, onHide, onWrap, onInsertLeft, onInsertRight, onDuplicate, onChangeKind,
 }: FieldHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -455,13 +531,13 @@ function FieldHeader({
   return (
     <th
       ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition, width }}
+      style={{ transform: CSS.Transform.toString(transform), transition, width, left: pinnedLeft }}
       scope="col"
       title={`${filled} of ${total} filled`}
       className={cn(
         'group/head relative h-9 border-r border-a-line-soft px-2 text-left align-middle font-normal',
         isDragging && 'z-10 bg-a-bg shadow-[var(--a-shadow-md)]',
-        frozen && 'sticky left-[260px] z-[1] bg-a-bg',
+        pinnedLeft && 'sticky z-[2] bg-a-bg',
       )}
     >
       {/* DataPrep's signature data-quality fill bar: share of rows with a real value. */}
@@ -545,52 +621,60 @@ function FieldHeader({
   );
 }
 
-/** The Title column's own header — click to rename it, same as any field. */
-function TitleHeaderCell({ label, onCommit }: { label: string; onCommit: (label: string) => void }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(label);
-
-  useEffect(() => { setDraft(label); }, [label]);
-
-  const commit = () => {
-    setEditing(false);
-    const trimmed = draft.trim();
-    if (!trimmed || trimmed === label) { setDraft(label); return; }
-    onCommit(trimmed);
-  };
-
-  if (editing) {
-    return (
-      <input
-        autoFocus
-        value={draft}
-        maxLength={100}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') { e.preventDefault(); commit(); }
-          if (e.key === 'Escape') { setDraft(label); setEditing(false); }
-        }}
-        aria-label="Rename the Title column"
-        className="w-full rounded-[6px] border-0 bg-[color-mix(in_srgb,var(--a-ink)_6%,transparent)] px-1 text-[13px] font-semibold text-a-ink outline-none focus-visible:ring-1 focus-visible:ring-a-accent"
-      />
-    );
-  }
-
+/** The Title column's header: the same click-to-open menu as a field, minus what a title cannot do. */
+function TitleHeaderCell(p: {
+  field: FieldDef; sortDir: 1 | -1 | null; grouped: boolean; calc: string; frozen: boolean; wrapped: boolean;
+  showPageIcon: boolean; onTogglePageIcon: () => void;
+  onRename: (name: string) => void; onFilter: () => void; onSort: (dir: 1 | -1) => void; onGroup: () => void;
+  onCalc: (key: string) => void; onFreeze: () => void; onWrap: () => void; onInsertLeft: () => void; onInsertRight: () => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const noop = () => {};
   return (
-    <button
-      type="button"
-      onClick={() => setEditing(true)}
-      aria-label={`Rename the ${label} column`}
-      className="flex items-center gap-1.5 rounded-[6px] px-1 text-[13px] font-semibold text-a-ink transition-colors duration-[120ms] hover:bg-[color-mix(in_srgb,var(--a-ink)_6%,transparent)]"
-    >
-      <Type className="size-[15px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
-      {label}
-    </button>
+    <span className="flex items-center gap-1.5">
+      <Type className="size-[15px] flex-shrink-0 text-a-ink" strokeWidth={1.75} aria-hidden />
+      <span className="relative z-[1] cursor-pointer text-[13px] font-semibold whitespace-nowrap text-a-ink select-none" onClick={() => setMenuOpen(true)}>
+        {p.field.name}
+      </span>
+      {p.frozen && <Pin className="size-3 flex-shrink-0 text-a-faint" strokeWidth={1.75} aria-hidden />}
+      {p.sortDir && (p.sortDir === 1 ? <ArrowUp className="size-3.5 flex-shrink-0 text-a-accent" strokeWidth={1.75} /> : <ArrowDown className="size-3.5 flex-shrink-0 text-a-accent" strokeWidth={1.75} />)}
+      <ColumnMenu
+        variant="title"
+        field={p.field}
+        open={menuOpen}
+        onOpenChange={setMenuOpen}
+        kindIcon={KIND_ICON}
+        kinds={CHANGE_TYPE_KINDS}
+        calcOptions={CALC_OPTIONS}
+        calc={p.calc}
+        sortDir={p.sortDir}
+        grouped={p.grouped}
+        frozen={p.frozen}
+        wrapped={p.wrapped}
+        showPageIcon={p.showPageIcon}
+        onTogglePageIcon={p.onTogglePageIcon}
+        optionUsage={() => 0}
+        onRename={p.onRename}
+        onChangeKind={noop}
+        onChangeOptions={noop}
+        onFilter={p.onFilter}
+        onSort={p.onSort}
+        onGroup={p.onGroup}
+        onCalc={p.onCalc}
+        onFreeze={p.onFreeze}
+        onHide={noop}
+        onWrap={p.onWrap}
+        onInsertLeft={p.onInsertLeft}
+        onInsertRight={p.onInsertRight}
+        onDuplicate={noop}
+        onDelete={noop}
+        trigger={<button type="button" aria-label={`${p.field.name} column options`} className="absolute inset-0 z-0 cursor-pointer" />}
+      />
+    </span>
   );
 }
 
-function TitleCell({ title, onCommit }: { title: string; onCommit: (title: string) => void }) {
+function TitleCell({ title, onCommit, showIcon, wrap }: { title: string; onCommit: (title: string) => void; showIcon: boolean; wrap: boolean }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(title);
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -624,7 +708,7 @@ function TitleCell({ title, onCommit }: { title: string; onCommit: (title: strin
           if (e.key === 'Escape') { setDraft(title); setEditing(false); }
         }}
         aria-label="Title"
-        className={cn(CONTROL, 'min-w-0 flex-1 resize-none py-0 pl-[22px] leading-6')}
+        className={cn(CONTROL, 'min-w-0 flex-1 resize-none py-0 leading-6', showIcon && 'pl-[22px]')}
       />
     );
   }
@@ -636,10 +720,10 @@ function TitleCell({ title, onCommit }: { title: string; onCommit: (title: strin
       onClick={() => setEditing(true)}
       aria-label={`Edit title of ${title}`}
       title={title}
-      className="flex h-6 min-w-0 flex-1 items-center gap-1.5 rounded-[4px] text-left text-[14px] text-a-ink"
+      className={cn('flex min-h-6 min-w-0 flex-1 gap-1.5 rounded-[4px] text-left text-[14px] text-a-ink', wrap ? 'items-start py-[2px]' : 'h-6 items-center')}
     >
-      <File className="size-4 flex-shrink-0 text-a-faint" strokeWidth={1.75} aria-hidden />
-      <span className="truncate">{title}</span>
+      {showIcon && <File className="size-4 flex-shrink-0 text-a-faint" strokeWidth={1.75} aria-hidden />}
+      <span className={wrap ? 'break-words' : 'truncate'}>{title}</span>
     </button>
   );
 }

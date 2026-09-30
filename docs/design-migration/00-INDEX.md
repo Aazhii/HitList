@@ -156,10 +156,10 @@ Test baseline: **371 tests across 42 files.** This must not regress.
 Phase 0  █████   5 / 5      done
 Phase 1  █████  11 / 11      foundations — the broken UI
 Phase 2  █████   5 / 5       shell exactness
-Phase 3  ███░░  29 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
+Phase 3  ███░░  31 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
 Phase 4  ░░░░░   1 / 12      missing features
 Phase 5  ░░░░░   0 / 7       proposals, unreviewed
-                51 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
+                53 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
 ```
 
 ### A note on "partially built"
@@ -259,8 +259,8 @@ on a description. Execution order is the section order below.
 | T3.25 | `db-filter` | **done** | shots/db-filter.{ref,app}.png — "Filter records": column · contains · value, count, Clear filter; pill in the toolbar |
 | T3.26 | `db-picker` | **done** | shots/db-picker.{ref,app}.png — listbox of tags with a tick and "Clear value" |
 | T3.27 | `db-peek` — **net-new** | todo | |
-| T3.28 | `db-freeze` | todo — verify, scroll-test it | |
-| T3.29 | `db-group` | todo — verify, don't rewrite | |
+| T3.28 | `db-freeze` | **done** | shots/db-freeze.{ref,app}.png — Title has its own menu (page-icon switch, no type/hide/delete); Freeze pins Title + every column up to it, scroll-tested (Title held at x=296 after a 250px scroll) | |
+| T3.29 | `db-group` | **done** | shots/db-group.{ref,app}.png — option-coloured group pill + tertiary count, borderless calc footer; Title supports sort/group/calc/freeze/wrap | |
 | T3.30 | `db-new` | **done** | shots/db-new.{ref,app}.png — "+" in the Databases header opens the 280px panel |
 | T3.31 | `db-empty` | **done** | shots/db-empty.{ref,app}.png — sample_data illustration and prototype copy |
 | T3.32 | `db-offline` | **done** | shots/db-offline.{ref,app}.png — already matched; verified |

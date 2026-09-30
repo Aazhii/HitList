@@ -131,6 +131,16 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
   const [calc, setCalc] = useState<Record<string, string>>({});
   const [frozenFieldId, setFrozenFieldId] = useState<string | null>(null);
   const [wrapFieldIds, setWrapFieldIds] = useState<string[]>([]);
+  // The Title cell's page icon: a per-browser preference (default on), like the other list chrome.
+  const [hidePageIcon, setHidePageIcon] = useState<boolean>(() => {
+    try { return localStorage.getItem('hitlist.db.hidePageIcon') === '1'; } catch { return false; }
+  });
+  const togglePageIcon = useCallback(() => {
+    setHidePageIcon((prev) => {
+      try { localStorage.setItem('hitlist.db.hidePageIcon', prev ? '0' : '1'); } catch { /* storage unavailable: still works for this visit */ }
+      return !prev;
+    });
+  }, []);
   /** fieldId -> px, from the view's long-declared-but-unused display.widths. */
   const [colWidths, setColWidths] = useState<Record<string, number>>({});
   // A different database, or a filter tweaked by hand: no tab is "the" view anymore.
@@ -180,14 +190,9 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
       return cmp * sort.dir;
     });
   }, [visibleRows, values, sort]);
-  // Fields not on the "show/hide" list, with a frozen one moved right after Title.
-  const tableFields = useMemo(() => {
-    const shown = fields.filter((f) => !hiddenFieldIds.includes(f.id));
-    if (!frozenFieldId) return shown;
-    const frozen = shown.find((f) => f.id === frozenFieldId);
-    if (!frozen) return shown;
-    return [frozen, ...shown.filter((f) => f.id !== frozenFieldId)];
-  }, [fields, hiddenFieldIds, frozenFieldId]);
+  // Fields not on the "show/hide" list. A frozen column stays where it is: the table pins
+  // Title and everything up to it.
+  const tableFields = useMemo(() => fields.filter((f) => !hiddenFieldIds.includes(f.id)), [fields, hiddenFieldIds]);
 
 
   // Open the first database once they arrive, so the page is never blank when
@@ -289,7 +294,8 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
       if (insertTarget) {
         setFields((prev) => {
           const targetIndex = prev.findIndex((f) => f.id === insertTarget.fieldId);
-          const insertAt = targetIndex === -1 ? prev.length : insertTarget.side === 'left' ? targetIndex : targetIndex + 1;
+          // Title is always first, so both sides of it land before the first field.
+          const insertAt = insertTarget.fieldId === 'title' ? 0 : targetIndex === -1 ? prev.length : insertTarget.side === 'left' ? targetIndex : targetIndex + 1;
           const withoutNew = [...prev].sort((a, b) => a.fieldOrder - b.fieldOrder);
           const originalOrder = new Map(withoutNew.map((f) => [f.id, f.fieldOrder]));
           withoutNew.splice(insertAt, 0, created);
@@ -747,6 +753,8 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
                 calc={calc}
                 onCalcField={handleCalcField}
                 frozenFieldId={frozenFieldId}
+                showPageIcon={!hidePageIcon}
+                onTogglePageIcon={togglePageIcon}
                 onFreezeField={handleFreezeField}
                 wrapFieldIds={wrapFieldIds}
                 onWrapField={handleWrapField}
