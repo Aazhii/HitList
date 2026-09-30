@@ -159,7 +159,7 @@ Phase 2  █████   5 / 5       shell exactness
 Phase 3  ███░░  42 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
 Phase 4  ░░░░░   1 / 12      missing features
 Phase 5  ░░░░░   0 / 7       proposals, unreviewed
-                66 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
+                67 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
 ```
 
 ### A note on "partially built"
@@ -303,7 +303,7 @@ on a description. Execution order is the section order below.
 | T4.4d | Automations — frontend un-stub and mount | blocked on T4.4b | |
 | T4.4e | Automations — fidelity to `auto-list` / `auto-form` | blocked on T4.4d | |
 | T4.5 | Remaining dead controls: Help, workspace chevron | **done** | Help opens a menu → shortcuts dialog; the workspace chevron is removed; `design:check` gains `dead-control` (0 violations) |
-| T4.6 | Finish the half-wired view persistence | todo | |
+| T4.6 | Finish the half-wired view persistence | **done** | applied saved views already wrote all five keys through `persistTableControls`; the rest are now remembered per database in `hitlist-db-table-controls-v1` (sort survives switching database and back, checked in the browser) |
 | T4.7 | Fix the blank Board (may be closed by T3.4) | **done** | closed by T3.4: `BoardSetup` renders `BoardSkeleton` while fields load; test 'shows a loading skeleton, not a blank page' |
 | T4.8 | Databases inside notes — the five `notes-db-*` screens | blocked on T3.9–T3.24 | |
 

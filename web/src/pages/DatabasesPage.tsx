@@ -147,10 +147,32 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
   /** fieldId -> px, from the view's long-declared-but-unused display.widths. */
   const [colWidths, setColWidths] = useState<Record<string, number>>({});
   // A different database, or a filter tweaked by hand: no tab is "the" view anymore.
+  // The column menu's table controls outlive a visit: they are remembered per database in this
+  // browser (a saved view, when one is applied, still carries its own copy).
+  type TableControls = {
+    hidden: string[]; sort: { fieldId: string; dir: 1 | -1 } | null; groupField: string | null;
+    calc: Record<string, string>; frozenFieldId: string | null; wrapFieldIds: string[]; widths: Record<string, number>;
+  };
+  const [tableMemory, setTableMemory] = useLocalStorage<Record<string, TableControls>>('hitlist-db-table-controls-v1', {});
+  const tableMemoryRef = useRef(tableMemory);
+  tableMemoryRef.current = tableMemory;
+  const memoryDbRef = useRef<string | null>(null);
   useEffect(() => {
     setActiveViewId(null); setFieldFilters({}); setSearch('');
-    setHiddenFieldIds([]); setSort(null); setGroupFieldId(null); setCalc({}); setFrozenFieldId(null); setWrapFieldIds([]); setColWidths({});
+    const kept = openId ? tableMemoryRef.current[openId] : undefined;
+    setHiddenFieldIds(kept?.hidden ?? []); setSort(kept?.sort ?? null); setGroupFieldId(kept?.groupField ?? null);
+    setCalc(kept?.calc ?? {}); setFrozenFieldId(kept?.frozenFieldId ?? null); setWrapFieldIds(kept?.wrapFieldIds ?? []);
+    setColWidths(kept?.widths ?? {});
+    memoryDbRef.current = openId ?? null;
   }, [openId]);
+  useEffect(() => {
+    const id = memoryDbRef.current;
+    if (!id) return;
+    setTableMemory((prev) => ({
+      ...prev,
+      [id]: { hidden: hiddenFieldIds, sort, groupField: groupFieldId, calc, frozenFieldId, wrapFieldIds, widths: colWidths },
+    }));
+  }, [hiddenFieldIds, sort, groupFieldId, calc, frozenFieldId, wrapFieldIds, colWidths, setTableMemory]);
 
   const open = databases.find((d) => d.id === openId) ?? null;
   // Layout lives on the view, like Notion's own "Default view / By status
