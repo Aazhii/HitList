@@ -221,7 +221,7 @@ async function shootRef(browser, screenId) {
   await new Promise((r) => setTimeout(r, 1200));
 
   for (const step of REF_STEPS[screenId] ?? []) { await runStep(page, step); await new Promise((r) => setTimeout(r, 600)); }
-  if (['notes-slash', 'notes-mention'].includes(screenId)) {
+  if (['notes-slash', 'notes-mention', 'notes-db-new', 'notes-db', 'notes-db-menu', 'notes-db-board', 'notes-db-linked'].includes(screenId)) {
     // These menus hang off the note's last line, below the fold: scroll every scroller to its end.
     await page.evaluate(() => document.querySelectorAll('*').forEach((el) => {
       if (el.scrollHeight > el.clientHeight + 50 && getComputedStyle(el).overflowY !== 'visible') el.scrollTop = el.scrollHeight;

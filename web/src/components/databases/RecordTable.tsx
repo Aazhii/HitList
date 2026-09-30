@@ -113,6 +113,8 @@ function groupLabelFor(field: FieldDef, value: FieldValue | undefined): string {
 }
 
 export interface RecordTableProps {
+  /** In a note: the table stays in the note's column instead of running edge to edge. */
+  inline?: boolean;
   rows: ApiDatabaseRow[];
   fields: FieldDef[];
   /** The Title column's own header label — renamable, defaults to "Title". */
@@ -186,7 +188,7 @@ const CONTROL = cn(
 const CONTROL_ROW = cn(CONTROL, 'h-6');
 
 export function RecordTable({
-  rows, fields, titleLabel, onRenameTitleLabel, values, loading,
+  inline = false, rows, fields, titleLabel, onRenameTitleLabel, values, loading,
   onAdd, onRename, onDelete, onSetValue, onRenameField, onChangeFieldOptions, onFilterField, onDeleteField, onCreateField, onReorderFields, linking,
   sort, onSortField, onClearSort, groupFieldId, onGroupField, calc, onCalcField,
   frozenFieldId, onFreezeField, onOpenRecord, showPageIcon, onTogglePageIcon, wrapFieldIds, onWrapField, colWidths, onResizeField, onHideField, onInsertField, onDuplicateField, onChangeFieldKind,
@@ -284,8 +286,8 @@ export function RecordTable({
     <div className="animate-fade-in">
     {/* Full-bleed (showcase 614): the grid runs edge to edge under a hairline, its first
         column starting where the page content does. */}
-    <div className="-mx-4 overflow-x-auto border-t border-a-line md:-mx-12">
-    <div className={cn('w-max px-4 md:px-12', INSET_VARS)}>
+    <div className={cn('overflow-x-auto border-t border-a-line', !inline && '-mx-4 md:-mx-12')}>
+    <div className={cn('w-max', inline ? '[--tbl-inset:0px]' : cn('px-4 md:px-12', INSET_VARS))}>
       {/* DndContext must wrap the table, not sit inside <thead>: it renders a
           hidden accessibility <div>, which HTML forbids as a <thead> child —
           the browser would otherwise silently relocate it, taking the table's
