@@ -141,8 +141,8 @@ async function shootRef(browser, screenId) {
     const src = Array.from(document.querySelectorAll('script'))
       .map((s) => s.textContent || '').find((t) => t.includes("id: '") && t.includes('g:'));
     if (!src) return null;
-    const re = new RegExp(`\\{\\s*id:\\s*'${wanted}'[^}]*?label:\\s*'([^']+)'`);
-    return re.exec(src)?.[1] ?? null;
+    const re = new RegExp(`\\{\\s*id:\\s*'${wanted}'[^}]*?label:\\s*(['"])(.+?)\\1`);
+    return re.exec(src)?.[2] ?? null;
   }, screenId);
   if (!label) throw new Error(`no screen with id "${screenId}" in the prototype`);
 

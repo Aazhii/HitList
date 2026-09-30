@@ -1,285 +1,111 @@
+/**
+ * Weekly progress — showcase 972–986. Four stat tiles (streak, today, this week, all
+ * time) and a completed-per-day bar chart for the last seven days, today's bar in
+ * the brand colour. The dialog frame (title, week range) is the caller's.
+ */
 import { useMemo } from 'react';
-import { Flame, Trophy, CheckCircle2, TrendingUp } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { BTN_MD, topBarSecondary } from '@/components/shell/TopBar';
 import type { Todo } from '@/types/todo';
-import { getCategoryConfig } from '@/types/todo';
 
 interface StreakPanelProps {
   todos: Todo[];
-  listName: string;
+  onClose: () => void;
 }
 
-function getLocalDateStr(ts: number): string {
-  const d = new Date(ts);
+function dateKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function getTodayStr(): string {
-  return getLocalDateStr(Date.now());
+/** The seven local days ending today, oldest first. */
+export function lastSevenDays(now = new Date()): Date[] {
+  return Array.from({ length: 7 }, (_, i) => new Date(now.getFullYear(), now.getMonth(), now.getDate() - (6 - i)));
 }
 
-function getDayLabel(dateStr: string): string {
-  const today = getTodayStr();
-  const d = new Date(dateStr + 'T00:00:00');
-  if (dateStr === today) return 'Today';
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yStr = getLocalDateStr(yesterday.getTime());
-  if (dateStr === yStr) return 'Yesterday';
-  return d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+/** "Sep 23 – Sep 29" — the dialog's description. */
+export function weekRangeLabel(now = new Date()): string {
+  const days = lastSevenDays(now);
+  const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `${fmt(days[0])} – ${fmt(days[6])}`;
 }
 
-function formatTime(ts: number): string {
-  return new Date(ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-}
-
-interface DayData {
-  dateStr: string;
-  count: number;
-  completions: Todo[];
-}
-
-export function StreakPanel({ todos, listName }: StreakPanelProps) {
-  const doneTodos = useMemo(
-    () => todos.filter((t) => t.status === 'done' && t.completedAt),
-    [todos]
-  );
-
-  // Build last-14-days data
-  const days = useMemo((): DayData[] => {
-    const result: DayData[] = [];
-    for (let i = 13; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const dateStr = getLocalDateStr(d.getTime());
-      const completions = doneTodos.filter(
-        (t) => getLocalDateStr(t.completedAt!) === dateStr
-      );
-      result.push({ dateStr, count: completions.length, completions });
-    }
-    return result;
-  }, [doneTodos]);
-
-  // Current streak (consecutive days ending today with at least 1 completion)
-  const currentStreak = useMemo(() => {
-    const today = getTodayStr();
-    let streak = 0;
-    // Walk backwards from today
-    for (let i = 0; i < 365; i++) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const dateStr = getLocalDateStr(d.getTime());
-      const hasCompletion = doneTodos.some((t) => getLocalDateStr(t.completedAt!) === dateStr);
-      if (hasCompletion) {
-        streak++;
-      } else if (dateStr === today) {
-        // Today with no completions — streak not broken yet, just 0 for today
-        continue;
-      } else {
-        break;
-      }
-    }
-    return streak;
-  }, [doneTodos]);
-
-  // Longest streak
-  const longestStreak = useMemo(() => {
-    if (doneTodos.length === 0) return 0;
-    const dateSet = new Set(doneTodos.map((t) => getLocalDateStr(t.completedAt!)));
-    const sortedDates = Array.from(dateSet).sort();
-    let longest = 0;
-    let current = 1;
-    for (let i = 1; i < sortedDates.length; i++) {
-      const prev = new Date(sortedDates[i - 1] + 'T00:00:00');
-      const curr = new Date(sortedDates[i] + 'T00:00:00');
-      const diffDays = Math.round((curr.getTime() - prev.getTime()) / (1000 * 60 * 60 * 24));
-      if (diffDays === 1) {
-        current++;
-        longest = Math.max(longest, current);
-      } else {
-        current = 1;
-      }
-    }
-    return Math.max(longest, current);
-  }, [doneTodos]);
-
-  const totalDone = doneTodos.length;
-  const maxCount = Math.max(...days.map((d) => d.count), 1);
-
-  // Recent completions (last 5, newest first)
-  const recentCompletions = useMemo(
-    () =>
-      [...doneTodos]
-        .filter((t) => t.completedAt)
-        .sort((a, b) => b.completedAt! - a.completedAt!)
-        .slice(0, 5),
-    [doneTodos]
-  );
-
-  if (totalDone === 0) {
-    return (
-      <div className="rounded-[8px] border border-border bg-card p-5 animate-fade-in">
-        <div className="flex items-center gap-2 mb-4">
-          <TrendingUp className="size-4 text-primary" />
-          <span className="text-sm font-semibold text-foreground">Progress</span>
-        </div>
-        <div className="flex flex-col items-center py-6 text-center">
-          <div className="mb-3 flex size-10 items-center justify-center rounded-full bg-primary/10">
-            <Flame className="size-5 text-primary/50" />
-          </div>
-          <p className="text-sm font-medium text-foreground">No completions yet</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Complete your first task in {listName} to start your streak.
-          </p>
-        </div>
-      </div>
-    );
+/** Consecutive days ending today (or yesterday, if today has none yet) with a completion. */
+export function currentStreak(completedDays: Set<string>, now = new Date()): number {
+  let streak = 0;
+  for (let i = 0; i < 365; i += 1) {
+    const key = dateKey(new Date(now.getFullYear(), now.getMonth(), now.getDate() - i));
+    if (completedDays.has(key)) streak += 1;
+    else if (i === 0) continue; // today not done yet doesn't break it
+    else break;
   }
+  return streak;
+}
+
+const BAR_MAX_PX = 90;
+
+export function StreakPanel({ todos, onClose }: StreakPanelProps) {
+  const { stats, bars } = useMemo(() => {
+    const done = todos.filter((t) => t.status === 'done' && t.completedAt);
+    const perDay = new Map<string, number>();
+    for (const t of done) {
+      const key = dateKey(new Date(t.completedAt!));
+      perDay.set(key, (perDay.get(key) ?? 0) + 1);
+    }
+    const week = lastSevenDays();
+    const weekBars = week.map((d, i) => ({
+      key: dateKey(d),
+      day: d.toLocaleDateString('en-US', { weekday: 'short' }),
+      n: perDay.get(dateKey(d)) ?? 0,
+      today: i === week.length - 1,
+    }));
+    const todayN = weekBars[weekBars.length - 1].n;
+    return {
+      bars: weekBars,
+      stats: [
+        { label: 'Streak', value: `${currentStreak(new Set(perDay.keys()))}d` },
+        { label: 'Today', value: String(todayN) },
+        { label: 'This week', value: String(weekBars.reduce((n, b) => n + b.n, 0)) },
+        { label: 'All time', value: String(done.length) },
+      ],
+    };
+  }, [todos]);
+
+  const max = Math.max(...bars.map((b) => b.n), 1);
 
   return (
-    <div className="rounded-[8px] border border-border bg-card p-5 space-y-5 animate-fade-in">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <TrendingUp className="size-4 text-primary" />
-          <span className="text-sm font-semibold text-foreground">Progress</span>
-        </div>
-        <span className="text-xs text-muted-foreground">{listName}</span>
+    <div className="flex flex-col gap-5">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {stats.map((s) => (
+          <div key={s.label} className="rounded-[8px] border border-a-line px-3.5 py-3">
+            <div className="text-a-faint">{s.label}</div>
+            <div className="mt-1 font-mono text-[24px] leading-normal font-bold text-a-ink tabular-nums">{s.value}</div>
+          </div>
+        ))}
       </div>
 
-      {/* Stats row */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="flex flex-col items-center rounded-xl bg-muted/40 px-3 py-2.5">
-          <div className="flex items-center gap-1 mb-0.5">
-            <Flame
-              className={cn(
-                'size-3.5',
-                currentStreak > 0 ? 'text-primary' : 'text-muted-foreground/40'
-              )}
-            />
-            <span
-              className={cn(
-                'text-xl font-bold tabular-nums',
-                currentStreak > 0 ? 'text-foreground' : 'text-muted-foreground'
-              )}
-            >
-              {currentStreak}
-            </span>
-          </div>
-          <span className="text-[11px] text-muted-foreground text-center leading-tight">
-            Day streak
-          </span>
-        </div>
-
-        <div className="flex flex-col items-center rounded-xl bg-muted/40 px-3 py-2.5">
-          <div className="flex items-center gap-1 mb-0.5">
-            <Trophy className="size-3.5 text-amber-500" />
-            <span className="text-xl font-bold tabular-nums text-foreground">{longestStreak}</span>
-          </div>
-          <span className="text-[11px] text-muted-foreground text-center leading-tight">
-            Best streak
-          </span>
-        </div>
-
-        <div className="flex flex-col items-center rounded-xl bg-muted/40 px-3 py-2.5">
-          <div className="flex items-center gap-1 mb-0.5">
-            <CheckCircle2 className="size-3.5 text-primary" />
-            <span className="text-xl font-bold tabular-nums text-foreground">{totalDone}</span>
-          </div>
-          <span className="text-[11px] text-muted-foreground text-center leading-tight">
-            Total done
-          </span>
-        </div>
-      </div>
-
-      {/* 14-day activity chart */}
       <div>
-        <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2">
-          Last 14 days
-        </p>
-        <div className="flex items-end gap-1 h-10">
-          {days.map((day) => {
-            const heightPct = day.count === 0 ? 0 : Math.max(15, (day.count / maxCount) * 100);
-            const isToday = day.dateStr === getTodayStr();
-            return (
+        <div className="mb-2.5 font-semibold text-a-ink">Completed per day</div>
+        <div className="flex h-[140px] items-end gap-3 border-b border-a-line px-1">
+          {bars.map((b) => (
+            <div key={b.key} className="flex h-full flex-1 flex-col items-center justify-end gap-1">
+              <span className="font-mono text-[11px] text-a-muted tabular-nums">{b.n}</span>
               <div
-                key={day.dateStr}
-                className="flex-1 flex flex-col items-center justify-end gap-0.5 group relative"
-                title={`${getDayLabel(day.dateStr)}: ${day.count} completed`}
-              >
-                <div
-                  className={cn(
-                    'w-full rounded-sm transition-all duration-[260ms]',
-                    day.count === 0
-                      ? 'bg-muted/60 h-1'
-                      : isToday
-                      ? 'bg-primary'
-                      : 'bg-primary/50 group-hover:bg-primary/70'
-                  )}
-                  style={{ height: day.count === 0 ? '4px' : `${heightPct}%` }}
-                />
-                {isToday && (
-                  <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-primary" />
-                )}
-              </div>
-            );
-          })}
+                className={cn('w-full max-w-[44px] rounded-t-[4px]', b.today ? 'bg-a-accent' : 'bg-a-blue-line')}
+                style={{ height: `${Math.max(6, (b.n / max) * BAR_MAX_PX)}px` }}
+              />
+            </div>
+          ))}
         </div>
-        <div className="flex justify-between mt-4 text-[11px] text-muted-foreground/60">
-          <span>14d ago</span>
-          <span>Today</span>
+        <div className="flex gap-3 px-1 pt-1.5">
+          {bars.map((b) => (
+            <span key={b.key} className="flex-1 text-center text-[12px] text-a-faint">{b.day}</span>
+          ))}
         </div>
       </div>
 
-      {/* Recent completions timeline */}
-      {recentCompletions.length > 0 && (
-        <div>
-          <p className="text-[11px] font-medium text-muted-foreground uppercase tracking-wide mb-2.5">
-            Recent completions
-          </p>
-          <div className="space-y-2">
-            {recentCompletions.map((todo, i) => {
-              const catConfig = getCategoryConfig(todo.category);
-              return (
-                <div
-                  key={todo.id}
-                  className="flex items-start gap-2.5 animate-slide-up"
-                  style={{ animationDelay: `${i * 40}ms`, animationFillMode: 'both' }}
-                >
-                  {/* Timeline dot + line */}
-                  <div className="flex flex-col items-center flex-shrink-0 mt-1">
-                    <div className="size-1.5 rounded-full bg-primary/60" />
-                    {i < recentCompletions.length - 1 && (
-                      <div className="w-px flex-1 bg-border/60 mt-1" style={{ minHeight: '16px' }} />
-                    )}
-                  </div>
-
-                  <div className="flex-1 min-w-0 pb-1">
-                    <p className="text-xs font-medium text-foreground leading-snug truncate">
-                      {todo.text}
-                    </p>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      {catConfig && (
-                        <span
-                          className={cn(
-                            'inline-flex items-center rounded-[3px] px-1.5 py-0 text-[11px] font-medium',
-                            catConfig.color
-                          )}
-                        >
-                          {catConfig.label}
-                        </span>
-                      )}
-                      <span className="text-[11px] text-muted-foreground/70">
-                        {getDayLabel(getLocalDateStr(todo.completedAt!))} · {formatTime(todo.completedAt!)}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      <div className="flex justify-end">
+        <button type="button" onClick={onClose} className={cn(topBarSecondary, BTN_MD)}>Close</button>
+      </div>
     </div>
   );
 }

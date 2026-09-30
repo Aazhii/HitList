@@ -22,7 +22,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { MomentumBar } from '@/components/MomentumBar';
 import { TodayHistoryPanel } from '@/components/TodayHistoryPanel';
 import { ListSidebar } from '@/components/ListSidebar';
-import { StreakPanel } from '@/components/StreakPanel';
+import { StreakPanel, weekRangeLabel } from '@/components/StreakPanel';
 import { EisenhowerMatrix } from '@/components/EisenhowerMatrix';
 import { TaskListView } from '@/components/tasks/TaskListView';
 import { TaskTableView } from '@/components/tasks/TaskTableView';
@@ -1684,11 +1684,12 @@ function UserScopedApp() {
 
       {/* Weekly progress — reached from the momentum foot. */}
       <Dialog open={showStreak} onOpenChange={setShowStreak}>
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="sm:max-w-[720px]">
           <DialogHeader>
-            <DialogTitle className="font-display text-[20px] font-normal">Progress</DialogTitle>
+            <DialogTitle>Weekly progress</DialogTitle>
+            <DialogDescription>{activeList?.name ?? 'This list'} · {weekRangeLabel()}</DialogDescription>
           </DialogHeader>
-          <StreakPanel todos={listTodos} listName={activeList?.name ?? 'this list'} />
+          <StreakPanel todos={listTodos} onClose={() => setShowStreak(false)} />
         </DialogContent>
       </Dialog>
 

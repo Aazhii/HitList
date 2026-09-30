@@ -146,7 +146,7 @@ that one is fine where it is.
 | Visual | `node web/scripts/shoot.mjs <screen-id>` → a `.ref.png` / `.app.png` pair | every Phase 3 task |
 | Real build | `sh desktop/scripts/prepare-jar.sh` → copy to `api/target/hitlist.jar` → restart Electron → re-check its own port | every **phase** exit, not every task |
 
-Test baseline: **345 tests across 39 files.** This must not regress.
+Test baseline: **351 tests across 40 files.** This must not regress.
 
 ---
 
@@ -156,10 +156,10 @@ Test baseline: **345 tests across 39 files.** This must not regress.
 Phase 0  █████   5 / 5      done
 Phase 1  █████  11 / 11      foundations — the broken UI
 Phase 2  █████   5 / 5       shell exactness
-Phase 3  ██░░░  11 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
+Phase 3  ██░░░  13 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
 Phase 4  ░░░░░   1 / 12      missing features
 Phase 5  ░░░░░   0 / 7       proposals, unreviewed
-                33 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
+                35 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
 ```
 
 ### A note on "partially built"
@@ -241,8 +241,8 @@ on a description. Execution order is the section order below.
 | T3.12 | `ov-filter` | todo | |
 | T3.13 | `ov-fields` | todo — don't reintroduce a Dialog here | |
 | T3.14 | `ov-fielddelete` | todo | |
-| T3.15 | `ov-history` | todo | |
-| T3.16 | `ov-progress` | todo | |
+| T3.15 | `ov-history` | **done** | design:check PASS, tsc/lint clean, vitest 351/351; shots/ov-history.{ref,app}.png — 400px peek panel, no scrim, green count badge, subtle Undo, footer line |
+| T3.16 | `ov-progress` | **done** | shots/ov-progress.{ref,app}.png — four stat tiles + completed-per-day bars (today in brand blue); date logic unit-tested |
 
 ### 3C · Databases
 

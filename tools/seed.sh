@@ -28,4 +28,9 @@ add "Plan team offsite agenda"             schedule  "\"$(d +9d)\"" work "$BACKL
 add "Approve expense reports"              delegate  "\"$(d +0d)\"" personal    "$BACKLOG"
 add "Schedule vendor demo calls"           delegate  "\"$(d +1d)\"" work  "$PROG"
 add "Clear old email newsletters"          eliminate null           personal    ""
-echo "seeded field $FID and 8 tasks on :$PORT"
+# Two tasks completed today, as in the prototype's history panel.
+for t in "Send weekly status update|do" "Submit timesheet|schedule"; do
+  T=$(post /tasks "{\"title\":\"${t%|*}\",\"quadrant\":\"${t#*|}\",\"category\":\"work\"}" | id)
+  curl -s -c $J -b $J -X PATCH "$B/tasks/$T/complete" >/dev/null
+done
+echo "seeded field $FID and 10 tasks on :$PORT"

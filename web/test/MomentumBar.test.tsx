@@ -102,7 +102,7 @@ describe('TodayHistoryPanel', () => {
 
   it('shows empty state when no tasks completed today', () => {
     render(<TodayHistoryPanel open={true} todos={[]} onClose={vi.fn()} />);
-    expect(screen.getByText(/no tasks completed yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/nothing completed yet/i)).toBeInTheDocument();
   });
 
   it('shows correct count in header', () => {
@@ -111,13 +111,13 @@ describe('TodayHistoryPanel', () => {
       makeDoneTodo({ id: '2', text: 'Task 2' }),
     ];
     render(<TodayHistoryPanel open={true} todos={todos} onClose={vi.fn()} />);
-    expect(screen.getByText(/2 tasks completed today/i)).toBeInTheDocument();
+    expect(screen.getByText(/2 completed/i)).toBeInTheDocument();
   });
 
   it('calls onClose when close button is clicked', () => {
     const onClose = vi.fn();
     render(<TodayHistoryPanel open={true} todos={[]} onClose={onClose} />);
-    const closeBtn = screen.getByRole('button', { name: /close panel/i });
+    const closeBtn = screen.getByRole('button', { name: 'Close' });
     fireEvent.click(closeBtn);
     expect(onClose).toHaveBeenCalled();
   });

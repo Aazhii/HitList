@@ -106,6 +106,11 @@ export const topBarSecondary = cn(
   BTN_SM, 'border-a-line-strong bg-a-surface text-a-ink hover:bg-a-bg active:bg-a-line-soft',
 );
 
+/** DS `Button` subtle sm (blue tint, brand ink): the momentum card's buttons, "Undo". */
+export const topBarSubtle = cn(
+  BTN_SM, 'bg-a-blue-tint text-a-accent hover:bg-a-blue-hover active:bg-a-blue-line',
+);
+
 /** DS `Button` size md, to override a size-sm variant: 34px, 0 16px, 13px, 4px radius. */
 export const BTN_MD = 'h-[34px] rounded-[4px] px-4 text-[13px]';
 

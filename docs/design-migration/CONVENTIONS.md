@@ -502,11 +502,25 @@ Shared primitives now follow the DS, so every dialog inherits them:
 - **Deviation:** the linked-note row reads "Added from note · Open note" (the prototype shows
   the note's title as the link).
 
+### Today's history and Weekly progress (T3.15, T3.16)
+
+- **Today's history** is a 400px peek panel like the detail panel (no scrim, Escape closes):
+  `Today` (18px/600), a green Badge "N completed", rows of a green `circle-check`, the title,
+  "Do first · 9:12 AM" (tertiary 12px) and a **subtle** "Undo"; footer "Undo moves a task back
+  to the quadrant it came from." The old "Today's Wins" header icon, "Great work" footer,
+  quadrant emojis and per-row chips are gone (no emoji in product UI, §9).
+- **Weekly progress** is a 720px dialog titled "Weekly progress" with the list name and the
+  seven-day range as its description, four tiles — **Streak** (`Nd`), **Today**, **This week**
+  (the last seven days), **All time** — and a "Completed per day" bar chart: bars scale to 90px,
+  6px minimum, today's in `#006eb9`, the rest `--blue-200`; counts above in 11px mono.
+  **Removed** because the design has neither: Best streak and Recent completions.
+- `topBarSubtle` (DS subtle `sm`) is shared by the momentum card's buttons and Undo.
+
 ## 13. Standing rules for whoever executes a task
 
 1. **Verify before you change.** Every task quotes the current code. If what you find does not match the quote, **stop and report** — do not adapt silently. The file may have moved on.
 2. **Never invent a value.** If a task does not give you a number and this file does not either, ask. Guessing is what produced the current state.
 3. **One task, one commit.** Commit message: `design(T1.4): set every icon stroke to 1.75`.
-4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 345 tests.
+4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 351 tests.
 5. **Update `00-INDEX.md`** — set State and fill in "Verified by" with the actual command output or screenshot pair. A task with an empty "Verified by" is not done.
 6. **Do not delete the Automations or Reminders code.** It is being revived in Phase 4, not removed.

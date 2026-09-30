@@ -1,13 +1,10 @@
 import { useMemo, useState } from 'react';
-import { CheckCircle2, Clock, RotateCcw, Sparkles, TrendingUp } from 'lucide-react';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Sheet, SheetContent } from '@/components/ui/sheet';
-import { Button } from '@/components/ui/button';
+import { CircleCheck, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { getQuadrantConfig, getCategoryConfig } from '@/types/todo';
+import { topBarSubtle } from '@/components/shell/TopBar';
+import { getQuadrantConfig } from '@/types/todo';
 import type { Todo } from '@/types/todo';
 import type { ApiTask } from '@/lib/api';
-import { X } from 'lucide-react';
 
 interface TodayHistoryPanelProps {
   open: boolean;
@@ -29,26 +26,10 @@ function isTodayTimestamp(ts: number): boolean {
   );
 }
 
+/** "9:12 AM" — the row's second line (showcase 1052). */
 function formatTime(ts: number): string {
-  return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return new Date(ts).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 }
-
-function formatRelative(ts: number): string {
-  const diffMs = Date.now() - ts;
-  const diffMin = Math.floor(diffMs / 60_000);
-  if (diffMin < 1) return 'just now';
-  if (diffMin < 60) return `${diffMin}m ago`;
-  const diffHr = Math.floor(diffMin / 60);
-  if (diffHr < 24) return `${diffHr}h ago`;
-  return formatTime(ts);
-}
-
-const QUADRANT_ICON: Record<string, string> = {
-  do: '🔥',
-  schedule: '📅',
-  delegate: '🤝',
-  eliminate: '🗑️',
-};
 
 export function TodayHistoryPanel({ open, todos, serverHistory, onClose, onUndo }: TodayHistoryPanelProps) {
   // When server history is available, convert ApiTask[] → Todo[] shape for display
@@ -98,172 +79,80 @@ export function TodayHistoryPanel({ open, todos, serverHistory, onClose, onUndo 
   // Prefer server history when available (more accurate completedAt from server)
   const todayDone = serverTodayDone ?? localTodayDone;
 
+  if (!open) return null;
+
+  // Showcase 1048–1056: a 400px peek panel under the chrome — no scrim, the page stays live.
   return (
-    <Sheet open={open} onOpenChange={(v) => !v && onClose()}>
-      <SheetContent
-        side="right"
-        showCloseButton={false}
-        className="w-full sm:max-w-md flex flex-col p-0 gap-0 overflow-hidden"
-      >
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-border flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="flex size-9 items-center justify-center rounded-xl bg-primary/10">
-              <TrendingUp className="size-4 text-primary" />
-            </div>
-            <div>
-              <h2 className="text-base font-semibold text-foreground leading-tight">
-                Today's Wins
-              </h2>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {todayDone.length === 0
-                  ? 'No tasks completed yet'
-                  : `${todayDone.length} task${todayDone.length !== 1 ? 's' : ''} completed today`}
-              </p>
-            </div>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onClose}
-            className="size-8 rounded-lg text-muted-foreground hover:text-foreground"
-            aria-label="Close panel"
-          >
-            <X className="size-4" />
-          </Button>
-        </div>
+    <aside
+      role="dialog"
+      aria-label="Today's history"
+      onKeyDown={(e) => { if (e.key === 'Escape') onClose(); }}
+      className="fixed top-[52px] right-0 bottom-0 z-40 flex w-[400px] max-w-full flex-col border-l border-a-line bg-a-surface text-[13px] leading-normal text-a-ink shadow-[var(--a-shadow-xl)] animate-in slide-in-from-right duration-[260ms]"
+    >
+      <header className="flex items-center gap-2 border-b border-a-line px-4 py-3">
+        <h2 className="text-[18px] leading-[1.35] font-semibold">Today</h2>
+        {/* design-check-ignore: pill — the DS Badge is a pill (showcase 1050). */}
+        <span className="rounded-full border border-transparent bg-a-green-tint px-2 py-[3px] text-[11px] leading-none font-semibold text-a-green-ink">
+          {todayDone.length} completed
+        </span>
+        <div className="flex-1" />
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close"
+          className="flex size-7 items-center justify-center rounded-[4px] text-a-muted transition-colors duration-[120ms] hover:bg-a-line-soft hover:text-a-ink active:bg-a-line"
+        >
+          <X className="size-4" strokeWidth={1.75} />
+        </button>
+      </header>
 
-        {/* Body */}
-        <ScrollArea className="flex-1 min-h-0">
-          <div className="px-6 py-5 space-y-3">
-            {todayDone.length === 0 ? (
-              <EmptyState />
-            ) : (
-              <>
-                {todayDone.map((todo, i) => (
-                  <TaskRow key={todo.id} todo={todo} index={i} onUndo={onUndo} />
-                ))}
+      <div className="flex-1 overflow-auto px-4 py-2">
+        {todayDone.length === 0 ? (
+          <p className="py-10 text-center text-a-faint">Nothing completed yet. Finish a task and it will appear here.</p>
+        ) : (
+          todayDone.map((todo) => <TaskRow key={todo.id} todo={todo} onUndo={onUndo} />)
+        )}
+      </div>
 
-                {/* Footer summary */}
-                <div className="pt-4 border-t border-border/60 flex items-center gap-2">
-                  <Sparkles className="size-3.5 text-primary flex-shrink-0" />
-                  <p className="text-xs text-muted-foreground">
-                    Great work — keep the momentum going!
-                  </p>
-                </div>
-              </>
-            )}
-          </div>
-        </ScrollArea>
-      </SheetContent>
-    </Sheet>
+      <footer className="border-t border-a-line px-4 py-3 text-a-faint">
+        Undo moves a task back to the quadrant it came from.
+      </footer>
+    </aside>
   );
 }
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
-function TaskRow({ todo, index, onUndo }: {
+function TaskRow({ todo, onUndo }: {
   todo: Todo;
-  index: number;
   onUndo?: (id: string) => Promise<void> | void;
 }) {
   const qConfig = getQuadrantConfig(todo.quadrant);
   const [undoing, setUndoing] = useState(false);
-  const catConfig = getCategoryConfig(todo.category);
   const completedTs = todo.completedAt ?? todo.createdAt;
 
   return (
-    <div
-      className={cn(
-        'group relative rounded-xl border border-border bg-background p-4',
-        'hover:border-border/80 hover:shadow-sm transition-all duration-[180ms]',
-        'animate-fade-in',
+    <div className="flex items-center gap-2.5 border-b border-a-line-soft py-3">
+      <CircleCheck className="size-[18px] flex-shrink-0 text-a-dq-valid" strokeWidth={1.75} aria-hidden />
+      <div className="min-w-0 flex-1">
+        <div className="font-medium">{todo.text}</div>
+        <div className="text-[12px] text-a-faint">{qConfig.label} · {formatTime(completedTs)}</div>
+      </div>
+      {onUndo && (
+        <button
+          type="button"
+          disabled={undoing}
+          onClick={async () => {
+            setUndoing(true);
+            try { await onUndo(todo.id); } finally { setUndoing(false); }
+          }}
+          aria-label={`Undo completing ${todo.text}`}
+          title="Not done yet? Put it back in its quadrant"
+          className={cn(topBarSubtle, 'disabled:opacity-50')}
+        >
+          {undoing ? 'Undoing…' : 'Undo'}
+        </button>
       )}
-      style={{ animationDelay: `${index * 40}ms`, animationFillMode: 'both' }}
-    >
-      <div className="flex items-start gap-3">
-        {/* Check icon */}
-        <div className="flex-shrink-0 mt-0.5">
-          <CheckCircle2 className="size-4 text-primary" />
-        </div>
-
-        {/* Content */}
-        <div className="flex-1 min-w-0 space-y-2">
-          {/* Task title */}
-          <p className="text-sm font-medium text-foreground leading-snug line-clamp-2">
-            {todo.text}
-          </p>
-
-          {/* Meta row */}
-          <div className="flex items-center gap-2 flex-wrap">
-            {/* Quadrant badge */}
-            <span
-              className={cn(
-                'inline-flex items-center gap-1 rounded-[3px] px-2 py-0.5 text-[11px] font-medium',
-                qConfig.badgeClass,
-              )}
-            >
-              <span>{QUADRANT_ICON[todo.quadrant]}</span>
-              {qConfig.label}
-            </span>
-
-            {/* Category badge */}
-            {catConfig && (
-              <span
-                className={cn(
-                  'inline-flex items-center rounded-[3px] px-2 py-0.5 text-[11px] font-medium',
-                  catConfig.color,
-                )}
-              >
-                {catConfig.label}
-              </span>
-            )}
-          </div>
-
-          {/* Completion time */}
-          <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-            <Clock className="size-3 flex-shrink-0" />
-            <span>
-              Completed at {formatTime(completedTs)}
-              <span className="ml-1 opacity-70">· {formatRelative(completedTs)}</span>
-            </span>
-          </div>
-        </div>
-
-        {onUndo && (
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={undoing}
-            onClick={async () => {
-              setUndoing(true);
-              try { await onUndo(todo.id); } finally { setUndoing(false); }
-            }}
-            aria-label={`Undo completing ${todo.text}`}
-            title="Not done yet? Put it back in its quadrant"
-            className="h-7 flex-shrink-0 gap-1.5 rounded-lg px-2 text-xs text-muted-foreground hover:text-foreground"
-          >
-            <RotateCcw className={cn('size-3.5', undoing && 'animate-spin [animation-direction:reverse]')} />
-            {undoing ? 'Undoing…' : 'Undo'}
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function EmptyState() {
-  return (
-    <div className="flex flex-col items-center justify-center py-16 text-center space-y-4">
-      <div className="flex size-16 items-center justify-center rounded-[8px] bg-muted/50">
-        <CheckCircle2 className="size-7 text-muted-foreground/40" />
-      </div>
-      <div className="space-y-1.5">
-        <h3 className="text-sm font-semibold text-foreground">Nothing completed yet</h3>
-        <p className="text-xs text-muted-foreground max-w-[220px] leading-relaxed">
-          Finish your first task today and it'll appear here. Small steps, big progress.
-        </p>
-      </div>
     </div>
   );
 }

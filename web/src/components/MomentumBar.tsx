@@ -1,5 +1,6 @@
 import { Flame } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { topBarSubtle } from '@/components/shell/TopBar';
 import type { KaizenStats } from '@/types/todo';
 
 interface MomentumBarProps {
@@ -64,7 +65,7 @@ export function MomentumBar({ stats, total, done, onViewHistory, onViewProgress 
           <button
             type="button"
             onClick={onViewHistory}
-            className="flex h-7 items-center whitespace-nowrap rounded-[3px] border border-transparent bg-a-blue-tint px-3 text-[11px] font-semibold text-a-accent transition-colors duration-[120ms] hover:bg-a-blue-hover active:bg-a-blue-line"
+            className={topBarSubtle}
           >
             Today
           </button>
@@ -73,7 +74,7 @@ export function MomentumBar({ stats, total, done, onViewHistory, onViewProgress 
           <button
             type="button"
             onClick={onViewProgress}
-            className="flex h-7 items-center whitespace-nowrap rounded-[3px] border border-transparent bg-a-blue-tint px-3 text-[11px] font-semibold text-a-accent transition-colors duration-[120ms] hover:bg-a-blue-hover active:bg-a-blue-line"
+            className={topBarSubtle}
           >
             Weekly progress
           </button>
