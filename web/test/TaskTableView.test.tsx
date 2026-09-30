@@ -266,3 +266,14 @@ describe('TaskTableView — rows, columns and fields', () => {
     });
   });
 });
+
+describe('cell click area', () => {
+  it('opens the quadrant select when the empty part of its cell is clicked', async () => {
+    setup();
+    const trigger = screen.getByRole('combobox', { name: 'Quadrant of Alpha' });
+    const cell = trigger.closest('td') as HTMLElement;
+    const click = vi.spyOn(trigger, 'click');
+    fireEvent.click(cell);
+    expect(click).toHaveBeenCalled();
+  });
+});

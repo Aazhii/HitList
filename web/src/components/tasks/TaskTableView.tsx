@@ -506,7 +506,15 @@ function TaskTableRow({ rowNumber, todo, columns, activeCol, selected, selecting
   const quadrant = QUADRANTS.find((q) => q.id === todo.quadrant) ?? QUADRANTS[0];
 
   // Each cell is findable by the keyboard layer, and the one under its cursor is ringed.
-  const cell = (i: number) => ({ 'data-cell': `${todo.id}:${i}`, 'data-active': activeCol === i ? '' : undefined });
+  // A click anywhere in a cell, not only on its small control, opens that control (a select, a date, a menu).
+  const cell = (i: number) => ({
+    'data-cell': `${todo.id}:${i}`,
+    'data-active': activeCol === i ? '' : undefined,
+    onClick: (e: React.MouseEvent<HTMLTableCellElement>) => {
+      if (e.target !== e.currentTarget) return;
+      e.currentTarget.querySelector<HTMLElement>('[role="combobox"], button, input')?.click();
+    },
+  });
 
   return (
     <tr className="group" data-row={todo.id}>
