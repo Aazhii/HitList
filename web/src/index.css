@@ -20,19 +20,83 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* 260ms is the DS's slowest step; 300ms was over it. The curve is the DS's own
+   ease-out, used for entrances. No keyframe here overshoots — the DS forbids
+   bounce, so these stay pure fade + small translate. */
 .animate-fade-in {
-  animation: fade-in 0.3s ease-out;
+  animation: fade-in 260ms var(--a-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 .animate-slide-up {
-  animation: slide-in-from-bottom 0.3s ease-out;
+  animation: slide-in-from-bottom 260ms var(--a-ease-out, cubic-bezier(0.16, 1, 0.3, 1));
 }
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-@import "@fontsource-variable/geist";
+/* Manrope is the declared fallback in @theme; Caprasimo + Figtree serve
+   .login-organic. Geist and IBM Plex Mono were imported and referenced nowhere
+   — they were being bundled and emitted into dist/assets for nothing. */
 @import "@fontsource-variable/manrope";
 @import "@fontsource/caprasimo";
 @import "@fontsource-variable/figtree";
-@import "@fontsource/ibm-plex-mono";
+
+/* Zoho Puvi + Roboto Mono — self-hosted, the exact files from the Zoho
+   DataPrep design system bundle (assets/fonts/*.woff2), not a Google Fonts
+   substitute. .app-organic's body/heading/mono faces. */
+@font-face {
+  font-family: "Zoho Puvi";
+  src: url("/fonts/Zoho_Puvi_Light.woff2") format("woff2");
+  font-weight: 300;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Zoho Puvi";
+  src: url("/fonts/Zoho_Puvi_Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Zoho Puvi";
+  src: url("/fonts/Zoho_Puvi_Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Zoho Puvi";
+  src: url("/fonts/Zoho_Puvi_Semibold.woff2") format("woff2");
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Zoho Puvi";
+  src: url("/fonts/Zoho_Puvi_Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Zoho Puvi";
+  src: url("/fonts/Zoho_Puvi_Extrabold.woff2") format("woff2");
+  font-weight: 800;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Roboto Mono";
+  src: url("/fonts/RobotoMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Roboto Mono";
+  src: url("/fonts/RobotoMono-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
 
 @custom-variant dark (&:is(.dark *));
 
@@ -55,6 +119,8 @@
     --color-a-line: var(--a-line);
     --color-a-line-soft: var(--a-line-soft);
     --color-a-row-hover: var(--a-row-hover);
+    --color-a-dq-valid: var(--a-dq-valid);
+    --color-a-dq-missing: var(--a-dq-missing);
     --color-a-accent: var(--a-accent);
     --color-a-accent-600: var(--a-accent-600);
     --color-a-accent-700: var(--a-accent-700);
@@ -62,6 +128,9 @@
     --color-a-sage: var(--a-sage);
     --color-a-sage-tint: var(--a-sage-tint);
     --color-a-sage-ink: var(--a-sage-ink);
+    --color-a-amber: var(--a-amber);
+    --color-a-attention: var(--a-attention);
+    --color-a-row-alt: var(--a-row-alt);
     --color-a-rail: var(--a-rail);
     --color-a-rail-fg: var(--a-rail-fg);
     --color-q-do: var(--a-q-do);
@@ -455,104 +524,193 @@ html.login-locked body {
  * ──────────────────────────────────────────────────────────────────────────── */
 
 .app-organic {
-  --a-bg: #f5ead8;
-  --a-surface: #ebddc5;
-  --a-surface-2: #e7e1d6;
-  --a-ink: #201e1d;
-  --a-muted: #4a453f;
-  --a-faint: #6d675f;
+  /* Zoho DataPrep component structure, re-skinned to Notion's literal
+     neutral palette — the exact "Notion x Zoho" hybrid `HitList Notion x
+     Zoho.dc.html` itself renders (its own local override of the DataPrep
+     tokens.css `--gray-*` scale). Values below are that override, not a
+     guess: #f7f6f3 / #37352f / #e9e9e7 are the file's own `:root` block. */
+  --a-bg: #f7f6f3;
+  --a-surface: #ffffff;
+  --a-surface-2: #f1f1ef;
+  --a-ink: #37352f;
+  --a-muted: #6f6e69;
+  --a-faint: #9b9a97;
 
-  --a-line: rgba(32, 30, 29, 0.12);
-  --a-line-soft: rgba(32, 30, 29, 0.07);
-  --a-row-hover: rgba(32, 30, 29, 0.035);
+  /* Literal showcase values, not approximations: --border-default / --border-subtle. */
+  --a-line: #e9e9e7;
+  --a-line-soft: #f1f1ef;
+  /* The showcase's nav/menu-row hover (rgba(55,53,47,.06)) — its table-row
+     hover is a different, solid literal (--gray-25, #fbfbfa), used as a
+     one-off in RecordTable rather than here, since the two contexts don't
+     share one hover treatment in the source either. */
+  --a-row-hover: rgba(55, 53, 47, 0.06);
 
-  --a-accent: #c67139;
-  --a-accent-600: #b2622d;
-  --a-accent-700: #8c491a;
-  --a-accent-tint: rgba(198, 113, 57, 0.10);
+  /* DataPrep's signature data-quality colors — literal, not re-toned. */
+  --a-dq-valid: #1fa45e;
+  --a-dq-missing: #f1f1ef;
 
-  --a-sage: #7a8a5e;
-  --a-sage-tint: #e1eecc;
-  --a-sage-ink: #56633f;
+  /* Zoho DataPrep brand blue. The showcase loads the DataPrep design system and
+     overrides only the greys, radii and shadows in its own :root (lines 20-30) —
+     it never overrides --blue-*, so the accent stays #006EB9. Verified by
+     sampling the prototype's primary button and logo mark, not by reading CSS:
+     a scanline through the button matches --blue-500 exactly. An earlier pass
+     assumed the whole palette was Notion's and used Notion blue here; it is not. */
+  --a-accent: #006eb9;
+  --a-accent-600: #005c9c;
+  --a-accent-700: #004a7f;
+  --a-accent-tint: rgba(0, 110, 185, 0.10);
+  /* DS --shadow-focus alpha, used by the focus ring below. */
+  --a-accent-ring: rgba(0, 110, 185, 0.28);
+
+  /* Amber — DS --amber-600, the streak colour on the momentum card (showcase 94). */
+  --a-amber: #c0741a;
+  /* The showcase's attention/overdue red (line 123). Distinct from --destructive:
+     this is text that warns, not a control that destroys. */
+  --a-attention: #b83232;
+  /* --gray-25. The showcase's table-row hover is this solid tint, not the
+     translucent --a-row-hover the nav and menus use (line 630). */
+  --a-row-alt: #fbfbfa;
+
+  --a-sage: #0f7b0f;
+  --a-sage-tint: #e8f5e8;
+  --a-sage-ink: #0c5e0c;
 
   /* The icon rail is the one dark surface in both themes, so it cannot simply
      reuse --a-ink / --a-bg, which swap places under .dark. */
   --a-rail: #201e1d;
-  --a-rail-fg: #f5ead8;
+  --a-rail-fg: #f7f6f3;
 
-  /* Quadrant inks. Each clears 4.5:1 on its own tint (measured). */
-  --a-q-do: #9c3421;        --a-q-do-bg: #f7e0d6;
-  --a-q-schedule: #3f6b8a;  --a-q-schedule-bg: #dde8ef;
-  --a-q-delegate: #75570f;  --a-q-delegate-bg: #f2e7cd;
-  --a-q-eliminate: #57524b; --a-q-eliminate-bg: #e7e1d6;
+  /* Quadrant inks — the showcase's matrix-card family (red/blue/purple/gray),
+     each measured against its own tint. */
+  --a-q-do: #a83a3a;        --a-q-do-bg: #ffe2dd;
+  --a-q-schedule: #1a5c8c;  --a-q-schedule-bg: #d3e5ef;
+  --a-q-delegate: #5d3a7a;  --a-q-delegate-bg: #e8deee;
+  --a-q-eliminate: #57524b; --a-q-eliminate-bg: #e3e2e0;
 
-  /* Tag colors for select/multi options — a dedicated palette (Notion's 9
-     names, re-toned to this app's palette), same solid-hex recipe as the
-     quadrant colors above rather than a low-alpha tint, so a chip actually
-     reads as colored instead of washed out. */
-  --a-tag-gray: #57524b;   --a-tag-gray-bg: #e7e1d6;
-  --a-tag-brown: #6b4a2f;  --a-tag-brown-bg: #ecdcc8;
-  --a-tag-orange: #a3501a; --a-tag-orange-bg: #f7ddc2;
-  --a-tag-yellow: #8a6d0f; --a-tag-yellow-bg: #f7eec2;
-  --a-tag-green: #3f6b3f;  --a-tag-green-bg: #dbe8d2;
-  --a-tag-blue: #2f5f8a;   --a-tag-blue-bg: #d7e5f0;
-  --a-tag-purple: #6b4a8a; --a-tag-purple-bg: #e8ddf0;
-  --a-tag-pink: #9c3f6b;   --a-tag-pink-bg: #f5dde8;
-  --a-tag-red: #a3271f;    --a-tag-red-bg: #f5d6d0;
+  /* Tag colors for select/multi options — the showcase's own literal `TAGC`
+     table (`HitList Notion x Zoho.dc.html` line 1390), Notion's 9 named
+     colors verbatim, not re-toned. */
+  --a-tag-gray: #32302c;   --a-tag-gray-bg: #e3e2e0;
+  --a-tag-brown: #603b2c;  --a-tag-brown-bg: #eee0da;
+  --a-tag-orange: #854c1d; --a-tag-orange-bg: #fadec9;
+  --a-tag-yellow: #89632a; --a-tag-yellow-bg: #fdecc8;
+  --a-tag-green: #1c3829;  --a-tag-green-bg: #dbeddb;
+  --a-tag-blue: #183347;   --a-tag-blue-bg: #d3e5ef;
+  --a-tag-purple: #412454; --a-tag-purple-bg: #e8deee;
+  --a-tag-pink: #5c1e3a;   --a-tag-pink-bg: #f5e0e9;
+  --a-tag-red: #5d1715;    --a-tag-red-bg: #ffe2dd;
 
-  /* Fontsource registers Figtree as 'Figtree Variable'; 'Figtree' is kept so the
-     Google Fonts copy the login page loads also satisfies it. */
-  --a-font-heading: 'Caprasimo', ui-serif, system-ui, sans-serif;
-  --a-font-body: 'Figtree Variable', 'Figtree', ui-sans-serif, system-ui, sans-serif;
-  --a-font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  --a-font-heading: 'Zoho Puvi', ui-sans-serif, system-ui, sans-serif;
+  --a-font-body: 'Zoho Puvi', ui-sans-serif, system-ui, sans-serif;
+  --a-font-mono: 'Roboto Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
 
   /* The editor's reading column, and the gutter that holds the block controls. */
   --a-measure: 720px;
   --a-gutter: 44px;
 
-  --a-radius-sm: 6px;
-  --a-radius-row: 14px;
-  --a-radius-md: 16px;
-  --a-radius-lg: 18px;
-  --a-radius-xl: 24px;
+  /* Radius — Zoho DataPrep's tokens/radius.css, verbatim. */
+  --a-radius-sm: 3px;
+  --a-radius-row: 6px;
+  --a-radius-md: 8px;
+  --a-radius-lg: 8px;
+  --a-radius-xl: 12px;
 
-  --a-shadow-sm: 0 1px 3px rgba(46, 43, 37, 0.18);
-  --a-shadow-md: 0 3px 10px rgba(46, 43, 37, 0.14);
+  /* Tailwind derives rounded-sm..4xl from --radius, and :root sets it to
+     0.875rem (14px) — which made rounded-lg 14px, rounded-xl 19.6px and
+     and the 2xl step 25.2px, across 127 call sites. The design's card is 8px.
+     0.5rem lands the derived scale on 4.8 / 6.4 / 8 / 11.2px, which is the
+     design's 4 / 6 / 8 / 12 within a rounding error. The --a-radius-* values
+     above are not wired to any utility; this is what actually renders. */
+  --radius: 0.5rem;
+
+  /* Motion — Zoho DataPrep's tokens/radius.css, verbatim. Quick and gentle,
+     and deliberately no overshoot curve: the DS forbids bounce. */
+  --a-duration-fast: 120ms;
+  --a-duration-base: 180ms;
+  --a-duration-slow: 260ms;
+  --a-ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+  --a-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Shadows — the showcase's own :root override (lines 27-29), not DataPrep's
+     cool-tinted set. The design leans on 1px borders; shadows are only for
+     menus, popovers, modals, drawers, toasts and card-hover. */
+  --a-shadow-sm: 0 1px 3px rgba(15, 15, 15, 0.10);
+  --a-shadow-md: 0 2px 4px rgba(15, 15, 15, 0.15);
+  --a-shadow-lg: 0 4px 6px rgba(15, 15, 15, 0.10), 0 0 0 1px rgba(15, 15, 15, 0.05);
+
+  /* Spacing — Zoho DataPrep's tokens/spacing.css 4px grid, verbatim. */
+  --a-space-1: 2px;
+  --a-space-2: 4px;
+  --a-space-3: 8px;
+  --a-space-4: 12px;
+  --a-space-5: 16px;
+  --a-space-6: 20px;
+  --a-space-7: 24px;
+  --a-space-8: 32px;
+  --a-space-9: 40px;
+  --a-space-10: 48px;
+  --a-space-11: 64px;
+
+  /* Type scale — the showcase's own scale (tokens/typography.css), verbatim. */
+  --a-text-xs: 11px;
+  --a-text-sm: 13px;
+  --a-text-base: 14px;
+  --a-text-md: 16px;
+  --a-text-lg: 18px;
+  --a-text-xl: 20px;
+  --a-text-2xl: 24px;
+  --a-text-3xl: 30px;
+  --a-text-4xl: 38px;
+  --a-text-5xl: 48px;
+  --a-text-6xl: 60px;
+
+  --a-control-h-sm: 28px;
+  --a-control-h-md: 34px;
+  --a-control-h-lg: 40px;
 
   /* ── shadcn tokens, remapped ──
      Every ui/* primitive reads these, so dialogs, sheets, menus and forms take
      the palette without each component being rewritten. They reference the
      --a-* tokens, so the dark block below only has to redefine those. */
-  --background: var(--a-bg);
+  /* The page is WHITE and the sidebar is grey — not the other way round.
+     The showcase's <main> is literally background:#fff (line 107) and its
+     --surface-page is #ffffff (line 24); #f7f6f3 is --gray-50, used only for
+     the sidebar ground (line 39) and "sunken" surfaces. These two tokens were
+     previously swapped, which painted every page, card and popover beige.
+     Sampled from the prototype: content #ffffff, sidebar #f7f6f3, panel #ffffff.
+     --secondary/--muted/--accent must move the other way at the same time, or
+     all three go white and every muted surface vanishes into the page. */
+  --background: var(--a-surface);
   --foreground: var(--a-ink);
-  --card: var(--a-bg);
+  --card: var(--a-surface);
   --card-foreground: var(--a-ink);
-  --popover: var(--a-bg);
+  --popover: var(--a-surface);
   --popover-foreground: var(--a-ink);
   --primary: var(--a-accent);
-  --primary-foreground: var(--a-bg);
-  --secondary: var(--a-surface);
+  --primary-foreground: var(--a-surface);
+  --secondary: var(--a-bg);
   --secondary-foreground: var(--a-ink);
-  --muted: var(--a-surface);
+  --muted: var(--a-bg);
   --muted-foreground: var(--a-faint);
-  --accent: var(--a-surface);
+  /* shadcn's --accent is the hover wash, not the brand accent. */
+  --accent: var(--a-bg);
   --accent-foreground: var(--a-ink);
   --destructive: var(--a-q-do);
   --border: var(--a-line);
   --input: var(--a-line);
   --ring: var(--a-accent);
-  --sidebar: var(--a-surface);
+  --sidebar: var(--a-bg);
   --sidebar-foreground: var(--a-ink);
   --sidebar-primary: var(--a-accent);
-  --sidebar-primary-foreground: var(--a-bg);
-  --sidebar-accent: var(--a-bg);
+  --sidebar-primary-foreground: var(--a-surface);
+  --sidebar-accent: var(--a-surface-2);
   --sidebar-accent-foreground: var(--a-ink);
   --sidebar-border: var(--a-line);
   --sidebar-ring: var(--a-accent);
 
   font-family: var(--a-font-body);
   color: var(--a-ink);
-  background: var(--a-bg);
+  background: var(--a-surface);
 }
 
 /* ── Dark ──
@@ -600,6 +758,9 @@ html.login-locked body {
   --a-tag-pink: #e0a8c0;   --a-tag-pink-bg: #361f2b;
   --a-tag-red: #e0938a;    --a-tag-red-bg: #3a201c;
 
+  --a-dq-valid: #3ec97a;
+  --a-dq-missing: #2e2a26;
+
   --a-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.45);
   --a-shadow-md: 0 3px 10px rgba(0, 0, 0, 0.4);
 }
@@ -613,8 +774,34 @@ html.login-locked body {
     background: color-mix(in srgb, var(--a-accent) 30%, transparent);
   }
 
+  /* The DS specifies a soft 3px brand-blue halo at 28% alpha
+     (--shadow-focus: 0 0 0 3px rgba(0,110,185,0.28)). Expressed as an outline
+     rather than a box-shadow on purpose: the comment above explains this rule
+     lives in @layer base so components can opt out with `outline-none`, and
+     note-block textareas rely on that. A box-shadow would silently break every
+     one of those opt-outs. A 3px solid outline at the same colour and alpha
+     renders the same. */
   .app-organic :focus-visible {
-    outline: 2px solid var(--a-accent);
-    outline-offset: 2px;
+    outline: 3px solid var(--a-accent-ring);
+    outline-offset: 0;
+  }
+
+  /* The DS specifies a 1.75 icon stroke. Most call sites pass strokeWidth
+     explicitly, but lucide defaults to 2 when the prop is omitted, and a single
+     missed icon reads visibly heavier than its neighbours. CSS beats the SVG
+     presentation attribute, so this holds for every icon including ones added
+     later without the prop. */
+  .app-organic svg.lucide {
+    stroke-width: 1.75;
+  }
+
+  /* DS motion: "quick and gentle… no bounce". Tailwind's default timing
+     function is a plain ease; setting the DS standard curve here means every
+     `transition-*` picks it up without a per-site `ease-` class, and the three
+     durations (120 / 180 / 260ms) are the only ones used. */
+  .app-organic *,
+  .app-organic *::before,
+  .app-organic *::after {
+    transition-timing-function: var(--a-ease-standard);
   }
 }
