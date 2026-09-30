@@ -3,13 +3,15 @@
  * everything overdue counted and one click away. The matrix and the other layouts stay under Tasks,
  * as the planning views. The ranking is `lib/today.ts`, derived from quadrant, due date and status.
  */
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Check, ChevronDown, Play } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { TopBar, topBarPrimary, topBarSecondary, BTN_MD } from '@/components/shell/TopBar';
 import { ViewLayoutContext } from '@/components/shell/ViewLayout';
 import { EmptyState, ILL } from '@/components/EmptyState';
 import { DUE_TONE_CLASS, dueTone, getDueInfo } from '@/lib/dueInfo';
+import { DailyLine } from '@/components/today/DailyLine';
+import { dayKey, finishedYesterday, shouldShowDailyLine, yesterdaySentence } from '@/lib/dailyLine';
 import { greeting, planToday } from '@/lib/today';
 import { getQuadrantConfig, type KaizenList, type Todo, type TodoStatus } from '@/types/todo';
 
@@ -21,8 +23,8 @@ export interface TodayPageProps {
   /** Goes to the Tasks view, where the matrix and the other layouts are. */
   onOpenTasks: () => void;
   onOpenSidebar?: () => void;
-  /** Sits above the plan: the daily line (P5.2). */
-  banner?: ReactNode;
+  /** The daily line (P5.2): whether it is switched on, the day it was last dismissed, and how to change either. */
+  dailyLine: { enabled: boolean; seenDay: string; onSeen: (day: string) => void; onTurnOff: () => void };
 }
 
 function DueText({ todo }: { todo: Todo }) {
@@ -31,7 +33,7 @@ function DueText({ todo }: { todo: Todo }) {
   return <span className={cn('text-[13px]', DUE_TONE_CLASS[dueTone(info)])}>{info.label}</span>;
 }
 
-export function TodayPage({ todos, lists, onStatusChange, onOpenTask, onOpenTasks, onOpenSidebar, banner }: TodayPageProps) {
+export function TodayPage({ todos, lists, onStatusChange, onOpenTask, onOpenTasks, onOpenSidebar, dailyLine }: TodayPageProps) {
   // The plan is time-aware (overdue, greeting), so it is recomputed each minute the page stays open.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -63,7 +65,14 @@ export function TodayPage({ todos, lists, onStatusChange, onOpenTask, onOpenTask
         />
         <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
           <div className="mx-auto w-full max-w-[640px] px-4 pt-6 pb-12">
-            {banner}
+            {shouldShowDailyLine(dailyLine.enabled, dailyLine.seenDay, now) && (
+              <DailyLine
+                yesterday={yesterdaySentence(finishedYesterday(todos, now))}
+                focus={next?.text ?? null}
+                onDismiss={() => dailyLine.onSeen(dayKey(now))}
+                onTurnOff={dailyLine.onTurnOff}
+              />
+            )}
             {!next ? (
               <EmptyState
                 image={ILL.happyMascot}

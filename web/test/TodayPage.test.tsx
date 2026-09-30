@@ -8,7 +8,10 @@ const task = (over: Partial<Todo>): Todo => ({
   id: `t${++n}`, text: `Task ${n}`, status: 'todo', createdAt: 0, listId: 'w', order: n, quadrant: 'do', ...over,
 });
 const lists = [{ id: 'w', name: 'Work', color: 'violet', createdAt: 1 }];
-const props = () => ({ lists, onStatusChange: vi.fn(), onOpenTask: vi.fn(), onOpenTasks: vi.fn() });
+const props = () => ({
+  lists, onStatusChange: vi.fn(), onOpenTask: vi.fn(), onOpenTasks: vi.fn(),
+  dailyLine: { enabled: false, seenDay: '', onSeen: vi.fn(), onTurnOff: vi.fn() },
+});
 
 describe('TodayPage', () => {
   it('shows the one next task large and the two after it', () => {
@@ -46,5 +49,26 @@ describe('TodayPage', () => {
   it('says so when nothing is open', () => {
     render(<TodayPage todos={[task({ status: 'done' })]} {...props()} />);
     expect(screen.getByText('Nothing left for today')).toBeInTheDocument();
+  });
+
+  it('shows the daily line once, dismisses it for the day, and can turn it off', () => {
+    const p = props();
+    p.dailyLine.enabled = true;
+    const yesterday = new Date(); yesterday.setDate(yesterday.getDate() - 1);
+    const t = task({ text: 'Ship it' });
+    const finished = task({ status: 'done', completedAt: yesterday.getTime() });
+    render(<TodayPage todos={[t, finished]} {...p} />);
+    const line = screen.getByRole('note', { name: 'Daily summary' });
+    expect(line).toHaveTextContent('Yesterday you finished 1 task.');
+    expect(line).toHaveTextContent("Today's one thing: Ship it.");
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss for today' }));
+    expect(p.dailyLine.onSeen).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Turn off' }));
+    expect(p.dailyLine.onTurnOff).toHaveBeenCalled();
+  });
+
+  it('shows no daily line when it is off or already seen today', () => {
+    render(<TodayPage todos={[task({})]} {...props()} />);
+    expect(screen.queryByRole('note', { name: 'Daily summary' })).not.toBeInTheDocument();
   });
 });

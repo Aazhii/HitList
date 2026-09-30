@@ -3,6 +3,7 @@ import { Bell, Keyboard } from 'lucide-react';
 import { DENSITIES, useDensity } from '@/hooks/useDensity';
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
@@ -18,7 +19,11 @@ import { ShortcutsDialog } from '@/components/shell/ShortcutsDialog';
  * store, then the entries. There is no sign-in in this app — data is tied to the browser — so the
  * prototype's "Sign out" is not offered; Reminders (browser permission, default lead time) opens from here.
  */
-export function UserMenu({ onOpenReminders }: { onOpenReminders?: () => void }) {
+export function UserMenu({ onOpenReminders, dailyLine }: {
+  onOpenReminders?: () => void;
+  /** The Today page's daily line: whether it is on, and a way to change that. */
+  dailyLine?: { enabled: boolean; onChange: (enabled: boolean) => void };
+}) {
   const [shortcuts, setShortcuts] = useState(false);
   const [density, setDensity] = useDensity();
 
@@ -67,6 +72,15 @@ export function UserMenu({ onOpenReminders }: { onOpenReminders?: () => void }) 
               <Keyboard className="size-[15px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
               Keyboard shortcuts
             </DropdownMenuItem>
+            {dailyLine && (
+              <DropdownMenuCheckboxItem
+                checked={dailyLine.enabled}
+                onCheckedChange={dailyLine.onChange}
+                className="px-2.5 py-2 text-[14px] text-a-muted"
+              >
+                Daily summary on Today
+              </DropdownMenuCheckboxItem>
+            )}
             <DropdownMenuSeparator />
             <DropdownMenuLabel className="px-2.5 py-1.5 text-[12px] font-medium text-a-faint">Density</DropdownMenuLabel>
             <DropdownMenuRadioGroup value={density} onValueChange={(v) => setDensity(v as typeof density)}>

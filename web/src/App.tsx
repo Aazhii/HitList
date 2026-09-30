@@ -471,6 +471,9 @@ function UserScopedApp() {
   useEffect(() => {
     if (initialScreen === null) setActiveView('today');
   }, [initialScreen, setActiveView]);
+  // P5.2: the once-a-day line on Today. On by default, one click to turn off, and back on from the Account menu.
+  const [dailyLineOn, setDailyLineOn] = useLocalStorage('hitlist-daily-line', true);
+  const [dailyLineSeen, setDailyLineSeen] = useLocalStorage('hitlist-daily-line-seen', '');
   /** The sidebar's mobile sheet — desktop always shows it inline. */
   const [sidebarOpen, setSidebarOpen] = useState(false);
   /** Databases' own list, reported up since its state lives in DatabasesPage. */
@@ -1587,7 +1590,7 @@ function UserScopedApp() {
               }}
             />
           }
-          account={<UserMenu onOpenReminders={openReminders} />}
+          account={<UserMenu onOpenReminders={openReminders} dailyLine={{ enabled: dailyLineOn, onChange: setDailyLineOn }} />}
           onOpenSidebar={() => setSidebarOpen(true)}
         />
         {activeView === 'today' ? (
@@ -1598,6 +1601,7 @@ function UserScopedApp() {
             onOpenTask={(t) => { setActiveView('tasks'); handleOpenDetail(t); }}
             onOpenTasks={() => setActiveView('tasks')}
             onOpenSidebar={() => setSidebarOpen(true)}
+            dailyLine={{ enabled: dailyLineOn, seenDay: dailyLineSeen, onSeen: setDailyLineSeen, onTurnOff: () => setDailyLineOn(false) }}
           />
         ) : activeView === 'library' ? (
           <LibraryPage

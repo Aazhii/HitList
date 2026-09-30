@@ -612,7 +612,7 @@ Shared primitives now follow the DS, so every dialog inherits them:
 1. **Verify before you change.** Every task quotes the current code. If what you find does not match the quote, **stop and report** — do not adapt silently. The file may have moved on.
 2. **Never invent a value.** If a task does not give you a number and this file does not either, ask. Guessing is what produced the current state.
 3. **One task, one commit.** Commit message: `design(T1.4): set every icon stroke to 1.75`.
-4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 453 tests.
+4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 456 tests.
 5. **Update `00-INDEX.md`** — set State and fill in "Verified by" with the actual command output or screenshot pair. A task with an empty "Verified by" is not done.
 6. **Do not delete the Automations or Reminders code.** It is being revived in Phase 4, not removed.
 
@@ -739,4 +739,9 @@ Everything below deliberately stops matching the prototype. Each entry says wher
 - Layout: greeting line; the next task in a 12px-radius card (quadrant badge, list, due text, title 24px display; Start / Mark done / Open); "After that" lists the next two; "N overdue" expands the overdue tasks inline; "N more open" goes to Tasks. Nothing open → the happy-mascot empty state.
 - Spends: one new view and nav row. All tokens, sizes and motion are existing ones. No prototype counterpart, so not shot-paired; covered by `today.test.ts` and `TodayPage.test.tsx`.
 - Stored shape: nothing new. `hitlist-active-view` may now hold `today`; older values still load.
+
+### P5.2 Daily line
+- One line above the plan on Today: "Yesterday you finished 3 tasks. Today's one thing: <next task>." It shows while the preference is on and it has not been dismissed today; × dismisses it for the day, "Turn off" switches it off for good, and Account → "Daily summary on Today" switches it back on. Preference `hitlist-daily-line` (default on) and last-dismissed day `hitlist-daily-line-seen` live in localStorage, per browser.
+- Not a modal or toast, no animation, no streak or celebration. An empty yesterday is left out rather than called out.
+- Spends: one tinted 8px-radius strip and one Account-menu checkbox item. Covered by `dailyLine.test.ts` and `TodayPage.test.tsx`; no prototype counterpart.
 
