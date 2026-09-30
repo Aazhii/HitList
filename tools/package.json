@@ -1,0 +1,12 @@
+{
+  "name": "hitlist-tools",
+  "private": true,
+  "type": "module",
+  "description": "Repo-level developer tooling. Deliberately separate from web/ so the production image never installs any of it — the Docker frontend stage runs `npm ci` against web/package.json, and a headless browser has no business in that layer.",
+  "scripts": {
+    "shoot": "node shoot.mjs"
+  },
+  "devDependencies": {
+    "puppeteer": "^25.12.0"
+  }
+}

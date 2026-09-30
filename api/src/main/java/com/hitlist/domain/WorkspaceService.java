@@ -359,7 +359,7 @@ public class WorkspaceService {
                 Map<String, Object> value = new LinkedHashMap<>();
                 value.put(idKey, EntityRepository.text(row.get("TaskId")));
                 value.put("fieldId", EntityRepository.text(row.get("DefId")));
-                value.put("value", decode(fields.get(EntityRepository.text(row.get("DefId"))), EntityRepository.text(row.get("ValueText"))));
+                value.put("value", decode(fields.get(EntityRepository.text(row.get("DefId"))), EntityRepository.text(row.get("ValueText")), EntityRepository.text(row.get("EncodedKind"))));
                 return value;
             })
             .filter(row -> row.get("value") != null)
@@ -368,6 +368,7 @@ public class WorkspaceService {
 
     private Map<String, Object> setValue(String owner, String subjectId, String fieldId, Map<String, Object> field, Object rawValue, String idKey) {
         String text = encode(field, rawValue);
+        String kind = EntityRepository.text(field.get("FieldKind"));
         Map<String, Object> existing = repository.list(StorageTables.FIELD_VALUES, owner).stream()
             .filter(row -> subjectId.equals(EntityRepository.text(row.get("TaskId"))) && fieldId.equals(EntityRepository.text(row.get("DefId"))))
             .findFirst()
@@ -380,17 +381,22 @@ public class WorkspaceService {
             row.put("TaskId", subjectId);
             row.put("DefId", fieldId);
             row.put("ValueText", text);
+            // The kind this value was written under — a later "change type"
+            // never touches this row, it just makes the value unreadable
+            // (cloaked, not deleted) until the field's kind matches again.
+            row.put("EncodedKind", kind);
             row.put("UpdatedAt", System.currentTimeMillis());
             repository.insert(StorageTables.FIELD_VALUES, owner, row);
         } else {
             existing.put("ValueText", text);
+            existing.put("EncodedKind", kind);
             existing.put("UpdatedAt", System.currentTimeMillis());
             repository.replace(StorageTables.FIELD_VALUES, owner, EntityRepository.text(existing.get("PropId")), existing);
         }
         Map<String, Object> response = new LinkedHashMap<>();
         response.put(idKey, subjectId);
         response.put("fieldId", fieldId);
-        response.put("value", text == null ? null : decode(field, text));
+        response.put("value", text == null ? null : decode(field, text, kind));
         return response;
     }
 
@@ -409,8 +415,10 @@ public class WorkspaceService {
     private Map<String, Object> fieldRow(Map<String, Object> body, Map<String, Object> existing) {
         Map<String, Object> row = existing == null ? new LinkedHashMap<>() : new LinkedHashMap<>(existing);
         String kind = body.containsKey("kind") ? Values.optional(body, "kind", 16, "") : EntityRepository.text(row.get("FieldKind"));
-        if (!List.of("select", "multi", "number", "date", "checkbox", "text").contains(kind)) throw ApiException.invalid("kind is invalid");
-        if (existing != null && !kind.equals(EntityRepository.text(existing.get("FieldKind")))) throw ApiException.invalid("kind cannot change after the field is created");
+        if (!List.of("select", "multi", "number", "date", "checkbox", "text", "longtext").contains(kind)) throw ApiException.invalid("kind is invalid");
+        // Changing kind never touches a single row_value — see decode()'s
+        // EncodedKind check. Switching back to the old kind un-cloaks
+        // everything exactly as it was, so this is safe to allow freely.
         row.put("Name", body.containsKey("name") ? Values.required(body, "name", 100) : EntityRepository.text(row.get("Name")));
         row.put("FieldKind", kind);
         row.put("OptionsJson", body.containsKey("options") ? json(normalizeOptions(body.get("options"))) : EntityRepository.text(row.getOrDefault("OptionsJson", "[]")));
@@ -580,6 +588,8 @@ public class WorkspaceService {
         List<Object> options = Values.jsonList(objectMapper, field.get("OptionsJson"));
         return switch (kind) {
             case "text" -> value instanceof String text && text.length() <= 2000 ? text : invalidValue();
+            // Same storage as text; the larger cap is the point of the kind.
+            case "longtext" -> value instanceof String body && body.length() <= 10_000 ? body : invalidValue();
             case "number" -> value instanceof Number number && Double.isFinite(number.doubleValue()) ? String.valueOf(number) : invalidValue();
             case "date" -> value instanceof String date && date.matches("\\d{4}-\\d{2}-\\d{2}") ? date : invalidValue();
             case "checkbox" -> value instanceof Boolean flag ? flag ? "true" : null : invalidValue();
@@ -590,9 +600,36 @@ public class WorkspaceService {
         };
     }
 
-    private Object decode(Map<String, Object> field, String text) {
+    /**
+     * Two kinds that store the same bytes and accept the same values, so a
+     * value written under one is still exactly right under the other.
+     *
+     * Only text and longtext qualify: they differ in how the cell is edited —
+     * one line versus a wrapping box — not in what is stored. Cloaking on that
+     * switch would blank a column for a presentation change, which is not what
+     * the cloak is for.
+     */
+    private boolean interchangeable(String written, String current) {
+        if (written.equals(current)) return true;
+        List<String> textual = List.of("text", "longtext");
+        return textual.contains(written) && textual.contains(current);
+    }
+
+    /**
+     * `encodedKind` is the kind this value was actually written under — a
+     * legacy row (written before this column existed) has none, and is
+     * always readable, since we can't know its origin and shouldn't
+     * retroactively hide old data. Once a value carries an EncodedKind, it
+     * only decodes while the field's current kind still matches: changing
+     * a field's type cloaks every value written under the old kind (as if
+     * empty) without ever touching storage, and switching back uncloaks
+     * them exactly as they were.
+     */
+    private Object decode(Map<String, Object> field, String text, String encodedKind) {
         if (text.isBlank()) return null;
-        return switch (EntityRepository.text(field.get("FieldKind"))) {
+        String kind = EntityRepository.text(field.get("FieldKind"));
+        if (encodedKind != null && !encodedKind.isBlank() && !interchangeable(encodedKind, kind)) return null;
+        return switch (kind) {
             case "number" -> {
                 try {
                     yield Double.parseDouble(text);
