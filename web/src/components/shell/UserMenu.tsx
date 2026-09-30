@@ -1,9 +1,14 @@
 import { useState } from 'react';
 import { Bell, Keyboard } from 'lucide-react';
+import { DENSITIES, useDensity } from '@/hooks/useDensity';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { ShortcutsDialog } from '@/components/shell/ShortcutsDialog';
@@ -15,6 +20,7 @@ import { ShortcutsDialog } from '@/components/shell/ShortcutsDialog';
  */
 export function UserMenu({ onOpenReminders }: { onOpenReminders?: () => void }) {
   const [shortcuts, setShortcuts] = useState(false);
+  const [density, setDensity] = useDensity();
 
   return (
     <>
@@ -61,6 +67,13 @@ export function UserMenu({ onOpenReminders }: { onOpenReminders?: () => void }) 
               <Keyboard className="size-[15px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
               Keyboard shortcuts
             </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="px-2.5 py-1.5 text-[12px] font-medium text-a-faint">Density</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={density} onValueChange={(v) => setDensity(v as typeof density)}>
+              {DENSITIES.map((d) => (
+                <DropdownMenuRadioItem key={d.id} value={d.id} className="px-2.5 py-2 text-[14px] text-a-muted">{d.label}</DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
           </div>
         </DropdownMenuContent>
       </DropdownMenu>

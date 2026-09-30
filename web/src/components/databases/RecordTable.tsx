@@ -164,7 +164,7 @@ export interface RecordTableProps {
   onChangeFieldKind: (field: FieldDef, kind: FieldDef['kind']) => void;
 }
 
-const CELL = 'px-2 py-1.5 align-top';
+const CELL = 'px-2 py-[calc(6px+var(--a-density))] align-top';
 
 /** The Title column is not a field, but its menu, sort, group, calc, freeze and wrap speak in ids like one. */
 export const TITLE_ID = 'title';

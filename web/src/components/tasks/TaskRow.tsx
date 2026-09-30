@@ -94,7 +94,7 @@ export function TaskRow({
         animationFillMode: 'both',
       }}
       className={cn(
-        'group relative flex min-h-11 items-center gap-2.5 border-b border-a-line-soft px-3 animate-slide-up last:border-b-0',
+        'group relative flex min-h-[calc(44px+2*var(--a-density))] items-center gap-2.5 border-b border-a-line-soft px-3 animate-slide-up last:border-b-0',
         'transition-[background-color,box-shadow,opacity,scale] duration-[260ms]',
         isDragging ? 'z-10 bg-a-bg shadow-[var(--a-shadow-md)]' : 'hover:bg-a-bg',
         deleting && 'scale-[0.98] opacity-0',

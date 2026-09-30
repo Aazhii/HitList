@@ -98,7 +98,7 @@ const STATUS_OPTIONS: Array<{ value: TodoStatus; label: string }> = [
 
 // DS Table (Table.jsx): 13px cells, 8px 12px padding (here 4px cell + 8px control), a
 // hairline under each row. Controls look like plain text until hovered or focused.
-const CELL = 'border-b border-a-line-soft px-1 py-0.5 align-middle group-hover:bg-a-row-alt';
+const CELL = 'border-b border-a-line-soft px-1 py-[calc(2px+var(--a-density))] align-middle group-hover:bg-a-row-alt';
 const CONTROL = cn(
   'w-full rounded-[4px] border-0 bg-transparent px-2 text-left text-[13px] text-a-ink',
   'transition-colors duration-[120ms] hover:bg-[color-mix(in_srgb,var(--a-ink)_6%,transparent)]',

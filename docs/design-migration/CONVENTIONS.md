@@ -721,3 +721,6 @@ Everything below deliberately stops matching the prototype. Each entry says wher
 
 ### P5.6 Note ↔ task links
 - The chip already showed a task's quadrant, list, done state and (since the notes pass) due date, and a task already links back to its note. What was missing is what a note says about them: its meta line now reads "3 of 7 linked tasks done" (green when all are), counted live from the tasks; and a line whose task is done is struck through and faint like a done to-do, so the note stops looking unfinished. A task deleted elsewhere counts for nothing. Spends: `notes-editor` meta line, linked lines.
+
+### P5.5 Density
+- Account menu → Density: Compact, Standard (the prototype, and the default), Roomy. One variable, `--a-density` on `<html>` (−2px / 0 / +4px), is added to the padding of the row-shaped content surfaces — task list rows (min height 40 / 44 / 52), matrix rows, board cards, the task table's and the database table's cells. Type size does not change, and the shell (sidebar, top bar, menus) stays at the prototype's size. The density mock-ups in the design bundle also changed type size; that is not done here because sizes are not all token-driven yet. Spends: every content row at Compact and Roomy; Standard is unchanged.

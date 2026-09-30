@@ -234,6 +234,11 @@
     --radius-4xl: calc(var(--radius) * 2.6);
 }
 
+/* Density (P5.5): added to a row's own padding. Standard is the prototype; see hooks/useDensity. */
+html { --a-density: 0px; }
+html[data-density='compact'] { --a-density: -2px; }
+html[data-density='roomy'] { --a-density: 4px; }
+
 :root {
     --background: oklch(1 0 0);
     --foreground: oklch(0.145 0 0);

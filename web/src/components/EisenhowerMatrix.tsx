@@ -170,7 +170,7 @@ function MatrixRow({ todo, isNext, index, onStatusChange, onDelete, onOpen, onOp
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(todo); }
       }}
       style={{ animationDelay: `${index * 50}ms`, animationFillMode: 'both' }}
-      className="group flex cursor-pointer items-center gap-2.5 border-b border-a-line-soft px-4 py-[9px] transition-colors duration-[120ms] last:border-b-0 hover:bg-a-bg animate-slide-up"
+      className="group flex cursor-pointer items-center gap-2.5 border-b border-a-line-soft px-4 py-[calc(9px+var(--a-density))] transition-colors duration-[120ms] last:border-b-0 hover:bg-a-bg animate-slide-up"
       aria-label={`Open task: ${todo.text}`}
     >
       <StatusIcon

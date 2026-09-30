@@ -92,7 +92,7 @@ export function MatrixTaskCard({
           if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen(todo); }
         }}
         className={cn(
-          'flex cursor-pointer flex-col gap-2 rounded-[8px] border border-a-line bg-a-surface px-3 py-2.5',
+          'flex cursor-pointer flex-col gap-2 rounded-[8px] border border-a-line bg-a-surface px-3 py-[calc(10px+var(--a-density))]',
           'transition-shadow duration-[120ms] hover:shadow-[var(--a-shadow-md)]',
           isDone && 'opacity-60',
         )}
