@@ -146,6 +146,8 @@ export interface RecordTableProps {
   onCalcField: (fieldId: string, key: string) => void;
   frozenFieldId: string | null;
   onFreezeField: (fieldId: string) => void;
+  /** The page icon's Open button: show this record in the peek panel. */
+  onOpenRecord: (recordId: string) => void;
   /** Show the little page icon in the Title cell. */
   showPageIcon: boolean;
   onTogglePageIcon: () => void;
@@ -187,7 +189,7 @@ export function RecordTable({
   rows, fields, titleLabel, onRenameTitleLabel, values, loading,
   onAdd, onRename, onDelete, onSetValue, onRenameField, onChangeFieldOptions, onFilterField, onDeleteField, onCreateField, onReorderFields, linking,
   sort, onSortField, onClearSort, groupFieldId, onGroupField, calc, onCalcField,
-  frozenFieldId, onFreezeField, showPageIcon, onTogglePageIcon, wrapFieldIds, onWrapField, colWidths, onResizeField, onHideField, onInsertField, onDuplicateField, onChangeFieldKind,
+  frozenFieldId, onFreezeField, onOpenRecord, showPageIcon, onTogglePageIcon, wrapFieldIds, onWrapField, colWidths, onResizeField, onHideField, onInsertField, onDuplicateField, onChangeFieldKind,
 }: RecordTableProps) {
   const columnCount = 2 + fields.length;
   /** How many records hold this option, for the remove guard in Edit options. */
@@ -242,6 +244,7 @@ export function RecordTable({
         <div className="flex items-start gap-1">
           <TitleCell
             showIcon={showPageIcon}
+            onOpen={() => onOpenRecord(row.id)}
             wrap={wrapFieldIds.includes(TITLE_ID)}
             title={row.title}
             onCommit={(title) => { if (title && title !== row.title) onRename(row.id, title); }}
@@ -674,7 +677,7 @@ function TitleHeaderCell(p: {
   );
 }
 
-function TitleCell({ title, onCommit, showIcon, wrap }: { title: string; onCommit: (title: string) => void; showIcon: boolean; wrap: boolean }) {
+function TitleCell({ title, onCommit, showIcon, wrap, onOpen }: { title: string; onCommit: (title: string) => void; showIcon: boolean; wrap: boolean; onOpen: () => void }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(title);
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -714,17 +717,30 @@ function TitleCell({ title, onCommit, showIcon, wrap }: { title: string; onCommi
   }
 
   return (
-    // The page glyph then the title on one line (showcase 634); the full title is its tooltip.
-    <button
-      type="button"
-      onClick={() => setEditing(true)}
-      aria-label={`Edit title of ${title}`}
-      title={title}
-      className={cn('flex min-h-6 min-w-0 flex-1 gap-1.5 rounded-[4px] text-left text-[14px] text-a-ink', wrap ? 'items-start py-[2px]' : 'h-6 items-center')}
-    >
-      {showIcon && <File className="size-4 flex-shrink-0 text-a-faint" strokeWidth={1.75} aria-hidden />}
-      <span className={wrap ? 'break-words' : 'truncate'}>{title}</span>
-    </button>
+    // The page glyph (a button: it opens the record's peek) then the title on one line
+    // (showcase 634); the full title is its tooltip.
+    <div className={cn('flex min-h-6 min-w-0 flex-1 gap-1.5', wrap ? 'items-start' : 'items-center')}>
+      {showIcon && (
+        <button
+          type="button"
+          onClick={onOpen}
+          aria-label={`Open ${title}`}
+          title="Open"
+          className={'-m-0.5 flex size-5 flex-shrink-0 items-center justify-center rounded-[4px] text-a-faint transition-colors duration-[120ms] hover:bg-a-line-soft hover:text-a-ink'}
+        >
+          <File className="size-4" strokeWidth={1.75} aria-hidden />
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={() => setEditing(true)}
+        aria-label={`Edit title of ${title}`}
+        title={title}
+        className={cn('flex min-h-6 min-w-0 flex-1 rounded-[4px] text-left text-[14px] text-a-ink', wrap ? 'items-start py-[2px]' : 'h-6 items-center')}
+      >
+        <span className={wrap ? 'break-words' : 'truncate'}>{title}</span>
+      </button>
+    </div>
   );
 }
 
@@ -810,6 +826,8 @@ interface FieldCellProps {
   recordName: string;
   onChange: (value: FieldValue | null) => void;
   linking?: DatabaseTaskLinking;
+  /** In the record peek a date reads in the body font; the table sets it in mono. */
+  peek?: boolean;
 }
 
 /**
@@ -859,7 +877,7 @@ function TextAreaCell({ value, ariaLabel, onCommit }: {
   );
 }
 
-function FieldCell({ def, value, recordId, recordName, onChange, linking }: FieldCellProps) {
+export function FieldCell({ def, value, recordId, recordName, onChange, linking, peek }: FieldCellProps) {
   const label = `${def.name} of ${recordName}`;
   // Only select/multi (a popover) need this; harmless elsewhere since unused.
   const [popoverOpen, setPopoverOpen] = useState(false);
@@ -919,7 +937,7 @@ function FieldCell({ def, value, recordId, recordName, onChange, linking }: Fiel
       );
 
     case 'date':
-      return <DateCell value={typeof value === 'string' ? value : ''} ariaLabel={label} onChange={onChange} />;
+      return <DateCell value={typeof value === 'string' ? value : ''} ariaLabel={label} onChange={onChange} plain={peek} />;
 
     case 'number':
       return (
@@ -927,7 +945,7 @@ function FieldCell({ def, value, recordId, recordName, onChange, linking }: Fiel
           type="number"
           value={value === undefined ? '' : String(value)}
           ariaLabel={label}
-          className="font-mono text-[13px] tabular-nums"
+          className={peek ? undefined : 'font-mono text-[13px] tabular-nums'}
           onCommit={(draft) => {
             const raw = draft.trim();
             if (raw === '') { if (value !== undefined) onChange(null); return ''; }
@@ -950,7 +968,7 @@ function FieldCell({ def, value, recordId, recordName, onChange, linking }: Fiel
               {chosen.map((o) => (
                 // Showcase 1500s: a 22px tag, 3px radius, 13px; a single select carries a dot.
                 <span key={o.id} className={cn('inline-flex h-[22px] items-center gap-1.5 rounded-[3px] px-2 text-[13px] leading-none whitespace-nowrap', OPTION_CHIP_CLASS[o.color])}>
-                  {def.kind === 'select' && <span className="size-2 rounded-full bg-current opacity-70" aria-hidden />}
+                  {def.kind === 'select' && !peek && <span className="size-2 rounded-full bg-current opacity-70" aria-hidden />}
                   {o.label}
                 </span>
               ))}
@@ -1016,12 +1034,12 @@ function formatCellDate(key: string): string {
 }
 
 /** A date shows as text; clicking it opens a date input in a popover. */
-function DateCell({ value, ariaLabel, onChange }: { value: string; ariaLabel: string; onChange: (value: FieldValue | null) => void }) {
+function DateCell({ value, ariaLabel, onChange, plain }: { value: string; ariaLabel: string; onChange: (value: FieldValue | null) => void; plain?: boolean }) {
   const [open, setOpen] = useState(false);
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button type="button" aria-label={ariaLabel} className={cn(CONTROL_ROW, 'flex items-center font-mono text-[13px] tabular-nums')}>
+        <button type="button" aria-label={ariaLabel} className={cn(CONTROL_ROW, 'flex items-center', !plain && 'font-mono text-[13px] tabular-nums')}>
           {value ? formatCellDate(value) : ''}
         </button>
       </PopoverTrigger>

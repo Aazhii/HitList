@@ -49,6 +49,7 @@ function setup(over: Partial<RecordTableProps> = {}) {
     onCalcField: vi.fn(),
     frozenFieldId: null,
     onFreezeField: vi.fn(),
+    onOpenRecord: vi.fn(),
     showPageIcon: true,
     onTogglePageIcon: vi.fn(),
     wrapFieldIds: [],
@@ -265,6 +266,12 @@ describe('RecordTable', () => {
 
   it('drops the page icon from the Title cell when it is turned off', () => {
     setup({ showPageIcon: false });
-    expect(screen.getByRole('button', { name: 'Edit title of Dune' }).querySelector('svg')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Open Dune' })).not.toBeInTheDocument();
+  });
+
+  it('opens the record peek from the page icon', () => {
+    const props = setup();
+    fireEvent.click(screen.getByRole('button', { name: 'Open Dune' }));
+    expect(props.onOpenRecord).toHaveBeenCalledWith('r1');
   });
 });

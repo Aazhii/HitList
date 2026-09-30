@@ -34,6 +34,7 @@ import { anchorRectOf, type AnchorRect } from '@/components/fields/FieldsManager
 import { NewPropertyMenu } from '@/components/databases/NewPropertyMenu';
 import { CHANGE_TYPE_KINDS, KIND_ICON, RecordTable } from '@/components/databases/RecordTable';
 import { RecordBoard } from '@/components/databases/RecordBoard';
+import { RecordPeek } from '@/components/databases/RecordPeek';
 import { EmptyState, ILL, type IllustrationName } from '@/components/EmptyState';
 import { useDatabases } from '@/hooks/useDatabases';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
@@ -121,6 +122,8 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
   const [search, setSearch] = useState('');
   /** The toolbar's Filter (showcase 727–738): one column, "contains", some text. Ad hoc, like search. */
   const [filterOpen, setFilterOpen] = useState(false);
+  /** The record open in the peek panel (the Title cell's page icon). */
+  const [peekId, setPeekId] = useState<string | null>(null);
   const [textFilter, setTextFilter] = useState<{ col: string; text: string }>({ col: 'title', text: '' });
   // The column-menu table controls: hidden/sorted/grouped/calculated/frozen/
   // wrapped columns. Ad-hoc per open database for now, same as fieldFilters —
@@ -753,6 +756,7 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
                 calc={calc}
                 onCalcField={handleCalcField}
                 frozenFieldId={frozenFieldId}
+                onOpenRecord={setPeekId}
                 showPageIcon={!hidePageIcon}
                 onTogglePageIcon={togglePageIcon}
                 onFreezeField={handleFreezeField}
@@ -776,6 +780,20 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
         </div>
       </div>
       </ViewLayoutContext.Provider>
+
+      {open && peekId && rows.some((r) => r.id === peekId) && (
+        <RecordPeek
+          record={rows.find((r) => r.id === peekId)!}
+          databaseName={open.name}
+          fields={tableFields}
+          values={values[peekId]}
+          linking={linking}
+          onClose={() => setPeekId(null)}
+          onRename={(title) => { void updateRow(peekId, { title }); }}
+          onSetValue={(fieldId, value) => { void setValue(peekId, fieldId, value); }}
+          onDelete={() => { void deleteRow(peekId); setPeekId(null); }}
+        />
+      )}
 
       <NewPropertyMenu
         open={fieldsOpen}

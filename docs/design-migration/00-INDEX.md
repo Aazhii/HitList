@@ -146,7 +146,7 @@ that one is fine where it is.
 | Visual | `node web/scripts/shoot.mjs <screen-id>` → a `.ref.png` / `.app.png` pair | every Phase 3 task |
 | Real build | `sh desktop/scripts/prepare-jar.sh` → copy to `api/target/hitlist.jar` → restart Electron → re-check its own port | every **phase** exit, not every task |
 
-Test baseline: **371 tests across 42 files.** This must not regress.
+Test baseline: **381 tests across 43 files.** This must not regress.
 
 ---
 
@@ -156,10 +156,10 @@ Test baseline: **371 tests across 42 files.** This must not regress.
 Phase 0  █████   5 / 5      done
 Phase 1  █████  11 / 11      foundations — the broken UI
 Phase 2  █████   5 / 5       shell exactness
-Phase 3  ███░░  31 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
+Phase 3  ███░░  32 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
 Phase 4  ░░░░░   1 / 12      missing features
 Phase 5  ░░░░░   0 / 7       proposals, unreviewed
-                53 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
+                54 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
 ```
 
 ### A note on "partially built"
@@ -258,7 +258,7 @@ on a description. Execution order is the section order below.
 | T3.24 | `db-sort` | **done** | shots/db-sort.{ref,app}.png — every column (Title too) with ascending / descending buttons |
 | T3.25 | `db-filter` | **done** | shots/db-filter.{ref,app}.png — "Filter records": column · contains · value, count, Clear filter; pill in the toolbar |
 | T3.26 | `db-picker` | **done** | shots/db-picker.{ref,app}.png — listbox of tags with a tick and "Clear value" |
-| T3.27 | `db-peek` — **net-new** | todo | |
+| T3.27 | `db-peek` — **net-new** | **done** | shots/db-peek.{ref,app}.png — right panel from the Title cell's page icon: title, one editable row per property, close, delete (two-step) | |
 | T3.28 | `db-freeze` | **done** | shots/db-freeze.{ref,app}.png — Title has its own menu (page-icon switch, no type/hide/delete); Freeze pins Title + every column up to it, scroll-tested (Title held at x=296 after a 250px scroll) | |
 | T3.29 | `db-group` | **done** | shots/db-group.{ref,app}.png — option-coloured group pill + tertiary count, borderless calc footer; Title supports sort/group/calc/freeze/wrap | |
 | T3.30 | `db-new` | **done** | shots/db-new.{ref,app}.png — "+" in the Databases header opens the 280px panel |

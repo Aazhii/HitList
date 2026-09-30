@@ -64,6 +64,7 @@ const APP_ROUTE = {
   'db-new':       { nav: 'Databases', then: ['~Reading list', '@New database'] },
   'db-offline':   { nav: 'Databases' },
   'db-group':     { nav: 'Databases', then: ['~Reading list', '@Status column options', '~Group', '@Title column options', '~Calculate', '~Count all', '@Rating column options', '~Calculate', '~Average'] },
+  'db-peek':      { nav: 'Databases', then: ['~Reading list', '@Open Dune'] },
   'db-freeze':    { nav: 'Databases', then: ['~Reading list', '@Title column options', '~Freeze'] },
   'db-colmenu':   { nav: 'Databases', then: ['~Reading list', '@Rating column options'] },
   'db-type':      { nav: 'Databases', then: ['~Reading list', '@Rating column options', '~Change type'] },
