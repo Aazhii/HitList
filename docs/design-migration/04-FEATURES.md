@@ -146,6 +146,46 @@ is a desktop app whose backend only runs while the app is open.
 
 **Deliverable** a written contract and a recommendation, appended here. **No code.**
 
+### T4.4a — Findings (written 2026-09-30; no code changed)
+
+**1. The design itself draws Automations as unavailable.** `auto-list` (showcase 876–899) opens with an amber
+`role="status"` banner — *"Automations are unavailable. Rules and reminders can't run in the PostgreSQL-only
+migration, so creating, editing and triggering rules is disabled."* — the rule cards are dimmed (opacity .85) with a
+disabled **Run now** and a disabled read-only **Switch**, and Recent runs is the empty state *"No runs yet"*.
+`auto-form` (989–1013) is the same: a "New automation rule" dialog whose first row is an amber notice that rules
+can't run right now. So "match the design" and "build a rule engine" are different jobs. The prototype only asks for
+the first.
+
+**2. The contract the frontend expects** (`types/automation.ts`, `lib/api.ts` 431–510, `hooks/useAutomations.ts`):
+`AutomationRule` = id, name, description, optional taskId, triggerType (`due-date` | legacy `overdue` | `recurring`
+| `status-change` | `daily-digest`), status (`active` | `paused` | `draft`), urgency, `offsetMinutes[]` (signed minutes
+from the due instant, up to 5 steps), optional recurrence {frequency, time, dayOfWeek, dayOfMonth}, three notify
+channels (in-app, browser, email), timestamps, `lastTriggeredAt`, `nextTriggerAt`. `AutomationRun` = id, ruleId,
+ruleName (copied), triggeredAt, status (`SUCCESS` | `FAILED` | `SKIPPED`), source (`scheduler` | `manual`), detail,
+channels. Endpoints implied: list / create / update / delete rules, recent runs, runs for a rule, trigger.
+
+**3. What a backend would take.** Persistence is small: `StorageTables.RULES` and `RUNS` already exist as constants,
+so it is two generic-store tables and a controller like `PageMarksController` (about a day, additive, contract-tested).
+*Firing* is the real work, and there is a wall in it: the backend only runs while the desktop app is open, so a
+rule cannot fire at 09:00 if the app is closed. Options, cheapest first:
+   a. **A sweep while the app is open** — a `@Scheduled` job (every 30–60 s) that evaluates rules against tasks and
+      writes in-app notifications and run rows; browser notifications go through the client (it already has timers).
+      Honest limit: nothing fires while the app is closed; missed firings can be caught up on start ("SKIPPED").
+   b. **Client-side evaluation** — the browser evaluates rules from `reminderSteps` and the reminder timers now
+      mounted for T4.3; the server only stores rules. Simplest, same limit, no Java scheduler.
+   c. **Email** (`notifyEmail`) needs an SMTP configuration the app does not have, so it stays off in either case.
+   Recurring / daily-digest / status-change triggers each need their own evaluator; `due-date` with offsets is the
+   one that overlaps the reminders that now exist.
+
+**4. Recommendation.** Do **T4.4d/e as a *design* task now** — mount `AutomationsPage`, add `'automations'` to the
+sidebar, match `auto-list` / `auto-form` *including* the unavailable banner, disabled Run now / Switch and "No runs
+yet" — because that is exactly what the prototype shows and it costs no backend. Treat a working engine (option a or
+b) as a separate, later decision: it is a product change, not a fidelity one. Nothing here deletes the existing
+automations code, which stays the spec for that later build.
+
+**Decision needed before T4.4b–e:** (A) mirror the prototype — visible but unavailable; (B) build the engine, option a
+or b, so rules really fire while the app is open.
+
 ### T4.4b — Backend: persistence + CRUD
 Rules and runs tables via the existing generic row store, plus an `AutomationController`
 matching the stub's signatures. Stop honouring `TaskService`'s reminder zeroing.

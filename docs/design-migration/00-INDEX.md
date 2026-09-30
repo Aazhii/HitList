@@ -159,7 +159,7 @@ Phase 2  █████   5 / 5       shell exactness
 Phase 3  ███░░  42 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
 Phase 4  ░░░░░   1 / 12      missing features
 Phase 5  ░░░░░   0 / 7       proposals, unreviewed
-                69 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
+                70 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
 ```
 
 ### A note on "partially built"
@@ -297,7 +297,7 @@ on a description. Execution order is the section order below.
 | T4.1 | Library, Favorites and Recents — **net-new**, frontend + backend | **done** | shots/library.{ref,app}.png; `PageMarksService` + `/api/favorites`, `/api/recents` (ApiContractTest); sidebar Favorites / Recents with the row menu; `LibraryPage`; a star survives a reload (server-held, checked live) |
 | T4.2 | ⌘K command palette — **net-new** | **done** | `CommandPalette.tsx`, `lib/paletteSearch.ts`; ⌘K / Ctrl-K and the sidebar Search row open it; `test/CommandPalette.test.tsx` (6) |
 | T4.3 | Notifications, made real — two hardcoded `false`s, one per side of the wire | **done** | server returns `notifications: true` and keeps a task's reminder (create/update/read; ApiContractTest covers keep / off / out-of-range); the client reads the server's answer (automations stay off until T4.4); task details gain a Reminder select; Account → Reminders opens the permission / default-lead-time panel; `useNotifications` is mounted so timers run |
-| T4.4a | Automations — feasibility write-up, **no code** | todo | |
+| T4.4a | Automations — feasibility write-up, **no code** | **done** | findings appended to 04-FEATURES.md: the prototype draws Automations as unavailable; engine options a/b; decision needed |
 | T4.4b | Automations — backend persistence + CRUD | blocked on T4.4a | |
 | T4.4c | Automations — backend execution | blocked on T4.4a | |
 | T4.4d | Automations — frontend un-stub and mount | blocked on T4.4b | |
