@@ -720,6 +720,20 @@ export const calendarApi = {
   },
 };
 
+// ── Favorites and recents ────────────────────────────────────────────────────
+
+export type PageKind = 'list' | 'note' | 'database';
+export interface ApiPageMark { kind: PageKind; id: string; createdAt?: number; visitedAt?: number }
+
+export const pageMarksApi = {
+  favorites: () => get<ApiPageMark[]>('/favorites'),
+  addFavorite: (kind: PageKind, id: string) => put<ApiPageMark>(`/favorites/${kind}/${id}`, {}),
+  removeFavorite: (kind: PageKind, id: string) => del<void>(`/favorites/${kind}/${id}`),
+  recents: () => get<ApiPageMark[]>('/recents'),
+  visit: (kind: PageKind, id: string) => post<ApiPageMark>(`/recents/${kind}/${id}`, {}),
+  removeRecent: (kind: PageKind, id: string) => del<void>(`/recents/${kind}/${id}`),
+};
+
 // ── Trial features ───────────────────────────────────────────────────────────
 
 /** App-wide switches returned by the backend. */

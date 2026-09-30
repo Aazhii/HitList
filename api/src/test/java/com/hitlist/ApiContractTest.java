@@ -1,7 +1,9 @@
 package com.hitlist;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -13,12 +15,14 @@ import com.hitlist.config.HitListProperties;
 import com.hitlist.domain.EntityRepository;
 import com.hitlist.domain.ListService;
 import com.hitlist.domain.NoteService;
+import com.hitlist.domain.PageMarksService;
 import com.hitlist.domain.TaskService;
 import com.hitlist.domain.WorkspaceService;
 import com.hitlist.storage.RowStore;
 import com.hitlist.web.ApiExceptionHandler;
 import com.hitlist.web.ListController;
 import com.hitlist.web.NoteController;
+import com.hitlist.web.PageMarksController;
 import com.hitlist.web.PlatformController;
 import com.hitlist.web.SimpleRequestFilter;
 import com.hitlist.web.StatsController;
@@ -124,6 +128,42 @@ class ApiContractTest {
     }
 
     @Test
+    void favoritesAndRecentsAreKeptPerOwnerAndTrimmed() throws Exception {
+        MockCookie browser = browser();
+        MockCookie other = browser();
+
+        mvc.perform(put("/api/favorites/note/n1").cookie(browser))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.kind").value("note"))
+            .andExpect(jsonPath("$.id").value("n1"));
+        // Starring twice is still one favourite.
+        mvc.perform(put("/api/favorites/note/n1").cookie(browser)).andExpect(status().isOk());
+        mvc.perform(put("/api/favorites/database/d1").cookie(browser)).andExpect(status().isOk());
+        mvc.perform(get("/api/favorites").cookie(browser))
+            .andExpect(jsonPath("$.length()").value(2))
+            .andExpect(jsonPath("$[0].id").value("n1"));
+        mvc.perform(get("/api/favorites").cookie(other)).andExpect(jsonPath("$.length()").value(0));
+
+        mvc.perform(put("/api/favorites/folder/x").cookie(browser)).andExpect(status().isBadRequest());
+
+        mvc.perform(delete("/api/favorites/note/n1").cookie(browser)).andExpect(status().isNoContent());
+        mvc.perform(get("/api/favorites").cookie(browser))
+            .andExpect(jsonPath("$.length()").value(1))
+            .andExpect(jsonPath("$[0].id").value("d1"));
+
+        for (int i = 0; i < 25; i++) {
+            mvc.perform(post("/api/recents/note/page" + i).cookie(browser)).andExpect(status().isOk());
+        }
+        // Opening one again moves it to the top rather than adding a second row.
+        mvc.perform(post("/api/recents/note/page24").cookie(browser)).andExpect(status().isOk());
+        mvc.perform(get("/api/recents").cookie(browser))
+            .andExpect(jsonPath("$.length()").value(20))
+            .andExpect(jsonPath("$[0].id").value("page24"));
+        mvc.perform(delete("/api/recents/note/page24").cookie(browser)).andExpect(status().isNoContent());
+        mvc.perform(get("/api/recents").cookie(browser)).andExpect(jsonPath("$.length()").value(19));
+    }
+
+    @Test
     void notesListsAndWorkspaceRoutesRetainTheirApiShapes() throws Exception {
         MockCookie browser = browser();
         mvc.perform(post("/api/lists")
@@ -196,8 +236,11 @@ class ApiContractTest {
                 .header("X-Owner-Id", firstBrowser.getValue()))
             .andExpect(status().isNotFound());
         String firstValue = firstBrowser.getValue();
-        String forgedValue = firstValue.substring(0, firstValue.length() - 1)
-            + (firstValue.endsWith("A") ? "B" : "A");
+        // Change a character in the middle: the last base64 character can carry unused bits, so
+        // changing only that one is sometimes not a change at all.
+        int middle = firstValue.length() / 2;
+        String forgedValue = firstValue.substring(0, middle)
+            + (firstValue.charAt(middle) == 'A' ? 'B' : 'A') + firstValue.substring(middle + 1);
         mvc.perform(get("/api/tasks/private-task").cookie(new MockCookie(OwnerResolver.COOKIE_NAME, forgedValue)))
             .andExpect(status().isNotFound());
         mvc.perform(get("/api/tasks/private-task").cookie(firstBrowser))
@@ -219,7 +262,8 @@ class ApiContractTest {
                 new StatsController(new TaskService(repository), owners),
                 new ListController(new ListService(repository), owners),
                 new NoteController(new NoteService(repository), owners),
-                new WorkspaceController(new WorkspaceService(repository, objectMapper), owners)
+                new WorkspaceController(new WorkspaceService(repository, objectMapper), owners),
+                new PageMarksController(new PageMarksService(repository), owners)
             )
             .setControllerAdvice(new ApiExceptionHandler())
             .setMessageConverters(converter)

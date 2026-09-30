@@ -79,9 +79,12 @@ export interface DatabasesPageProps {
   onOpenSidebar?: () => void;
   /** The nav row's count badge — how many databases exist. */
   onCountChange?: (count: number) => void;
+  /** Make a new database as soon as this opens (the library's New page → Database). */
+  createOnOpen?: boolean;
+  onCreateHandled?: () => void;
 }
 
-export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, linking, onSidebarContentChange, onOpenSidebar, onCountChange }: DatabasesPageProps = {}) {
+export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, linking, onSidebarContentChange, onOpenSidebar, onCountChange, createOnOpen, onCreateHandled }: DatabasesPageProps = {}) {
   const notify = useCallback((message: string) => toast.error(message, { duration: 3000 }), []);
   const [openId, setOpenId] = useState<string | null>(null);
   const {
@@ -234,6 +237,13 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
   }, [openDatabaseId, onOpenHandled]);
 
   useEffect(() => { onOpenChange?.(openId); }, [openId, onOpenChange]);
+
+  // The library's New page → Database: an "Untitled" one, opened.
+  useEffect(() => {
+    if (!createOnOpen || loading) return;
+    onCreateHandled?.();
+    void createDatabase({ name: 'Untitled', icon: '' }).then((created) => { if (created) setOpenId(created.id); });
+  }, [createOnOpen, loading, createDatabase, onCreateHandled]);
 
   // This database's fields and values. Both are the server's: a record's
   // columns are field definitions, and there is no offline copy of those.

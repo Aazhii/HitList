@@ -40,6 +40,10 @@ import { UserMenu } from '@/components/shell/UserMenu';
 import { NotificationBell } from '@/components/NotificationBell';
 import { NotificationToast } from '@/components/NotificationToast';
 import { CommandPalette } from '@/components/CommandPalette';
+import { PageSections } from '@/components/shell/PageSections';
+import { LibraryPage } from '@/pages/LibraryPage';
+import { usePageMarks } from '@/hooks/usePageMarks';
+import { pageKey, resolvePages, type PageInfo, type PageRef } from '@/lib/pages';
 import { RemindersSettingsPanel } from '@/components/RemindersSettingsPanel';
 import { useNotifications } from '@/hooks/useNotifications';
 import { getDefaultReminderMinutes, setDefaultReminderMinutes, type ReminderMinutes } from '@/lib/notifications';
@@ -655,7 +659,7 @@ function UserScopedApp() {
   );
 
   useEffect(() => {
-    if (activeView === 'tasks' || activeView === 'notes' || activeView === 'databases' || activeView === 'calendar') {
+    if (activeView === 'tasks' || activeView === 'notes' || activeView === 'databases' || activeView === 'calendar' || activeView === 'library') {
       return;
     }
     setActiveView('tasks');
@@ -1262,12 +1266,59 @@ function UserScopedApp() {
     ];
   }, [lists]);
 
+  // ── Pages: favorites, recents, the library ───────────────────────────────────
+  const marks = usePageMarks(server.serverOnline);
+  const [pageDirectory, setPageDirectory] = useState<PageInfo[]>([]);
+  const [createNoteOnOpen, setCreateNoteOnOpen] = useState(false);
+  const [createDatabaseOnOpen, setCreateDatabaseOnOpen] = useState(false);
+
+  /** Every page there is, read fresh when the view or the page on screen changes. */
+  useEffect(() => {
+    let live = true;
+    (async () => {
+      let notes: Array<{ id: string; title: string; emoji?: string; updatedAt?: number }> = [];
+      try { notes = JSON.parse(localStorage.getItem(notesStorageKey(getActiveUserId())) ?? '[]'); } catch { /* unreadable: no notes */ }
+      const databases = await databaseApi.list().catch(() => []);
+      if (!live) return;
+      setPageDirectory([
+        ...lists.map((l) => ({ kind: 'list' as const, id: l.id, name: l.name, dotClass: getListColorDot(l.color) })),
+        ...notes.map((n) => ({ kind: 'note' as const, id: n.id, name: n.title || 'Untitled', emoji: n.emoji ?? '📝', editedAt: n.updatedAt })),
+        ...databases.map((d) => ({ kind: 'database' as const, id: d.id, name: d.name, emoji: d.icon || '📄', editedAt: d.updatedAt })),
+      ]);
+    })();
+    return () => { live = false; };
+  }, [lists, activeView, activeNoteId, activeDatabaseId]);
+
+  const openPage = useCallback((page: PageRef) => {
+    if (page.kind === 'note') { setPendingNoteId(page.id); setActiveView('notes'); }
+    else if (page.kind === 'database') { setPendingDatabaseId(page.id); setActiveView('databases'); }
+    else { setActiveView('tasks'); handleSelectList(page.id); }
+  }, [handleSelectList, setActiveView]);
+
+  // Whatever page is on screen goes to the top of Recents.
+  const { visit } = marks;
+  useEffect(() => {
+    if (activeView === 'tasks' && activeListId && lists.some((l) => l.id === activeListId)) visit({ kind: 'list', id: activeListId });
+    else if (activeView === 'notes' && activeNoteId) visit({ kind: 'note', id: activeNoteId });
+    else if (activeView === 'databases' && activeDatabaseId) visit({ kind: 'database', id: activeDatabaseId });
+  }, [activeView, activeListId, lists, activeNoteId, activeDatabaseId, visit]);
+
+  const activePageKey = activeView === 'tasks' && activeListId ? pageKey({ kind: 'list', id: activeListId })
+    : activeView === 'notes' && activeNoteId ? pageKey({ kind: 'note', id: activeNoteId })
+    : activeView === 'databases' && activeDatabaseId ? pageKey({ kind: 'database', id: activeDatabaseId }) : undefined;
+  const favoritePages = useMemo(() => resolvePages(marks.favorites, pageDirectory), [marks.favorites, pageDirectory]);
+  const recentPages = useMemo(() => resolvePages(marks.recents, pageDirectory), [marks.recents, pageDirectory]);
+
   const handleOpenPaletteItem = useCallback((item: PaletteItem) => {
     if (item.kind === 'task') handleOpenLinkedTask(item.id);
-    else if (item.kind === 'note') { setPendingNoteId(item.id); setActiveView('notes'); }
-    else if (item.kind === 'database') { setPendingDatabaseId(item.id); setActiveView('databases'); }
-    else { setActiveView('tasks'); handleSelectList(item.id); }
-  }, [handleOpenLinkedTask, handleSelectList, setActiveView]);
+    else openPage({ kind: item.kind, id: item.id });
+  }, [handleOpenLinkedTask, openPage]);
+
+  const handleCreatePage = useCallback((kind: PageRef['kind']) => {
+    if (kind === 'note') { setCreateNoteOnOpen(true); setActiveView('notes'); }
+    else if (kind === 'database') { setCreateDatabaseOnOpen(true); setActiveView('databases'); }
+    else { setActiveView('tasks'); void handleCreateList('Untitled list', 'emerald'); }
+  }, [handleCreateList, setActiveView]);
 
   const handleOpenSourceNote = useCallback((noteId: string) => {
     setDetailOpen(false);
@@ -1377,9 +1428,9 @@ function UserScopedApp() {
     />
   );
 
-  const shellView = activeView === 'notes' || activeView === 'databases' || activeView === 'calendar' ? activeView : 'tasks';
-  const crumb1 = shellView === 'notes' ? 'Notes' : shellView === 'databases' ? 'Databases' : shellView === 'calendar' ? 'Calendar' : 'Tasks';
-  const crumb2 = shellView === 'tasks' ? activeList?.name : undefined;
+  const shellView = activeView === 'notes' || activeView === 'databases' || activeView === 'calendar' || activeView === 'library' ? activeView : 'tasks';
+  const crumb1 = shellView === 'notes' ? 'Notes' : shellView === 'databases' ? 'Databases' : shellView === 'calendar' ? 'Calendar' : shellView === 'library' ? 'Home' : 'Tasks';
+  const crumb2 = shellView === 'tasks' ? activeList?.name : shellView === 'library' ? 'Library' : undefined;
   const syncStatus: { tone: 'success' | 'warning' | 'danger'; label: string } = server.error
     ? { tone: 'danger', label: 'Error' }
     : !server.serverOnline
@@ -1425,6 +1476,18 @@ function UserScopedApp() {
             activeView={shellView}
             onViewChange={setActiveView}
             onSearch={() => setPaletteOpen(true)}
+            pages={
+              <PageSections
+                favorites={favoritePages}
+                recents={recentPages}
+                activeKey={activePageKey}
+                isFavorite={marks.isFavorite}
+                onOpen={openPage}
+                onToggleFavorite={marks.toggleFavorite}
+                onRemoveRecent={marks.removeRecent}
+                onViewAll={() => setActiveView('library')}
+              />
+            }
             counts={{ tasks: totalCount, notes: notesCount, databases: dbCount }}
             mobileOpen={sidebarOpen}
             onMobileOpenChange={setSidebarOpen}
@@ -1496,11 +1559,23 @@ function UserScopedApp() {
           account={<UserMenu onOpenReminders={() => setRemindersOpen(true)} />}
           onOpenSidebar={() => setSidebarOpen(true)}
         />
-        {activeView === 'notes' ? (
+        {activeView === 'library' ? (
+          <LibraryPage
+            directory={pageDirectory}
+            favorites={marks.favorites}
+            recents={marks.recents}
+            onOpen={openPage}
+            onCreate={handleCreatePage}
+            onOpenSource={(kind) => setActiveView(kind === 'note' ? 'notes' : kind === 'database' ? 'databases' : 'tasks')}
+            onOpenSidebar={() => setSidebarOpen(true)}
+          />
+        ) : activeView === 'notes' ? (
           <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
             <NotesWorkspace
               linking={noteLinking}
               openNoteId={pendingNoteId}
+              createOnOpen={createNoteOnOpen}
+              onCreateHandled={() => setCreateNoteOnOpen(false)}
               onOpenNoteHandled={handleOpenNoteHandled}
               onActiveNoteChange={setActiveNoteId}
               onSidebarContentChange={setNotesSidebarContext}
@@ -1512,6 +1587,8 @@ function UserScopedApp() {
           <DatabasesPage
             openDatabaseId={pendingDatabaseId}
             onOpenHandled={() => setPendingDatabaseId(null)}
+            createOnOpen={createDatabaseOnOpen}
+            onCreateHandled={() => setCreateDatabaseOnOpen(false)}
             onOpenChange={setActiveDatabaseId}
             linking={databaseLinking}
             onSidebarContentChange={setDbSidebarContext}

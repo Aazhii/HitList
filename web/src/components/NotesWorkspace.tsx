@@ -395,9 +395,12 @@ interface NotesWorkspaceProps {
   onOpenSidebar?: () => void;
   /** The nav row's count badge — how many notes exist. */
   onCountChange?: (count: number) => void;
+  /** Make a new note as soon as this opens (the library's New page → Note). */
+  createOnOpen?: boolean;
+  onCreateHandled?: () => void;
 }
 
-export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiveNoteChange, onSidebarContentChange, onOpenSidebar, onCountChange }: NotesWorkspaceProps = {}) {
+export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiveNoteChange, onSidebarContentChange, onOpenSidebar, onCountChange, createOnOpen, onCreateHandled }: NotesWorkspaceProps = {}) {
   const {
     notes,
     activeNote,
@@ -452,6 +455,12 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
   const handleCreate = useCallback(() => {
     createNote('Untitled');
   }, [createNote]);
+
+  useEffect(() => {
+    if (!createOnOpen || isLoading) return;
+    handleCreate();
+    onCreateHandled?.();
+  }, [createOnOpen, isLoading, handleCreate, onCreateHandled]);
 
   const handleDeleteConfirm = useCallback(() => {
     if (deleteTarget) {

@@ -612,7 +612,7 @@ Shared primitives now follow the DS, so every dialog inherits them:
 1. **Verify before you change.** Every task quotes the current code. If what you find does not match the quote, **stop and report** — do not adapt silently. The file may have moved on.
 2. **Never invent a value.** If a task does not give you a number and this file does not either, ask. Guessing is what produced the current state.
 3. **One task, one commit.** Commit message: `design(T1.4): set every icon stroke to 1.75`.
-4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 394 tests.
+4. **Run the verify line before marking done.** `cd web && pnpm exec tsc -b && pnpm vitest run` must stay green at 403 tests.
 5. **Update `00-INDEX.md`** — set State and fill in "Verified by" with the actual command output or screenshot pair. A task with an empty "Verified by" is not done.
 6. **Do not delete the Automations or Reminders code.** It is being revived in Phase 4, not removed.
 
@@ -679,3 +679,12 @@ Shared primitives now follow the DS, so every dialog inherits them:
 - Account → Reminders opens the existing `RemindersSettingsPanel` in a dialog (browser permission, default lead time). Its own styling is still the older look; restyle it if it is kept.
 - `useNotifications` is mounted in `App`, so browser notification timers now run for tasks with a reminder once permission is granted.
 - The API's contract tests are flaky on `browserSessionsCannotReadEachOthersDataOrChooseAnOwnerHeader` (it flips the last base64 character of a cookie, which is sometimes a no-op); it passed on three full reruns.
+
+### Phase 4: library, favorites, recents (T4.1)
+
+- Storage is two generic-store tables (`KaizenFavorites`, `KaizenRecents`), keyed `kind_pageId`, so starring or visiting twice is one row. Nothing existing is touched (additive; no migration). Recents keep the newest 20; favorites cap at 200.
+- Whatever page is on screen is recorded as a visit (a task list, a note, a database). The client keeps a local copy of the last answer for offline.
+- The library has no "Created by" column (there is one user) and no Filter / Properties buttons (nothing to filter or choose); Search pages is real. "Source" is a link to that kind's view. Last edited is known for notes and databases only; a list shows "—".
+- New page → Note / Database opens that view and makes an "Untitled" one; Task list makes "Untitled list".
+- The prototype's Notion-style Favorites row menu also offers Duplicate, Copy link, Rename, Move to Trash, Open in new tab; only Add/Remove Favorites and Remove from Recents are offered (see Shell overlays).
+- The API contract test `browserSessionsCannotReadEachOthersDataOrChooseAnOwnerHeader` no longer flips the last base64 character of the cookie (sometimes a no-op, so the test was flaky); it flips a middle one.

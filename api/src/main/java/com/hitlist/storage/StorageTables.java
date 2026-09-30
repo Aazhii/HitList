@@ -16,6 +16,8 @@ public final class StorageTables {
     public static final String DATABASES = "KaizenDatabases";
     public static final String DATABASE_ROWS = "KaizenDbRows";
     public static final String CALENDAR_CONNECTIONS = "KaizenZohoCalendarConnections";
+    public static final String FAVORITES = "KaizenFavorites";
+    public static final String RECENTS = "KaizenRecents";
     public static final String MIGRATION_MARKERS = "KaizenMigrationMarkers";
 
     private static final Map<String, String> PRIMARY_KEYS = Map.ofEntries(
@@ -32,6 +34,8 @@ public final class StorageTables {
         Map.entry(DATABASES, "DatabaseId"),
         Map.entry(DATABASE_ROWS, "RecordId"),
         Map.entry(CALENDAR_CONNECTIONS, "ConnectionId"),
+        Map.entry(FAVORITES, "MarkId"),
+        Map.entry(RECENTS, "MarkId"),
         Map.entry(MIGRATION_MARKERS, "MarkerId")
     );
 

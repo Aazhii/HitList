@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { useIsDesktop } from '@/components/shell/ViewLayout';
 
-export type AppView = 'tasks' | 'notes' | 'databases' | 'calendar';
+export type AppView = 'tasks' | 'notes' | 'databases' | 'calendar' | 'library';
 
 const VIEWS: ReadonlyArray<{ id: AppView; label: string; icon: typeof ListChecks }> = [
   { id: 'tasks', label: 'Tasks', icon: ListChecks },
@@ -23,6 +23,8 @@ export interface SidebarProps {
   context: ReactNode;
   /** Pinned to the foot of the sidebar, e.g. Tasks' momentum card. */
   contextFoot?: ReactNode;
+  /** Favorites and Recents, under the view's own sections. */
+  pages?: ReactNode;
   /** Opens the ⌘K palette. */
   onSearch?: () => void;
   /** Whether the sidebar's mobile sheet is open, and how to change that. */
@@ -49,6 +51,7 @@ export function Sidebar({
   counts,
   context,
   contextFoot,
+  pages,
   onSearch,
   mobileOpen,
   onMobileOpenChange,
@@ -60,7 +63,7 @@ export function Sidebar({
     if (isDesktop) onMobileOpenChange(false);
   }, [isDesktop, onMobileOpenChange]);
 
-  const body = <SidebarBody activeView={activeView} onViewChange={onViewChange} counts={counts} context={context} contextFoot={contextFoot} onSearch={onSearch} />;
+  const body = <SidebarBody activeView={activeView} onViewChange={onViewChange} counts={counts} context={context} contextFoot={contextFoot} pages={pages} onSearch={onSearch} />;
 
   if (isDesktop) {
     return (
@@ -81,7 +84,7 @@ export function Sidebar({
   );
 }
 
-function SidebarBody({ activeView, onViewChange, counts, context, contextFoot, onSearch }: Omit<SidebarProps, 'mobileOpen' | 'onMobileOpenChange'>) {
+function SidebarBody({ activeView, onViewChange, counts, context, contextFoot, pages, onSearch }: Omit<SidebarProps, 'mobileOpen' | 'onMobileOpenChange'>) {
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Logo / workspace row */}
@@ -134,7 +137,7 @@ function SidebarBody({ activeView, onViewChange, counts, context, contextFoot, o
       </nav>
 
       {/* This view's own contextual sections. */}
-      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-3">{context}</div>
+      <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-3">{context}{pages}</div>
 
       {contextFoot && (
         <div className="flex-shrink-0 border-t border-a-line-soft p-3">{contextFoot}</div>

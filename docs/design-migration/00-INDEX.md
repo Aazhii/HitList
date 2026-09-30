@@ -146,7 +146,7 @@ that one is fine where it is.
 | Visual | `node web/scripts/shoot.mjs <screen-id>` → a `.ref.png` / `.app.png` pair | every Phase 3 task |
 | Real build | `sh desktop/scripts/prepare-jar.sh` → copy to `api/target/hitlist.jar` → restart Electron → re-check its own port | every **phase** exit, not every task |
 
-Test baseline: **394 tests across 45 files.** This must not regress.
+Test baseline: **403 tests across 47 files.** This must not regress.
 
 ---
 
@@ -159,7 +159,7 @@ Phase 2  █████   5 / 5       shell exactness
 Phase 3  ███░░  42 / 42      per-screen fidelity (3A Tasks: T3.1–T3.8, re-measured; list/board pending)
 Phase 4  ░░░░░   1 / 12      missing features
 Phase 5  ░░░░░   0 / 7       proposals, unreviewed
-                68 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
+                69 / 82   + 1 accepted deviation (see CONVENTIONS.md 12a)
 ```
 
 ### A note on "partially built"
@@ -294,7 +294,7 @@ on a description. Execution order is the section order below.
 
 | ID | Title | State | Verified by |
 |---|---|---|---|
-| T4.1 | Library, Favorites and Recents — **net-new**, frontend + backend | todo | |
+| T4.1 | Library, Favorites and Recents — **net-new**, frontend + backend | **done** | shots/library.{ref,app}.png; `PageMarksService` + `/api/favorites`, `/api/recents` (ApiContractTest); sidebar Favorites / Recents with the row menu; `LibraryPage`; a star survives a reload (server-held, checked live) |
 | T4.2 | ⌘K command palette — **net-new** | **done** | `CommandPalette.tsx`, `lib/paletteSearch.ts`; ⌘K / Ctrl-K and the sidebar Search row open it; `test/CommandPalette.test.tsx` (6) |
 | T4.3 | Notifications, made real — two hardcoded `false`s, one per side of the wire | **done** | server returns `notifications: true` and keeps a task's reminder (create/update/read; ApiContractTest covers keep / off / out-of-range); the client reads the server's answer (automations stay off until T4.4); task details gain a Reminder select; Account → Reminders opens the permission / default-lead-time panel; `useNotifications` is mounted so timers run |
 | T4.4a | Automations — feasibility write-up, **no code** | todo | |
