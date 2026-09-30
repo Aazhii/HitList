@@ -132,6 +132,7 @@
     --color-a-amber: var(--a-amber);
     --color-a-blue-tint: var(--a-blue-tint);
     --color-a-blue-line: var(--a-blue-line);
+    --color-a-blue-hover: var(--a-blue-hover);
     --color-a-green-tint: var(--a-green-tint);
     --color-a-green-ink: var(--a-green-ink);
     --color-a-red-line: var(--a-red-line);
@@ -593,6 +594,7 @@ html.login-locked body {
   /* DS --blue-50 / --blue-200: a selected Tag's fill and border. */
   --a-blue-tint: #e8f2fa;
   --a-blue-line: #8fbfe1;
+  --a-blue-hover: #c6def0; /* DS --blue-100: the subtle button's hover */
   /* DS Badge tones: green-50/600, red-50/600 (amber-50/600 above). */
   --a-green-tint: #e6f5ee;
   --a-green-ink: #178049;
@@ -776,6 +778,7 @@ html.login-locked body {
   --a-amber-tint: rgba(232, 145, 42, 0.14);
   --a-blue-tint: rgba(217, 133, 82, 0.14);
   --a-blue-line: rgba(217, 133, 82, 0.5);
+  --a-blue-hover: rgba(217, 133, 82, 0.24);
   --a-green-tint: rgba(31, 164, 94, 0.16);
   --a-green-ink: #7fd6a6;
   --a-red-tint: rgba(229, 72, 77, 0.16);

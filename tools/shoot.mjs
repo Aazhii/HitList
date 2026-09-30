@@ -76,7 +76,17 @@ async function dumpDom(page) {
       if (r.width < 1 || r.height < 1) continue;
       const cs = getComputedStyle(el);
       if (cs.visibility === 'hidden' || cs.display === 'none') continue;
+      // The box the text sits in: the nearest ancestor (within 3) that is rounded or filled.
+      let box = el;
+      for (let i = 0; i < 3 && box; i += 1, box = box.parentElement) {
+        const b = getComputedStyle(box);
+        if (b.borderRadius !== '0px' || b.backgroundColor !== 'rgba(0, 0, 0, 0)') break;
+      }
+      const bs = box ? getComputedStyle(box) : cs;
+      const br = box ? box.getBoundingClientRect() : r;
       out.push({
+        ar: bs.borderRadius, abg: bs.backgroundColor, aw: +br.width.toFixed(1), ah: +br.height.toFixed(1),
+        ash: bs.boxShadow === 'none' ? '' : bs.boxShadow.slice(0, 50), abd: bs.borderTopWidth + ' ' + bs.borderTopColor,
         text: own.slice(0, 60), tag: el.tagName.toLowerCase(),
         x: +r.x.toFixed(1), y: +r.y.toFixed(1), w: +r.width.toFixed(1), h: +r.height.toFixed(1),
         fs: cs.fontSize, fw: cs.fontWeight, color: cs.color, bg: cs.backgroundColor, radius: cs.borderRadius,

@@ -64,7 +64,7 @@ export function MomentumBar({ stats, total, done, onViewHistory, onViewProgress 
           <button
             type="button"
             onClick={onViewHistory}
-            className="flex h-7 items-center whitespace-nowrap rounded-[6px] bg-a-bg px-2.5 text-[13px] text-a-muted transition-colors duration-[120ms] hover:bg-a-surface-2 hover:text-a-ink"
+            className="flex h-7 items-center whitespace-nowrap rounded-[3px] border border-transparent bg-a-blue-tint px-3 text-[11px] font-semibold text-a-accent transition-colors duration-[120ms] hover:bg-a-blue-hover active:bg-a-blue-line"
           >
             Today
           </button>
@@ -73,7 +73,7 @@ export function MomentumBar({ stats, total, done, onViewHistory, onViewProgress 
           <button
             type="button"
             onClick={onViewProgress}
-            className="flex h-7 items-center whitespace-nowrap rounded-[6px] bg-a-bg px-2.5 text-[13px] text-a-muted transition-colors duration-[120ms] hover:bg-a-surface-2 hover:text-a-ink"
+            className="flex h-7 items-center whitespace-nowrap rounded-[3px] border border-transparent bg-a-blue-tint px-3 text-[11px] font-semibold text-a-accent transition-colors duration-[120ms] hover:bg-a-blue-hover active:bg-a-blue-line"
           >
             Weekly progress
           </button>

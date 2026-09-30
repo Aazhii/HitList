@@ -420,23 +420,32 @@ been declared in `ViewDisplay` and left unused since it was written.
 
 ### Measured corrections to the foundations (found by `tools/cmp.mjs`)
 
+**Radii are one step smaller than §4 says, for DS components.** The showcase re-declares
+`--radius-sm/md/lg/xl` as **3 / 4 / 6 / 8px** (line 28) on top of the DS's 4 / 6 / 8 / 12, and
+every DS component reads those. Measured in the prototype: sm **Button 3px**, md Button
+(34px) **4px**, **Tag 4px**, IconButton 4px, Badge pill (with a 1px border, so 19px
+tall), DS Table container 6px. Hand-written markup in the showcase (panels, popovers,
+sidebar rows) uses literal px and is unaffected. DS controls also carry a real 1px border
+(transparent, `--border-strong` or `--border-default`), which is part of their box — don't
+fake it with an inset shadow or the control comes out 2px small.
+
 These were wrong at the source and every screen inherited them.
 
 - **Text colours.** `--a-muted` is now `#5f5e5b` (`--text-secondary`) and `--a-faint`
   `#787774` (`--text-tertiary`); they were `#6f6e69` and `#9b9a97` (`--gray-400`, an icon
   grey). Plain due dates, captions, counts and placeholders all use the faint one.
 - **DS `Button` sm** — what every page-header control is: 28px tall, `0 12px`, **11px /
-  600**, 8px gap, **4px radius** (md: 34px, `0 16px`, 13px, 6px). Variants: primary
+  600**, 8px gap, **3px radius**, 1px border (md: 34px, `0 16px`, 13px, 4px). Variants: primary
   (`#006eb9`), secondary (white, `--border-strong` ring, ink), ghost (transparent,
   secondary ink, `--gray-100` hover). `topBarPrimary / topBarSecondary / topBarPill` in
   `TopBar.tsx` are these; `BTN_MD` is the md override.
 - **DS `Tabs`**: 13px, 500 (selected 600, brand), `12px` padding, 4px gap, a 1px
   `--border-default` rule under the row and a 2px brand rule inset 12px on the selected tab.
   The page header puts **8px** between the title row and the tab row.
-- **DS `Tag`**: 11px / 500, `3px 8px`, 1px border, 6px radius, 6px gap, an 8px swatch.
+- **DS `Tag`**: 11px / 500, `3px 8px`, 1px border, **4px** radius, 6px gap, an 8px swatch.
   Selected: `--blue-50` fill, `--blue-200` border, `--blue-700` text. Used for the
   saved-view chips and every category chip.
-- **DS `Badge`**: 11px / 600, `3px 8px`, pill, 6px dot in the ink. Sync pill
+- **DS `Badge`**: 11px / 600, `3px 8px`, pill, 1px transparent border, 6px dot in the ink. Sync pill
   (green-50/600, amber-50/600, red-50/600) and "Next up" (blue-50/700).
 - **Quadrant and category colours are the showcase's literals** (lines 1224–1227), with a
   separate dot colour per quadrant: Do `#b83232 / #ffeaea / #e03e3e`, Schedule
@@ -446,7 +455,7 @@ These were wrong at the source and every screen inherited them.
   still bans it as a brand colour — see the two `design-check-ignore` lines in `index.css`.)
 - **DS `Table`** (tasks table): a bordered 8px container; sticky `--gray-50` header whose
   cells are glyph + 13px/600 name over an 11px tertiary type label (`text`, `date`,
-  `select`…); a 44px `#` gutter (`--gray-100` head, `--gray-25` cells, row numbers 13px ink);
+  `select`…); a 44px `#` gutter (`--gray-100` head, `--gray-25` cells, row numbers 13px ink); container radius 6px;
   cells 13px, hairline rows, hover `--gray-25`; overdue due cells use the DS "invalid" cell
   (`red-50` fill, `red-600` ink, 2px `red-500` left bar); empty cells read `—` in italic
   tertiary; number columns are right-aligned mono 11px. The frozen title column is white,

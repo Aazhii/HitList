@@ -68,12 +68,12 @@ export interface ViewTabsProps {
 }
 
 const TAB = cn(
-  // DS Tag (Tag.jsx): 11px / 500, 3px 8px, 1px border, 6px radius, 6px gap.
-  'inline-flex flex-shrink-0 items-center gap-1.5 rounded-[6px] px-2 py-[3px] text-[11px] font-medium whitespace-nowrap transition-colors duration-[120ms]',
+  // DS Tag (Tag.jsx): 11px / 500, 3px 8px, 1px border, 4px radius (showcase override), 6px gap.
+  'inline-flex flex-shrink-0 items-center gap-1.5 rounded-[4px] border px-2 py-[3px] text-[11px] font-medium whitespace-nowrap transition-colors duration-[120ms]',
 );
 // Selected: --color-primary-subtle fill, --blue-200 border, --blue-700 text.
-const TAB_ACTIVE = 'bg-a-blue-tint text-a-accent-700 shadow-[inset_0_0_0_1px_var(--a-blue-line)]';
-const TAB_IDLE = 'bg-a-surface text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)] hover:bg-a-bg hover:shadow-[inset_0_0_0_1px_var(--a-faint)]';
+const TAB_ACTIVE = 'border-a-blue-line bg-a-blue-tint text-a-accent-700';
+const TAB_IDLE = 'border-a-line bg-a-surface text-a-muted hover:border-a-line-strong hover:bg-a-bg';
 
 export function ViewTabs({
   layout, views, appliedViewId, dirty, listId, listName, online, groupFields,
@@ -254,7 +254,7 @@ function NewViewButton({ layout, listName, groupFields, online, onCreate, onMana
       <PopoverTrigger asChild>
         <button
           type="button"
-          className="flex size-7 flex-shrink-0 items-center justify-center rounded-[6px] text-a-muted transition-colors duration-[120ms] hover:bg-a-line-soft hover:text-a-ink active:bg-a-line disabled:opacity-45"
+          className="flex size-7 flex-shrink-0 items-center justify-center rounded-[4px] text-a-muted transition-colors duration-[120ms] hover:bg-a-line-soft hover:text-a-ink active:bg-a-line disabled:opacity-45"
           aria-label="New view"
           disabled={!online}
           title={online ? 'Save current filters as a view' : 'Saved views need the server'}

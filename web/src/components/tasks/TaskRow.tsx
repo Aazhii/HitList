@@ -45,7 +45,7 @@ export interface TaskRowProps {
 }
 
 // DS Tag: 11px / 500, 3px 8px, 6px radius.
-const CHIP = 'inline-flex items-center gap-1.5 rounded-[6px] px-2 py-[3px] text-[11px] font-medium whitespace-nowrap';
+const CHIP = 'inline-flex items-center gap-1.5 rounded-[4px] border border-transparent px-2 py-[3px] text-[11px] font-medium whitespace-nowrap';
 
 // Overlaid on the row's right edge, not in the flow: the design's due column is
 // flush right (showcase 238) and this appears only on hover.
@@ -137,7 +137,7 @@ export function TaskRow({
 
       {isNext && !isDone && (
         // design-check-ignore: pill — the DS Badge is a pill (showcase 235).
-        <span className="flex-shrink-0 rounded-full bg-a-blue-tint px-2 py-[3px] text-[11px] font-semibold leading-none text-a-accent-700">
+        <span className="flex-shrink-0 rounded-full border border-transparent bg-a-blue-tint px-2 py-[3px] text-[11px] font-semibold leading-none text-a-accent-700">
           Next up
         </span>
       )}
@@ -155,7 +155,7 @@ export function TaskRow({
       )}
 
       {category && (
-        <span className={cn(CHIP, 'flex-shrink-0 text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)]')}>
+        <span className={cn(CHIP, 'flex-shrink-0 border-a-line text-a-muted')}>
           <span className={cn('size-2 flex-shrink-0 rounded-[3px]', category.swatchClass)} aria-hidden />
           {category.label}
         </span>

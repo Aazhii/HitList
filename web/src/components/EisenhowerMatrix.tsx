@@ -215,7 +215,7 @@ function MatrixRow({ todo, isNext, index, onStatusChange, onDelete, onOpen, onOp
 
       {isNext && !isDone && (
         // design-check-ignore: pill — the DS Badge is a pill (showcase 210).
-        <span className="flex-shrink-0 rounded-full bg-a-blue-tint px-2 py-[3px] text-[11px] font-semibold leading-none text-a-accent-700">
+        <span className="flex-shrink-0 rounded-full border border-transparent bg-a-blue-tint px-2 py-[3px] text-[11px] font-semibold leading-none text-a-accent-700">
           Next up
         </span>
       )}
@@ -225,7 +225,7 @@ function MatrixRow({ todo, isNext, index, onStatusChange, onDelete, onOpen, onOp
 
 function CategoryTag({ category }: { category: NonNullable<ReturnType<typeof getCategoryConfig>> }) {
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-[6px] bg-a-surface px-2 py-[3px] text-[11px] font-medium text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)]">
+    <span className="inline-flex items-center gap-1.5 rounded-[4px] border border-a-line bg-a-surface px-2 py-[3px] text-[11px] font-medium text-a-muted">
       <span className={cn('size-2 flex-shrink-0 rounded-[3px]', category.swatchClass)} aria-hidden />
       {category.label}
     </span>

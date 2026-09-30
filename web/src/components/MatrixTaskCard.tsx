@@ -36,7 +36,7 @@ interface MatrixTaskCardProps {
 }
 
 // DS Tag: 11px / 500, 3px 8px, 6px radius.
-const CHIP = 'inline-flex items-center gap-1.5 rounded-[6px] px-2 py-[3px] text-[11px] font-medium whitespace-nowrap';
+const CHIP = 'inline-flex items-center gap-1.5 rounded-[4px] border border-transparent px-2 py-[3px] text-[11px] font-medium whitespace-nowrap';
 
 const CARD_ACTION = cn(
   'flex size-[22px] items-center justify-center rounded-[6px] text-a-faint transition-[opacity,background-color,color] duration-[120ms]',
@@ -105,7 +105,7 @@ export function MatrixTaskCard({
           <span className={cn('size-2 flex-shrink-0 rounded-full', getQuadrantConfig(todo.quadrant).dotClass)} aria-hidden />
           {dueInfo && <span className={cn('whitespace-nowrap', DUE_TONE_CLASS[dueTone(dueInfo)])}>{dueInfo.label}</span>}
           {categoryConfig && (
-            <span className={cn(CHIP, 'text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)]')}>
+            <span className={cn(CHIP, 'border-a-line text-a-muted')}>
               <span className={cn('size-2 flex-shrink-0 rounded-[3px]', categoryConfig.swatchClass)} aria-hidden />
               {categoryConfig.label}
             </span>
@@ -198,7 +198,7 @@ export function MatrixTaskCard({
           )}
 
           {categoryConfig && (
-            <span className={cn(CHIP, 'text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)]')}>
+            <span className={cn(CHIP, 'border-a-line text-a-muted')}>
               <span className={cn('size-2 flex-shrink-0 rounded-[3px]', categoryConfig.swatchClass)} aria-hidden />
               {categoryConfig.label}
             </span>
@@ -212,7 +212,7 @@ export function MatrixTaskCard({
               onClick={() => onOpenNote!(todo.sourceNoteId!)}
               title="Open the note this came from"
               aria-label={`Open the note “${todo.text}” came from`}
-              className={cn(CHIP, 'text-a-muted shadow-[inset_0_0_0_1px_var(--a-line)] transition-colors duration-[120ms] hover:text-a-ink')}
+              className={cn(CHIP, 'border-a-line text-a-muted transition-colors duration-[120ms] hover:text-a-ink')}
             >
               <FileText className="size-3" strokeWidth={1.75} aria-hidden /> Note
             </button>

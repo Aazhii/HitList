@@ -180,7 +180,7 @@ export function TaskTableView({
 
   return (
     <div className="animate-fade-in">
-    <div className="max-h-[calc(100vh-260px)] w-full overflow-auto rounded-[8px] border border-a-line bg-a-surface">
+    <div className="max-h-[calc(100vh-260px)] w-full overflow-auto rounded-[6px] border border-a-line bg-a-surface">
       <table className="w-full min-w-max border-separate border-spacing-0 text-[13px]">
         <thead>
           <tr>

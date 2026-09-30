@@ -87,11 +87,12 @@ export function TopBar({ dotClass, title, subtitle, attention, tabs, actions }: 
 }
 
 /**
- * DS `Button` size sm (Button.jsx): 28px, 0 12px, 11px / 600, 4px radius, 8px gap.
+ * DS `Button` size sm (Button.jsx): 28px, 0 12px, 11px / 600, 3px radius (the showcase
+ * shifts the DS radii down: sm 3, md 4, lg 6, xl 8 — line 28), 8px gap.
  * Three variants used in page chrome: ghost (Filter), primary (New), secondary
  * (Columns, Fields, Retry). Anything bigger composes these with BTN_MD.
  */
-const BTN_SM = 'flex h-7 flex-shrink-0 items-center gap-2 rounded-[4px] px-3 text-[11px] font-semibold whitespace-nowrap transition-colors duration-[120ms] active:translate-y-[0.5px]';
+const BTN_SM = 'flex h-7 flex-shrink-0 items-center gap-2 rounded-[3px] border border-transparent px-3 text-[11px] font-semibold whitespace-nowrap transition-colors duration-[120ms] active:translate-y-[0.5px]';
 
 export const topBarPill = cn(
   BTN_SM, 'text-a-muted hover:bg-a-line-soft active:bg-a-line data-[state=open]:bg-a-line-soft',
@@ -102,11 +103,11 @@ export const topBarPrimary = cn(
 );
 
 export const topBarSecondary = cn(
-  BTN_SM, 'bg-a-surface text-a-ink shadow-[inset_0_0_0_1px_var(--a-line-strong)] hover:bg-a-bg active:bg-a-line-soft',
+  BTN_SM, 'border-a-line-strong bg-a-surface text-a-ink hover:bg-a-bg active:bg-a-line-soft',
 );
 
-/** DS `Button` size md, to override a size-sm variant: 34px, 0 16px, 13px, 6px radius. */
-export const BTN_MD = 'h-[34px] rounded-[6px] px-4 text-[13px]';
+/** DS `Button` size md, to override a size-sm variant: 34px, 0 16px, 13px, 4px radius. */
+export const BTN_MD = 'h-[34px] rounded-[4px] px-4 text-[13px]';
 
 interface TopBarToggleProps<T extends string> {
   label: string;

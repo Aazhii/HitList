@@ -59,7 +59,7 @@ export function AppHeader({ crumb1, crumb2, sync, bell, account, onOpenSidebar }
       <div className="flex-1" />
 
       {/* design-check-ignore: pill — the DS Badge is a pill; showcase 111 uses it for sync. */}
-      <span className={cn('flex flex-shrink-0 items-center gap-1 rounded-full px-2 py-[3px] text-[11px] font-semibold leading-none', SYNC_TONE_CLASS[sync.tone].pill)}>
+      <span className={cn('flex flex-shrink-0 items-center gap-1 rounded-full border border-transparent px-2 py-[3px] text-[11px] font-semibold leading-none', SYNC_TONE_CLASS[sync.tone].pill)}>
         <span className={cn('size-[6px] rounded-full', SYNC_TONE_CLASS[sync.tone].dot)} aria-hidden />
         {sync.label}
       </span>

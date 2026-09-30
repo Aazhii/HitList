@@ -14,6 +14,8 @@ const load = (side) => JSON.parse(readFileSync(`/tmp/hitlist-dump-${id}.${side}.
 const ref = load('ref'); const app = load('app');
 const key = (e) => `${e.tag === 'button' || e.tag === 'input' ? 'c' : 't'}:${e.text}`;
 const bucket = (list) => { const m = new Map(); for (const e of list) { const k = key(e); if (!m.has(k)) m.set(k, []); m.get(k).push(e); } return m; };
+const pill = (v) => (parseFloat(v) >= 999 ? 'pill' : v);
+for (const e of [...ref, ...app]) if (e.ar !== undefined) e.ar = pill(e.ar);
 const R = bucket(ref), A = bucket(app);
 const rows = []; const onlyRef = []; const onlyApp = [];
 for (const [k, rs] of R) {
@@ -30,6 +32,13 @@ for (const [k, rs] of R) {
     if (Math.abs(r.x - a.x) > tol) d.push(`x ${r.x}→${a.x}`);
     if (Math.abs(cyR - cyA) > tol) d.push(`cy ${cyR.toFixed(1)}→${cyA.toFixed(1)}`);
     if (ctl) for (const f of ['w', 'h']) if (Math.abs(r[f] - a[f]) > tol) d.push(`${f} ${r[f]}→${a[f]}`);
+    // The box the text sits in (chip, button, badge, row): radius, fill, border, size.
+    if (r.ar !== undefined && a.ar !== undefined && (r.ar !== '0px' || a.ar !== '0px')) {
+      if (r.ar !== a.ar) d.push(`radius ${r.ar}→${a.ar}`);
+      if (r.abg !== a.abg) d.push(`fill ${r.abg}→${a.abg}`);
+      if (r.abd !== a.abd && r.abd.split(' ')[0] !== '0px') d.push(`border ${r.abd}→${a.abd}`);
+      if (Math.abs(r.ah - a.ah) > tol) d.push(`boxh ${r.ah}→${a.ah}`);
+    }
     for (const f of ['fs', 'fw', 'color', 'ls']) if (r[f] !== a[f]) d.push(`${f} ${r[f]}→${a[f]}`);
     if (d.length) rows.push(`${JSON.stringify(r.text)}  ${d.join(' · ')}`);
   });

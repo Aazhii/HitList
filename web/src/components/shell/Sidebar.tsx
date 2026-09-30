@@ -84,7 +84,7 @@ function SidebarBody({ activeView, onViewChange, counts, context, contextFoot }:
       {/* Logo / workspace row */}
       <div className="flex flex-shrink-0 items-center gap-2 px-3.5 pt-3 pb-1.5">
         <span className="flex size-[22px] flex-shrink-0 items-center justify-center rounded-[4px] bg-a-accent" aria-hidden>
-          <Leaf className="size-3.5 text-white" strokeWidth={1.75} />
+          <Leaf className="size-[13px] text-white" strokeWidth={1.75} />
         </span>
         <span className="text-[14px] font-semibold text-a-ink">HitList</span>
         <ChevronsUpDown className="size-3.5 text-a-faint" strokeWidth={1.75} />
