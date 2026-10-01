@@ -11,5 +11,8 @@ contextBridge.exposeInMainWorld('hitlistDesktop', {
   restoreNow: () => ipcRenderer.invoke('restore:run'),
   getCliq: () => ipcRenderer.invoke('cliq:get'),
   setCliq: (settings) => ipcRenderer.invoke('cliq:set', settings),
+  getUpdate: () => ipcRenderer.invoke('update:status'),
+  checkUpdate: () => ipcRenderer.invoke('update:check'),
+  downloadUpdate: () => ipcRenderer.invoke('update:download'),
   testCliq: () => ipcRenderer.invoke('cliq:test'),
 });

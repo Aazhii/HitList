@@ -1,6 +1,8 @@
 import { useRef, useState } from 'react';
-import { Bell, Download, Keyboard, LogIn, LogOut, MessageSquare, Upload } from 'lucide-react';
+import { Bell, Download, Keyboard, LogIn, LogOut, MessageSquare, RefreshCw, Upload } from 'lucide-react';
 import { CliqAlertsDialog } from '@/components/shell/CliqAlertsDialog';
+import { UpdateDialog } from '@/components/shell/UpdateDialog';
+import { useAppUpdate } from '@/hooks/useAppUpdate';
 import { useDesktopAccount } from '@/hooks/useDesktopAccount';
 import { toast } from 'sonner';
 import { backupApi } from '@/lib/api';
@@ -36,6 +38,8 @@ export function UserMenu({ onOpenReminders, dailyLine }: {
 }) {
   const [shortcuts, setShortcuts] = useState(false);
   const [cliqOpen, setCliqOpen] = useState(false);
+  const [updateOpen, setUpdateOpen] = useState(false);
+  const appUpdate = useAppUpdate();
   const [density, setDensity] = useDensity();
   const fileInput = useRef<HTMLInputElement>(null);
   const desktop = useDesktopAccount();
@@ -149,6 +153,17 @@ export function UserMenu({ onOpenReminders, dailyLine }: {
                 </span>
               </DropdownMenuItem>
             )}
+            {appUpdate.available && (
+              <DropdownMenuItem onSelect={() => setUpdateOpen(true)} className="gap-2.5 px-2.5 py-2 text-[14px] text-a-muted">
+                <RefreshCw className="size-[15px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span>Check for updates</span>
+                  {appUpdate.status?.phase === 'available' && appUpdate.status.latest && (
+                    <span className="text-[12px] text-a-faint">Version {appUpdate.status.latest.version} is available</span>
+                  )}
+                </span>
+              </DropdownMenuItem>
+            )}
             {desktop.available && desktop.account && (
               <DropdownMenuItem onSelect={() => setCliqOpen(true)} className="gap-2.5 px-2.5 py-2 text-[14px] text-a-muted">
                 <MessageSquare className="size-[15px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
@@ -219,6 +234,7 @@ export function UserMenu({ onOpenReminders, dailyLine }: {
       />
       <ShortcutsDialog open={shortcuts} onOpenChange={setShortcuts} />
       <CliqAlertsDialog open={cliqOpen} onOpenChange={setCliqOpen} />
+      <UpdateDialog open={updateOpen} onOpenChange={setUpdateOpen} />
     </>
   );
 }

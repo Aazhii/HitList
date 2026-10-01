@@ -16,6 +16,7 @@ files:
   - backup.js
   - restore.js
   - cliqAlerts.js
+  - updater.js
   - dataDir.js
   - preload.js
   - signin.html

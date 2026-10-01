@@ -44,7 +44,14 @@ xattr -dr com.apple.quarantine /Applications/HitList.app
 
 ## Updating
 
-Download the new version and drag it onto **Applications**, replacing the old one. Your data is kept, because it lives in
+**From inside the app.** *Account → Check for updates* looks at the project's GitHub Releases (the app also checks by itself a minute
+after it opens, then once a day). If a newer version exists you see its notes; **Download and open** saves the installer to your
+Downloads folder, checks it against the release's `SHA256SUMS.txt` (a file that does not match is deleted), and opens it. On Mac
+you then drag HitList onto Applications and choose Replace. The app never installs anything itself, because the apps are not
+signed. Stable installs are only offered stable releases; an alpha or beta install is offered newer alpha, beta and stable ones.
+Only releases made with *publish* ticked count. This needs the repository to stay public.
+
+**By hand.** Download the new version and drag it onto **Applications**, replacing the old one. Your data is kept, because it lives in
 `~/Library/Application Support/HitList` and not inside the app. Moving the app to the Trash does not delete it either.
 Before an update (or any time) you can copy your data with *Account → Export workspace*.
 

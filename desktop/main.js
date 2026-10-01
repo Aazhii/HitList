@@ -8,11 +8,12 @@
  * background process, no OS-level scheduling, no LaunchAgent: the backend
  * lives exactly as long as this app's own process does.
  */
-const { app, BrowserWindow, dialog, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
 const { createAuth, ownerFor } = require('./auth');
 const { createBackup } = require('./backup');
 const { createRestore } = require('./restore');
 const { createCliqAlerts } = require('./cliqAlerts');
+const { createUpdater } = require('./updater');
 const { dataDirIn, migrateLegacyData, LEGACY_FOLDER } = require('./dataDir');
 const { BACKUP_FUNCTION_URL } = require('./catalyst-config');
 const { spawn } = require('node:child_process');
@@ -274,6 +275,18 @@ async function createWindow() {
   });
   cliqAlerts.startSchedule();
 
+  // App updates: look at the project's GitHub Releases, download the new installer on request, and open it.
+  const updater = createUpdater({
+    repo: 'Aazhii/HitList',
+    currentVersion: app.getVersion(),
+    platform: process.platform,
+    arch: process.arch,
+    fetch: (url, opts) => fetch(url, opts),
+    downloadDir: app.getPath('downloads'),
+    openFile: async (file) => { if (process.platform === 'linux') shell.showItemInFolder(file); else await shell.openPath(file); },
+  });
+  if (app.isPackaged) updater.startSchedule();
+
   /** Set at sign-in, spent by the first check afterwards: that check may look in the cloud even if there is data here. */
   let justSignedIn = false;
 
@@ -295,6 +308,9 @@ async function createWindow() {
   ipcMain.handle('cliq:get', () => cliqAlerts.status());
   ipcMain.handle('cliq:set', (_e, settings) => ({ ...cliqAlerts.setSettings(settings || {}), status: cliqAlerts.status() }));
   ipcMain.handle('cliq:test', () => cliqAlerts.sendTest());
+  ipcMain.handle('update:status', () => updater.status());
+  ipcMain.handle('update:check', () => updater.check());
+  ipcMain.handle('update:download', () => updater.download());
   ipcMain.handle('backup:status', () => backup.status());
   ipcMain.handle('backup:now', () => backup.backupNow('manual'));
   ipcMain.handle('account:signOut', async () => {
