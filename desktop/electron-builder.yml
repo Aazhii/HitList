@@ -20,14 +20,34 @@ files:
   - catalyst-config.js
   - package.json
 
-extraResources:
-  - from: resources/hitlist.jar
-    to: hitlist.jar
-  - from: resources/jre
-    to: jre
-
 mac:
   category: public.app-category.productivity
   target:
     - target: dmg
       arch: [arm64]
+  extraResources:
+    - from: resources/hitlist.jar
+      to: hitlist.jar
+    - from: resources/jre
+      to: jre
+
+# Windows: a normal installer (.exe) for 64-bit Windows; it also runs on ARM PCs through Windows' own emulation.
+# Not signed (no certificate), so Windows SmartScreen shows a warning the first time; see docs/INSTALL.md.
+# signAndEditExecutable false: editing the .exe's metadata needs Wine on a Mac, and there is nothing to sign.
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  signAndEditExecutable: false
+  extraResources:
+    - from: resources/hitlist.jar
+      to: hitlist.jar
+    - from: resources/jre-win
+      to: jre
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  perMachine: false
+  createDesktopShortcut: true
+  artifactName: HitList-Setup-${version}-x64.${ext}

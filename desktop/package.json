@@ -9,7 +9,10 @@
     "prepare:jar": "sh scripts/prepare-jar.sh",
     "prepare:jre": "sh scripts/prepare-jre.sh",
     "build": "pnpm run prepare:jar && pnpm run prepare:jre && electron-builder",
-    "test": "node --test test.auth.js test.backup.js test.restore.js test.dataDir.js"
+    "test": "node --test test.auth.js test.backup.js test.restore.js test.dataDir.js",
+    "prepare:jre:win": "sh scripts/prepare-jre-win.sh",
+    "build:mac": "pnpm run prepare:jar && pnpm run prepare:jre && electron-builder --mac",
+    "build:win": "pnpm run prepare:jar && pnpm run prepare:jre:win && electron-builder --win --x64"
   },
   "devDependencies": {
     "electron": "^44.3.0",

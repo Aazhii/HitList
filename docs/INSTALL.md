@@ -1,9 +1,10 @@
-# Installing HitList on a Mac
+# Installing HitList
 
 HitList is a desktop app. It works without the internet, and your data stays on your Mac unless you sign in to back it up.
 The same steps are on the download page (`client/index.html`).
 
-**Requirements:** a Mac with Apple silicon (M1 or later). There is no build for Intel Macs or Windows yet.
+**Requirements:** a Mac with Apple silicon (M1 or later), or a 64-bit Windows 10 or 11 PC. There is no build for Intel Macs.
+Windows steps are further down.
 
 **Download:** https://workdrive.zohoexternal.in/external/1658ad81d16124c31bf123fcf81cd7d42f359e6a1ee60b4a2ece48d372cd397d
 
@@ -48,3 +49,19 @@ Before an update (or any time) you can copy your data with *Account → Export w
 - The app opens empty after an update: the data folder above should still hold `hitlist.db`. Sign in and use *Restore from
   backup* if you have backed up.
 - It will not open at all: quit it fully (Cmd-Q) and open it again. Only one copy can run at a time.
+
+---
+
+# Installing HitList on Windows
+
+**Requirements:** Windows 10 or 11, 64-bit (also runs on ARM PCs). Java is included; you do not need to install it.
+
+1. Download `HitList-Setup-….exe` from the same download folder.
+2. Double-click it. Windows shows a blue **"Windows protected your PC"** screen, because the app is not signed with a paid
+   certificate. This is expected. Click **More info**, then **Run anyway**.
+3. Follow the installer (you can choose the folder), then open **HitList** from the Start menu or the desktop shortcut.
+4. If your antivirus or Windows Defender asks, choose to allow it. It is the same app described here, only unsigned.
+
+Your data is kept in `%APPDATA%\HitList` (type that in the File Explorer address bar). Updating means running the new
+installer over the old one; uninstalling the app does not delete that folder. Backups, restore and signing in work exactly
+as on a Mac (account menu, top right). **Windows has not been tested by the developer yet**, so please report anything odd.

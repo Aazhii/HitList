@@ -85,9 +85,10 @@ function getJarPath() {
 /** Same idea for the Java runtime: a bundled JRE once packaged (Slice 3),
  * the `java` already on PATH during development. */
 function getJavaExecutable() {
-  if (!app.isPackaged) return 'java';
-  const jre = path.join(process.resourcesPath, 'jre', 'bin', 'java');
-  return fs.existsSync(jre) ? jre : 'java';
+  if (!app.isPackaged) return process.platform === 'win32' ? 'java.exe' : 'java';
+  // The Windows installer bundles Temurin's runtime (bin/java.exe); the Mac build bundles a jlink runtime (bin/java).
+  const jre = path.join(process.resourcesPath, 'jre', 'bin', process.platform === 'win32' ? 'java.exe' : 'java');
+  return fs.existsSync(jre) ? jre : (process.platform === 'win32' ? 'java.exe' : 'java');
 }
 
 function waitForHealth(port) {
