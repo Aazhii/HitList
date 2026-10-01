@@ -3,8 +3,8 @@
 HitList is a desktop app. It works without the internet, and your data stays on your Mac unless you sign in to back it up.
 The same steps are on the download page (`client/index.html`).
 
-**Requirements:** a Mac with Apple silicon (M1 or later), or a 64-bit Windows 10 or 11 PC. There is no build for Intel Macs.
-Windows steps are further down.
+**Requirements:** a Mac with Apple silicon (M1 or later), a 64-bit Windows 10 or 11 PC, or a 64-bit Linux PC. There is no build for
+Intel Macs. Windows and Linux steps are further down.
 
 **Download:** https://workdrive.zohoexternal.in/external/1658ad81d16124c31bf123fcf81cd7d42f359e6a1ee60b4a2ece48d372cd397d
 
@@ -65,3 +65,36 @@ Before an update (or any time) you can copy your data with *Account → Export w
 Your data is kept in `%APPDATA%\HitList` (type that in the File Explorer address bar). Updating means running the new
 installer over the old one; uninstalling the app does not delete that folder. Backups, restore and signing in work exactly
 as on a Mac (account menu, top right). **Windows has not been tested by the developer yet**, so please report anything odd.
+
+---
+
+# Installing HitList on Linux
+
+**Requirements:** a 64-bit (x86-64) Linux desktop. Java is included. ARM Linux (Raspberry Pi and similar) has no build.
+There are two files in the download folder; use whichever suits your system.
+
+## AppImage (works on most distributions)
+
+1. Download `HitList-….AppImage`.
+2. Make it runnable. In a terminal: `chmod +x HitList-*.AppImage` (or right-click it, Properties, Permissions, "Allow
+   executing as a program").
+3. Double-click it, or run `./HitList-*.AppImage`.
+
+If it does not start and mentions **FUSE**, install it (on Ubuntu 22.04 and later: `sudo apt install libfuse2`; on 24.04:
+`sudo apt install libfuse2t64`). If you would rather not, run it with `./HitList-*.AppImage --appimage-extract-and-run`.
+
+## .deb (Ubuntu, Debian and relatives)
+
+```
+sudo apt install ./HitList_*_amd64.deb
+```
+
+Then open **HitList** from the applications menu.
+
+## Linux notes
+
+- On recent Ubuntu, the system restricts the sandbox Electron uses. HitList notices this and starts without Chromium's
+  sandbox in that one case so that it opens; elsewhere the sandbox stays on.
+- Your data is kept in `~/.config/HitList`. Updating means downloading the new file (and running the new `.deb`, or
+  replacing the AppImage); the data folder is not touched.
+- **Linux has not been tested by the developer yet**, so please report anything odd, with your distribution and version.

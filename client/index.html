@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>HitList for Mac and Windows</title>
+  <title>HitList for Mac, Windows and Linux</title>
   <meta name="description" content="HitList is a desktop app for your tasks, notes and databases. Download it for Mac." />
   <style>
     :root {
@@ -43,7 +43,7 @@
   <p class="lead">Your tasks, notes and databases, in an app that runs on your own computer. It works without the internet, and nothing is sent anywhere unless you sign in to back up.</p>
 
   <a class="button" href="https://workdrive.zohoexternal.in/external/1658ad81d16124c31bf123fcf81cd7d42f359e6a1ee60b4a2ece48d372cd397d" rel="noopener">Download HitList</a>
-  <p class="small">Opens the download folder. Take the <strong>.dmg</strong> for a Mac with Apple silicon (M1 and later), or the <strong>.exe</strong> for Windows 10 and 11. About 200 MB each. Not available for Intel Macs.</p>
+  <p class="small">Opens the download folder. Take the <strong>.dmg</strong> for a Mac with Apple silicon (M1 and later), the <strong>.exe</strong> for Windows 10 and 11, or the <strong>.AppImage</strong> / <strong>.deb</strong> for 64-bit Linux. About 200 MB each. Not available for Intel Macs.</p>
 
   <h2>Install on a Mac</h2>
   <ol>
@@ -75,6 +75,17 @@
   </ol>
   <p class="small">Java is included. The Windows version is new and has not been tested widely, so tell us if anything looks wrong. Your data is kept in <code>%APPDATA%\HitList</code>.</p>
 
+  <h2>Install on Linux</h2>
+  <ol>
+    <li>Download the <code>.AppImage</code> (most distributions) or the <code>.deb</code> (Ubuntu and Debian).</li>
+    <li>AppImage: make it runnable with <code>chmod +x HitList-*.AppImage</code>, then double-click it or run <code>./HitList-*.AppImage</code>.<br />.deb: run <code>sudo apt install ./HitList_*_amd64.deb</code>, then open HitList from the applications menu.</li>
+  </ol>
+  <details>
+    <summary>The AppImage doesn’t start</summary>
+    <p>If it mentions <strong>FUSE</strong>, install it with <code>sudo apt install libfuse2</code> (on Ubuntu 24.04: <code>libfuse2t64</code>), or run <code>./HitList-*.AppImage --appimage-extract-and-run</code> instead.</p>
+  </details>
+  <p class="small">Java is included. The Linux version is new and has not been tested widely, so tell us your distribution and version if anything looks wrong. Your data is kept in <code>~/.config/HitList</code>.</p>
+
   <h2>Using it</h2>
   <ul>
     <li><strong>You don't need an account.</strong> HitList works straight away, and your data stays on your Mac.</li>
@@ -83,10 +94,10 @@
   </ul>
 
   <h2>Updating</h2>
-  <p>Download the new version from this page. On a Mac, drag it onto <strong>Applications</strong>, replacing the old one. On Windows, run the new installer over the old one. <strong>Your data is kept</strong>: it lives in a separate folder, not inside the app.</p>
+  <p>Download the new version from this page. On a Mac, drag it onto <strong>Applications</strong>, replacing the old one. On Windows, run the new installer over the old one. On Linux, replace the AppImage or install the new <code>.deb</code>. <strong>Your data is kept</strong>: it lives in a separate folder, not inside the app.</p>
   <details>
     <summary>Where is my data?</summary>
-    <p>On a Mac, in <code>~/Library/Application Support/HitList</code>; on Windows, in <code>%APPDATA%\HitList</code>. Deleting or uninstalling the app does not delete it. Don't delete that folder unless you mean to, and use <strong>Export workspace</strong> in the account menu first if you want a copy.</p>
+    <p>On a Mac, in <code>~/Library/Application Support/HitList</code>; on Windows, in <code>%APPDATA%\HitList</code>; on Linux, in <code>~/.config/HitList</code>. Deleting or uninstalling the app does not delete it. Don't delete that folder unless you mean to, and use <strong>Export workspace</strong> in the account menu first if you want a copy.</p>
   </details>
 
   <hr />

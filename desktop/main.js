@@ -23,6 +23,17 @@ const crypto = require('node:crypto');
 const HEALTH_TIMEOUT_MS = 15_000;
 const HEALTH_POLL_MS = 200;
 
+// Linux: newer Ubuntu (24.04 and later) blocks the user-namespace sandbox that Electron uses unless an AppArmor profile
+// allows it, and the app then refuses to start at all. Only in that case, start without Chromium's sandbox, so the app opens
+// instead of failing. Everywhere else the sandbox stays on. (The .deb sets up its own sandbox helper and is not affected.)
+if (process.platform === 'linux') {
+  try {
+    if (fs.readFileSync('/proc/sys/kernel/apparmor_restrict_unprivileged_userns', 'utf8').trim() === '1') {
+      app.commandLine.appendSwitch('no-sandbox');
+    }
+  } catch { /* the setting does not exist on this system: leave the sandbox on */ }
+}
+
 // One data folder for every way of running the app (installed or from the project). Set before anything reads it,
 // including the single-instance lock below, which is keyed on this folder. Data from the folder older project runs used
 // is COPIED in once, only if this folder has no database yet; the old folder is left alone.

@@ -12,10 +12,18 @@
     "test": "node --test test.auth.js test.backup.js test.restore.js test.dataDir.js",
     "prepare:jre:win": "sh scripts/prepare-jre-win.sh",
     "build:mac": "pnpm run prepare:jar && pnpm run prepare:jre && electron-builder --mac",
-    "build:win": "pnpm run prepare:jar && pnpm run prepare:jre:win && electron-builder --win --x64"
+    "build:win": "pnpm run prepare:jar && pnpm run prepare:jre:win && electron-builder --win --x64",
+    "prepare:jre:linux": "sh scripts/prepare-jre-linux.sh",
+    "build:linux": "pnpm run prepare:jar && pnpm run prepare:jre:linux && electron-builder --linux --x64"
   },
   "devDependencies": {
     "electron": "^44.3.0",
     "electron-builder": "^26.15.3"
-  }
+  },
+  "homepage": "https://hitlist-60090109165.development.catalystserverless.in/app/",
+  "author": {
+    "name": "HitList",
+    "email": "noreply@hitlist.invalid"
+  },
+  "desktopName": "hitlist.desktop"
 }

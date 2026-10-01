@@ -45,6 +45,30 @@ win:
     - from: resources/jre-win
       to: jre
 
+# Linux: an AppImage (one file that runs on most distributions) and a .deb (Ubuntu, Debian). 64-bit PCs only.
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+  category: Office
+  maintainer: HitList <noreply@hitlist.invalid>
+  synopsis: Tasks, notes and databases on your own computer
+  description: HitList keeps your tasks, notes and databases on your own computer and works without the internet.
+  extraResources:
+    - from: resources/hitlist.jar
+      to: hitlist.jar
+    - from: resources/jre-linux
+      to: jre
+
+deb:
+  artifactName: HitList_${version}_amd64.${ext}
+  depends: [libgtk-3-0, libnotify4, libnss3, libxss1, libxtst6, xdg-utils, libatspi2.0-0, libuuid1, libsecret-1-0]
+
+appImage:
+  artifactName: HitList-${version}-x64.${ext}
+
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true
