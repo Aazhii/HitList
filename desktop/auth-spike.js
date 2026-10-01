@@ -7,7 +7,9 @@
  */
 const { app, BrowserWindow, session } = require('electron');
 
-const { HOST: DOMAIN, LOGIN_URL: LOGIN, BACKUP_FUNCTION_URL } = require('./catalyst-config');
+const { HOST: DOMAIN, LOGIN_URL, SIGNUP_URL, RESET_PASSWORD_URL, BACKUP_FUNCTION_URL } = require('./catalyst-config');
+// SPIKE_PAGE=reset or =signup opens that hosted page instead of the sign-in page (to set a first password).
+const LOGIN = { reset: RESET_PASSWORD_URL, signup: SIGNUP_URL }[process.env.SPIKE_PAGE] ?? LOGIN_URL;
 const WHOAMI = `${BACKUP_FUNCTION_URL}/whoami`;
 
 async function cookieHeader(ses) {
