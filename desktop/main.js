@@ -12,6 +12,7 @@ const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const { createAuth, ownerFor } = require('./auth');
 const { createBackup } = require('./backup');
 const { createRestore } = require('./restore');
+const { dataDirIn, migrateLegacyData, LEGACY_FOLDER } = require('./dataDir');
 const { BACKUP_FUNCTION_URL } = require('./catalyst-config');
 const { spawn } = require('node:child_process');
 const { createServer } = require('node:net');
@@ -21,6 +22,20 @@ const crypto = require('node:crypto');
 
 const HEALTH_TIMEOUT_MS = 15_000;
 const HEALTH_POLL_MS = 200;
+
+// One data folder for every way of running the app (installed or from the project). Set before anything reads it,
+// including the single-instance lock below, which is keyed on this folder. Data from the folder older project runs used
+// is COPIED in once, only if this folder has no database yet; the old folder is left alone.
+{
+  const appData = app.getPath('appData');
+  app.setPath('userData', dataDirIn(appData));
+  try {
+    const outcome = migrateLegacyData({ legacyDir: path.join(appData, LEGACY_FOLDER), dir: app.getPath('userData') });
+    if (outcome === 'copied') console.log('[hitlist] copied your data from the older folder into', app.getPath('userData'));
+  } catch (error) {
+    console.error('[hitlist] could not copy the older data folder:', error.message);
+  }
+}
 
 // One instance at a time — two processes writing the same SQLite file at
 // once is exactly the kind of corruption SQLite's own docs warn about.
