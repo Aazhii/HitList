@@ -28,9 +28,20 @@ curl -s -X POST "https://cliq.zoho.in/api/v2/bots/hitlistbot/message?zapikey=YOU
 A direct message from the HitList bot should appear in your Cliq. If not, note the response text (an error code or message); the
 usual causes are a wrong bot unique name, the bot not visible to you, a wrong region, or a bad token.
 
-## 5. Give the Catalyst Function its settings (later, when phase B is built)
-Catalyst console, Serverless, Functions, `backup`, Configuration, Environment Variables: `CLIQ_BOT` (the unique name), `CLIQ_TOKEN`
-(the webhook token), `CLIQ_ALLOWED_DOMAINS` (your company email domain, for example `zohocorp.com`), and `CLIQ_DC` if not `in`.
+## 5. Give the Catalyst Function its settings
+The Function reads `CLIQ_BOT`, `CLIQ_TOKEN`, `CLIQ_ALLOWED_DOMAINS` (your company email domain) and `CLIQ_DC` (default `in`) from its
+environment. The token must never be committed, so put them in a local file that git ignores, `functions/backup/.env.cliq`:
+
+```
+CLIQ_BOT=hitlistbot
+CLIQ_TOKEN=<the webhook token>
+CLIQ_ALLOWED_DOMAINS=yourcompany.com
+CLIQ_DC=in
+```
+
+and deploy with `sh scripts/deploy-backup-function.sh` (it writes the values into the function's config only for the deploy, then
+restores the file, so nothing secret reaches git). Note: the bot's unique name is **lowercase** (`hitlistbot`); `HitListBot` gives
+"request URL invalid". If the token is ever pasted into a chat or leaked, generate a new one in Cliq and redeploy.
 
 ## What each person does in HitList (once phase D exists)
 Account menu, **Cliq alerts**: switch on, type your Cliq email, press **Send test message**. Alerts only go out while HitList is open.

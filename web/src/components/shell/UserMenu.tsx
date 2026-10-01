@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
-import { Bell, Download, Keyboard, LogIn, LogOut, Upload } from 'lucide-react';
+import { Bell, Download, Keyboard, LogIn, LogOut, MessageSquare, Upload } from 'lucide-react';
+import { CliqAlertsDialog } from '@/components/shell/CliqAlertsDialog';
 import { useDesktopAccount } from '@/hooks/useDesktopAccount';
 import { toast } from 'sonner';
 import { backupApi } from '@/lib/api';
@@ -34,6 +35,7 @@ export function UserMenu({ onOpenReminders, dailyLine }: {
   dailyLine?: { enabled: boolean; onChange: (enabled: boolean) => void };
 }) {
   const [shortcuts, setShortcuts] = useState(false);
+  const [cliqOpen, setCliqOpen] = useState(false);
   const [density, setDensity] = useDensity();
   const fileInput = useRef<HTMLInputElement>(null);
   const desktop = useDesktopAccount();
@@ -148,6 +150,12 @@ export function UserMenu({ onOpenReminders, dailyLine }: {
               </DropdownMenuItem>
             )}
             {desktop.available && desktop.account && (
+              <DropdownMenuItem onSelect={() => setCliqOpen(true)} className="gap-2.5 px-2.5 py-2 text-[14px] text-a-muted">
+                <MessageSquare className="size-[15px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
+                Cliq alerts
+              </DropdownMenuItem>
+            )}
+            {desktop.available && desktop.account && (
               <DropdownMenuItem
                 onSelect={() => {
                   void desktop.checkRestore(true).then((check) => {
@@ -210,6 +218,7 @@ export function UserMenu({ onOpenReminders, dailyLine }: {
         onChange={(e) => { void importBackup(e.target.files?.[0]); e.target.value = ''; }}
       />
       <ShortcutsDialog open={shortcuts} onOpenChange={setShortcuts} />
+      <CliqAlertsDialog open={cliqOpen} onOpenChange={setCliqOpen} />
     </>
   );
 }
