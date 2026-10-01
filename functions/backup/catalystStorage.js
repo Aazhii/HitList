@@ -11,9 +11,10 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { zcAuth } = require('@zcatalyst/auth/node');
-const { Datastore } = require('@zcatalyst/datastore');
-const { Filestore } = require('@zcatalyst/filestore');
+// Storage uses Catalyst's standard Node SDK, which ships Data Store and File Store consistently. (The newer split
+// packages could not be used here: the File Store one pulls in its own older copy of the auth code, which does not
+// see the credentials the newer auth package sets up.)
+const catalyst = require('zcatalyst-sdk-node');
 
 const TABLE = 'Backups';
 const FOLDER_NAME = 'backups';
@@ -23,20 +24,20 @@ const rowOf = (r) => { const row = r[TABLE] || r; return { rowId: String(row.ROW
 
 async function createCatalystStorage(req) {
 	// Storage is the service's own business, so it runs with the project's rights, after the caller was verified.
-	// The app is passed to each package on purpose: they do not share the auth package's credentials.
-	const app = await zcAuth.init(req, { type: 'advancedio', appName: 'backup', scope: 'admin' });
-	const datastore = new Datastore(app);
-	const filestore = new Filestore(app);
+	const app = catalyst.initialize(req, { type: 'advancedio', appName: 'backup', scope: 'admin' });
+	const datastore = app.datastore();
+	const filestore = app.filestore();
 	let folder;
 	const getFolder = async () => {
 		if (folder) return folder;
-		const found = (await filestore.getAllFolders()).map((f) => f.toJSON()).find((f) => f.folder_name === FOLDER_NAME);
+		const found = (await filestore.getAllFolders()).map((f) => (typeof f.toJSON === 'function' ? f.toJSON() : f)).find((f) => f.folder_name === FOLDER_NAME);
 		const details = found || (await filestore.createFolder(FOLDER_NAME));
-		folder = filestore.folder(details.id);
+		const id = details.id || (typeof details.toJSON === 'function' && details.toJSON().id);
+		folder = filestore.folder(id);
 		return folder;
 	};
 	const query = async (userId, limit) =>
-		(await datastore.executeZCQLQuery(`SELECT * FROM ${TABLE} WHERE UserId='${digits(userId)}' ORDER BY BackedUpAt DESC LIMIT ${limit}`)).map(rowOf);
+		(await app.zcql().executeZCQLQuery(`SELECT * FROM ${TABLE} WHERE UserId='${digits(userId)}' ORDER BY BackedUpAt DESC LIMIT ${limit}`)).map(rowOf);
 
 	return {
 		index: {
@@ -57,10 +58,7 @@ async function createCatalystStorage(req) {
 				} finally { fs.rmSync(tmp, { force: true }); }
 			},
 			get: async (fileId) => {
-				const stream = await (await getFolder()).getFileStream(String(fileId));
-				const chunks = [];
-				for await (const chunk of stream) chunks.push(chunk);
-				return Buffer.concat(chunks);
+				return Buffer.from(await (await getFolder()).downloadFile(String(fileId)));
 			},
 			remove: async (fileId) => { await (await getFolder()).deleteFile(String(fileId)); },
 		},

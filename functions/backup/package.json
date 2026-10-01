@@ -5,12 +5,7 @@
 	"author": "arikaran.rajamanickam.ai@gmail.com",
 	"dependencies": {
 		"@zcatalyst/auth": "^1.0.0",
-		"@zcatalyst/cache": "latest",
-		"@zcatalyst/datastore": "^1.0.0",
-		"@zcatalyst/filestore": "^0.0.2",
-		"@zcatalyst/stratus": "^1.0.0",
-		"@zcatalyst/user-management": "^0.0.2",
-		"@zcatalyst/zcql": "^0.0.2"
+		"zcatalyst-sdk-node": "^3.4.0"
 	},
 	"scripts": {
 		"test": "node --test test.backupService.js"
