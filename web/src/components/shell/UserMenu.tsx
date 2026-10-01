@@ -6,6 +6,8 @@ import { backupApi } from '@/lib/api';
 import { currentSession, signOut } from '@/lib/session';
 import { agoLabel } from '@/lib/pages';
 import { backupMessage } from '@/lib/backupMessage';
+import { noOfferMessage } from '@/lib/restoreMessage';
+import { offerRestore } from '@/components/shell/RestoreOffer';
 import { backupFileName, importSummary, parseBackupText } from '@/lib/backupFile';
 import { DENSITIES, useDensity } from '@/hooks/useDensity';
 import {
@@ -143,6 +145,19 @@ export function UserMenu({ onOpenReminders, dailyLine }: {
                     {desktop.backup?.lastSuccessAt ? `Backed up ${agoLabel(desktop.backup.lastSuccessAt).toLowerCase()}` : 'Not backed up yet'}
                   </span>
                 </span>
+              </DropdownMenuItem>
+            )}
+            {desktop.available && desktop.account && (
+              <DropdownMenuItem
+                onSelect={() => {
+                  void desktop.checkRestore(true).then((check) => {
+                    if (!offerRestore(check, desktop.restoreNow)) toast(noOfferMessage(check), { duration: 4000 });
+                  });
+                }}
+                className="gap-2.5 px-2.5 py-2 text-[14px] text-a-muted"
+              >
+                <Download className="size-[15px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
+                Restore from backup
               </DropdownMenuItem>
             )}
             {desktop.available && (desktop.account ? (

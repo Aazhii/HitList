@@ -58,4 +58,21 @@ describe('useDesktopAccount', () => {
     expect(result.current.backup?.lastSuccessAt).toBe(123);
     expect(result.current.backingUp).toBe(false);
   });
+
+  it('asks the shell about a restore and runs one, and copes with a shell that cannot', async () => {
+    window.hitlistDesktop = {
+      getAccount: vi.fn().mockResolvedValue({ email: 'a@b.c' }), signIn: vi.fn(), signOut: vi.fn(),
+      checkRestore: vi.fn().mockResolvedValue({ state: 'restore-available', at: 5 }),
+      restoreNow: vi.fn().mockResolvedValue({ result: 'restored', imported: { KaizenTasks: 2 } }),
+    };
+    const { result } = renderHook(() => useDesktopAccount());
+    expect(await result.current.checkRestore(true)).toEqual({ state: 'restore-available', at: 5 });
+    expect(window.hitlistDesktop.checkRestore).toHaveBeenCalledWith({ force: true });
+    expect((await result.current.restoreNow()).result).toBe('restored');
+
+    window.hitlistDesktop = { getAccount: vi.fn().mockResolvedValue(null), signIn: vi.fn(), signOut: vi.fn() };
+    const bare = renderHook(() => useDesktopAccount());
+    expect((await bare.result.current.checkRestore()).state).toBe('unavailable');
+    expect((await bare.result.current.restoreNow()).result).toBe('unavailable');
+  });
 });

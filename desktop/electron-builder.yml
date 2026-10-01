@@ -12,6 +12,7 @@ files:
   - main.js
   - auth.js
   - backup.js
+  - restore.js
   - preload.js
   - catalyst-config.js
   - package.json

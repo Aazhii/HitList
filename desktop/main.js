@@ -11,6 +11,7 @@
 const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const { createAuth, ownerFor } = require('./auth');
 const { createBackup } = require('./backup');
+const { createRestore } = require('./restore');
 const { BACKUP_FUNCTION_URL } = require('./catalyst-config');
 const { spawn } = require('node:child_process');
 const { createServer } = require('node:net');
@@ -208,18 +209,47 @@ async function createWindow() {
   });
   backup.startSchedule();
 
+  const localPost = (urlPath, body) => new Promise((resolve, reject) => {
+    const payload = Buffer.from(JSON.stringify(body));
+    const headers = {
+      'Content-Type': 'application/json', 'Content-Length': payload.length,
+      ...(account ? { 'X-Hitlist-Desktop-Token': DESKTOP_TOKEN, 'X-Hitlist-Desktop-Owner': ownerFor(account.userId) } : {}),
+    };
+    const req = require('node:http').request({ host: '127.0.0.1', port, path: urlPath, method: 'POST', headers }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => { let json = {}; try { json = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { /* not JSON */ } resolve({ status: res.statusCode, json }); });
+    });
+    req.on('error', reject);
+    req.end(payload);
+  });
+  const cloudFetch = (urlPath) => auth.getSession().fetch(`${BACKUP_FUNCTION_URL}${urlPath}`);
+  const restore = createRestore({
+    getAccount: () => account,
+    localGet,
+    localPost,
+    cloudList: async () => { const res = await cloudFetch('/backup/list'); if (!res.ok) throw new Error(`list ${res.status}`); return res.json(); },
+    cloudLatest: async () => { const res = await cloudFetch('/backup/latest'); if (res.status === 404) return null; if (!res.ok) throw new Error(`latest ${res.status}`); return Buffer.from(await res.arrayBuffer()); },
+    lastBackupAt: () => backup.status().lastSuccessAt,
+  });
+  /** Set at sign-in, spent by the first check afterwards: that check may look in the cloud even if there is data here. */
+  let justSignedIn = false;
+
   const publicAccount = () => (account ? { email: account.email } : null);
   ipcMain.handle('account:get', () => publicAccount());
   ipcMain.handle('account:signIn', async () => {
     const signedIn = await auth.signIn(win);
     if (signedIn) {
       account = signedIn;
+      justSignedIn = true;
       win.webContents.reload();
       // After the page has asked /api/session (which brings the old local workspace into the account), not before.
       setTimeout(() => { void backup.backupNow('signed-in'); }, 15_000);
     }
     return publicAccount();
   });
+  ipcMain.handle('restore:check', async (_e, opts) => { const out = await restore.check({ force: !!(opts && opts.force), justSignedIn }); justSignedIn = false; return out; });
+  ipcMain.handle('restore:run', () => restore.restore());
   ipcMain.handle('backup:status', () => backup.status());
   ipcMain.handle('backup:now', () => backup.backupNow('manual'));
   ipcMain.handle('account:signOut', async () => {

@@ -58,8 +58,8 @@ machine after sign-in. The web link (AppSail) stops being the way people use Hit
 | D3.1 | Scheduler in the desktop shell (not the jar): every 6 h while open, on quit, and "Back up now" in the Account menu | **built, awaiting a click-through** | `desktop/backup.js` + `test.backup.js` (8): due only after 6 h, a 15-minute local check, a last backup on quit and on sign-out capped at 8 s |
 | D3.2 | Skip the upload when nothing changed since the last one (hash of the snapshot) | **built** | the hash ignores export time and row order; unchanged means no cloud call at all |
 | D3.3 | Compress (gzip) before upload; show "Backed up 2 h ago" in the Account menu | **built** | Account menu: Back up now plus the last-backup time (`useDesktopAccount`, `backupMessage`) |
-| D4.1 | After sign-in on an empty install: "Restore from backup (Oct 1, 9:40 AM)?" | todo | |
-| D4.2 | Restore into a non-empty install only adds (the P6.4 rule), never overwrites | todo | |
+| D4.1 | After sign-in on an empty install: "Restore from backup (Oct 1, 9:40 AM)?" | **built, awaiting a click-through** | `desktop/restore.js` + `test.restore.js` (8); the app offers a Restore toast on an empty install or just after sign-in (`RestoreOffer`), and Account → Restore from backup on demand; a normal launch with data makes no cloud call |
+| D4.2 | Restore into a non-empty install only adds (the P6.4 rule), never overwrites | **built** | restore posts the backup to the local server's add-only import (existing rows are left as they are, nothing is deleted); a damaged download changes nothing |
 | D5.1 | Stop the AppSail, or keep it with a page that links to the download | todo | |
 | D5.2 | Host the download page and the hosted-login page as a static Web Client (no compute) | todo | |
 | D6.1 | Windows x64 and macOS x64 builds; bundled JRE per platform | todo | |

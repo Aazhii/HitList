@@ -45,6 +45,7 @@ import { toApiRecurrence, type Recurrence } from '@/lib/recurrence';
 import { taskCountLabel } from '@/lib/bulkSelection';
 import type { BulkChange } from '@/components/tasks/BulkBar';
 import { takeClaimedMessage } from '@/lib/session';
+import { RestoreOffer } from '@/components/shell/RestoreOffer';
 import { QuickCapture } from '@/components/QuickCapture';
 import { isTypingTarget } from '@/lib/taskKeyboard';
 import { PageSections } from '@/components/shell/PageSections';
@@ -1966,6 +1967,7 @@ function UserScopedApp() {
       </div>
       </AppShell>
 
+      <RestoreOffer />
       <QuickCapture
         open={captureOpen}
         onOpenChange={setCaptureOpen}

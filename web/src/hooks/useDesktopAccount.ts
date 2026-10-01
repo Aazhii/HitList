@@ -3,6 +3,7 @@
  * a desktop build without them, `available` is false and the menu shows nothing about it.
  */
 import { useCallback, useEffect, useState } from 'react';
+import type { RestoreCheck, RestoreResult } from '@/lib/restoreMessage';
 
 export interface DesktopAccount { email: string | null }
 
@@ -12,6 +13,8 @@ export interface BackupOutcome { result: string; stored?: boolean }
 interface DesktopBridge {
   getBackupStatus?: () => Promise<BackupStatus>;
   backupNow?: () => Promise<BackupOutcome>;
+  checkRestore?: (opts?: { force?: boolean }) => Promise<RestoreCheck>;
+  restoreNow?: () => Promise<RestoreResult>;
   getAccount: () => Promise<DesktopAccount | null>;
   signIn: () => Promise<DesktopAccount | null>;
   signOut: () => Promise<null>;
@@ -59,5 +62,15 @@ export function useDesktopAccount() {
     } catch { return 'error'; } finally { setBackingUp(false); }
   }, [bridge]);
 
-  return { available: !!bridge, account, busy, failed, signIn, signOut, backup, backingUp, backupNow };
+  const checkRestore = useCallback(async (force = false): Promise<RestoreCheck> => {
+    if (!bridge?.checkRestore) return { state: 'unavailable' };
+    try { return await bridge.checkRestore({ force }); } catch { return { state: 'offline' }; }
+  }, [bridge]);
+
+  const restoreNow = useCallback(async (): Promise<RestoreResult> => {
+    if (!bridge?.restoreNow) return { result: 'unavailable' };
+    try { return await bridge.restoreNow(); } catch { return { result: 'error' }; }
+  }, [bridge]);
+
+  return { available: !!bridge, account, busy, failed, signIn, signOut, backup, backingUp, backupNow, checkRestore, restoreNow };
 }
