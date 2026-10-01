@@ -141,11 +141,9 @@ function EmojiPicker({ emoji, onSelect }: { emoji: string; onSelect: (emoji: str
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          // Showcase 312: a 56px white tile, 12px radius, 1px border. The prototype's emoji is 30px,
-          // between the scale's 24 and 32.
-          className="mb-4 grid size-14 cursor-pointer place-items-center rounded-[12px] border border-a-line bg-a-surface text-[32px] leading-none transition-colors duration-[120ms] hover:bg-a-line-soft"
-          aria-label={emoji ? 'Change note emoji' : 'Add note emoji'}
-          title={emoji ? 'Change note emoji' : 'Add note emoji'}
+          className="grid size-10 shrink-0 cursor-pointer place-items-center rounded-[6px] text-[28px] leading-none transition-colors duration-[120ms] hover:bg-a-line-soft"
+          aria-label="Change note emoji"
+          title="Change note emoji"
           onKeyDown={(event) => {
             if (emoji && (event.key === 'Backspace' || event.key === 'Delete')
               && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
@@ -156,7 +154,7 @@ function EmojiPicker({ emoji, onSelect }: { emoji: string; onSelect: (emoji: str
             }
           }}
         >
-          {emoji || <Plus className="size-5 text-a-faint" aria-hidden />}
+          {emoji}
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-52">
@@ -232,10 +230,16 @@ export function NoteDetail({
             metadata, every block, tables and panels share one left edge. */}
         <div className="mx-auto w-full max-w-[calc(var(--a-measure)+var(--a-gutter))] md:pl-[var(--a-gutter)]">
           <div>
-            <EmojiPicker
-              emoji={note.emoji ?? '📝'}
-              onSelect={(e) => onUpdateEmoji(note.id, e)}
-            />
+            <div className="flex min-w-0 items-start gap-3">
+              {note.emoji !== '' && (
+                <EmojiPicker
+                  emoji={note.emoji ?? '📝'}
+                  onSelect={(emoji) => {
+                    onUpdateEmoji(note.id, emoji);
+                    if (emoji === '') titleRef.current?.focus();
+                  }}
+                />
+              )}
 
             <textarea
               ref={titleRef}
@@ -244,9 +248,8 @@ export function NoteDetail({
               placeholder="Untitled"
               rows={1}
               className={cn(
-                'w-full resize-none border-none bg-transparent p-0 outline-none field-sizing-content',
-                // Showcase 313: 34px/1.15, 700, -0.02em; 32 here, the top of the type scale.
-                'block text-[34px] leading-[1.22] font-bold tracking-[-0.02em] text-a-ink',
+                'min-w-0 flex-1 resize-none border-none bg-transparent p-0 outline-none field-sizing-content [overflow-wrap:anywhere]',
+                'block text-[34px] leading-[1.22] font-bold tracking-normal text-a-ink',
                 'placeholder:text-a-line-strong',
               )}
               aria-label="Note title"
@@ -271,6 +274,7 @@ export function NoteDetail({
                 }
               }}
             />
+            </div>
 
             <p className="mt-[10px] mb-7 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-a-faint">
               <span>Edited {formatNoteEdited(note.updatedAt)}</span>

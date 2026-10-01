@@ -24,6 +24,19 @@ function Header({ onEmoji }: { onEmoji: (emoji: string) => void }) {
 }
 
 describe('note emoji keyboard deletion', () => {
+  it('places the emoji beside the editable title and allows long titles to wrap', () => {
+    render(<Header onEmoji={vi.fn()} />);
+    const title = screen.getByRole('textbox', { name: 'Note title' });
+    const emoji = screen.getByRole('button', { name: 'Change note emoji' });
+    expect(title.parentElement).toBe(emoji.parentElement);
+    expect(title.parentElement).toHaveClass('flex', 'items-start', 'min-w-0');
+    expect(emoji).toHaveClass('size-10', 'shrink-0');
+    expect(emoji).not.toHaveClass('mb-4');
+    expect(title).toHaveClass('min-w-0', 'flex-1', '[overflow-wrap:anywhere]');
+    fireEvent.change(title, { target: { value: 'A longer title that remains editable' } });
+    expect(title).toHaveValue('A longer title that remains editable');
+  });
+
   it('removes the emoji with Backspace at the start without changing the title or focus', () => {
     const onEmoji = vi.fn();
     render(<Header onEmoji={onEmoji} />);
@@ -34,7 +47,8 @@ describe('note emoji keyboard deletion', () => {
     expect(onEmoji).toHaveBeenCalledExactlyOnceWith('');
     expect(title).toHaveValue('Meeting notes');
     expect(title).toHaveFocus();
-    expect(screen.getByRole('button', { name: 'Add note emoji' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /note emoji/ })).not.toBeInTheDocument();
+    expect(title.parentElement?.children).toHaveLength(1);
     expect(fireEvent.keyDown(title, { key: 'Backspace' })).toBe(true);
     expect(onEmoji).toHaveBeenCalledTimes(1);
   });
@@ -47,6 +61,8 @@ describe('note emoji keyboard deletion', () => {
     expect(fireEvent.keyDown(emoji, { key })).toBe(false);
     expect(onEmoji).toHaveBeenCalledExactlyOnceWith('');
     expect(screen.getByRole('textbox', { name: 'Note title' })).toHaveValue('Meeting notes');
+    expect(screen.getByRole('textbox', { name: 'Note title' })).toHaveFocus();
+    expect(screen.queryByRole('button', { name: /note emoji/ })).not.toBeInTheDocument();
   });
 
   it('preserves ordinary text deletion, selections, shortcuts and composition', () => {
@@ -64,11 +80,10 @@ describe('note emoji keyboard deletion', () => {
     expect(onEmoji).not.toHaveBeenCalled();
   });
 
-  it('lets the user add an emoji again after keyboard removal', async () => {
+  it('still lets the user change an existing emoji', async () => {
     const onEmoji = vi.fn();
     render(<Header onEmoji={onEmoji} />);
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Change note emoji' }), { key: 'Delete' });
-    fireEvent.keyDown(screen.getByRole('button', { name: 'Add note emoji' }), { key: 'Enter' });
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Change note emoji' }), { key: 'Enter' });
     fireEvent.click(await screen.findByRole('button', { name: NOTE_EMOJIS[0] }));
     expect(onEmoji).toHaveBeenLastCalledWith(NOTE_EMOJIS[0]);
     expect(screen.getByRole('button', { name: 'Change note emoji' })).toHaveTextContent(NOTE_EMOJIS[0]);
