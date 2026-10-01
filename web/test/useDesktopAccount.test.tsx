@@ -41,4 +41,21 @@ describe('useDesktopAccount', () => {
     expect(result.current.failed).toBe(false);
     expect(result.current.account).toEqual({ email: 'x@y.z' });
   });
+
+  it('backs up through the shell and refreshes the last-backup time', async () => {
+    const status = vi.fn().mockResolvedValueOnce({ lastSuccessAt: null, lastResult: null }).mockResolvedValue({ lastSuccessAt: 123, lastResult: 'backed-up' });
+    window.hitlistDesktop = {
+      getAccount: vi.fn().mockResolvedValue({ email: 'a@b.c' }),
+      signIn: vi.fn(), signOut: vi.fn(),
+      getBackupStatus: status,
+      backupNow: vi.fn().mockResolvedValue({ result: 'backed-up', stored: true }),
+    };
+    const { result } = renderHook(() => useDesktopAccount());
+    await waitFor(() => expect(result.current.backup).toEqual({ lastSuccessAt: null, lastResult: null }));
+    let outcome = '';
+    await act(async () => { outcome = await result.current.backupNow(); });
+    expect(outcome).toBe('backed-up');
+    expect(result.current.backup?.lastSuccessAt).toBe(123);
+    expect(result.current.backingUp).toBe(false);
+  });
 });

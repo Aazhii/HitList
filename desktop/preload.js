@@ -5,4 +5,6 @@ contextBridge.exposeInMainWorld('hitlistDesktop', {
   getAccount: () => ipcRenderer.invoke('account:get'),
   signIn: () => ipcRenderer.invoke('account:signIn'),
   signOut: () => ipcRenderer.invoke('account:signOut'),
+  getBackupStatus: () => ipcRenderer.invoke('backup:status'),
+  backupNow: () => ipcRenderer.invoke('backup:now'),
 });

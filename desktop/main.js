@@ -10,6 +10,8 @@
  */
 const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const { createAuth, ownerFor } = require('./auth');
+const { createBackup } = require('./backup');
+const { BACKUP_FUNCTION_URL } = require('./catalyst-config');
 const { spawn } = require('node:child_process');
 const { createServer } = require('node:net');
 const path = require('node:path');
@@ -90,6 +92,9 @@ function waitForHealth(port) {
 }
 
 let backendProcess = null;
+/** Set once the window is up. Used by the quit handler to take a last backup. */
+let backup = null;
+const QUIT_BACKUP_MS = 8000;
 /** A secret for this launch only. The local server accepts an account name from the shell only with it. */
 const DESKTOP_TOKEN = crypto.randomBytes(32).toString('hex');
 
@@ -183,14 +188,43 @@ async function createWindow() {
     callback({ requestHeaders: headers });
   });
 
+  /** The local server's answer, as the signed-in account (this is where the snapshot comes from). */
+  const localGet = (urlPath) => new Promise((resolve, reject) => {
+    const headers = account ? { 'X-Hitlist-Desktop-Token': DESKTOP_TOKEN, 'X-Hitlist-Desktop-Owner': ownerFor(account.userId) } : {};
+    require('node:http').get({ host: '127.0.0.1', port, path: urlPath, headers }, (res) => {
+      const chunks = [];
+      res.on('data', (c) => chunks.push(c));
+      res.on('end', () => (res.statusCode === 200 ? resolve(Buffer.concat(chunks)) : reject(new Error(`local ${res.statusCode}`))));
+    }).on('error', reject);
+  });
+  backup = createBackup({
+    stateDir: userDataDir,
+    getAccount: () => account,
+    localGet,
+    upload: async (bytes, hash) => {
+      const res = await auth.getSession().fetch(`${BACKUP_FUNCTION_URL}/backup`, { method: 'PUT', body: bytes, headers: { 'x-content-hash': hash } });
+      return { status: res.status, body: await res.text() };
+    },
+  });
+  backup.startSchedule();
+
   const publicAccount = () => (account ? { email: account.email } : null);
   ipcMain.handle('account:get', () => publicAccount());
   ipcMain.handle('account:signIn', async () => {
     const signedIn = await auth.signIn(win);
-    if (signedIn) { account = signedIn; win.webContents.reload(); }
+    if (signedIn) {
+      account = signedIn;
+      win.webContents.reload();
+      // After the page has asked /api/session (which brings the old local workspace into the account), not before.
+      setTimeout(() => { void backup.backupNow('signed-in'); }, 15_000);
+    }
     return publicAccount();
   });
+  ipcMain.handle('backup:status', () => backup.status());
+  ipcMain.handle('backup:now', () => backup.backupNow('manual'));
   ipcMain.handle('account:signOut', async () => {
+    // A last backup first, so signing out never leaves recent work only on this machine.
+    await Promise.race([backup.backupNow('sign-out'), new Promise((r) => setTimeout(r, QUIT_BACKUP_MS))]).catch(() => {});
     await auth.signOut();
     account = null;
     win.webContents.reload();
@@ -213,6 +247,8 @@ app.on('activate', () => {
 app.on('before-quit', async (event) => {
   if (!backendProcess || backendProcess.exitCode !== null) return;
   event.preventDefault();
+  // One last backup while the local server is still up, but never holding the quit for more than a few seconds.
+  if (backup) await Promise.race([backup.backupNow('quit'), new Promise((r) => setTimeout(r, QUIT_BACKUP_MS))]).catch(() => {});
   await stopBackend();
   app.quit();
 });

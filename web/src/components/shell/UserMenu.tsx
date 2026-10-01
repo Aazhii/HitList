@@ -4,6 +4,8 @@ import { useDesktopAccount } from '@/hooks/useDesktopAccount';
 import { toast } from 'sonner';
 import { backupApi } from '@/lib/api';
 import { currentSession, signOut } from '@/lib/session';
+import { agoLabel } from '@/lib/pages';
+import { backupMessage } from '@/lib/backupMessage';
 import { backupFileName, importSummary, parseBackupText } from '@/lib/backupFile';
 import { DENSITIES, useDensity } from '@/hooks/useDensity';
 import {
@@ -124,6 +126,24 @@ export function UserMenu({ onOpenReminders, dailyLine }: {
               >
                 Daily summary on Today
               </DropdownMenuCheckboxItem>
+            )}
+            {desktop.available && desktop.account && (
+              <DropdownMenuItem
+                disabled={desktop.backingUp}
+                onSelect={(e) => {
+                  e.preventDefault();
+                  void desktop.backupNow().then((result) => toast(backupMessage(result), { duration: 3500 }));
+                }}
+                className="gap-2.5 px-2.5 py-2 text-[14px] text-a-muted"
+              >
+                <Upload className="size-[15px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span>{desktop.backingUp ? 'Backing up…' : 'Back up now'}</span>
+                  <span className="text-[12px] text-a-faint">
+                    {desktop.backup?.lastSuccessAt ? `Backed up ${agoLabel(desktop.backup.lastSuccessAt).toLowerCase()}` : 'Not backed up yet'}
+                  </span>
+                </span>
+              </DropdownMenuItem>
             )}
             {desktop.available && (desktop.account ? (
               <DropdownMenuItem

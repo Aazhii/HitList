@@ -9,7 +9,7 @@
     "prepare:jar": "sh scripts/prepare-jar.sh",
     "prepare:jre": "sh scripts/prepare-jre.sh",
     "build": "pnpm run prepare:jar && pnpm run prepare:jre && electron-builder",
-    "test": "node --test test.auth.js"
+    "test": "node --test test.auth.js test.backup.js"
   },
   "devDependencies": {
     "electron": "^44.3.0",
