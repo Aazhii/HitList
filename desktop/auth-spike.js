@@ -6,6 +6,12 @@
  * never prints a cookie value, only the cookie names.
  */
 const { app, BrowserWindow, session } = require('electron');
+const fs = require('node:fs');
+
+// Everything printed is also appended here, so the result can be read without copying it out of a terminal.
+const RESULT = '/tmp/hitlist-auth-spike.txt';
+fs.writeFileSync(RESULT, '');
+const say = (...parts) => { const line = parts.join(' '); console.log(line); fs.appendFileSync(RESULT, line + '\n'); };
 
 const { HOST: DOMAIN, LOGIN_URL, SIGNUP_URL, RESET_PASSWORD_URL, BACKUP_FUNCTION_URL } = require('./catalyst-config');
 // SPIKE_PAGE=reset or =signup opens that hosted page instead of the sign-in page (to set a first password).
@@ -26,18 +32,18 @@ app.whenReady().then(async () => {
   const ses = session.fromPartition('persist:hitlist-spike');
   const win = new BrowserWindow({ width: 520, height: 720, title: 'HitList sign-in (spike)', webPreferences: { session: ses } });
   await win.loadURL(LOGIN);
-  console.log('Sign in in the window. The check runs 5 s after each page load that is not the login page.');
+  say('Sign in in the window. The check runs 5 s after each page load that is not the login page.');
   let done = false;
-  win.webContents.on('did-navigate', (_e, url) => console.log('navigated to', new URL(url).pathname));
+  win.webContents.on('did-navigate', (_e, url) => say('navigated to', new URL(url).pathname));
   win.webContents.on('did-finish-load', () => {
     setTimeout(async () => {
       if (done) return;
       const { names, header } = await cookieHeader(ses);
-      console.log('cookie names:', names.join(', ') || '(none)');
+      say('cookie names:', names.join(', ') || '(none)');
       const authed = await whoami(header);
-      console.log('whoami with the window\'s cookies ->', authed);
-      console.log('whoami with no cookies           ->', await whoami(''));
-      if (authed.startsWith('200')) { done = true; console.log('SPIKE PASSED'); setTimeout(() => app.quit(), 1500); }
+      say('whoami with the window\'s cookies ->', authed);
+      say('whoami with no cookies           ->', await whoami(''));
+      if (authed.startsWith('200')) { done = true; say('SPIKE PASSED'); setTimeout(() => app.quit(), 1500); }
     }, 5000);
   });
 });
