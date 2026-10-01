@@ -71,3 +71,12 @@ machine after sign-in. The web link (AppSail) stops being the way people use Hit
   until a newer one is safely stored.
 - Every network call has a budget line in `01-BUDGET.md` before it is written.
 - The desktop must work with no network at all. Cloud is backup, not a dependency.
+
+## What the spike taught us (read before building D1.1 and D2)
+
+- **Who is calling.** `functions/backup/index.js` `callerOf`: the SDK must accept the request's user token (`zcAuth.init(req, { scope: 'user' })`; an anonymous caller is refused), and Catalyst's gateway id (`x-zc-user-id`) must resolve, by an admin `getUserDetails`, to an actual App User. Not used, on purpose: `getCurrentUser()` (answers null even for a signed-in app user), `x-zc-user-type` (the gateway passes a caller-supplied one through), and the gateway id alone (for an anonymous caller it is the project owner's id).
+- **Who counts as a user.** Only people in Authentication → User Management with role App User. The project owner's own Zoho/Gmail login is *not* one until it appears in that list (it did, after setting a password through the hosted page).
+- **How the desktop calls.** Any of these works: a call from the signed-in window's page, Electron's `session.fetch` from the main process, or a plain `Cookie` header built from the window's cookies. Use `session.fetch` (browser-style cookie handling, no page needed).
+- **After sign-in** Catalyst lands the window on `/app/` ("Site Not Found" until a web client is deployed). The desktop should detect that URL and close the login window itself.
+- **Gotchas found:** a deploy takes a few seconds to take over, so the first request after `catalyst deploy` can still be answered by the previous version; `x-zc-*` headers on a Function request are the gateway's, never the caller's, except `x-zc-user-type`.
+
