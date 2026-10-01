@@ -27,12 +27,21 @@ on:
         description: Third number (the 5 in 1.2.5). Leave empty for an automatic, always-new number
         type: string
         default: ''
+      stage:
+        description: Pre-release stage (optional). none = a normal release; alpha or beta = a pre-release such as 1.2.5-beta2
+        type: choice
+        options: [none, alpha, beta]
+        default: none
+      stage_number:
+        description: Number after the stage (the 2 in beta2). Only used with alpha or beta; empty means 1
+        type: string
+        default: ''
       publish:
         description: Also publish a GitHub Release with the files
         type: boolean
         default: false
   push:
-    tags: ['v*']
+    tags: ['v*', '*_[0-9]*']
 
 concurrency:
   group: build-desktop-${{ github.ref }}
@@ -48,6 +57,8 @@ jobs:
     outputs:
       version: ${{ steps.v.outputs.version }}
       name: ${{ steps.v.outputs.name }}
+      tag: ${{ steps.v.outputs.tag }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
       sha: ${{ steps.v.outputs.sha }}
     steps:
       - uses: actions/checkout@v4
@@ -60,6 +71,8 @@ jobs:
           IN_MAJOR: ${{ inputs.major }}
           IN_MINOR: ${{ inputs.minor }}
           IN_PATCH: ${{ inputs.patch }}
+          IN_STAGE: ${{ inputs.stage }}
+          IN_STAGE_NUM: ${{ inputs.stage_number }}
         run: |
           sh scripts/ci/compute-version.sh >> "$GITHUB_OUTPUT"
           echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
@@ -240,15 +253,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
           NAME: ${{ needs.version.outputs.name }}
+          TAG: ${{ needs.version.outputs.tag }}
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
           SHA: ${{ needs.version.outputs.sha }}
         run: |
-          if gh release view "v${VERSION}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
-            echo "A release for v${VERSION} already exists. Run again with a different version (or leave the third field empty for an automatic number)." >&2
+          if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "A release called ${TAG} already exists. Run again with a different version (or leave the third field empty for an automatic number)." >&2
             exit 1
           fi
           cat SHA256SUMS-*.txt > SHA256SUMS.txt
           rm SHA256SUMS-*.txt
-          gh release create "v${VERSION}" --repo "${GITHUB_REPOSITORY}" --target "${GITHUB_SHA}" \
+          FLAGS=""
+          if [ "${PRERELEASE}" = "true" ]; then FLAGS="--prerelease"; fi
+          gh release create "${TAG}" --repo "${GITHUB_REPOSITORY}" --target "${GITHUB_SHA}" ${FLAGS} \
             --title "${NAME} ${VERSION}" \
             --notes "Built from commit ${SHA}. Mac (.dmg), Windows (.exe), Linux (.AppImage and .deb). The apps are not signed; see docs/INSTALL.md for the first-open steps. SHA256SUMS.txt lists the checksums." \
             ./*

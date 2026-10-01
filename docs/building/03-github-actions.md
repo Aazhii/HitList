@@ -41,10 +41,16 @@ When you click **Run workflow** you get these fields:
 | Main version | The 1 in `1.2.5` | `1` |
 | Second number | The 2 in `1.2.5` | `1` |
 | Third number | The 5 in `1.2.5`. **Leave empty** and it becomes the run number | empty |
+| Pre-release stage | `none` (a normal release), `alpha` or `beta` | `none` |
+| Stage number | The 2 in `beta2`; only used with alpha or beta; empty means 1 | empty |
 | Also publish a GitHub Release | Creates a Release with every file | off |
 
-Numbers must be whole numbers, and the name may use only letters, numbers, spaces, dots, dashes and underscores. A bad value
-stops the run at once with a message. Publishing a version that already has a Release also stops with a message; choose another
+The result follows the pattern `<name>_<main>.<second>.<third>-<stage><number>`: for example name `HitList`, `1`, `2`, `5`, `beta`, `2`
+gives version `1.2.5-beta2` and the release tag `HitList_1.2.5-beta2`. A build with alpha or beta is marked as a **pre-release** on the
+GitHub Releases page. With stage `none` the version is just `1.2.5` and the tag `HitList_1.2.5`.
+
+Numbers (including the stage number) must be whole numbers, and the name may use only letters, numbers, spaces, dots, dashes and underscores. A bad value
+stops the run at once with a message. Publishing a version whose tag already has a Release also stops with a message; choose another
 version or leave the third field empty. The logic is `scripts/ci/compute-version.sh`, tested by
 `sh scripts/ci/compute-version.test.sh`.
 
@@ -54,7 +60,7 @@ version or leave the third field empty. The logic is `scripts/ci/compute-version
   number only ever goes up, so no two builds share a version, and the version is in every file name and inside the app.
   If you type a third number yourself, you are choosing it, and you must not reuse one.
 - The commit id is in the artifact names and the release notes, and `SHA256SUMS.txt` fingerprints each file.
-- A pushed tag such as `v1.2.0` uses its own number and publishes a Release by itself.
+- A pushed tag such as `v1.2.0`, `v1.2.0-beta3` or `HitList_1.2.0` uses its own number and publishes a Release by itself.
 - All three apps in one run contain the identical backend, because the jar is built once.
 
 ## Things to know
