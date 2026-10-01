@@ -123,6 +123,8 @@ function waitForHealth(port) {
 }
 
 let backendProcess = null;
+let backendPort = null;
+let windowCreation = null;
 /** Set once the window is up. Used by the quit handler to take a last backup. */
 let backup = null;
 const QUIT_BACKUP_MS = 8000;
@@ -173,30 +175,19 @@ function stopBackend() {
   });
 }
 
-async function createWindow() {
+async function openWindow() {
   const userDataDir = app.getPath('userData');
   fs.mkdirSync(userDataDir, { recursive: true });
 
-  let port;
-  try {
-    port = await getFreePort();
-    startBackend(port, userDataDir);
-  } catch (error) {
-    dialog.showErrorBox('HitList could not start', String(error?.message ?? error));
-    app.quit();
-    return;
+  if (!backendProcess || backendProcess.exitCode !== null || backendProcess.killed) {
+    backendPort = await getFreePort();
+    startBackend(backendPort, userDataDir);
+    if (!await waitForHealth(backendPort)) {
+      await stopBackend();
+      throw new Error('The local backend did not respond in time. Check that Java is installed and try again.');
+    }
   }
-
-  const ready = await waitForHealth(port);
-  if (!ready) {
-    dialog.showErrorBox(
-      'HitList could not start',
-      'The local backend did not respond in time. Check that Java is installed and try again.',
-    );
-    await stopBackend();
-    app.quit();
-    return;
-  }
+  const port = backendPort;
 
   const auth = createAuth({ userDataDir });
   /** Who is signed in, as remembered on disk: the app opens signed in with no network. */
@@ -299,6 +290,11 @@ async function createWindow() {
   let justSignedIn = false;
 
   const publicAccount = () => (account ? { email: account.email } : null);
+  for (const channel of [
+    'account:get', 'account:signIn', 'account:signOut', 'restore:check', 'restore:run',
+    'cliq:get', 'cliq:set', 'cliq:test', 'update:status', 'update:check',
+    'update:download', 'update:cancel', 'update:install', 'backup:status', 'backup:now',
+  ]) ipcMain.removeHandler(channel);
   ipcMain.handle('account:get', () => publicAccount());
   ipcMain.handle('account:signIn', async () => {
     const signedIn = await auth.signIn(win);
@@ -345,10 +341,24 @@ async function createWindow() {
     return { backup: outcome.result };
   });
 
-  win.loadURL(`http://127.0.0.1:${port}`);
+  await win.loadURL(`http://127.0.0.1:${port}`);
 }
 
-app.whenReady().then(createWindow);
+function createWindow() {
+  if (windowCreation) return windowCreation;
+  windowCreation = openWindow().catch((error) => {
+    console.error('[hitlist] could not open window:', error);
+    dialog.showErrorBox('HitList could not start', String(error?.message ?? error));
+    app.quit();
+  }).finally(() => { windowCreation = null; });
+  return windowCreation;
+}
+
+app.whenReady().then(createWindow).catch((error) => {
+  console.error('[hitlist] app initialization failed:', error);
+  dialog.showErrorBox('HitList could not start', String(error?.message ?? error));
+  app.quit();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
