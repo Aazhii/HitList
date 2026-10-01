@@ -16,8 +16,16 @@ function send(res, status, body) {
 async function currentUser(req) {
 	try {
 		await zcAuth.init(req, { type: 'advancedio', appName: 'backup', scope: 'user' });
-		const user = await new UserManagement().getCurrentUser();
-		return user && user.user_id ? { user } : { reason: 'no user in the answer', answerKeys: Object.keys(user || {}) };
+		const um = new UserManagement();
+		const user = await um.getCurrentUser();
+		if (user && user.user_id) return { user };
+		// Spike only: what Catalyst actually answered, to see why the user object is empty.
+		let raw = '';
+		try {
+			const resp = await um.requester.send({ method: 'GET', path: '/project-user/current', service: 'baas', track: true, user: 'user' });
+			raw = JSON.stringify({ status: resp.status, data: resp.data }).slice(0, 500);
+		} catch (inner) { raw = 'raw call failed: ' + String(inner && inner.message).slice(0, 200); }
+		return { reason: 'no user in the answer', answerKeys: Object.keys(user || {}), raw };
 	} catch (error) {
 		return { reason: String((error && (error.message || error.code)) || error).slice(0, 300) };
 	}
@@ -27,7 +35,7 @@ module.exports = async (req, res) => {
 	const path = (req.url || '/').split('?')[0];
 	if (path === '/health') return send(res, 200, { ok: true });
 	const found = await currentUser(req);
-	if (!found.user) return send(res, 401, { error: 'unauthenticated', reason: found.reason, answerKeys: found.answerKeys });
+	if (!found.user) return send(res, 401, { error: 'unauthenticated', reason: found.reason, answerKeys: found.answerKeys, raw: found.raw });
 	if (path === '/whoami') return send(res, 200, { userId: String(found.user.user_id), email: found.user.email_id || null });
 	return send(res, 404, { error: 'not_found' });
 };
