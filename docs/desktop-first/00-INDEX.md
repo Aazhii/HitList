@@ -45,8 +45,8 @@ machine after sign-in. The web link (AppSail) stops being the way people use Hit
 
 | ID | Task | Status | Proof |
 |---|---|---|---|
-| D0.1 | Paste the free-tier limits into `01-BUDGET.md` (the message only had a placeholder) | **blocked: needs the text** | |
-| D0.2 | Per-user daily call budget: sign-in, backup, restore, list | todo | table in `01-BUDGET.md` |
+| D0.1 | Paste the free-tier limits into `01-BUDGET.md` | **done 2026-10-01** | `01-BUDGET.md`: the pasted limits and what a person costs |
+| D0.2 | Per-user daily call budget: sign-in, backup, restore, list | **done 2026-10-01** | table in `01-BUDGET.md`: File Store uploads are the first limit, about 33 active people at 2 backups a day |
 | D1.0 | Spike: can a desktop window sign in with Catalyst's hosted login and call a Function as that user? | **done 2026-10-01** | `desktop/auth-spike.js` printed SPIKE PASSED: the window's session reaches the `backup` Function, which returned the user id and email; a call with no cookies is refused |
 | D1.1 | Desktop opens Catalyst's hosted login in its own window, keeps the session cookie in the app's partition | **built, awaiting a click-through** | `desktop/auth.js`: the window closes itself on /app/, the account is remembered in `account.json`, sign-out clears the session; `test.auth.js` (4) |
 | D1.2 | The jar learns the signed-in user: Electron passes it in, the jar runs in `cookie` mode locally with that user as owner | **built** | `AUTH_MODE=desktop`: the shell names the owner on its own local requests with a per-launch secret; a wrong or missing secret falls back to the cookie workspace; `ApiContractTest` desktop case |

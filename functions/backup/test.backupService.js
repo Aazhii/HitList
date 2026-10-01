@@ -10,14 +10,16 @@ function fakeStorage() {
 	const rows = [];
 	const blobs = new Map();
 	let n = 0;
+	const stats = { deleteCalls: 0, listCalls: 0 };
 	return {
 		rows,
+		stats,
 		blobs,
 		index: {
 			latest: async (u) => rows.filter((r) => r.userId === u).sort((a, b) => b.at - a.at)[0] || null,
-			list: async (u) => rows.filter((r) => r.userId === u).sort((a, b) => b.at - a.at),
+			list: async (u) => { stats.listCalls++; return rows.filter((r) => r.userId === u).sort((a, b) => b.at - a.at); },
 			add: async (e) => { const row = { ...e, rowId: ++n }; rows.push(row); return row; },
-			remove: async (u, e) => { const i = rows.findIndex((r) => r.userId === u && r.rowId === e.rowId); if (i >= 0) rows.splice(i, 1); },
+			removeMany: async (u, es) => { stats.deleteCalls++; for (const e of es) { const i = rows.findIndex((r) => r.userId === u && r.rowId === e.rowId); if (i >= 0) rows.splice(i, 1); } },
 		},
 		files: {
 			put: async (_u, _name, bytes) => { const id = String(++n); blobs.set(id, bytes); return id; },
@@ -50,13 +52,27 @@ test('does not store the same content twice in a row', async () => {
 	assert.equal((await svc.list('111')).length, 2);
 });
 
-test('keeps only the newest seven, and deletes the files with them', async () => {
+test('prunes to the newest seven in one batch once there are fourteen, and deletes the files with them', async () => {
 	const s = fakeStorage(); const svc = service(s);
-	for (let i = 0; i < 10; i++) { const x = snap(`v${i}`); await svc.save('111', x.bytes, x.hash); }
+	for (let i = 0; i < 13; i++) { const x = snap(`v${i}`); await svc.save('111', x.bytes, x.hash); }
+	assert.equal((await svc.list('111')).length, 13);
+	assert.equal(s.stats.deleteCalls, 0);
+	const x = snap('v13'); await svc.save('111', x.bytes, x.hash);
 	const list = await svc.list('111');
 	assert.equal(list.length, 7);
 	assert.equal(s.blobs.size, 7);
+	assert.equal(s.stats.deleteCalls, 1);
 	assert.ok(list[0].at > list[6].at);
+	assert.equal(list[0].hash, x.hash);
+});
+
+test('one backup costs one index query, and nothing more when the content is unchanged', async () => {
+	const s = fakeStorage(); const svc = service(s);
+	const a = snap('only');
+	await svc.save('111', a.bytes, a.hash);
+	assert.equal(s.stats.listCalls, 1);
+	await svc.save('111', a.bytes, a.hash);
+	assert.equal(s.stats.listCalls, 2);
 });
 
 test('one user can never read or change another user\'s backups', async () => {
@@ -71,7 +87,7 @@ test('one user can never read or change another user\'s backups', async () => {
 	// Alice saving the very content Bob already has is still stored for Alice: the dedupe is per user.
 	assert.equal((await svc.save('111', b.bytes, b.hash)).stored, true);
 	// Pruning one user's old backups never touches the other's.
-	for (let i = 0; i < 9; i++) { const x = snap(`a${i}`); await svc.save('111', x.bytes, x.hash); }
+	for (let i = 0; i < 20; i++) { const x = snap(`a${i}`); await svc.save('111', x.bytes, x.hash); }
 	assert.equal((await svc.list('222')).length, 1);
 	assert.deepEqual((await svc.latest('222')).bytes, b.bytes);
 });

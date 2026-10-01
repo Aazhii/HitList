@@ -46,7 +46,8 @@ async function createCatalystStorage(req) {
 			add: async ({ userId, at, hash, size, fileId }) => rowOf(await datastore.table(TABLE).insertRow({
 				UserId: digits(userId), BackedUpAt: at, Hash: hash, SizeBytes: size, FileId: String(fileId),
 			})),
-			remove: async (_userId, entry) => { await datastore.table(TABLE).deleteRow(entry.rowId); },
+			// One request for the whole batch.
+			removeMany: async (_userId, entries) => { if (entries.length) await datastore.table(TABLE).deleteRows(entries.map((e) => e.rowId)); },
 		},
 		files: {
 			put: async (_userId, name, bytes) => {

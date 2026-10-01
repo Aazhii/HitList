@@ -3,13 +3,15 @@
 /**
  * The backup rules, with no Catalyst in them: storage is passed in, so these can be tested with a fake.
  *
- *   index: { latest(userId), list(userId), add(entry), remove(userId, entry) }   (one row per backup)
+ *   index: { latest(userId), list(userId), add(entry), removeMany(userId, entries) }   (one row per backup)
  *   files: { put(userId, name, bytes) -> fileId, get(fileId) -> bytes, remove(fileId) }
  *
  * Isolation: every read and write goes through the index, filtered by `userId`, and the file id used is always
  * one taken from that user's own entry. A user id is never accepted from the request body.
  */
 const KEEP = 7;
+// Old backups are removed in one batch once a user has twice KEEP, not one by one: the free tier counts every delete
+// request, so a user at the limit costs one delete call per KEEP backups instead of one per backup.
 const MAX_BYTES = 25 * 1024 * 1024;
 
 class BackupError extends Error {
@@ -23,6 +25,7 @@ class BackupError extends Error {
 const isGzip = (bytes) => bytes.length > 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
 
 function createBackupService({ index, files, now = () => Date.now(), keep = KEEP, maxBytes = MAX_BYTES }) {
+	const pruneAt = keep * 2;
 	return {
 		/** Stores a snapshot unless the newest one already has the same content hash. */
 		async save(userId, bytes, hash) {
@@ -31,18 +34,22 @@ function createBackupService({ index, files, now = () => Date.now(), keep = KEEP
 			if (bytes.length > maxBytes) throw new BackupError(413, 'too_large', `A backup may be at most ${maxBytes} bytes`);
 			if (!isGzip(bytes)) throw new BackupError(400, 'not_gzip', 'The backup must be gzip-compressed');
 
-			const newest = await index.latest(userId);
+			// One query serves both the unchanged check and the pruning below.
+			const existing = await index.list(userId);
+			const newest = existing[0];
 			if (newest && newest.hash === hash) return { stored: false, entry: newest };
 
 			const at = now();
 			const fileId = await files.put(userId, `${userId}_${at}_${hash.slice(0, 8)}.json.gz`, bytes);
 			const entry = await index.add({ userId, at, hash, size: bytes.length, fileId });
 
-			// Only after the new backup is safely stored: drop the ones beyond the newest `keep`.
-			const all = await index.list(userId);
-			for (const old of all.slice(keep)) {
-				await files.remove(old.fileId);
-				await index.remove(userId, old);
+			// Only after the new backup is safely stored, and only once there are twice `keep`: drop everything beyond the
+			// newest `keep`, in one batch.
+			const all = [entry, ...existing];
+			if (all.length >= pruneAt) {
+				const old = all.slice(keep);
+				for (const o of old) await files.remove(o.fileId);
+				await index.removeMany(userId, old);
 			}
 			return { stored: true, entry };
 		},
