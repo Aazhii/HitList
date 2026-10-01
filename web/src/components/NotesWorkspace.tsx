@@ -141,7 +141,7 @@ function EmojiPicker({ emoji, onSelect }: { emoji: string; onSelect: (emoji: str
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          className="grid size-10 shrink-0 cursor-pointer place-items-center rounded-[6px] text-[28px] leading-none transition-colors duration-[120ms] hover:bg-a-line-soft"
+          className="grid size-10 shrink-0 cursor-pointer place-items-center rounded-[6px] text-[32px] leading-none transition-colors duration-[120ms] hover:bg-a-line-soft"
           aria-label="Change note emoji"
           title="Change note emoji"
           onKeyDown={(event) => {
