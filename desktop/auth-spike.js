@@ -33,20 +33,23 @@ async function whoami(header, csrf) {
 app.whenReady().then(async () => {
   const ses = session.fromPartition('persist:hitlist-spike');
   const win = new BrowserWindow({ width: 520, height: 720, title: 'HitList sign-in (spike)', webPreferences: { session: ses } });
-  await win.loadURL(LOGIN);
-  say('Sign in in the window. The check runs 5 s after each page load that is not the login page.');
   let done = false;
+  const check = async () => {
+    if (done) return;
+    const { names, header, csrf } = await cookieHeader(ses);
+    say('cookie names:', names.join(', ') || '(none)');
+    const withCsrf = await whoami(header, csrf);
+    say('whoami with cookies only          ->', await whoami(header, ''));
+    say('whoami with cookies + csrf header ->', withCsrf);
+    say('whoami with no cookies            ->', await whoami(''));
+    if (withCsrf.startsWith('200') || (await whoami(header, '')).startsWith('200')) {
+      done = true; say('SPIKE PASSED'); setTimeout(() => app.quit(), 1500);
+    }
+  };
   win.webContents.on('did-navigate', (_e, url) => say('navigated to', new URL(url).pathname));
-  win.webContents.on('did-finish-load', () => {
-    setTimeout(async () => {
-      if (done) return;
-      const { names, header, csrf } = await cookieHeader(ses);
-      say('cookie names:', names.join(', ') || '(none)');
-      const authed = await whoami(header, csrf);
-      say('whoami with cookies only         ->', await whoami(header, ''));
-      say('whoami with cookies + csrf header ->', authed);
-      say('whoami with no cookies           ->', await whoami(''));
-      if (authed.startsWith('200')) { done = true; say('SPIKE PASSED'); setTimeout(() => app.quit(), 1500); }
-    }, 5000);
-  });
+  // Listening before the first load, so an already signed-in window is checked too. A check runs 5 s after every
+  // page load until one passes (sign-in takes you through several pages).
+  win.webContents.on('did-finish-load', () => { setTimeout(() => { check().catch((e) => say('check failed:', e.message)); }, 5000); });
+  say('Sign in in the window if it asks. The check runs 5 s after each page load.');
+  await win.loadURL(LOGIN);
 });
