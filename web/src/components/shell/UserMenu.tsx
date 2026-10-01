@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
-import { Bell, Download, Keyboard, LogOut, Upload } from 'lucide-react';
+import { Bell, Download, Keyboard, LogIn, LogOut, Upload } from 'lucide-react';
+import { useDesktopAccount } from '@/hooks/useDesktopAccount';
 import { toast } from 'sonner';
 import { backupApi } from '@/lib/api';
 import { currentSession, signOut } from '@/lib/session';
@@ -31,6 +32,7 @@ export function UserMenu({ onOpenReminders, dailyLine }: {
   const [shortcuts, setShortcuts] = useState(false);
   const [density, setDensity] = useDensity();
   const fileInput = useRef<HTMLInputElement>(null);
+  const desktop = useDesktopAccount();
 
   /** Everything in the workspace, as one JSON file the person keeps. */
   const exportBackup = async () => {
@@ -123,6 +125,25 @@ export function UserMenu({ onOpenReminders, dailyLine }: {
                 Daily summary on Today
               </DropdownMenuCheckboxItem>
             )}
+            {desktop.available && (desktop.account ? (
+              <DropdownMenuItem
+                disabled={desktop.busy}
+                onSelect={() => { void desktop.signOut(); }}
+                className="gap-2.5 px-2.5 py-2 text-[14px] text-a-muted"
+              >
+                <LogOut className="size-[15px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
+                Sign out{desktop.account.email ? ` (${desktop.account.email})` : ''}
+              </DropdownMenuItem>
+            ) : (
+              <DropdownMenuItem
+                disabled={desktop.busy}
+                onSelect={() => { void desktop.signIn(); }}
+                className="gap-2.5 px-2.5 py-2 text-[14px] text-a-muted"
+              >
+                <LogIn className="size-[15px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
+                {desktop.failed ? 'Sign in failed, try again' : 'Sign in to back up'}
+              </DropdownMenuItem>
+            ))}
             {currentSession()?.mode === 'catalyst' && (
               <DropdownMenuItem
                 onSelect={() => { signOut(currentSession()?.loginUrl).catch(() => toast.error('Could not sign out', { duration: 3000 })); }}
