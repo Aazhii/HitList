@@ -3,6 +3,8 @@
 // Backup service for the desktop app (D1.0 passed: see docs/desktop-first/00-INDEX.md). For now it only answers
 // "who is calling?"; the backup routes (D2) build on `callerOf`.
 const { zcAuth, UserManagement } = require('@zcatalyst/auth/node');
+const { createBackupService, BackupError, MAX_BYTES } = require('./backupService');
+const { createCatalystStorage } = require('./catalystStorage');
 
 function send(res, status, body) {
 	res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -36,11 +38,45 @@ async function callerOf(req) {
 	}
 }
 
+/** The request body as bytes, refusing anything over the size limit before it is all read. */
+function readBody(req) {
+	return new Promise((resolve, reject) => {
+		const chunks = [];
+		let size = 0;
+		req.on('data', (chunk) => {
+			size += chunk.length;
+			if (size > MAX_BYTES) { reject(new BackupError(413, 'too_large', `A backup may be at most ${MAX_BYTES} bytes`)); req.destroy(); return; }
+			chunks.push(chunk);
+		});
+		req.on('end', () => resolve(Buffer.concat(chunks)));
+		req.on('error', reject);
+	});
+}
+
 module.exports = async (req, res) => {
 	const path = (req.url || '/').split('?')[0];
 	if (path === '/health') return send(res, 200, { ok: true });
 	const caller = await callerOf(req);
 	if (!caller) return send(res, 401, { error: 'unauthenticated' });
 	if (path === '/whoami') return send(res, 200, caller);
-	return send(res, 404, { error: 'not_found' });
+
+	try {
+		const backups = createBackupService(await createCatalystStorage(req));
+		if (path === '/backup' && (req.method === 'PUT' || req.method === 'POST')) {
+			const { stored, entry } = await backups.save(caller.userId, await readBody(req), String(req.headers['x-content-hash'] || ''));
+			return send(res, stored ? 201 : 200, { stored, at: entry.at, hash: entry.hash, size: entry.size });
+		}
+		if (path === '/backup/list' && req.method === 'GET') return send(res, 200, await backups.list(caller.userId));
+		if (path === '/backup/latest' && req.method === 'GET') {
+			const found = await backups.latest(caller.userId);
+			if (!found) return send(res, 404, { error: 'no_backup' });
+			res.writeHead(200, { 'Content-Type': 'application/gzip', 'X-Backup-At': String(found.entry.at), 'X-Content-Hash': found.entry.hash });
+			return res.end(found.bytes);
+		}
+		return send(res, 404, { error: 'not_found' });
+	} catch (error) {
+		if (error instanceof BackupError) return send(res, error.status, { error: error.code, message: error.message });
+		console.error('backup failed:', error && error.message);
+		return send(res, 500, { error: 'server_error' });
+	}
 };

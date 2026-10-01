@@ -11,5 +11,8 @@
 		"@zcatalyst/stratus": "^1.0.0",
 		"@zcatalyst/user-management": "^0.0.2",
 		"@zcatalyst/zcql": "^0.0.2"
+	},
+	"scripts": {
+		"test": "node --test test.backupService.js"
 	}
 }
