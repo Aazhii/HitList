@@ -111,7 +111,7 @@ jobs:
           pnpm test
       - name: Backup function - tests
         working-directory: functions/backup
-        run: node --test test.backupService.js
+        run: npm test
 
   # ---- The one backend that goes into all three apps (the web app is inside the jar) ------------------------------------
   backend:

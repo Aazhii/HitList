@@ -84,7 +84,7 @@ public class TaskService {
         if (!listId.isBlank() && repository.find(StorageTables.LISTS, owner, listId).isEmpty()) {
             throw ApiException.notFound();
         }
-        updated.put("UpdatedAt", System.currentTimeMillis());
+        updated.put("UpdatedAt", Math.max(System.currentTimeMillis(), Values.number(existing.get("UpdatedAt"), 0) + 1));
         if (becameDone(existing, updated)) spawnNext(owner, updated);
         else if ("DONE".equals(text(existing, "Status")) && !"DONE".equals(text(updated, "Status"))) retractNext(owner, updated);
         repository.replace(StorageTables.TASKS, owner, id, updated);
@@ -101,7 +101,7 @@ public class TaskService {
         Map<String, Object> updated = new LinkedHashMap<>(existing);
         updated.put("Status", "DONE");
         updated.put("CompletedAt", System.currentTimeMillis());
-        updated.put("UpdatedAt", System.currentTimeMillis());
+        updated.put("UpdatedAt", Math.max(System.currentTimeMillis(), Values.number(existing.get("UpdatedAt"), 0) + 1));
         if (becameDone(existing, updated)) spawnNext(owner, updated);
         repository.replace(StorageTables.TASKS, owner, id, updated);
         return api(updated);

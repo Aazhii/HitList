@@ -19,6 +19,7 @@ public final class StorageTables {
     public static final String FAVORITES = "KaizenFavorites";
     public static final String RECENTS = "KaizenRecents";
     public static final String MIGRATION_MARKERS = "KaizenMigrationMarkers";
+    public static final String CLIQ_COMMAND_RECEIPTS = "KaizenCliqCommandReceipts";
 
     private static final Map<String, String> PRIMARY_KEYS = Map.ofEntries(
         Map.entry(TASKS, "TaskId"),
@@ -36,7 +37,8 @@ public final class StorageTables {
         Map.entry(CALENDAR_CONNECTIONS, "ConnectionId"),
         Map.entry(FAVORITES, "MarkId"),
         Map.entry(RECENTS, "MarkId"),
-        Map.entry(MIGRATION_MARKERS, "MarkerId")
+        Map.entry(MIGRATION_MARKERS, "MarkerId"),
+        Map.entry(CLIQ_COMMAND_RECEIPTS, "CommandKey")
     );
 
     private StorageTables() {

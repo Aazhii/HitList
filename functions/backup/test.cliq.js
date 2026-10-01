@@ -48,6 +48,21 @@ test('the message lists up to ten tasks and says how many more', () => {
 
 const fakeFetch = (status, seen = []) => async (url, init) => { seen.push({ url, init }); return { status }; };
 
+test('aborts a stalled bot request without exposing credentials', async () => {
+	let signal;
+	const result = await postToBot({
+		bot: 'hitlistbot', token: 'SECRET-TOKEN', email: 'a@zohocorp.com', text: 'hi', timeoutMs: 10,
+		fetch: async (_url, init) => {
+			signal = init.signal;
+			assert.equal(init.redirect, 'error');
+			return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('SECRET-TOKEN')), { once: true }));
+		},
+	});
+	assert.equal(signal.aborted, true);
+	assert.deepEqual(result, { ok: false, status: 0, reason: 'timeout' });
+	assert.doesNotMatch(JSON.stringify(result), /SECRET-TOKEN/);
+});
+
 test('posts through the bot with the right address and body, and treats 2xx as sent', async () => {
 	const seen = [];
 	const r = await postToBot({ fetch: fakeFetch(200, seen), bot: 'hitlistbot', token: '1001.a.b', email: 'a@zohocorp.com', text: 'hi' });

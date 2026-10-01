@@ -2,14 +2,14 @@
   "name": "hitlist-desktop",
   "private": true,
   "version": "1.1.0",
-  "description": "Desktop shell for HitList \u2014 spawns api/'s own jar locally (SQLite, no server) and shows web/'s own build in a window.",
+  "description": "Desktop shell for HitList — spawns api/'s own jar locally (SQLite, no server) and shows web/'s own build in a window.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "prepare:jar": "sh scripts/prepare-jar.sh",
     "prepare:jre": "sh scripts/prepare-jre.sh",
     "build": "pnpm run prepare:jar && pnpm run prepare:jre && electron-builder",
-    "test": "node --test test.auth.js test.backup.js test.restore.js test.dataDir.js test.cliqAlerts.js test.updater.js test.installer.js",
+    "test": "node --test test.auth.js test.backup.js test.restore.js test.dataDir.js test.cliqAlerts.js test.cliqInbox.js test.cliqPush.js test.updater.js test.installer.js",
     "prepare:jre:win": "sh scripts/prepare-jre-win.sh",
     "build:mac": "pnpm run prepare:jar && pnpm run prepare:jre && electron-builder --mac",
     "build:win": "pnpm run prepare:jar && pnpm run prepare:jre:win && electron-builder --win --x64",
@@ -25,5 +25,8 @@
     "name": "HitList",
     "email": "noreply@hitlist.invalid"
   },
-  "desktopName": "hitlist.desktop"
+  "desktopName": "hitlist.desktop",
+  "dependencies": {
+    "ably": "^2.29.0"
+  }
 }

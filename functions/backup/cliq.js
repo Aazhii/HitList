@@ -10,6 +10,7 @@
 const MAX_TASKS = 20;
 const MAX_TITLE = 120;
 const LISTED = 10;
+const POST_TIMEOUT_MS = 10_000;
 
 const parseDomains = (list) => String(list || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean);
 
@@ -55,16 +56,20 @@ function buildOverdueMessage(tasks, total) {
 const TEST_MESSAGE = 'HitList is connected. You will get a message like this when a task becomes overdue (while HitList is open).';
 
 /** Sends one message through the bot. Resolves { ok, status }; the token is never in what comes back. */
-async function postToBot({ fetch, bot, token, dc = 'in', email, text }) {
+async function postToBot({ fetch, bot, token, dc = 'in', email, text, timeoutMs = POST_TIMEOUT_MS }) {
 	if (!/^[a-z0-9_]{1,50}$/.test(String(bot || ''))) return { ok: false, status: 0, reason: 'bot_not_configured' };
 	if (!token) return { ok: false, status: 0, reason: 'token_not_configured' };
 	if (!/^(in|com|eu|com\.au|jp)$/.test(dc)) return { ok: false, status: 0, reason: 'bad_region' };
 	const url = `https://cliq.zoho.${dc}/api/v2/bots/${bot}/message?zapikey=${encodeURIComponent(token)}`;
+	const controller = new AbortController();
+	const timer = setTimeout(() => controller.abort(), timeoutMs);
 	try {
-		const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userids: email, text }) });
+		const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ userids: email, text }), signal: controller.signal, redirect: 'error' });
 		return { ok: res.status >= 200 && res.status < 300, status: res.status };
 	} catch {
-		return { ok: false, status: 0, reason: 'unreachable' };
+		return { ok: false, status: 0, reason: controller.signal.aborted ? 'timeout' : 'unreachable' };
+	} finally {
+		clearTimeout(timer);
 	}
 }
 
