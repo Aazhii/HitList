@@ -135,17 +135,28 @@ function SelectNotePrompt({ onCreate }: { onCreate: () => void }) {
 
 // ── Emoji picker ───────────────────────────────────────────────────────────────
 function EmojiPicker({ emoji, onSelect }: { emoji: string; onSelect: (emoji: string) => void }) {
+  const [open, setOpen] = useState(false);
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
           // Showcase 312: a 56px white tile, 12px radius, 1px border. The prototype's emoji is 30px,
           // between the scale's 24 and 32.
           className="mb-4 grid size-14 cursor-pointer place-items-center rounded-[12px] border border-a-line bg-a-surface text-[32px] leading-none transition-colors duration-[120ms] hover:bg-a-line-soft"
-          aria-label="Change note emoji"
+          aria-label={emoji ? 'Change note emoji' : 'Add note emoji'}
+          title={emoji ? 'Change note emoji' : 'Add note emoji'}
+          onKeyDown={(event) => {
+            if (emoji && (event.key === 'Backspace' || event.key === 'Delete')
+              && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
+              && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              onSelect('');
+              setOpen(false);
+            }
+          }}
         >
-          {emoji}
+          {emoji || <Plus className="size-5 text-a-faint" aria-hidden />}
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-52">
@@ -154,7 +165,7 @@ function EmojiPicker({ emoji, onSelect }: { emoji: string; onSelect: (emoji: str
             <button
               key={e}
               type="button"
-              onClick={() => onSelect(e)}
+              onClick={() => { onSelect(e); setOpen(false); }}
               className="rounded-lg p-1.5 text-center text-xl transition-colors duration-[120ms] hover:bg-accent"
             >
               {e}
@@ -167,7 +178,7 @@ function EmojiPicker({ emoji, onSelect }: { emoji: string; onSelect: (emoji: str
 }
 
 // ── Note detail view ───────────────────────────────────────────────────────────
-function NoteDetail({
+export function NoteDetail({
   note,
   onUpdateTitle,
   onUpdateEmoji,
@@ -240,6 +251,14 @@ function NoteDetail({
               )}
               aria-label="Note title"
               onKeyDown={(e) => {
+                if (e.key === 'Backspace' && note.emoji !== ''
+                  && e.currentTarget.selectionStart === 0 && e.currentTarget.selectionEnd === 0
+                  && !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey
+                  && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  onUpdateEmoji(note.id, '');
+                  return;
+                }
                 if (e.key === 'Enter') {
                   e.preventDefault();
                   // Focus first block
