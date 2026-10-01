@@ -47,3 +47,21 @@ most once a day instead of every 6 hours (about 66 people), or store snapshots i
 - Nothing runs on a timer in the cloud. The old 5-minute server ping is gone; reminders and rules run in the desktop app.
 - The AppSail (the web version) is not part of normal use and is stopped (D5), so it costs nothing.
 - One backup is one file, however many tasks it holds.
+
+## Plan for about 20 active people inside the 30-day limits
+
+The aim is to stay under every limit with room to spare, whatever anyone does:
+
+| Guard | Where | Effect |
+|---|---|---|
+| At most **3 stored backups per person per rolling 24 hours** | the backup Function (cannot be bypassed by the app) | worst case 20 x 3 x 30 = **1,800 uploads of the 2,000** limit; realistic use (about 2 a day) is about 1,200 |
+| No call at all when nothing changed | the desktop (content hash) | quiet days and idle people cost nothing |
+| After the daily limit, no further calls until the time the server gave | the desktop | no repeated refused calls |
+| After a server error, wait an hour before the next scheduled try | the desktop | a broken moment cannot become hundreds of calls |
+| Offline attempts never reach the server | the desktop | free |
+| Old backups removed in batches of 7 | the backup Function | 1 delete request per 7 backups |
+
+Worst case at 20 people, per 30 days: uploads 1,800 / 2,000, inserts 1,800 / 5,000, fetches about 2,000 / 10,000, deletes
+about 260 / 1,000, storage 20 people x 13 files x 1 MB = 260 MB / 5 GB. **Past about 22 people who all hit the cap every
+day, uploads would run out**; lowering the cap to 2 a day (a one-line change) makes room for about 33.
+

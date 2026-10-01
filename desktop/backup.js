@@ -15,6 +15,8 @@ const path = require('node:path');
 const zlib = require('node:zlib');
 
 const SIX_HOURS = 6 * 60 * 60 * 1000;
+/** After a server error, the scheduled backup waits this long before trying again (the free tier counts every call). */
+const ERROR_BACKOFF = 60 * 60 * 1000;
 
 /** The same workspace always gives the same hash: tables and rows are put in a fixed order, the export time is ignored. */
 function contentHash(snapshot) {
@@ -36,6 +38,8 @@ function createBackup({ stateDir, localGet, upload, getAccount, now = () => Date
     const state = readState();
     // The state belongs to one account: another account's last hash says nothing about this one.
     const mine = state.userId === account.userId ? state : {};
+    // Told by the server it was at today's limit: do not ask again until it said it would allow another.
+    if (mine.blockedUntil && mine.blockedUntil > now()) return { result: 'daily-limit', retryAt: mine.blockedUntil };
 
     let snapshot;
     try { snapshot = JSON.parse((await localGet('/api/backup')).toString('utf8')); }
@@ -51,12 +55,18 @@ function createBackup({ stateDir, localGet, upload, getAccount, now = () => Date
     try { reply = await upload(bytes, hash); }
     catch { writeState({ userId: account.userId, lastAttemptAt: now(), lastResult: 'offline' }); return { result: 'offline' }; }
 
+    if (reply.status === 429) {
+      let retryAt = now() + ERROR_BACKOFF;
+      try { const parsed = typeof reply.body === 'string' ? JSON.parse(reply.body) : reply.body; if (parsed && Number(parsed.retryAt) > now()) retryAt = Number(parsed.retryAt); } catch { /* keep the default wait */ }
+      writeState({ userId: account.userId, lastAttemptAt: now(), lastResult: 'daily-limit', blockedUntil: retryAt });
+      return { result: 'daily-limit', retryAt };
+    }
     if (reply.status === 401) { writeState({ userId: account.userId, lastAttemptAt: now(), lastResult: 'sign-in-needed' }); return { result: 'sign-in-needed' }; }
     if (reply.status === 200 || reply.status === 201) {
-      writeState({ userId: account.userId, lastHash: hash, lastSuccessAt: now(), lastAttemptAt: now(), lastResult: 'backed-up', lastReason: reason });
+      writeState({ userId: account.userId, lastHash: hash, lastSuccessAt: now(), lastAttemptAt: now(), lastResult: 'backed-up', lastReason: reason, blockedUntil: null, retryAfter: null });
       return { result: 'backed-up', stored: reply.status === 201 };
     }
-    writeState({ userId: account.userId, lastAttemptAt: now(), lastResult: `error-${reply.status}` });
+    writeState({ userId: account.userId, lastAttemptAt: now(), lastResult: `error-${reply.status}`, retryAfter: now() + ERROR_BACKOFF });
     return { result: 'error', status: reply.status };
   }
 
@@ -68,6 +78,7 @@ function createBackup({ stateDir, localGet, upload, getAccount, now = () => Date
     const account = getAccount();
     if (!account) return false;
     const state = readState();
+    if (state.userId === account.userId && ((state.blockedUntil && state.blockedUntil > now()) || (state.retryAfter && state.retryAfter > now()))) return false;
     return state.userId !== account.userId || !state.lastSuccessAt || now() - state.lastSuccessAt >= interval;
   }
 
@@ -91,4 +102,4 @@ function createBackup({ stateDir, localGet, upload, getAccount, now = () => Date
   return { backupNow, due, status, startSchedule, contentHash };
 }
 
-module.exports = { createBackup, contentHash, SIX_HOURS };
+module.exports = { createBackup, contentHash, SIX_HOURS, ERROR_BACKOFF };

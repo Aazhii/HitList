@@ -75,7 +75,7 @@ module.exports = async (req, res) => {
 		}
 		return send(res, 404, { error: 'not_found' });
 	} catch (error) {
-		if (error instanceof BackupError) return send(res, error.status, { error: error.code, message: error.message });
+		if (error instanceof BackupError) return send(res, error.status, { error: error.code, message: error.message, ...error.extra });
 		console.error('backup failed:', error && error.message);
 		return send(res, 500, { error: 'server_error' });
 	}

@@ -30,7 +30,8 @@ function fakeStorage() {
 }
 const snap = (text) => { const bytes = gzipSync(Buffer.from(text)); return { bytes, hash: createHash('sha256').update(bytes).digest('hex') }; };
 let clock = 1000;
-const service = (s, extra = {}) => createBackupService({ ...s, now: () => (clock += 10), ...extra });
+// Most tests are not about the daily cap, so they get a generous one; the cap has its own test below.
+const service = (s, extra = {}) => createBackupService({ ...s, now: () => (clock += 10), maxPerDay: 1000, ...extra });
 
 test('stores a backup and returns it as the latest', async () => {
 	const s = fakeStorage(); const svc = service(s);
@@ -100,4 +101,24 @@ test('refuses a bad hash, an empty body, a non-gzip body and an oversize one', a
 	await assert.rejects(svc.save('1', Buffer.from('plain text, not gzip'), ok.hash), (e) => e.code === 'not_gzip');
 	const big = svc.save('1', Buffer.concat([ok.bytes, Buffer.alloc(200)]), ok.hash);
 	await assert.rejects(big, (e) => e.status === 413);
+});
+
+test('at most three stored backups per person per rolling day, and says when the next one is allowed', async () => {
+	const s = fakeStorage(); let t = 10_000_000;
+	const svc = createBackupService({ ...s, now: () => t });
+	const day = 24 * 60 * 60 * 1000;
+	const stamps = [];
+	for (let i = 0; i < 3; i++) { t += 1000; stamps.push(t); const x = snap(`d${i}`); assert.equal((await svc.save('111', x.bytes, x.hash)).stored, true); }
+	t += 1000;
+	const fourth = snap('d3');
+	await assert.rejects(svc.save('111', fourth.bytes, fourth.hash), (e) => e.status === 429 && e.code === 'daily_limit' && e.extra.retryAt === stamps[0] + day);
+	assert.equal((await svc.list('111')).length, 3);
+	// Unchanged content is still not a new backup, and is not refused.
+	const same = snap('d2');
+	assert.equal((await svc.save('111', same.bytes, same.hash)).stored, false);
+	// Someone else is unaffected.
+	assert.equal((await svc.save('222', fourth.bytes, fourth.hash)).stored, true);
+	// A day after the oldest, the next is allowed.
+	t = stamps[0] + day + 1;
+	assert.equal((await svc.save('111', fourth.bytes, fourth.hash)).stored, true);
 });

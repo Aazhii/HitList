@@ -5,6 +5,7 @@ export function backupMessage(result: string): string {
     case 'unchanged': return 'Nothing has changed since the last backup.';
     case 'offline': return 'Could not reach the backup service. It will try again later.';
     case 'sign-in-needed': return 'Your sign-in expired. Sign out and sign in again to back up.';
+    case 'daily-limit': return 'You have reached today\'s backup limit. It will back up again later.';
     case 'signed-out': return 'Sign in to back up.';
     case 'local-error': return 'Could not read your workspace to back it up.';
     default: return 'The backup did not complete. It will try again later.';

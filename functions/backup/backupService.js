@@ -13,18 +13,23 @@ const KEEP = 7;
 // Old backups are removed in one batch once a user has twice KEEP, not one by one: the free tier counts every delete
 // request, so a user at the limit costs one delete call per KEEP backups instead of one per backup.
 const MAX_BYTES = 25 * 1024 * 1024;
+// The free tier counts uploads (2,000 per 30 days). Three stored backups per person per rolling 24 hours keeps 20 active
+// people at no more than 20 x 3 x 30 = 1,800, whatever the desktop app does.
+const MAX_PER_DAY = 3;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 class BackupError extends Error {
-	constructor(status, code, message) {
+	constructor(status, code, message, extra) {
 		super(message || code);
 		this.status = status;
 		this.code = code;
+		this.extra = extra || {};
 	}
 }
 
 const isGzip = (bytes) => bytes.length > 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
 
-function createBackupService({ index, files, now = () => Date.now(), keep = KEEP, maxBytes = MAX_BYTES }) {
+function createBackupService({ index, files, now = () => Date.now(), keep = KEEP, maxBytes = MAX_BYTES, maxPerDay = MAX_PER_DAY }) {
 	const pruneAt = keep * 2;
 	return {
 		/** Stores a snapshot unless the newest one already has the same content hash. */
@@ -40,6 +45,12 @@ function createBackupService({ index, files, now = () => Date.now(), keep = KEEP
 			if (newest && newest.hash === hash) return { stored: false, entry: newest };
 
 			const at = now();
+			// The newest three within the last day: a fourth would be refused until the oldest of them is a day old.
+			const recent = existing.filter((e) => e.at > at - DAY_MS);
+			if (recent.length >= maxPerDay) {
+				const retryAt = recent[maxPerDay - 1].at + DAY_MS;
+				throw new BackupError(429, 'daily_limit', `At most ${maxPerDay} backups a day. Try again later.`, { retryAt });
+			}
 			const fileId = await files.put(userId, `${userId}_${at}_${hash.slice(0, 8)}.json.gz`, bytes);
 			const entry = await index.add({ userId, at, hash, size: bytes.length, fileId });
 
@@ -67,4 +78,4 @@ function createBackupService({ index, files, now = () => Date.now(), keep = KEEP
 	};
 }
 
-module.exports = { createBackupService, BackupError, KEEP, MAX_BYTES };
+module.exports = { createBackupService, BackupError, KEEP, MAX_BYTES, MAX_PER_DAY };

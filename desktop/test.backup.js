@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const zlib = require('node:zlib');
-const { createBackup, contentHash, SIX_HOURS } = require('./backup');
+const { createBackup, contentHash, SIX_HOURS, ERROR_BACKOFF } = require('./backup');
 
 const snap = (rows, at = 'T1') => ({ schema: 'hitlist.backup.v1', exportedAt: at, tables: { KaizenTasks: rows, KaizenLists: [] } });
 const rig = (over = {}) => {
@@ -103,4 +103,26 @@ test('a local server error is reported and nothing is uploaded', async () => {
   const { svc, calls } = rig({ localGet: async () => { throw new Error('refused'); } });
   assert.equal((await svc.backupNow()).result, 'local-error');
   assert.equal(calls.uploads.length, 0);
+});
+
+test('at the daily limit it stops asking until the server said it would allow another', async () => {
+  const replies = [() => ({ status: 429, body: JSON.stringify({ retryAt: 1_000_000 + 5 * 60 * 60 * 1000 }) }), () => ({ status: 201 })];
+  const { svc, calls, advance, set } = rig({ upload: async () => replies.shift()() });
+  assert.deepEqual(await svc.backupNow(), { result: 'daily-limit', retryAt: 1_000_000 + 5 * 60 * 60 * 1000 });
+  set(snap([{ TaskId: 'a', Title: 'changed again' }]));
+  assert.equal((await svc.backupNow()).result, 'daily-limit');
+  assert.equal(calls.local, 1);
+  assert.equal(svc.due(), false);
+  advance(5 * 60 * 60 * 1000 + 1000);
+  assert.equal((await svc.backupNow()).result, 'backed-up');
+});
+
+test('after a server error the scheduled backup waits an hour before trying again', async () => {
+  const replies = [() => ({ status: 500 }), () => ({ status: 201 })];
+  const { svc, advance } = rig({ upload: async () => replies.shift()() });
+  assert.equal((await svc.backupNow()).result, 'error');
+  assert.equal(svc.due(), false);
+  advance(ERROR_BACKOFF + 1000);
+  assert.equal(svc.due(), true);
+  assert.equal((await svc.backupNow()).result, 'backed-up');
 });
