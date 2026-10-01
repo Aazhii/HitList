@@ -1,7 +1,7 @@
 {
   "name": "hitlist-desktop",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Desktop shell for HitList \u2014 spawns api/'s own jar locally (SQLite, no server) and shows web/'s own build in a window.",
   "main": "main.js",
   "scripts": {
