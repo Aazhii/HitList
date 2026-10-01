@@ -1,9 +1,9 @@
 # Free-tier budget
 
-Numbers are from the Catalyst usage page the owner pasted on 2026-10-01 (Development environment). **Not known:** whether
-the counts reset monthly or are a lifetime total, the Function invocation and compute limits, the Authentication limits
-(none of these were in the paste), and whether production has different limits. Treat the user counts below as an upper
-bound until those are confirmed.
+Numbers are from the Catalyst usage page the owner pasted on 2026-10-01 (Development environment). The owner confirmed
+that **the counts reset every 30 days**, so the per-month figures below are the right unit. **Not known:** the Function
+invocation and compute limits and the Authentication limits (neither was in the paste), and whether production has
+different limits. Treat the user counts below as an upper bound until those are confirmed.
 
 ## Limits that matter (as pasted)
 
