@@ -36,6 +36,7 @@ export function computeNumberedOrdinals(blocks: readonly NoteBlock[]): Map<strin
 
 /** How deep a line can go. */
 export const MAX_INDENT = 6;
+export const MAX_TODO_INDENT = 4;
 
 /** A block's level: 0 (top) when it has none. */
 export function levelOf(block: Pick<NoteBlock, 'indent'>): number {
@@ -80,7 +81,9 @@ export function subtreeEnd(blocks: readonly NoteBlock[], index: number): number 
 /** Whether Tab can push this block in: not the first block, and not already one deeper than the block above. */
 export function canIndent(blocks: readonly NoteBlock[], id: string): boolean {
   const i = blocks.findIndex((b) => b.id === id);
-  return i > 0 && levelOf(blocks[i]) <= levelOf(blocks[i - 1]) && levelOf(blocks[i]) < MAX_INDENT;
+  return i > 0 && levelOf(blocks[i]) <= levelOf(blocks[i - 1])
+    && blocks.slice(i, subtreeEnd(blocks, i)).every((block) =>
+      levelOf(block) < (block.type === 'todo' ? MAX_TODO_INDENT : MAX_INDENT));
 }
 
 /** Pushes a block in one level, its children with it. Same array when it cannot move. */
@@ -109,7 +112,7 @@ export function levelForNewBlockAfter(blocks: readonly NoteBlock[], index: numbe
   const here = blocks[index];
   if (!here) return 0;
   const hasChildren = index + 1 < blocks.length && levelOf(blocks[index + 1]) > levelOf(here);
-  return Math.min(MAX_INDENT, levelOf(here) + (hasChildren ? 1 : 0));
+  return Math.min(here.type === 'todo' ? MAX_TODO_INDENT : MAX_INDENT, levelOf(here) + (hasChildren ? 1 : 0));
 }
 
 /**

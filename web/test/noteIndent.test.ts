@@ -10,6 +10,25 @@ const ids = (blocks: NoteBlock[]) => blocks.map((x) => x.id).join(',');
 const levels = (blocks: NoteBlock[]) => blocks.map(levelOf).join('');
 
 describe('indenting', () => {
+  it('limits to-dos to five visible levels while other blocks retain six indent steps', () => {
+    const blocks = Array.from({ length: 5 }, (_, index) => b(`todo-${index}`, index, 'todo'));
+    const candidate = [...blocks, b('next', 3, 'todo')];
+    const indented = indentBlock(candidate, 'next');
+    expect(levelOf(indented[5])).toBe(4);
+    expect(canIndent(indented, 'next')).toBe(false);
+    expect(indentBlock(indented, 'next')).toBe(indented);
+    expect(levelForNewBlockAfter(indented, 5)).toBe(4);
+    const paragraphs = [...blocks, b('paragraph', 4)];
+    expect(levelOf(indentBlock(paragraphs, 'paragraph')[5])).toBe(5);
+  });
+
+  it('does not push a parent when a nested to-do is already at level five', () => {
+    const blocks = [b('a'), b('parent'), b('child', 1), b('child2', 2), b('child3', 3), b('todo', 4, 'todo')];
+    expect(canIndent(blocks, 'parent')).toBe(false);
+    expect(indentBlock(blocks, 'parent')).toBe(blocks);
+    expect(levelOf(outdentBlock(blocks, 'parent')[5])).toBe(4);
+  });
+
   it('pushes a block in under the one above, and not the first block', () => {
     const blocks = [b('a'), b('b')];
     expect(levels(indentBlock(blocks, 'b'))).toBe('01');
