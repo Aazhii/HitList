@@ -805,7 +805,9 @@ export function NoteEditor({
   }, [mention, linking, noteId, blocks, onUpdateBlock]);
 
   const handleSlashOpen = useCallback((blockId: string, pos: { top: number; left: number }) => {
-    setSlashState({ blockId, query: '', position: pos, selectedIndex: 0 });
+    setSlashState((current) => current?.blockId === blockId
+      ? { ...current, position: pos }
+      : { blockId, query: '', position: pos, selectedIndex: 0 });
   }, []);
 
   /** Where the linked-database picker hangs, and which block it is for. */
