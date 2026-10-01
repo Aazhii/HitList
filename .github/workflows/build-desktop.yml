@@ -210,14 +210,14 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           pattern: HitList-*
-          merge-multiple: true
-          path: files
-      - name: One checksum file per version
-        working-directory: files
+          path: files            # one directory per platform: HitList-<version>-<commit>-mac, -windows, -linux
+      - name: Put the version in each checksum file's name
         run: |
-          cat SHA256SUMS-*.txt > "SHA256SUMS-${{ needs.version.outputs.version }}.txt"
-          rm SHA256SUMS-mac.txt SHA256SUMS-windows.txt SHA256SUMS-linux.txt
-          ls -la
+          for d in files/*-mac files/*-windows files/*-linux; do
+            p="${d##*-}"
+            mv "$d/SHA256SUMS-$p.txt" "$d/SHA256SUMS-${{ needs.version.outputs.version }}-$p.txt"
+          done
+          ls -R files | head -40
       - name: Upload to WorkDrive
         env:
           WORKDRIVE_CLIENT_ID: ${{ secrets.WORKDRIVE_CLIENT_ID }}

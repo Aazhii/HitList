@@ -22,17 +22,21 @@ password: never put it in the repository.)
 
    The answer contains `"refresh_token"`. Copy it. (If you are not on the India data centre, use `accounts.zoho.com`,
    `.eu`, `.com.au` or `.jp` instead, and set `WORKDRIVE_DC` below.)
-4. **Find the folder id.** Open the target folder in WorkDrive in your browser. The address looks like
-   `https://workdrive.zoho.in/folder/abc123…`; the part after `/folder/` is the id.
+4. **Find the folder id.** Open the **parent** WorkDrive folder (the HitList folder that contains the `mac`, `linux` and `windows`
+   folders) in your browser. The address looks like `https://workdrive.zoho.in/folder/abc123…`; the part after `/folder/` is the id.
+   That one id is all that is needed: the job finds the three subfolders itself, by name (case and a number in front do not matter,
+   so `1. Mac`, `Linux`, `windows` all work).
 5. **Give GitHub the settings.** Repository, **Settings, Secrets and variables, Actions**:
    - Secrets (**New repository secret**): `WORKDRIVE_CLIENT_ID`, `WORKDRIVE_CLIENT_SECRET`, `WORKDRIVE_REFRESH_TOKEN`, `WORKDRIVE_FOLDER_ID`.
    - Variables: `WORKDRIVE_UPLOAD` = `true` (this switches the job on), and `WORKDRIVE_DC` only if you are not on `in`.
 
 ## What it does
 
-When the Mac, Windows and Linux jobs all succeed, the `workdrive` job gathers every file, merges the checksums into one
-`SHA256SUMS-<version>.txt`, and uploads them to that folder. File names carry the version (`HitList-1.1.57-arm64.dmg`), so each
-run adds new files. It **never deletes** anything: older versions pile up, so remove old ones from WorkDrive now and then
+When the Mac, Windows and Linux jobs all succeed, the `workdrive` job uploads each platform's files into **that platform's own
+subfolder**: the `.dmg` and its checksum into `mac`, the `.exe` into `windows`, the `.AppImage` and `.deb` into `linux`. Each
+platform also gets `SHA256SUMS-<version>-<platform>.txt`. File names carry the version (`HitList-1.1.57-arm64.dmg`), so each
+run adds new files; the newest has the highest version and the latest "modified" time. If a subfolder is not found by name the job stops and says so; you can also give its id directly with `WORKDRIVE_FOLDER_ID_MAC`,
+`WORKDRIVE_FOLDER_ID_LINUX` or `WORKDRIVE_FOLDER_ID_WINDOWS`. It **never deletes** anything: older versions pile up, so remove old ones from WorkDrive now and then
 (each run adds about 800 MB).
 
 ## Trying it without uploading
@@ -41,7 +45,8 @@ run adds new files. It **never deletes** anything: older versions pile up, so re
 node scripts/ci/upload-workdrive.mjs some-folder --dry-run
 ```
 
-lists what would be uploaded and needs no settings. A real run with settings missing stops and names what to add.
+lists what would be uploaded, and to which platform folder, and needs no settings. (`some-folder` holds one directory per platform,
+named `…-mac`, `…-windows`, `…-linux`, as the workflow's artifacts are.) A real run with settings missing stops and names what to add.
 
 ## Keep in mind
 
@@ -49,5 +54,7 @@ lists what would be uploaded and needs no settings. A real run with settings mis
   client in the API console.
 - This has not been run against your WorkDrive yet (it needs your credentials). The first real run may need small fixes; the
   job's log shows the file being uploaded and any answer WorkDrive gives.
-- The download page links to a WorkDrive folder. If you upload to a different folder than the one it links to, change the link in
-  `client/index.html` and redeploy the page (`catalyst deploy --only client`).
+- - The two share links you have are different things. The **view-and-download** link is what the download page gives users, and the
+  **upload-and-view** link is for people in a browser; the automatic upload uses neither and writes through the API into the folder
+  by id. The download page links to a WorkDrive folder; if the builds go to a different folder than the one it links to, change
+  the link in `client/index.html` and redeploy the page (`catalyst deploy --only client`).
