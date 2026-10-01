@@ -5,6 +5,7 @@
 const { zcAuth, UserManagement } = require('@zcatalyst/auth/node');
 const { createBackupService, BackupError, MAX_BYTES } = require('./backupService');
 const { createCatalystStorage } = require('./catalystStorage');
+const cliq = require('./cliq');
 
 function send(res, status, body) {
 	res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -53,6 +54,34 @@ function readBody(req) {
 	});
 }
 
+/** A small JSON body, refusing anything over `limit` bytes before it is all read. */
+function readJson(req, limit = 20 * 1024) {
+	return new Promise((resolve, reject) => {
+		const chunks = [];
+		let size = 0;
+		req.on('data', (chunk) => {
+			size += chunk.length;
+			if (size > limit) { reject(new BackupError(413, 'too_large', 'That request is too large')); req.destroy(); return; }
+			chunks.push(chunk);
+		});
+		req.on('end', () => { try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}')); } catch { reject(new BackupError(400, 'bad_json', 'The body must be JSON')); } });
+		req.on('error', reject);
+	});
+}
+
+/** Sends one Cliq message to the person named in the request, if their email's domain is allowed. Settings come from the environment. */
+async function notifyCliq(req, res, textFor) {
+	const body = await readJson(req);
+	const email = cliq.validateRecipient(body.email, cliq.parseDomains(process.env.CLIQ_ALLOWED_DOMAINS));
+	if (!email) return send(res, 400, { error: 'bad_recipient', message: 'That email is not allowed. Use your work email.' });
+	const text = textFor(body);
+	if (!text) return send(res, 400, { error: 'nothing_to_send' });
+	const result = await cliq.postToBot({ fetch, bot: process.env.CLIQ_BOT, token: process.env.CLIQ_TOKEN, dc: process.env.CLIQ_DC || 'in', email, text });
+	if (result.reason === 'bot_not_configured' || result.reason === 'token_not_configured') return send(res, 503, { error: 'cliq_not_configured' });
+	if (!result.ok) return send(res, 502, { error: 'cliq_failed', status: result.status });
+	return send(res, 200, { sent: true });
+}
+
 module.exports = async (req, res) => {
 	const path = (req.url || '/').split('?')[0];
 	if (path === '/health') return send(res, 200, { ok: true });
@@ -61,6 +90,13 @@ module.exports = async (req, res) => {
 	if (path === '/whoami') return send(res, 200, caller);
 
 	try {
+		if (path === '/notify/overdue' && req.method === 'POST') {
+			return await notifyCliq(req, res, (body) => {
+				const tasks = cliq.cleanTasks(body.tasks);
+				return tasks && tasks.length ? cliq.buildOverdueMessage(tasks, Number(body.total) || tasks.length) : '';
+			});
+		}
+		if (path === '/notify/test' && req.method === 'POST') return await notifyCliq(req, res, () => cliq.TEST_MESSAGE);
 		const backups = createBackupService(await createCatalystStorage(req));
 		if (path === '/backup' && (req.method === 'PUT' || req.method === 'POST')) {
 			const { stored, entry } = await backups.save(caller.userId, await readBody(req), String(req.headers['x-content-hash'] || ''));

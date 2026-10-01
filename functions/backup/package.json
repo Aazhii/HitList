@@ -8,6 +8,6 @@
 		"zcatalyst-sdk-node": "^3.4.0"
 	},
 	"scripts": {
-		"test": "node --test test.backupService.js"
+		"test": "node --test test.backupService.js test.cliq.js"
 	}
 }
