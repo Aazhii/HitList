@@ -203,6 +203,24 @@ class ApiContractTest {
     }
 
     @Test
+    void importNeverAddsATaskThatAlreadyExistsUnderAnotherId() throws Exception {
+        MockCookie owner = browser();
+        mvc.perform(post("/api/tasks").cookie(owner).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"clientId\":\"here-1\",\"title\":\"Table audit\",\"dueDate\":\"2030-10-04\",\"quadrant\":\"SCHEDULE\"}"))
+            .andExpect(status().isCreated());
+        String file = "{\"schema\":\"hitlist.backup.v1\",\"tables\":{\"KaizenTasks\":["
+            + "{\"TaskId\":\"other-1\",\"Title\":\"table audit\",\"DueDate\":\"2030-10-04\",\"Quadrant\":\"SCHEDULE\"},"
+            + "{\"TaskId\":\"other-2\",\"Title\":\"Table audit\",\"DueDate\":\"2030-10-04\",\"Quadrant\":\"SCHEDULE\"},"
+            + "{\"TaskId\":\"other-3\",\"Title\":\"Table audit\",\"DueDate\":\"2030-10-11\",\"Quadrant\":\"SCHEDULE\"}]}}";
+        // One of the first two is the task already here; the other is genuinely a second one; the third is another day.
+        mvc.perform(post("/api/backup").cookie(owner).contentType(MediaType.APPLICATION_JSON).content(file))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.imported.KaizenTasks").value(2))
+            .andExpect(jsonPath("$.skipped.KaizenTasks").value(1));
+        mvc.perform(get("/api/tasks").cookie(owner)).andExpect(jsonPath("$.length()").value(3));
+    }
+
+    @Test
     void catalystSignInOwnsTheWorkspaceAndClaimsAnOldCookieOnce() throws Exception {
         RowStore store = new TestRowStore();
         HitListProperties cookieProps = properties();
