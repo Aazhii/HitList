@@ -21,8 +21,8 @@ docs/       these docs.
 
 - **Sign-in** (optional): Catalyst's hosted login page opens in its own window; when Catalyst lands it on `/app/`, the shell
   closes it and remembers the account.
-- **Backup** (only when signed in): a gzipped snapshot is sent to the `backup` Function when something changed, at most three
-  stored per person per 24 hours. **Restore** downloads the newest one and adds what is missing.
+- **Backup** (only when signed in): a gzipped snapshot is sent to the `backup` Function when something changed: about every three days,
+  when the person signs out, and on *Back up now*; at most three stored per person per 24 hours. **Restore** downloads the newest one and adds what is missing.
 - Nothing else. Using the app costs no Catalyst requests.
 
 ## Who owns data

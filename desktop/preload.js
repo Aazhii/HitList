@@ -4,7 +4,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('hitlistDesktop', {
   getAccount: () => ipcRenderer.invoke('account:get'),
   signIn: () => ipcRenderer.invoke('account:signIn'),
-  signOut: () => ipcRenderer.invoke('account:signOut'),
+  signOut: () => ipcRenderer.invoke('account:signOut'), // resolves { backup: <how the last backup went> }
   getBackupStatus: () => ipcRenderer.invoke('backup:status'),
   backupNow: () => ipcRenderer.invoke('backup:now'),
   checkRestore: (opts) => ipcRenderer.invoke('restore:check', opts),

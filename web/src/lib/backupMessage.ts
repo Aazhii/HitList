@@ -1,3 +1,9 @@
+/** True when a backup before sign-out did not save the latest changes to the account (so the person should be told). */
+export const signOutBackupFailed = (result: string | null): boolean =>
+  result !== null && !['backed-up', 'unchanged', 'signed-out'].includes(result);
+
+export const signOutBackupMessage = 'Could not back up before signing out. Your data is still on this computer; sign in again later to back it up.';
+
 /** What a backup attempt says to the person, in a sentence. The shell reports a short code; this turns it into words. */
 export function backupMessage(result: string): string {
   switch (result) {

@@ -65,3 +65,14 @@ Worst case at 20 people, per 30 days: uploads 1,800 / 2,000, inserts 1,800 / 5,0
 about 260 / 1,000, storage 20 people x 13 files x 1 MB = 260 MB / 5 GB. **Past about 22 people who all hit the cap every
 day, uploads would run out**; lowering the cap to 2 a day (a one-line change) makes room for about 33.
 
+## Update 2026-10-01: backups every 3 days, plus on sign-out
+
+The owner decided that losing a machine is rare enough for a scheduled backup **every 3 days** (it was every 6 hours), plus
+one when someone signs out (the "pre-logout" backup) and the *Back up now* button. There is no backup on quit any more.
+If the person is offline when they sign out, the app says so and their data stays on the computer.
+
+Per person per month: about 10 scheduled backups, plus a few sign-outs and manual ones, so **about 12–15 uploads**. At
+15 uploads a person, File Store's 2,000 uploads cover about **130 people** (it was about 33), and the other limits cover more.
+The server's cap of 3 stored backups per person per 24 hours stays as a safety net. The cost of this choice is that up to
+3 days of work can be lost if a computer is lost between backups.
+

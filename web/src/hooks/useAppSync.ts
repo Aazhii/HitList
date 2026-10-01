@@ -12,6 +12,7 @@ import { taskApi, listApi, statsApi, checkServerHealth, isNetworkError } from '.
 import { mockTaskApi, mockListApi, mockStatsApi } from '../lib/mockApi';
 import { getActiveUserId, loadAppState } from '../lib/storage';
 import { migrateLocalState } from '../lib/localMigration';
+import { loadTaskWorkspace } from '../lib/taskWorkspace';
 
 export { ServerSyncState };
 
@@ -44,6 +45,7 @@ export function useAppSync(activeListId?: string): ServerSyncState {
   const savingCount = useRef(0);
   const migrationRunning = useRef(false);
   const onlineRef = useRef(false);
+  const workspaceLoad = useRef<ReturnType<typeof loadTaskWorkspace> | null>(null);
 
   const setOnline = useCallback((online: boolean) => {
     if (onlineRef.current === online) return;
@@ -86,6 +88,22 @@ export function useAppSync(activeListId?: string): ServerSyncState {
     }
   }, [handleError, setOnline]);
 
+  const loadWorkspace = useCallback(() => {
+    if (!workspaceLoad.current) {
+      workspaceLoad.current = loadTaskWorkspace({
+        list: {
+          list: () => viaBackend((api) => api.list.list()),
+          create: (request) => viaBackend((api) => api.list.create(request)),
+        },
+        task: {
+          list: () => viaBackend((api) => api.task.list()),
+          update: (id, request) => viaBackend((api) => api.task.update(id, request)),
+        },
+      }).finally(() => { workspaceLoad.current = null; });
+    }
+    return workspaceLoad.current;
+  }, [viaBackend]);
+
   const withSaving = useCallback(async <T>(fn: () => Promise<T>): Promise<T> => {
     savingCount.current += 1;
     setSaving(true);
@@ -107,10 +125,7 @@ export function useAppSync(activeListId?: string): ServerSyncState {
         setOnline(healthy);
 
         if (healthy) await migrateOfflineState();
-        const [fetchedTasks, fetchedLists] = await Promise.all([
-          viaBackend((api) => api.task.list()),
-          viaBackend((api) => api.list.list()),
-        ]);
+        const { tasks: fetchedTasks, lists: fetchedLists } = await loadWorkspace();
         if (cancelled) return;
         setTasks(fetchedTasks);
         setLists(fetchedLists);
@@ -161,17 +176,14 @@ export function useAppSync(activeListId?: string): ServerSyncState {
       const healthy = await checkServerHealth();
       setOnline(healthy);
       if (healthy) await migrateOfflineState();
-      const [fetchedTasks, fetchedLists] = await Promise.all([
-        viaBackend((api) => api.task.list()),
-        viaBackend((api) => api.list.list()),
-      ]);
+      const { tasks: fetchedTasks, lists: fetchedLists } = await loadWorkspace();
       setTasks(fetchedTasks);
       setLists(fetchedLists);
       await refreshMomentum();
       await refreshTodayHistory();
     } catch (e) { handleError(e); }
     finally { setLoading(false); }
-  }, [refreshMomentum, refreshTodayHistory, clearError, handleError, migrateOfflineState, setOnline, viaBackend]);
+  }, [refreshMomentum, refreshTodayHistory, clearError, handleError, migrateOfflineState, setOnline, loadWorkspace]);
 
   useEffect(() => {
     const reconnect = () => { void refresh(); };
@@ -181,6 +193,9 @@ export function useAppSync(activeListId?: string): ServerSyncState {
 
   const createTask = useCallback(async (req: TaskCreateRequest): Promise<ApiTask | null> => {
     clearError();
+    if (loading || !req.listId || !lists.some((list) => list.id === req.listId)) {
+      return handleError(new Error('Create or select a list before adding a task.'));
+    }
     return withSaving(async () => {
       try {
         const task = await viaBackend((api) => api.task.create(req));
@@ -189,7 +204,7 @@ export function useAppSync(activeListId?: string): ServerSyncState {
         return task;
       } catch (e) { return handleError(e); }
     });
-  }, [clearError, handleError, refreshMomentum, refreshTodayHistory, viaBackend, withSaving]);
+  }, [clearError, handleError, loading, lists, refreshMomentum, refreshTodayHistory, viaBackend, withSaving]);
 
   const updateTask = useCallback(async (id: string, req: TaskUpdateRequest): Promise<ApiTask | null> => {
     clearError();

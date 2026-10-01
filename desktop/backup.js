@@ -14,7 +14,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
 
-const SIX_HOURS = 6 * 60 * 60 * 1000;
+/** A scheduled backup is due when the last good one is this old. (Signing out and "Back up now" back up sooner.) */
+const BACKUP_INTERVAL = 3 * 24 * 60 * 60 * 1000;
 /** After a server error, the scheduled backup waits this long before trying again (the free tier counts every call). */
 const ERROR_BACKOFF = 60 * 60 * 1000;
 
@@ -26,7 +27,7 @@ function contentHash(snapshot) {
   return crypto.createHash('sha256').update(JSON.stringify(tables)).digest('hex');
 }
 
-function createBackup({ stateDir, localGet, upload, getAccount, now = () => Date.now(), interval = SIX_HOURS }) {
+function createBackup({ stateDir, localGet, upload, getAccount, now = () => Date.now(), interval = BACKUP_INTERVAL }) {
   const stateFile = path.join(stateDir, 'backup-state.json');
   const readState = () => { try { return JSON.parse(fs.readFileSync(stateFile, 'utf8')); } catch { return {}; } };
   const writeState = (patch) => fs.writeFileSync(stateFile, JSON.stringify({ ...readState(), ...patch }));
@@ -73,7 +74,7 @@ function createBackup({ stateDir, localGet, upload, getAccount, now = () => Date
   /** One backup at a time: asking while one is running gets that one's answer. */
   const backupNow = (reason = 'manual') => (running ||= run(reason).finally(() => { running = null; }));
 
-  /** Whether a scheduled backup is due: signed in, and the last good one is older than the interval. */
+  /** Whether a scheduled backup is due: signed in, and the last good one is older than the interval (three days). */
   function due() {
     const account = getAccount();
     if (!account) return false;
@@ -102,4 +103,4 @@ function createBackup({ stateDir, localGet, upload, getAccount, now = () => Date
   return { backupNow, due, status, startSchedule, contentHash };
 }
 
-module.exports = { createBackup, contentHash, SIX_HOURS, ERROR_BACKOFF };
+module.exports = { createBackup, contentHash, BACKUP_INTERVAL, ERROR_BACKOFF };

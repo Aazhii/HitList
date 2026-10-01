@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const zlib = require('node:zlib');
-const { createBackup, contentHash, SIX_HOURS, ERROR_BACKOFF } = require('./backup');
+const { createBackup, contentHash, BACKUP_INTERVAL, ERROR_BACKOFF } = require('./backup');
 
 const snap = (rows, at = 'T1') => ({ schema: 'hitlist.backup.v1', exportedAt: at, tables: { KaizenTasks: rows, KaizenLists: [] } });
 const rig = (over = {}) => {
@@ -64,12 +64,12 @@ test('offline is quiet and retried; an expired session is reported; a server err
   assert.ok(svc.status().lastSuccessAt);
 });
 
-test('a scheduled backup is due only when the last good one is older than six hours', async () => {
+test('a scheduled backup is due only when the last good one is older than three days', async () => {
   const { svc, advance } = rig();
   assert.equal(svc.due(), true);
   await svc.backupNow();
   assert.equal(svc.due(), false);
-  advance(SIX_HOURS - 1000);
+  advance(BACKUP_INTERVAL - 1000);
   assert.equal(svc.due(), false);
   advance(2000);
   assert.equal(svc.due(), true);

@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { backupApi } from '@/lib/api';
 import { currentSession, signOut } from '@/lib/session';
 import { agoLabel } from '@/lib/pages';
-import { backupMessage } from '@/lib/backupMessage';
+import { backupMessage, signOutBackupFailed, signOutBackupMessage } from '@/lib/backupMessage';
 import { noOfferMessage } from '@/lib/restoreMessage';
 import { offerRestore } from '@/components/shell/RestoreOffer';
 import { backupFileName, importSummary, parseBackupText } from '@/lib/backupFile';
@@ -163,7 +163,9 @@ export function UserMenu({ onOpenReminders, dailyLine }: {
             {desktop.available && (desktop.account ? (
               <DropdownMenuItem
                 disabled={desktop.busy}
-                onSelect={() => { void desktop.signOut(); }}
+                onSelect={() => {
+                  void desktop.signOut().then((backup) => { if (signOutBackupFailed(backup)) toast.warning(signOutBackupMessage, { duration: 8000 }); });
+                }}
                 className="gap-2.5 px-2.5 py-2 text-[14px] text-a-muted"
               >
                 <LogOut className="size-[15px] flex-shrink-0" strokeWidth={1.75} aria-hidden />

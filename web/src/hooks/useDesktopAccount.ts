@@ -17,7 +17,7 @@ interface DesktopBridge {
   restoreNow?: () => Promise<RestoreResult>;
   getAccount: () => Promise<DesktopAccount | null>;
   signIn: () => Promise<DesktopAccount | null>;
-  signOut: () => Promise<null>;
+  signOut: () => Promise<{ backup?: string } | null>;
 }
 
 declare global {
@@ -45,10 +45,16 @@ export function useDesktopAccount() {
     try { setAccount(await bridge.signIn()); } catch { setFailed(true); } finally { setBusy(false); }
   }, [bridge]);
 
-  const signOut = useCallback(async () => {
-    if (!bridge) return;
+  /** Signs out; resolves how the last backup before it went ('backed-up', 'unchanged', 'offline', ...), or null. */
+  const signOut = useCallback(async (): Promise<string | null> => {
+    if (!bridge) return null;
     setBusy(true);
-    try { await bridge.signOut(); setAccount(null); } finally { setBusy(false); }
+    try {
+      const outcome = await bridge.signOut();
+      setAccount(null);
+      return outcome?.backup ?? null;
+    } finally { setBusy(false); }
+    return null;
   }, [bridge]);
 
   /** Backs up now; returns what happened ('backed-up', 'unchanged', 'offline', 'sign-in-needed', ...). */

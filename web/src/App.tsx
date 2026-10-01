@@ -805,6 +805,15 @@ function UserScopedApp() {
 
   const handleAddTask = useCallback(
     async (text: string, quadrant: Quadrant, category?: string, dueDate?: string, dueTime?: string, recurrence?: Recurrence) => {
+      if (server.loading) {
+        toast.error('Your lists are still loading. Please try again shortly.');
+        return null;
+      }
+      if (!lists.some((list) => list.id === activeListId)) {
+        setSidebarOpen(true);
+        toast.error('Create or select a list before adding a task.');
+        return null;
+      }
       const maxOrder = listTodos.reduce((m, t) => Math.max(m, t.order), -1);
 
       // Optimistic local update — shown immediately while async save runs
@@ -854,7 +863,7 @@ function UserScopedApp() {
       toast.error('Failed to save task', { duration: 3000 });
       return null;
     },
-    [activeListId, listTodos, setTodos, server]
+    [activeListId, lists, listTodos, setTodos, server]
   );
 
   /** "+ Add" in a board column: create the task, then give it that column's value. */
@@ -1134,29 +1143,15 @@ function UserScopedApp() {
   // ── List CRUD ─────────────────────────────────────────────────────────────
 
   const handleCreateList = useCallback(async (name: string, color: string) => {
-    if (server.serverOnline) {
-      const created = await server.createList(name, color);
-      if (created) {
-        const newList = apiListToKaizenList(created);
-        setAppState((prev) => ({
-          ...prev,
-          lists: [...prev.lists, newList],
-          activeListId: newList.id,
-        }));
-        toast.success(`List "${name}" created`, { duration: 2000 });
-        return;
-      }
+    const created = await server.createList(name, color);
+    if (!created) {
+      toast.error('Failed to save list', { duration: 3000 });
+      return;
     }
-    // Offline fallback
-    const newList: KaizenList = {
-      id: crypto.randomUUID(),
-      name,
-      createdAt: Date.now(),
-      color,
-    };
+    const newList = apiListToKaizenList(created);
     setAppState((prev) => ({
       ...prev,
-      lists: [...prev.lists, newList],
+      lists: prev.lists.some((list) => list.id === newList.id) ? prev.lists : [...prev.lists, newList],
       activeListId: newList.id,
     }));
     toast.success(`List "${name}" created`, { duration: 2000 });

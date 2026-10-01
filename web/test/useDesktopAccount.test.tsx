@@ -15,7 +15,7 @@ describe('useDesktopAccount', () => {
     window.hitlistDesktop = {
       getAccount: vi.fn().mockResolvedValue(null),
       signIn: vi.fn().mockResolvedValue({ email: 'a@b.c' }),
-      signOut: vi.fn().mockResolvedValue(null),
+      signOut: vi.fn().mockResolvedValue({ backup: 'offline' }),
     };
     const { result } = renderHook(() => useDesktopAccount());
     expect(result.current.available).toBe(true);
@@ -23,7 +23,9 @@ describe('useDesktopAccount', () => {
     expect(result.current.account).toBeNull();
     await act(async () => { await result.current.signIn(); });
     expect(result.current.account).toEqual({ email: 'a@b.c' });
-    await act(async () => { await result.current.signOut(); });
+    let backupOutcome: string | null = '';
+    await act(async () => { backupOutcome = await result.current.signOut(); });
+    expect(backupOutcome).toBe('offline');
     expect(result.current.account).toBeNull();
     expect(window.hitlistDesktop.signOut).toHaveBeenCalled();
   });

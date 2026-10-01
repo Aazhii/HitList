@@ -34,7 +34,8 @@ xattr -dr com.apple.quarantine /Applications/HitList.app
 
 - No account is needed. Your tasks, notes and databases are stored on your Mac.
 - **Sign in to back up:** account menu (top right) → *Sign in to back up*. Your workspace is then backed up to your account
-  when something has changed, up to three times a day. *Back up now* is in the same menu.
+  about every three days (only when something has changed), and once more when you sign out. *Back up now* is in the same menu.
+  If the app cannot reach the internet when you sign out, it tells you; your data stays on the computer.
 - **New computer:** install HitList, sign in with the same account, and choose *Restore* when it offers your backup.
   *Account → Restore from backup* does the same on demand. Restoring only adds; it never overwrites or deletes.
 

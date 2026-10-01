@@ -280,12 +280,16 @@ async function createWindow() {
   ipcMain.handle('backup:status', () => backup.status());
   ipcMain.handle('backup:now', () => backup.backupNow('manual'));
   ipcMain.handle('account:signOut', async () => {
-    // A last backup first, so signing out never leaves recent work only on this machine.
-    await Promise.race([backup.backupNow('sign-out'), new Promise((r) => setTimeout(r, QUIT_BACKUP_MS))]).catch(() => {});
+    // The pre-logout hook: one last backup first, so signing out does not leave recent work only on this machine. Signing out
+    // goes ahead either way (offline included); the page is told how the backup went and says so if it did not.
+    const outcome = await Promise.race([
+      backup.backupNow('sign-out').catch(() => ({ result: 'error' })),
+      new Promise((r) => setTimeout(() => r({ result: 'timeout' }), QUIT_BACKUP_MS)),
+    ]);
     await auth.signOut();
     account = null;
     win.webContents.reload();
-    return null;
+    return { backup: outcome.result };
   });
 
   win.loadURL(`http://127.0.0.1:${port}`);
@@ -304,8 +308,6 @@ app.on('activate', () => {
 app.on('before-quit', async (event) => {
   if (!backendProcess || backendProcess.exitCode !== null) return;
   event.preventDefault();
-  // One last backup while the local server is still up, but never holding the quit for more than a few seconds.
-  if (backup) await Promise.race([backup.backupNow('quit'), new Promise((r) => setTimeout(r, QUIT_BACKUP_MS))]).catch(() => {});
   await stopBackend();
   app.quit();
 });
