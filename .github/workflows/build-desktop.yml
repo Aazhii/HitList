@@ -9,35 +9,37 @@
 name: Build desktop apps
 
 on:
+  # The form, kept short on purpose: Name _ Major . Minor . Patch - Stage + Stage no.   e.g. HitList_1.2.5-beta2
+  #   Patch empty = the run number (always new). Stage none/alpha/beta; Stage no. only with alpha/beta (empty = 1).
   workflow_dispatch:
     inputs:
       release_name:
-        description: Release name (the title of the GitHub Release)
+        description: Name
         type: string
         default: HitList
       major:
-        description: Main version (the 1 in 1.2.5)
+        description: Major
         type: string
         default: '1'
       minor:
-        description: Second number (the 2 in 1.2.5)
+        description: Minor
         type: string
         default: '1'
       patch:
-        description: Third number (the 5 in 1.2.5). Leave empty for an automatic, always-new number
+        description: Patch (empty = auto)
         type: string
         default: ''
       stage:
-        description: Pre-release stage (optional). none = a normal release; alpha or beta = a pre-release such as 1.2.5-beta2
+        description: Stage
         type: choice
         options: [none, alpha, beta]
         default: none
       stage_number:
-        description: Number after the stage (the 2 in beta2). Only used with alpha or beta; empty means 1
+        description: Stage no.
         type: string
         default: ''
       publish:
-        description: Also publish a GitHub Release with the files
+        description: Publish release
         type: boolean
         default: false
   push:
