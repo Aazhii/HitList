@@ -7,7 +7,7 @@ const { BrowserWindow, session } = require('electron');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
-const { HOST, LOGIN_URL, BACKUP_FUNCTION_URL } = require('./catalyst-config');
+const { HOST, LOGIN_URL, SIGNUP_URL, RESET_PASSWORD_URL, BACKUP_FUNCTION_URL } = require('./catalyst-config');
 
 const PARTITION = 'persist:hitlist-catalyst';
 
@@ -67,7 +67,8 @@ function createAuth({ userDataDir, getSession = () => session.fromPartition(PART
       };
       win.webContents.on('did-navigate', (_e, url) => { if (isSignedInUrl(url)) void finish(); });
       win.on('closed', () => { if (!settled) { settled = true; resolve(null); } });
-      void win.loadURL(LOGIN_URL);
+      // A small first screen with three clear choices, then Catalyst's own pages behind them (sign in, sign up, set password).
+      void win.loadFile(path.join(__dirname, 'signin.html'), { query: { host: HOST, login: LOGIN_URL, signup: SIGNUP_URL, reset: RESET_PASSWORD_URL } });
     });
   }
 

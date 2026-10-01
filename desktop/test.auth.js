@@ -49,3 +49,13 @@ test('whoami answers null for a signed-out session and throws when it cannot be 
   assert.deepEqual(await createAuth({ userDataDir: dir, getSession: () => reply(200, { userId: '75733000000033001', email: 'x@y.z' }) }).whoami(), { userId: '75733000000033001', email: 'x@y.z' });
   await assert.rejects(createAuth({ userDataDir: dir, getSession: () => reply(502, {}) }).whoami());
 });
+
+test('the sign-in first screen offers three choices, takes only https links on our own host, and loads nothing remote', () => {
+  const html = fs.readFileSync(path.join(__dirname, 'signin.html'), 'utf8');
+  for (const id of ['login', 'signup', 'reset']) assert.match(html, new RegExp(`id="${id}"`));
+  assert.match(html, /Sign in/); assert.match(html, /Create an account/); assert.match(html, /Set or reset my password/);
+  assert.match(html, /u\.protocol === 'https:' && u\.host === host/);
+  assert.match(html, /default-src 'none'/);
+  assert.doesNotMatch(html, /<script[^>]+src=|<link[^>]+href=|<img[^>]+src="http/);
+  assert.ok(require('./catalyst-config').SIGNUP_URL.includes('/__catalyst/auth/signup'));
+});

@@ -22,7 +22,7 @@ Problems we have already met, and the fix.
 | Function: "No such Table with the given name exists" | Create the `Backups` table in the console (04-catalyst.md) |
 | After `catalyst deploy`, the first request still gets the old behaviour | A deploy takes a few seconds to take over; retry |
 | `…/app` shows `INVALID_URL_PATTERN` | Use `…/app/` with the trailing slash |
-| Sign-in: "You have not set a password for this account" | Open the reset-password page (`SPIKE_PAGE=reset pnpm exec electron auth-spike.js` or the hosted URL) and set one |
+| Sign-in: "You have not set a password for this account. Set password now." | An account with no password (added in User Management, or made through social login) gets this from Zoho's page; "Set password now" starts the email reset. The sign-in window now opens on a first screen with a clear *Set or reset my password* button. Original note: | Open the reset-password page (`SPIKE_PAGE=reset pnpm exec electron auth-spike.js` or the hosted URL) and set one |
 | Signed in but backups are refused (401) | The account is not in User Management as an App User |
 
 ## The apps

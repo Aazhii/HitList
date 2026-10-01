@@ -17,6 +17,7 @@ files:
   - restore.js
   - dataDir.js
   - preload.js
+  - signin.html
   - catalyst-config.js
   - package.json
 

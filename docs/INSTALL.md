@@ -33,6 +33,9 @@ xattr -dr com.apple.quarantine /Applications/HitList.app
 ## Using it
 
 - No account is needed. Your tasks, notes and databases are stored on your Mac.
+- **Signing in:** *Sign in to back up* opens a small window with three choices. *Sign in* is for an existing account and password.
+  *Create an account* is for new people (you choose your password). *Set or reset my password* is for anyone who was added by someone
+  else or forgot theirs; it emails a link. Zoho and Google buttons are on the sign-in page.
 - **Sign in to back up:** account menu (top right) → *Sign in to back up*. Your workspace is then backed up to your account
   about every three days (only when something has changed), and once more when you sign out. *Back up now* is in the same menu.
   If the app cannot reach the internet when you sign out, it tells you; your data stays on the computer.
