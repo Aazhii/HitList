@@ -1,6 +1,6 @@
 /**
  * Today (P5.1): the daily decision as the front door. One next task, large; the two after it, small;
- * everything overdue counted and one click away. The matrix and the other layouts stay under Tasks,
+ * everything overdue listed by default. The matrix and the other layouts stay under Tasks,
  * as the planning views. The ranking is `lib/today.ts`, derived from quadrant, due date and status.
  */
 import { useEffect, useMemo, useState } from 'react';
@@ -42,7 +42,7 @@ export function TodayPage({ todos, lists, onStatusChange, onOpenTask, onOpenTask
   }, []);
 
   const plan = useMemo(() => planToday(todos, now), [todos, now]);
-  const [showOverdue, setShowOverdue] = useState(false);
+  const [showOverdue, setShowOverdue] = useState(true);
   const listName = (t: Todo) => lists.find((l) => l.id === t.listId)?.name;
   const date = new Date(now);
   const { next } = plan;

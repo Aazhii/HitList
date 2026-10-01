@@ -127,19 +127,20 @@ interface AddTaskDialogProps {
   /** A due date to start with — set when adding from a calendar day. */
   defaultDueDate?: string;
   onOpenChange: (v: boolean) => void;
-  onAdd: (text: string, quadrant: Quadrant, category?: string, dueDate?: string, dueTime?: string) => void;
+  onAdd: (text: string, quadrant: Quadrant, category?: string, dueDate?: string, dueTime?: string) => Promise<Todo | null>;
 }
 
 // DS field label (--font-label): 13px / 500, ink, sentence case.
 const FIELD_LABEL = 'text-[13px] font-medium leading-[1.35] text-a-ink';
 
-function AddTaskDialog({ open, defaultQuadrant, defaultDueDate, onOpenChange, onAdd }: AddTaskDialogProps) {
+export function AddTaskDialog({ open, defaultQuadrant, defaultDueDate, onOpenChange, onAdd }: AddTaskDialogProps) {
   const [text, setText] = useState('');
   const [quadrant, setQuadrant] = useState<Quadrant>(defaultQuadrant);
   const [category, setCategory] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [dueTime, setDueTime] = useState('');
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -150,12 +151,25 @@ function AddTaskDialog({ open, defaultQuadrant, defaultDueDate, onOpenChange, on
     return () => clearTimeout(t);
   }, [open, defaultQuadrant, defaultDueDate]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (saving) return;
     if (!text.trim()) { setError('Task description is required.'); return; }
-    onAdd(text.trim(), quadrant, category || undefined, dueDate || undefined, dueTime || undefined);
-    setText(''); setCategory(''); setDueDate(''); setDueTime(''); setError('');
-    onOpenChange(false);
+    setSaving(true);
+    setError('');
+    try {
+      const created = await onAdd(text.trim(), quadrant, category || undefined, dueDate || undefined, dueTime || undefined);
+      if (!created) {
+        setError('Task was not saved. Your draft is still here; please try again.');
+        return;
+      }
+      setText(''); setCategory(''); setDueDate(''); setDueTime(''); setError('');
+      onOpenChange(false);
+    } catch {
+      setError('Task was not saved. Your draft is still here; please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -220,8 +234,8 @@ function AddTaskDialog({ open, defaultQuadrant, defaultDueDate, onOpenChange, on
             <button type="button" className={cn(topBarPill, BTN_MD)} onClick={() => onOpenChange(false)}>
               Cancel
             </button>
-            <button type="submit" className={cn(topBarPrimary, BTN_MD)}>
-              Add task
+            <button type="submit" disabled={saving} className={cn(topBarPrimary, BTN_MD)}>
+              {saving ? 'Saving...' : 'Add task'}
             </button>
           </DialogFooter>
         </form>
@@ -836,7 +850,6 @@ function UserScopedApp() {
         quadrant,
       };
       setTodos((prev) => [optimisticTodo, ...prev]);
-      toast.success('Task added', { description: text, duration: 2000 });
 
       // Always route through server hook — it uses mockApi when offline
       const quadrantMap: Record<Quadrant, import('@/lib/api').Quadrant> = {
@@ -857,6 +870,7 @@ function UserScopedApp() {
         // Replace temp with persisted task (has real id from mock/server)
         const saved = apiTaskToTodo(created);
         setTodos((prev) => prev.map((t) => t.id === tempId ? saved : t));
+        toast.success('Task added', { description: text, duration: 2000 });
         // Returned so a caller can act on the real id — the board's "+ Add"
         // sets the column's field value on the task it just created.
         return saved;

@@ -53,6 +53,24 @@ describe('workspace sync task guards', () => {
     expect(taskApi.create).toHaveBeenCalledWith(request);
   });
 
+  it('keeps an overdue task after creation and refresh', async () => {
+    const request = { title: 'Already overdue', listId: 'work', dueDate: '2020-01-01' };
+    const saved = { id: 'overdue', ...request } as Awaited<ReturnType<typeof taskApi.create>>;
+    vi.mocked(taskApi.create).mockImplementation(async () => {
+      vi.mocked(taskApi.list).mockResolvedValue([saved]);
+      return saved;
+    });
+    const { result } = renderHook(() => useAppSync('work'));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {
+      expect(await result.current.createTask(request)).toEqual(saved);
+    });
+    expect(result.current.tasks).toEqual([saved]);
+    await act(async () => { await result.current.refresh(); });
+    expect(result.current.tasks).toEqual([saved]);
+    expect(taskApi.create).toHaveBeenCalledWith(request);
+  });
+
   it('removes the last list and its tasks and keeps refresh empty', async () => {
     vi.mocked(taskApi.list).mockResolvedValue([{ id: 'old', listId: 'work' } as Awaited<ReturnType<typeof taskApi.create>>]);
     const { result } = renderHook(() => useAppSync('work'));

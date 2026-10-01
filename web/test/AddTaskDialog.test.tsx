@@ -1,10 +1,32 @@
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { AddTaskDialog } from '@/App';
+import type { Todo } from '@/types/todo';
+
+describe('task creation dialog', () => {
+  it('keeps an overdue draft on save failure and closes only after retry succeeds', async () => {
+    const onOpenChange = vi.fn();
+    const onAdd = vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'saved' } as Todo);
+    render(<AddTaskDialog open defaultQuadrant="do" onAdd={onAdd} onOpenChange={onOpenChange} />);
+    const text = screen.getByLabelText(/Task\*/);
+    const date = screen.getByLabelText('Due date');
+    fireEvent.change(text, { target: { value: 'Overdue draft' } });
+    fireEvent.change(date, { target: { value: '2020-01-01' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add task' }));
+    expect(await screen.findByText(/Task was not saved/)).toBeInTheDocument();
+    expect(text).toHaveValue('Overdue draft');
+    expect(date).toHaveValue('2020-01-01');
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(onAdd).toHaveBeenLastCalledWith('Overdue draft', 'do', undefined, '2020-01-01', undefined);
+    fireEvent.click(screen.getByRole('button', { name: 'Add task' }));
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+  });
+});
 /**
  * AddTaskDialog tests (inline component from App.tsx)
  * Tests validation, submission, and quadrant selection.
  * We test via the App component's dialog trigger.
  */
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 import userEvent from '@testing-library/user-event';
 
 // Minimal standalone AddTaskDialog extracted for testing
