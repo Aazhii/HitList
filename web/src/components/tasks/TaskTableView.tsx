@@ -248,7 +248,13 @@ export function TaskTableView({
       />
     )}
     <div className="max-h-[calc(100vh-260px)] w-full overflow-auto rounded-[6px] border border-a-line bg-a-surface">
-      <table className="w-full min-w-max border-separate border-spacing-0 text-[13px]">
+      <table className="w-full table-fixed border-separate border-spacing-0 text-[13px]" style={{ minWidth: 368 + columns.length * 150 }}>
+        <colgroup>
+          <col style={{ width: 44 }} />
+          <col style={{ width: '40%' }} />
+          {columns.map((column) => <col key={column.id} />)}
+          <col style={{ width: 44 }} />
+        </colgroup>
         <thead>
           <tr>
             <th scope="col" className="sticky top-0 left-0 z-[3] w-11 border-b border-a-line bg-a-line-soft px-3 py-2 text-right align-bottom text-[11px] font-bold text-a-faint">
@@ -537,7 +543,7 @@ function TaskTableRow({ rowNumber, todo, columns, activeCol, selected, selecting
         ) : rowNumber}
       </td>
       <td {...cell(0)} className={cn(CELL, 'sticky left-11 z-[1] bg-a-surface', CURSOR)}>
-        <div className="flex items-start gap-1">
+        <div className="flex min-w-0 items-start gap-1">
           <TitleCell
             todo={todo}
             onCommit={(text) => { if (text && text !== todo.text) onUpdate(todo.id, { text }); }}
@@ -661,7 +667,7 @@ function TitleCell({ todo, onCommit }: { todo: Todo; onCommit: (text: string) =>
           if (e.key === 'Escape') { setDraft(todo.text); setEditing(false); }
         }}
         aria-label="Title"
-        className={cn(CONTROL, 'min-w-0 flex-1 resize-none py-1.5 leading-snug')}
+        className={cn(CONTROL, 'min-w-0 flex-1 resize-none py-1.5 leading-snug [overflow-wrap:anywhere]')}
       />
     );
   }
@@ -673,7 +679,7 @@ function TitleCell({ todo, onCommit }: { todo: Todo; onCommit: (text: string) =>
       aria-label={`Edit title of ${todo.text}`}
       className={cn(CONTROL, 'min-w-0 flex-1 py-1.5 leading-snug', isDone && 'text-a-faint line-through')}
     >
-      <span className="line-clamp-3 whitespace-pre-wrap">{todo.text}</span>
+      <span className="block whitespace-pre-wrap [overflow-wrap:anywhere]">{todo.text}</span>
     </button>
   );
 }
