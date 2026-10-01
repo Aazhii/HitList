@@ -45,6 +45,11 @@ export interface NoteBlock {
   type: BlockType;
   content: string;
   checked?: boolean;    // for todo blocks
+  /**
+   * How many levels in the line is pushed (Tab / Shift+Tab); missing or 0 is the top level. Optional like
+   * `checked`, so no existing note needs migrating, and any block type can carry it.
+   */
+  indent?: number;
   tableData?: TableData; // for table blocks
   /**
    * Callout blocks only. Optional, like `checked` and `tableData`, so no

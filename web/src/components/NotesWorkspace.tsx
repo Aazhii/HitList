@@ -185,6 +185,7 @@ export function NoteDetail({
   onDeleteBlock,
   onChangeBlockType,
   onMoveBlock,
+  onSetIndent,
   linking,
 }: {
   note: Note;
@@ -196,6 +197,7 @@ export function NoteDetail({
   onDeleteBlock: (noteId: string, blockId: string) => void;
   onChangeBlockType: (noteId: string, blockId: string, type: BlockType) => void;
   onMoveBlock: (noteId: string, blockId: string, direction: 'up' | 'down') => void;
+  onSetIndent: (noteId: string, blockId: string, direction: 'in' | 'out') => void;
 }) {
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const firstBlockRef = useRef<string | null>(null);
@@ -309,6 +311,7 @@ export function NoteDetail({
             onDeleteBlock={(blockId) => onDeleteBlock(note.id, blockId)}
             onChangeBlockType={(blockId, type) => onChangeBlockType(note.id, blockId, type)}
             onMoveBlock={(blockId, direction) => onMoveBlock(note.id, blockId, direction)}
+            onSetIndent={(blockId, direction) => onSetIndent(note.id, blockId, direction)}
             noteId={note.id}
             linking={linking}
           />
@@ -444,6 +447,7 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
     deleteBlock,
     changeBlockType,
     moveBlock,
+    setBlockIndent,
   } = useNotes();
 
   const [search, setSearch] = useState('');
@@ -626,6 +630,7 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
             onDeleteBlock={deleteBlock}
             onChangeBlockType={changeBlockType}
             onMoveBlock={moveBlock}
+            onSetIndent={setBlockIndent}
             linking={linking}
           />
         ) : notes.length === 0 ? (

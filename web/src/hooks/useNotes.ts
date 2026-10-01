@@ -8,6 +8,7 @@ import { useState, useCallback, useEffect, useRef } from 'react';
 import type { Note, NoteBlock, BlockType } from '@/types/notes';
 import { createNewNote, createEmptyBlock } from '@/types/notes';
 import { getActiveUserId } from '@/lib/storage';
+import { indentBlock, levelForNewBlockAfter, moveBlockWithChildren, normalizeIndents, outdentBlock } from '@/lib/noteBlocks';
 import { claimLegacyNotes, notesStorageKey } from '@/lib/notesStorage';
 import { notesSyncService } from '@/services/notesSyncService';
 import type { NotePayload } from '@/services/notesSyncService';
@@ -197,7 +198,9 @@ export function useNotes() {
           if (n.id !== noteId) return n;
           const idx = n.blocks.findIndex((b) => b.id === afterBlockId);
           const blocks = [...n.blocks];
-          blocks.splice(idx + 1, 0, newBlock);
+          // A new line sits level with the one before it (or first among its children), as in an outline.
+          const level = levelForNewBlockAfter(blocks, idx);
+          blocks.splice(idx + 1, 0, level > 0 ? { ...newBlock, indent: level } : newBlock);
           return { ...n, blocks, updatedAt: Date.now() };
         });
         persistLocal(next);
@@ -219,7 +222,7 @@ export function useNotes() {
           scheduleSave(cleared);
           return cleared;
         }
-        const updated = { ...n, updatedAt: Date.now(), blocks: n.blocks.filter((b) => b.id !== blockId) };
+        const updated = { ...n, updatedAt: Date.now(), blocks: normalizeIndents(n.blocks.filter((b) => b.id !== blockId)) };
         scheduleSave(updated);
         return updated;
       });
@@ -259,14 +262,29 @@ export function useNotes() {
     setNotes((prev) => {
       const next = prev.map((n) => {
         if (n.id !== noteId) return n;
-        const idx = n.blocks.findIndex((b) => b.id === blockId);
-        if (idx === -1) return n;
-        const newIdx = direction === 'up' ? idx - 1 : idx + 1;
-        if (newIdx < 0 || newIdx >= n.blocks.length) return n;
-        const blocks = [...n.blocks];
-        [blocks[idx], blocks[newIdx]] = [blocks[newIdx], blocks[idx]];
+        const blocks = moveBlockWithChildren(n.blocks, blockId, direction);
+        if (blocks === n.blocks) return n;
         return { ...n, blocks, updatedAt: Date.now() };
       });
+      persistLocal(next);
+      const updated = next.find((n) => n.id === noteId);
+      if (updated) scheduleSave(updated);
+      return next;
+    });
+  }, [scheduleSave]);
+
+  /** Tab / Shift+Tab: push a line in or bring it back out one level, its children with it. */
+  const setBlockIndent = useCallback((noteId: string, blockId: string, direction: 'in' | 'out') => {
+    setNotes((prev) => {
+      let changed = false;
+      const next = prev.map((n) => {
+        if (n.id !== noteId) return n;
+        const blocks = direction === 'in' ? indentBlock(n.blocks, blockId) : outdentBlock(n.blocks, blockId);
+        if (blocks === n.blocks) return n;
+        changed = true;
+        return { ...n, blocks, updatedAt: Date.now() };
+      });
+      if (!changed) return prev;
       persistLocal(next);
       const updated = next.find((n) => n.id === noteId);
       if (updated) scheduleSave(updated);
@@ -291,5 +309,6 @@ export function useNotes() {
     deleteBlock,
     changeBlockType,
     moveBlock,
+    setBlockIndent,
   };
 }

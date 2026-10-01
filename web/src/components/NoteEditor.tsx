@@ -27,7 +27,10 @@ import { DatabasePicker } from '@/components/notes/DatabasePicker';
 import { createInlineDatabase } from '@/lib/inlineDatabase';
 import { toast } from 'sonner';
 import { TableBlock } from '@/components/notes/TableBlock';
-import { computeNumberedOrdinals } from '@/lib/noteBlocks';
+import { computeNumberedOrdinals, levelOf } from '@/lib/noteBlocks';
+
+/** How far each level of Tab pushes a line in, in px. */
+const INDENT_STEP = 24;
 import { InlineText, supportedMarks } from '@/components/notes/InlineText';
 import { activeMarks, hasInlineMarks, toggleMark, type Mark } from '@/lib/inlineMarkdown';
 import { getCaretCoordinates } from '@/lib/caretCoordinates';
@@ -361,6 +364,8 @@ function BlockRow({
       ROW_SPACING[block.type],
       joinPrev && '-mt-[6px]',
     ),
+    // Pushed in with Tab: the whole row (marker, text and its hover controls) moves, as in an outline.
+    ...(levelOf(block) > 0 ? { style: { marginLeft: levelOf(block) * INDENT_STEP } } : {}),
     onMouseEnter: () => setHovered(true),
     onMouseLeave: () => setHovered(false),
   };
@@ -595,6 +600,8 @@ interface NoteEditorProps {
   onDeleteBlock: (blockId: string) => void;
   onChangeBlockType: (blockId: string, type: BlockType) => void;
   onMoveBlock: (blockId: string, direction: 'up' | 'down') => void;
+  /** Tab / Shift+Tab: push a line in or bring it back out one level (its children go with it). */
+  onSetIndent?: (blockId: string, direction: 'in' | 'out') => void;
   /** The note these blocks belong to; needed to link a block to a task. */
   noteId?: string;
   linking?: NoteTaskLinking;
@@ -607,6 +614,7 @@ export function NoteEditor({
   onDeleteBlock,
   onChangeBlockType,
   onMoveBlock,
+  onSetIndent,
   noteId,
   linking,
 }: NoteEditorProps) {
@@ -940,7 +948,7 @@ export function NoteEditor({
         setSlashState((s) => s ? { ...s, selectedIndex: Math.max(s.selectedIndex - 1, 0) } : null);
         return;
       }
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault();
         const cmd = filtered[slashState.selectedIndex];
         if (cmd) handleSlashSelect(cmd);
@@ -953,14 +961,25 @@ export function NoteEditor({
       }
     }
 
+    const isListItem = block.type === 'bullet' || block.type === 'numbered' || block.type === 'todo';
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      const nextType: BlockType =
-        block.type === 'bullet' || block.type === 'numbered' || block.type === 'todo'
-          ? block.type
-          : 'paragraph';
+      if (isListItem && block.content === '') {
+        // An empty list item ends the list: one level back out when it is nested, otherwise plain text.
+        if (levelOf(block) > 0 && onSetIndent) onSetIndent(blockId, 'out');
+        else onChangeBlockType(blockId, 'paragraph');
+        pendingFocusId.current = blockId;
+        return;
+      }
+      const nextType: BlockType = isListItem ? block.type : 'paragraph';
       const newId = onAddBlock(blockId, nextType);
       pendingFocusId.current = newId;
+    } else if (e.key === 'Backspace' && cursorAtStart && levelOf(block) > 0 && onSetIndent) {
+      // Backspace at the start of a pushed-in line first brings it back out; only a top-level empty line is deleted.
+      e.preventDefault();
+      onSetIndent(blockId, 'out');
+      pendingFocusId.current = blockId;
     } else if (e.key === 'Backspace' && cursorAtStart && block.content === '') {
       e.preventDefault();
       if (blocks.length > 1) {
@@ -974,13 +993,17 @@ export function NoteEditor({
     } else if (e.key === 'ArrowDown' && cursorAtEnd) {
       const next = blocks[idx + 1];
       if (next) { e.preventDefault(); pendingFocusId.current = next.id; }
-    } else if (e.key === 'Tab') {
+    } else if (e.key === 'Tab' && !e.nativeEvent.isComposing) {
       e.preventDefault();
       if (block.type === 'code') {
-        onUpdateBlock(blockId, { content: block.content + '  ' });
+        // Code keeps real spacing: Tab adds two spaces, Shift+Tab takes up to two from the start of the line.
+        onUpdateBlock(blockId, { content: e.shiftKey ? block.content.replace(/^ {1,2}/, '') : block.content + '  ' });
+      } else if (onSetIndent) {
+        onSetIndent(blockId, e.shiftKey ? 'out' : 'in');
+        pendingFocusId.current = blockId;
       }
     }
-  }, [blocks, slashState, mention, onAddBlock, onDeleteBlock, onUpdateBlock, handleSlashSelect, handleToggleMark]);
+  }, [blocks, slashState, mention, onAddBlock, onDeleteBlock, onUpdateBlock, onSetIndent, onChangeBlockType, handleSlashSelect, handleToggleMark]);
 
   const handleAddAfter = useCallback((blockId: string) => {
     const newId = onAddBlock(blockId, 'paragraph');
