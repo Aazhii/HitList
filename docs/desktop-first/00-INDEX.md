@@ -47,9 +47,10 @@ machine after sign-in. The web link (AppSail) stops being the way people use Hit
 |---|---|---|---|
 | D0.1 | Paste the free-tier limits into `01-BUDGET.md` (the message only had a placeholder) | **blocked: needs the text** | |
 | D0.2 | Per-user daily call budget: sign-in, backup, restore, list | todo | table in `01-BUDGET.md` |
+| D1.0 | Spike: can a desktop window sign in with Catalyst's hosted login and call a Function as that user? | **done 2026-10-01** | `desktop/auth-spike.js` printed SPIKE PASSED: the window's session reaches the `backup` Function, which returned the user id and email; a call with no cookies is refused |
 | D1.1 | Desktop opens Catalyst's hosted login in its own window, keeps the session cookie in the app's partition | todo | |
 | D1.2 | The jar learns the signed-in user: Electron passes it in, the jar runs in `cookie` mode locally with that user as owner | todo | |
-| D1.3 | First sign-in brings the existing local (cookie) workspace under the account (reuse `WorkspaceClaimService`) | todo | Java test exists for the claim |
+| D1.3 | First sign-in brings the existing local (cookie) workspace under the account (reuse `WorkspaceClaimService`) | **built** | same Java test: claimed once, another account sees nothing, the cookie no longer holds it |
 | D1.4 | Works offline: no network means the app opens as before; sign-in only when backing up or restoring | todo | |
 | D2.1 | Catalyst Function `backup` (Advanced I/O): `PUT` a snapshot, `GET` the latest, `GET` the list; user from the request, never from the body | todo | |
 | D2.2 | Storage: snapshot JSON in File Store/Stratus, one index row per snapshot in Data Store (`Backups`: user, time, size, counts, file id) | todo | |
