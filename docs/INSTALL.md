@@ -91,6 +91,10 @@ sudo apt install ./HitList_*_amd64.deb
 
 Then open **HitList** from the applications menu.
 
+`apt` may end with a note starting `N: Download is performed unsandboxed as root as file '…' couldn't be accessed by user '_apt'`.
+That is only a notice, not a failure: the install worked. To avoid it, copy the file to `/tmp` first and install from there.
+You can also start HitList from a terminal with `hitlist-desktop`.
+
 ## Linux notes
 
 - On recent Ubuntu, the system restricts the sandbox Electron uses. HitList notices this and starts without Chromium's
