@@ -1,0 +1,222 @@
+# Builds the HitList desktop apps for Mac, Windows and Linux.
+#
+# Run it by hand: GitHub -> Actions -> "Build desktop apps" -> Run workflow.
+# Or push a tag such as v1.2.0 and it runs by itself and publishes a release.
+#
+# Every run is unique: the version is <BASE_VERSION>.<run number> (1.1.57, 1.1.58, ...), the number only ever goes up, and
+# the commit id is in the artifact names and in SHA256SUMS.txt. Nothing is signed (no certificates); see docs/building.
+name: Build desktop apps
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Also publish a GitHub Release with the files
+        type: boolean
+        default: false
+  push:
+    tags: ['v*']
+
+concurrency:
+  group: build-desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  BASE_VERSION: '1.1'
+
+jobs:
+  # ---- Which version and commit this run is --------------------------------------------------------------------------
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      sha: ${{ steps.v.outputs.sha }}
+    steps:
+      - id: v
+        run: |
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then VERSION="${GITHUB_REF_NAME#v}"; else VERSION="${BASE_VERSION}.${GITHUB_RUN_NUMBER}"; fi
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          echo "Building version ${VERSION} from ${GITHUB_SHA::7}" >> "$GITHUB_STEP_SUMMARY"
+
+  # ---- Every test, before anything is built ---------------------------------------------------------------------------
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { package_json_file: web/package.json }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '25', cache: maven }
+      - name: Web - install
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      - name: Web - design rules, types, lint, tests
+        working-directory: web
+        run: |
+          pnpm design:check
+          pnpm exec tsc -b
+          pnpm exec eslint src test
+          pnpm vitest run
+      - name: API - tests
+        run: mvn -B -f api/pom.xml test
+      - name: Desktop - tests
+        working-directory: desktop
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm test
+      - name: Backup function - tests
+        working-directory: functions/backup
+        run: node --test test.backupService.js
+
+  # ---- The one backend that goes into all three apps (the web app is inside the jar) ------------------------------------
+  backend:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { package_json_file: web/package.json }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '25', cache: maven }
+      - name: Build the web app
+        working-directory: web
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm exec tsc -b
+          pnpm exec vite build
+      - name: Put the web app inside the jar and build it
+        run: |
+          mkdir -p api/src/main/resources/static
+          cp -R web/dist/. api/src/main/resources/static/
+          mvn -B -f api/pom.xml -DskipTests package
+          cp api/target/hitlist.jar hitlist.jar
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hitlist-jar
+          path: hitlist.jar
+          retention-days: 3
+
+  # ---- Mac (Apple silicon) .dmg ------------------------------------------------------------------------------------------
+  mac:
+    needs: [version, backend]
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { package_json_file: web/package.json }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - uses: actions/setup-java@v4   # provides jlink, which builds the small Mac Java runtime
+        with: { distribution: temurin, java-version: '25' }
+      - uses: actions/download-artifact@v4
+        with: { name: hitlist-jar, path: desktop/resources }
+      - name: Build the .dmg
+        working-directory: desktop
+        run: |
+          pnpm install --frozen-lockfile
+          sh scripts/prepare-jre.sh
+          pnpm exec electron-builder --mac --arm64 -c.extraMetadata.version=${{ needs.version.outputs.version }}
+      - name: Checksum
+        working-directory: desktop/dist
+        run: shasum -a 256 *.dmg > SHA256SUMS-mac.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HitList-${{ needs.version.outputs.version }}-${{ needs.version.outputs.sha }}-mac
+          path: |
+            desktop/dist/*.dmg
+            desktop/dist/SHA256SUMS-mac.txt
+          retention-days: 3
+
+  # ---- Windows installer (.exe), built on Linux: the installer tools and the Windows Java runtime are downloaded ---------
+  windows:
+    needs: [version, backend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { package_json_file: web/package.json }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - uses: actions/download-artifact@v4
+        with: { name: hitlist-jar, path: desktop/resources }
+      - name: Build the .exe
+        working-directory: desktop
+        run: |
+          pnpm install --frozen-lockfile
+          sh scripts/prepare-jre-win.sh
+          pnpm exec electron-builder --win --x64 -c.extraMetadata.version=${{ needs.version.outputs.version }}
+      - name: Checksum
+        working-directory: desktop/dist
+        run: sha256sum *.exe > SHA256SUMS-windows.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HitList-${{ needs.version.outputs.version }}-${{ needs.version.outputs.sha }}-windows
+          path: |
+            desktop/dist/*.exe
+            desktop/dist/SHA256SUMS-windows.txt
+          retention-days: 3
+
+  # ---- Linux .AppImage and .deb --------------------------------------------------------------------------------------------
+  linux:
+    needs: [version, backend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { package_json_file: web/package.json }
+      - uses: actions/setup-node@v4
+        with: { node-version: 24 }
+      - uses: actions/download-artifact@v4
+        with: { name: hitlist-jar, path: desktop/resources }
+      - name: Build the .AppImage and .deb
+        working-directory: desktop
+        run: |
+          pnpm install --frozen-lockfile
+          sh scripts/prepare-jre-linux.sh
+          pnpm exec electron-builder --linux --x64 -c.extraMetadata.version=${{ needs.version.outputs.version }}
+      - name: Checksum
+        working-directory: desktop/dist
+        run: sha256sum *.AppImage *.deb > SHA256SUMS-linux.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: HitList-${{ needs.version.outputs.version }}-${{ needs.version.outputs.sha }}-linux
+          path: |
+            desktop/dist/*.AppImage
+            desktop/dist/*.deb
+            desktop/dist/SHA256SUMS-linux.txt
+          retention-days: 3
+
+  # ---- Optional: a GitHub Release with every file (a tag push, or "publish" ticked) ---------------------------------------
+  release:
+    if: ${{ github.ref_type == 'tag' || inputs.publish }}
+    needs: [version, mac, windows, linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: HitList-*
+          merge-multiple: true
+          path: release
+      - name: One checksum file, then publish
+        working-directory: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
+          SHA: ${{ needs.version.outputs.sha }}
+        run: |
+          cat SHA256SUMS-*.txt > SHA256SUMS.txt
+          rm SHA256SUMS-*.txt
+          gh release create "v${VERSION}" --repo "${GITHUB_REPOSITORY}" --target "${GITHUB_SHA}" \
+            --title "HitList ${VERSION}" \
+            --notes "Built from commit ${SHA}. Mac (.dmg), Windows (.exe), Linux (.AppImage and .deb). The apps are not signed; see docs/INSTALL.md for the first-open steps. SHA256SUMS.txt lists the checksums." \
+            ./*
