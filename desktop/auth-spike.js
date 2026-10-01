@@ -7,9 +7,8 @@
  */
 const { app, BrowserWindow, session } = require('electron');
 
-const DOMAIN = 'hitlist-60090109165.development.catalystserverless.in';
-const LOGIN = `https://${DOMAIN}/__catalyst/auth/login`;
-const WHOAMI = `https://${DOMAIN}/server/backup/whoami`;
+const { HOST: DOMAIN, LOGIN_URL: LOGIN, BACKUP_FUNCTION_URL } = require('./catalyst-config');
+const WHOAMI = `${BACKUP_FUNCTION_URL}/whoami`;
 
 async function cookieHeader(ses) {
   const cookies = await ses.cookies.get({ domain: DOMAIN });
