@@ -5,6 +5,8 @@
 
 appId: com.hitlist.desktop
 productName: HitList
+afterPack: scripts/afterPack.js
+
 directories:
   output: dist
 
