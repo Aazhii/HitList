@@ -10,7 +10,7 @@ Problems we have already met, and the fix.
 | `catalyst serve` / Docker: nothing builds, "name resolution" errors | The VPN (FortiClient) cuts Docker off. Disconnect it, build, reconnect. Do not restart Colima |
 | `catalyst serve` says the image should be amd64 | Catalyst runs amd64 images: `docker buildx build --platform linux/amd64 …`. Docker also needs `ZC_DOCKER_SOCK_PATH=$HOME/.colima/default/docker.sock` |
 | AppSail container: `exec: "java": executable file not found` | Catalyst's runner drops the image's PATH. The `Dockerfile` uses the full path `/opt/java/openjdk/bin/java` |
-| Windows installer: errors about Wine or executable metadata | `signAndEditExecutable: false` in `electron-builder.yml` keeps the build off Wine |
+| Windows installer: errors about Wine or executable metadata | `signAndEditExecutable: false` in `electron-builder.yml` keeps the executable edit off Wine. Building the *installer* on Linux still needs Wine (to make the uninstaller): `wine process failed ENOENT`. Build it on a Windows machine (CI does) or a Mac |
 | The build changes nothing in the app | The jar is stale. Rebuild it (`02-build-on-your-computer.md` step 1) and copy to `desktop/resources/hitlist.jar` |
 
 ## Catalyst

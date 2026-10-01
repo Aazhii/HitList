@@ -123,7 +123,7 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           sh scripts/prepare-jre.sh
-          pnpm exec electron-builder --mac --arm64 -c.extraMetadata.version=${{ needs.version.outputs.version }}
+          pnpm exec electron-builder --mac --arm64 --publish never -c.extraMetadata.version=${{ needs.version.outputs.version }}
       - name: Checksum
         working-directory: desktop/dist
         run: shasum -a 256 *.dmg > SHA256SUMS-mac.txt
@@ -135,10 +135,13 @@ jobs:
             desktop/dist/SHA256SUMS-mac.txt
           retention-days: 3
 
-  # ---- Windows installer (.exe), built on Linux: the installer tools and the Windows Java runtime are downloaded ---------
+  # ---- Windows installer (.exe). Built on Windows: on Linux the installer tool needs Wine to make the uninstaller. ---------
   windows:
     needs: [version, backend]
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -151,8 +154,8 @@ jobs:
         working-directory: desktop
         run: |
           pnpm install --frozen-lockfile
-          sh scripts/prepare-jre-win.sh
-          pnpm exec electron-builder --win --x64 -c.extraMetadata.version=${{ needs.version.outputs.version }}
+          bash scripts/prepare-jre-win.sh
+          pnpm exec electron-builder --win --x64 --publish never -c.extraMetadata.version=${{ needs.version.outputs.version }}
       - name: Checksum
         working-directory: desktop/dist
         run: sha256sum *.exe > SHA256SUMS-windows.txt
@@ -181,7 +184,7 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           sh scripts/prepare-jre-linux.sh
-          pnpm exec electron-builder --linux --x64 -c.extraMetadata.version=${{ needs.version.outputs.version }}
+          pnpm exec electron-builder --linux --x64 --publish never -c.extraMetadata.version=${{ needs.version.outputs.version }}
       - name: Checksum
         working-directory: desktop/dist
         run: sha256sum *.AppImage *.deb > SHA256SUMS-linux.txt

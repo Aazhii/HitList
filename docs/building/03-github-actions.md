@@ -7,7 +7,7 @@ The workflow `.github/workflows/build-desktop.yml` ("Build desktop apps") builds
 | Platform | Built on | Files |
 |---|---|---|
 | Mac (Apple silicon) | a macOS runner | `HitList-<version>-arm64.dmg` |
-| Windows (64-bit) | an Ubuntu runner (the installer tools run there) | `HitList-Setup-<version>-x64.exe` |
+| Windows (64-bit) | a Windows runner (on Linux the installer tool needs Wine) | `HitList-Setup-<version>-x64.exe` |
 | Linux (64-bit) | an Ubuntu runner | `HitList-<version>-x64.AppImage`, `HitList_<version>_amd64.deb` |
 
 Each platform job also adds a `SHA256SUMS-<platform>.txt` so a download can be checked.
@@ -41,8 +41,9 @@ Tick **publish** when running (or push a tag like `v1.2.0`) to also create a **G
 
 ## Things to know
 
-- **Cost.** Public repositories get free runs. On a private repository the free plan includes 2,000 minutes a month, and macOS
-  minutes count ten times, so one run (about 10–15 macOS minutes) uses roughly 150 of them. About ten runs a month fits.
+- **Cost.** Public repositories get free runs. On a private repository the free plan includes 2,000 minutes a month; macOS minutes
+  count ten times and Windows minutes twice, so one run (about 10–15 macOS minutes) uses roughly 150–200 of them. About ten runs
+  a month fits.
 - **Storage.** One run produces about 800 MB of files. Private repositories on the free plan keep only 500 MB of artifacts, so
   prefer **publish** (a Release) over relying on artifacts, or make the repository public.
 - **Not signed.** No certificates, so users see a first-open warning on every platform (see [../INSTALL.md](../INSTALL.md)).
