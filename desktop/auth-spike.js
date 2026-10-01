@@ -20,11 +20,13 @@ const WHOAMI = `${BACKUP_FUNCTION_URL}/whoami`;
 
 async function cookieHeader(ses) {
   const cookies = await ses.cookies.get({ domain: DOMAIN });
-  return { names: cookies.map((c) => c.name), header: cookies.map((c) => `${c.name}=${c.value}`).join('; ') };
+  return { names: cookies.map((c) => c.name), csrf: cookies.find((c) => c.name === 'ZD_CSRF_TOKEN')?.value, header: cookies.map((c) => `${c.name}=${c.value}`).join('; ') };
 }
 
-async function whoami(header) {
-  const res = await fetch(WHOAMI, { headers: header ? { Cookie: header } : {} });
+async function whoami(header, csrf) {
+  const headers = header ? { Cookie: header } : {};
+  if (csrf) headers['X-ZCSRF-TOKEN'] = `ZD_CSRF_TOKEN=${csrf}`;
+  const res = await fetch(WHOAMI, { headers });
   return `${res.status} ${(await res.text()).slice(0, 200)}`;
 }
 
@@ -38,10 +40,11 @@ app.whenReady().then(async () => {
   win.webContents.on('did-finish-load', () => {
     setTimeout(async () => {
       if (done) return;
-      const { names, header } = await cookieHeader(ses);
+      const { names, header, csrf } = await cookieHeader(ses);
       say('cookie names:', names.join(', ') || '(none)');
-      const authed = await whoami(header);
-      say('whoami with the window\'s cookies ->', authed);
+      const authed = await whoami(header, csrf);
+      say('whoami with cookies only         ->', await whoami(header, ''));
+      say('whoami with cookies + csrf header ->', authed);
       say('whoami with no cookies           ->', await whoami(''));
       if (authed.startsWith('200')) { done = true; say('SPIKE PASSED'); setTimeout(() => app.quit(), 1500); }
     }, 5000);
