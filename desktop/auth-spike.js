@@ -14,7 +14,7 @@ fs.writeFileSync(RESULT, '');
 const say = (...parts) => { const line = parts.join(' '); console.log(line); fs.appendFileSync(RESULT, line + '\n'); };
 
 const { HOST: DOMAIN, LOGIN_URL, SIGNUP_URL, RESET_PASSWORD_URL, BACKUP_FUNCTION_URL } = require('./catalyst-config');
-// SPIKE_PAGE=reset or =signup opens that hosted page instead of the sign-in page (to set a first password).
+// SPIKE_FRESH=1 forgets the remembered sign-in. SPIKE_PAGE=reset or =signup opens that hosted page instead of the sign-in page (to set a first password).
 const LOGIN = { reset: RESET_PASSWORD_URL, signup: SIGNUP_URL }[process.env.SPIKE_PAGE] ?? LOGIN_URL;
 const WHOAMI = `${BACKUP_FUNCTION_URL}/whoami`;
 
@@ -32,6 +32,8 @@ async function whoami(header, csrf) {
 
 app.whenReady().then(async () => {
   const ses = session.fromPartition('persist:hitlist-spike');
+  // SPIKE_FRESH=1 forgets the remembered sign-in first, to try a different account.
+  if (process.env.SPIKE_FRESH) await ses.clearStorageData();
   const win = new BrowserWindow({ width: 520, height: 720, title: 'HitList sign-in (spike)', webPreferences: { session: ses } });
   let done = false;
   const check = async () => {
