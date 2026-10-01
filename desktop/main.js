@@ -8,7 +8,8 @@
  * background process, no OS-level scheduling, no LaunchAgent: the backend
  * lives exactly as long as this app's own process does.
  */
-const { app, BrowserWindow, dialog } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain } = require('electron');
+const { createAuth, ownerFor } = require('./auth');
 const { spawn } = require('node:child_process');
 const { createServer } = require('node:net');
 const path = require('node:path');
@@ -89,6 +90,8 @@ function waitForHealth(port) {
 }
 
 let backendProcess = null;
+/** A secret for this launch only. The local server accepts an account name from the shell only with it. */
+const DESKTOP_TOKEN = crypto.randomBytes(32).toString('hex');
 
 function startBackend(port, userDataDir) {
   const jarPath = getJarPath();
@@ -105,6 +108,8 @@ function startBackend(port, userDataDir) {
       SQLITE_PATH: sqlitePath,
       SERVER_PORT: String(port),
       OWNER_COOKIE_SECRET: ownerSecret,
+      AUTH_MODE: 'desktop',
+      DESKTOP_TOKEN,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -157,11 +162,41 @@ async function createWindow() {
     return;
   }
 
+  const auth = createAuth({ userDataDir });
+  /** Who is signed in, as remembered on disk: the app opens signed in with no network. */
+  let account = auth.cachedAccount();
+
   const win = new BrowserWindow({
     width: 1280,
     height: 840,
     title: 'HitList',
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
   });
+
+  // Name the signed-in account on every request the app makes to its own local server, and only to it.
+  win.webContents.session.webRequest.onBeforeSendHeaders({ urls: [`http://127.0.0.1:${port}/*`] }, (details, callback) => {
+    const headers = { ...details.requestHeaders };
+    if (account) {
+      headers['X-Hitlist-Desktop-Token'] = DESKTOP_TOKEN;
+      headers['X-Hitlist-Desktop-Owner'] = ownerFor(account.userId);
+    }
+    callback({ requestHeaders: headers });
+  });
+
+  const publicAccount = () => (account ? { email: account.email } : null);
+  ipcMain.handle('account:get', () => publicAccount());
+  ipcMain.handle('account:signIn', async () => {
+    const signedIn = await auth.signIn(win);
+    if (signedIn) { account = signedIn; win.webContents.reload(); }
+    return publicAccount();
+  });
+  ipcMain.handle('account:signOut', async () => {
+    await auth.signOut();
+    account = null;
+    win.webContents.reload();
+    return null;
+  });
+
   win.loadURL(`http://127.0.0.1:${port}`);
 }
 

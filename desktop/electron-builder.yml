@@ -10,6 +10,9 @@ directories:
 
 files:
   - main.js
+  - auth.js
+  - preload.js
+  - catalyst-config.js
   - package.json
 
 extraResources:

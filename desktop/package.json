@@ -2,13 +2,14 @@
   "name": "hitlist-desktop",
   "private": true,
   "version": "1.0.0",
-  "description": "Desktop shell for HitList — spawns api/'s own jar locally (SQLite, no server) and shows web/'s own build in a window.",
+  "description": "Desktop shell for HitList \u2014 spawns api/'s own jar locally (SQLite, no server) and shows web/'s own build in a window.",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
     "prepare:jar": "sh scripts/prepare-jar.sh",
     "prepare:jre": "sh scripts/prepare-jre.sh",
-    "build": "pnpm run prepare:jar && pnpm run prepare:jre && electron-builder"
+    "build": "pnpm run prepare:jar && pnpm run prepare:jre && electron-builder",
+    "test": "node --test test.auth.js"
   },
   "devDependencies": {
     "electron": "^44.3.0",
