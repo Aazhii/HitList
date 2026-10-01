@@ -665,6 +665,7 @@ Shared primitives now follow the DS, so every dialog inherits them:
 - Notifications is a Popover (role dialog): "Notifications", "Mark all read" (it dismisses every reminder), one row per reminder — missed first — with a red or orange dot and "Missed · 2h ago" / "Upcoming · due in 25 minutes". The prototype's "was due Sun, 5:00 PM" needs the due time, which a reminder record does not keep. The unread count badge on the bell stays; per-row go-to-task and dismiss show on hover.
 - Account menu: no "Sign out" (there is no sign-in; data belongs to the browser). "Keyboard shortcuts" opens a dialog listing only shortcuts that exist.
 - Row menus (`shell/RowMenu.tsx`): notes and saved views use it. The prototype's Add to Favorites, Duplicate, Copy link, Rename-by-shortcut, Open in new tab and its keyboard hints are not offered — they depend on Phase 4 features or do not exist. Lists keep their inline rename/delete icons.
+- Lists may be empty: deleting the last list uses the same confirmation and deletes that list's tasks, not standalone notes. Reload does not recreate default lists. Adding a task without a list opens Create a list (name and colour), then resumes the task form or a submitted quick-capture draft after the list is saved. Cancel creates nothing; a failed save keeps the popup open. Legacy tasks with no list keep their notes and are assigned when the first list is created.
 
 ### Phase 4: palette and dead controls (T4.2, T4.5)
 

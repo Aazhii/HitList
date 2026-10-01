@@ -13,13 +13,9 @@ interface WorkspaceApi {
 
 export async function loadTaskWorkspace(api: WorkspaceApi) {
   const lists = [...await api.list.list()];
-  if (lists.length === 0) {
-    lists.push(await api.list.create({ name: 'Work', color: 'blue', listOrder: 0 }));
-    lists.push(await api.list.create({ name: 'Personal', color: 'emerald', listOrder: 1 }));
-  }
   const tasks = await api.task.list();
   const repairedTasks = await Promise.all(tasks.map((task) =>
-    task.listId?.trim()
+    task.listId?.trim() || lists.length === 0
       ? task
       : api.task.update(task.id, { listId: lists[0].id }),
   ));

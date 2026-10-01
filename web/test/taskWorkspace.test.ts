@@ -19,15 +19,11 @@ function backend(lists: ApiList[], tasks: ApiTask[]) {
 }
 
 describe('task workspace initialization', () => {
-  it('persists Work and Personal before exposing a fresh workspace', async () => {
+  it('keeps a fresh or deleted-last-list workspace empty', async () => {
     const api = backend([], []);
     const result = await loadTaskWorkspace(api);
-    expect(result.lists).toEqual([work, personal]);
-    expect(api.list.create.mock.calls).toEqual([
-      [{ name: 'Work', color: 'blue', listOrder: 0 }],
-      [{ name: 'Personal', color: 'emerald', listOrder: 1 }],
-    ]);
-    expect(api.list.create.mock.invocationCallOrder[1]).toBeLessThan(api.task.list.mock.invocationCallOrder[0]);
+    expect(result).toEqual({ lists: [], tasks: [] });
+    expect(api.list.create).not.toHaveBeenCalled();
   });
 
   it('recovers unlisted tasks without changing their notes or source links', async () => {
@@ -35,7 +31,7 @@ describe('task workspace initialization', () => {
       id: 'old-task', listId: null, title: 'Existing task', quadrant: 'DO',
       note: 'Keep my notes', sourceNoteId: 'note-id', sourceBlockId: 'block-id',
     } as ApiTask;
-    const api = backend([], [orphan]);
+    const api = backend([work], [orphan]);
     const result = await loadTaskWorkspace(api);
     expect(api.task.update).toHaveBeenCalledWith('old-task', { listId: work.id });
     expect(result.tasks).toEqual([{ ...orphan, listId: work.id }]);
@@ -51,10 +47,11 @@ describe('task workspace initialization', () => {
     expect(result.tasks).toEqual([assigned, { ...orphan, listId: personal.id }]);
   });
 
-  it('surfaces list save failures instead of exposing an unlisted workspace', async () => {
-    const api = backend([], []);
-    api.list.create.mockReset().mockRejectedValue(new Error('Save failed'));
-    await expect(loadTaskWorkspace(api)).rejects.toThrow('Save failed');
-    expect(api.task.list).not.toHaveBeenCalled();
+  it('preserves legacy unlisted tasks until a list is explicitly created', async () => {
+    const orphan = { id: 'old-task', listId: null, note: 'Keep my notes' } as ApiTask;
+    const api = backend([], [orphan]);
+    expect(await loadTaskWorkspace(api)).toEqual({ lists: [], tasks: [orphan] });
+    expect(api.list.create).not.toHaveBeenCalled();
+    expect(api.task.update).not.toHaveBeenCalled();
   });
 });

@@ -198,7 +198,6 @@ export function ListSidebar({
                 >
                   <Pencil className="size-3" strokeWidth={1.75} />
                 </button>
-                {lists.length > 1 && (
                   <button
                     type="button"
                     onClick={() => setDeleteTarget(list)}
@@ -207,7 +206,6 @@ export function ListSidebar({
                   >
                     <Trash2 className="size-3" strokeWidth={1.75} />
                   </button>
-                )}
               </div>
             </li>
           );

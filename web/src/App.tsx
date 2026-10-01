@@ -23,6 +23,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { MomentumBar } from '@/components/MomentumBar';
 import { TodayHistoryPanel } from '@/components/TodayHistoryPanel';
 import { ListSidebar } from '@/components/ListSidebar';
+import { CreateTaskListDialog } from '@/components/tasks/CreateTaskListDialog';
 import { StreakPanel, weekRangeLabel } from '@/components/StreakPanel';
 import { EisenhowerMatrix } from '@/components/EisenhowerMatrix';
 import { TaskListView } from '@/components/tasks/TaskListView';
@@ -437,7 +438,7 @@ function UserScopedApp() {
       // The reachable server is authoritative, even for a new empty browser
       // workspace. Keeping local seed lists here would let the UI submit a
       // non-existent list id and receive a server-side 404 on its first task.
-      const mergedLists = server.serverOnline ? serverLists : (serverLists.length > 0 ? serverLists : prev.lists);
+      const mergedLists = serverLists;
 
       const validListIds = new Set(mergedLists.map((l) => l.id));
       const newActiveId  = validListIds.has(prev.activeListId)
@@ -461,6 +462,8 @@ function UserScopedApp() {
 
   // UI state
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [listRequiredOpen, setListRequiredOpen] = useState(false);
+  const pendingTask = useRef<[string, Quadrant, string?, string?, string?, Recurrence?] | null>(null);
   const [defaultQuadrant, setDefaultQuadrant] = useState<Quadrant>('do');
   const [defaultDueDate, setDefaultDueDate] = useState('');
   const [showStreak, setShowStreak] = useState(false);
@@ -810,8 +813,8 @@ function UserScopedApp() {
         return null;
       }
       if (!lists.some((list) => list.id === activeListId)) {
-        setSidebarOpen(true);
-        toast.error('Create or select a list before adding a task.');
+        pendingTask.current = [text, quadrant, category, dueDate, dueTime, recurrence];
+        setListRequiredOpen(true);
         return null;
       }
       const maxOrder = listTodos.reduce((m, t) => Math.max(m, t.order), -1);
@@ -865,6 +868,13 @@ function UserScopedApp() {
     },
     [activeListId, lists, listTodos, setTodos, server]
   );
+
+  useEffect(() => {
+    if (listRequiredOpen || server.loading || !lists.some((list) => list.id === activeListId) || !pendingTask.current) return;
+    const draft = pendingTask.current;
+    pendingTask.current = null;
+    void handleAddTask(...draft);
+  }, [listRequiredOpen, server.loading, lists, activeListId, handleAddTask]);
 
   /** "+ Add" in a board column: create the task, then give it that column's value. */
   const handleAddTaskInColumn = useCallback(async (title: string, columnKey: string) => {
@@ -1137,8 +1147,13 @@ function UserScopedApp() {
 
   const handleAddToQuadrant = useCallback((quadrant: Quadrant) => {
     setDefaultQuadrant(quadrant);
+    if (server.loading) return;
+    if (!lists.some((list) => list.id === activeListId)) {
+      setListRequiredOpen(true);
+      return;
+    }
     setDialogOpen(true);
-  }, []);
+  }, [server.loading, lists, activeListId]);
 
   // ── List CRUD ─────────────────────────────────────────────────────────────
 
@@ -1146,7 +1161,7 @@ function UserScopedApp() {
     const created = await server.createList(name, color);
     if (!created) {
       toast.error('Failed to save list', { duration: 3000 });
-      return;
+      return null;
     }
     const newList = apiListToKaizenList(created);
     setAppState((prev) => ({
@@ -1155,7 +1170,16 @@ function UserScopedApp() {
       activeListId: newList.id,
     }));
     toast.success(`List "${name}" created`, { duration: 2000 });
+    return newList;
   }, [server]);
+
+  const handleCreateTaskList = useCallback(async (name: string, color: string) => {
+    const created = await handleCreateList(name, color);
+    if (!created) return false;
+    setListRequiredOpen(false);
+    if (!pendingTask.current) setDialogOpen(true);
+    return true;
+  }, [handleCreateList]);
 
   const handleRenameList = useCallback(async (id: string, name: string) => {
     setAppState((prev) => ({
@@ -1169,17 +1193,20 @@ function UserScopedApp() {
   }, [server, lists]);
 
   const handleDeleteList = useCallback(async (id: string) => {
+    try {
+      await server.deleteList(id);
+    } catch {
+      toast.error('Failed to delete list', { duration: 3000 });
+      return;
+    }
     setAppState((prev) => {
-      if (prev.lists.length <= 1) return prev;
       const newLists = prev.lists.filter((l) => l.id !== id);
-      const newActiveId = prev.activeListId === id ? newLists[0].id : prev.activeListId;
+      const newActiveId = prev.activeListId === id ? (newLists[0]?.id ?? '') : prev.activeListId;
       const newTodos = prev.todos.filter((t) => t.listId !== id);
       return { ...prev, lists: newLists, activeListId: newActiveId, todos: newTodos };
     });
     toast('List deleted', { duration: 2000 });
-    if (server.serverOnline) {
-      await server.deleteList(id);
-    }
+    setDetailOpen(false);
   }, [server]);
 
   const handleSelectList = useCallback((id: string) => {
@@ -1518,7 +1545,7 @@ function UserScopedApp() {
 
           <button
             type="button"
-            onClick={() => { setDefaultQuadrant('do'); setDialogOpen(true); }}
+            onClick={() => handleAddToQuadrant('do')}
             className={topBarPrimary}
             aria-label="New task"
           >
@@ -1817,7 +1844,7 @@ function UserScopedApp() {
                   const addTask = (
                     <button
                       type="button"
-                      onClick={() => { setDefaultQuadrant('do'); setDialogOpen(true); }}
+                      onClick={() => handleAddToQuadrant('do')}
                       className={cn(topBarPrimary, BTN_MD)}
                     >
                       <Plus className="size-[15px]" strokeWidth={1.75} aria-hidden />
@@ -1971,6 +1998,14 @@ function UserScopedApp() {
       />
 
       {/* Add task dialog */}
+      <CreateTaskListDialog
+        open={listRequiredOpen}
+        onCreate={handleCreateTaskList}
+        onOpenChange={(open) => {
+          setListRequiredOpen(open);
+          if (!open) pendingTask.current = null;
+        }}
+      />
       <AddTaskDialog
         open={dialogOpen}
         defaultQuadrant={defaultQuadrant}

@@ -268,10 +268,17 @@ export function useAppSync(activeListId?: string): ServerSyncState {
       try {
         const list = await viaBackend((api) => api.list.create({ name, color, listOrder: lists.length }));
         setLists((prev) => [...prev, list]);
+        if (lists.length === 0) {
+          try {
+            const workspace = await loadWorkspace();
+            setLists(workspace.lists);
+            setTasks(workspace.tasks);
+          } catch (e) { handleError(e); }
+        }
         return list;
       } catch (e) { return handleError(e); }
     });
-  }, [clearError, handleError, lists.length, viaBackend, withSaving]);
+  }, [clearError, handleError, lists.length, loadWorkspace, viaBackend, withSaving]);
 
   const updateList = useCallback(async (id: string, name: string, color?: string): Promise<ApiList | null> => {
     clearError();
@@ -290,7 +297,11 @@ export function useAppSync(activeListId?: string): ServerSyncState {
       try {
         await viaBackend((api) => api.list.delete(id));
         setLists((prev) => prev.filter((l) => l.id !== id));
-      } catch (e) { handleError(e); }
+        setTasks((prev) => prev.filter((task) => task.listId !== id));
+      } catch (e) {
+        handleError(e);
+        throw e;
+      }
     });
   }, [clearError, handleError, viaBackend, withSaving]);
 
