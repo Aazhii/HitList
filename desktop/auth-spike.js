@@ -45,7 +45,10 @@ app.whenReady().then(async () => {
     // The same call made by the signed-in page itself, as a browser would.
     const inPage = await win.webContents.executeJavaScript(`fetch('/server/backup/whoami',{credentials:'include'}).then(async (r) => r.status + ' ' + (await r.text()).slice(0, 600)).catch((e) => 'failed ' + e.message)`);
     say('whoami from inside the window         ->', inPage);
-    if (withCsrf.startsWith('200') || inPage.startsWith('200') || (await whoami(header, '')).startsWith('200')) {
+    // Electron's session fetch: browser-style cookie handling, but from the main process (what the app would use).
+    const viaSession = await ses.fetch(WHOAMI).then(async (r) => `${r.status} ${(await r.text()).slice(0, 300)}`).catch((e) => `failed ${e.message}`);
+    say('whoami via session.fetch (main process) ->', viaSession);
+    if (withCsrf.startsWith('200') || inPage.startsWith('200') || viaSession.startsWith('200') || (await whoami(header, '')).startsWith('200')) {
       done = true; say('SPIKE PASSED'); setTimeout(() => app.quit(), 1500);
     }
   };
