@@ -13,7 +13,9 @@ password: never put it in the repository.)
    **Client ID** and **Client Secret**.
 2. **Make a code.** In the client's **Generate Code** tab enter the scope `WorkDrive.files.CREATE,WorkDrive.files.READ`, set the
    time to 10 minutes, a description such as "HitList builds", and click **Create**. Copy the code (it works once, for 10 minutes).
-3. **Turn the code into a refresh token.** In a terminal (use your own values):
+3. **Turn the code into a refresh token.** The code only lives 3–10 minutes, so pick 10 and do this at once; the token it gives
+   you does **not** expire. Easiest: in your own terminal run `sh scripts/ci/workdrive-token.sh`, which asks for the three values
+   (hiding the secret) and prints only the token. Or by hand, with your own values:
 
    ```
    curl -s -X POST "https://accounts.zoho.in/oauth/v2/token" \
