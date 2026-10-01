@@ -1,0 +1,31 @@
+'use strict';
+
+// Backup service for the desktop app. D1.0 spike: this first version only answers "who is calling?", to prove the
+// desktop can authenticate to a Catalyst Function. The backup routes (D2) are added once that is proved.
+const { zcAuth } = require('@zcatalyst/auth');
+const { UserManagement } = require('@zcatalyst/user-management');
+
+function send(res, status, body) {
+	res.writeHead(status, { 'Content-Type': 'application/json' });
+	res.end(JSON.stringify(body));
+}
+
+/** The signed-in Catalyst user from the request, or null. The id is never taken from the body or the query. */
+async function currentUser(req) {
+	try {
+		zcAuth.init(req);
+		const user = await new UserManagement().getCurrentUser();
+		return user && user.user_id ? user : null;
+	} catch {
+		return null;
+	}
+}
+
+module.exports = async (req, res) => {
+	const path = (req.url || '/').split('?')[0];
+	if (path === '/health') return send(res, 200, { ok: true });
+	const user = await currentUser(req);
+	if (!user) return send(res, 401, { error: 'unauthenticated' });
+	if (path === '/whoami') return send(res, 200, { userId: String(user.user_id), email: user.email_id || null });
+	return send(res, 404, { error: 'not_found' });
+};

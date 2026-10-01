@@ -7,5 +7,12 @@
         "http": 3001
       }
     }
-  ]
+  ],
+  "functions": {
+    "targets": [
+      "backup"
+    ],
+    "ignore": [],
+    "source": "functions"
+  }
 }

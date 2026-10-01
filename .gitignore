@@ -36,3 +36,5 @@ release/
 # Claude Code's own tooling — not part of this project
 .agents/
 .claude/
+
+functions/*/node_modules/

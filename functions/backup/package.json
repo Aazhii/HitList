@@ -1,0 +1,15 @@
+{
+	"name": "backup",
+	"version": "1.0.0",
+	"main": "index.js",
+	"author": "arikaran.rajamanickam.ai@gmail.com",
+	"dependencies": {
+		"@zcatalyst/auth": "^1.0.0",
+		"@zcatalyst/cache": "latest",
+		"@zcatalyst/datastore": "^1.0.0",
+		"@zcatalyst/filestore": "^0.0.2",
+		"@zcatalyst/stratus": "^1.0.0",
+		"@zcatalyst/user-management": "^0.0.2",
+		"@zcatalyst/zcql": "^0.0.2"
+	}
+}
