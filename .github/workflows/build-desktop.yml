@@ -197,36 +197,6 @@ jobs:
             desktop/dist/SHA256SUMS-linux.txt
           retention-days: 3
 
-  # ---- Optional: copy every file into the WorkDrive download folder, when all three apps built ----------------------------
-  # Off until the repository variable WORKDRIVE_UPLOAD is "true" and the four WORKDRIVE_* secrets exist (docs/building/06-workdrive.md).
-  workdrive:
-    if: ${{ vars.WORKDRIVE_UPLOAD == 'true' }}
-    needs: [version, mac, windows, linux]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 24 }
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: HitList-*
-          path: files            # one directory per platform: HitList-<version>-<commit>-mac, -windows, -linux
-      - name: Put the version in each checksum file's name
-        run: |
-          for d in files/*-mac files/*-windows files/*-linux; do
-            p="${d##*-}"
-            mv "$d/SHA256SUMS-$p.txt" "$d/SHA256SUMS-${{ needs.version.outputs.version }}-$p.txt"
-          done
-          ls -R files | head -40
-      - name: Upload to WorkDrive
-        env:
-          WORKDRIVE_CLIENT_ID: ${{ secrets.WORKDRIVE_CLIENT_ID }}
-          WORKDRIVE_CLIENT_SECRET: ${{ secrets.WORKDRIVE_CLIENT_SECRET }}
-          WORKDRIVE_REFRESH_TOKEN: ${{ secrets.WORKDRIVE_REFRESH_TOKEN }}
-          WORKDRIVE_FOLDER_ID: ${{ secrets.WORKDRIVE_FOLDER_ID }}
-          WORKDRIVE_DC: ${{ vars.WORKDRIVE_DC || 'in' }}
-        run: node scripts/ci/upload-workdrive.mjs files
-
   # ---- Optional: a GitHub Release with every file (a tag push, or "publish" ticked) ---------------------------------------
   release:
     if: ${{ github.ref_type == 'tag' || inputs.publish }}

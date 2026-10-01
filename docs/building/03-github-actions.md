@@ -49,9 +49,8 @@ Tick **publish** when running (or push a tag like `v1.2.0`) to also create a **G
 - **Not signed.** No certificates, so users see a first-open warning on every platform (see [../INSTALL.md](../INSTALL.md)).
 - **Not tested on real machines by CI.** CI proves the apps build and the tests pass. It does not start the Windows or Linux
   app. Have one person try each new platform build.
-- **WorkDrive.** The `workdrive` job can copy every file into the download folder automatically; it needs a one-time setup
-  ([06-workdrive.md](06-workdrive.md)) and is off until then. Without it, download the files from the run or the Release and
-  upload them by hand.
+- **The download page.** CI does not upload to WorkDrive. Download the files (from the run's Artifacts or a Release) and put them in the
+  WorkDrive folder the download page links to by hand.
 
 ## If a run fails
 
