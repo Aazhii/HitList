@@ -22,7 +22,8 @@ The app is not signed with an Apple developer certificate, so macOS says it cann
 3. Next to "HitList was blocked", click **Open Anyway** and confirm with your password.
 4. Open HitList again and click **Open**.
 
-If that does not work, run this once in Terminal and open HitList normally:
+If macOS says **"HitList is damaged and can't be opened"**, or **Open Anyway** does not appear, the app is not damaged: macOS
+uses that wording for apps without an Apple certificate. Run this once in Terminal and open HitList normally:
 
 ```
 xattr -dr com.apple.quarantine /Applications/HitList.app

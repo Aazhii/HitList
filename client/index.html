@@ -61,8 +61,8 @@
     <li>Open HitList again and click <strong>Open</strong>.</li>
   </ol>
   <details>
-    <summary>That didn't work, or I prefer Terminal</summary>
-    <p>Run this once in Terminal, then open HitList normally:</p>
+    <summary>macOS says “HitList is damaged and can’t be opened”, or Open Anyway doesn’t appear</summary>
+    <p>The app is not damaged. macOS words it that way for apps that are not signed with an Apple certificate. Run this once in Terminal, then open HitList normally:</p>
     <pre><code>xattr -dr com.apple.quarantine /Applications/HitList.app</code></pre>
     <p>It only removes the “downloaded from the internet” mark from this one app.</p>
   </details>
