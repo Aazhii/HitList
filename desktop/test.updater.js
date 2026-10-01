@@ -26,6 +26,7 @@ test('ordering: numbers, then alpha < beta < release', () => {
 
 const assetsOf = (ver) => [
   { name: `HitList-${ver}-arm64.dmg`, size: 5, browser_download_url: 'u/dmg' },
+  { name: `HitList-${ver}-arm64.zip`, size: 5, browser_download_url: 'u/zip' },
   { name: `HitList-Setup-${ver}-x64.exe`, size: 5, browser_download_url: 'u/exe' },
   { name: `HitList-${ver}-x64.AppImage`, size: 5, browser_download_url: 'u/ai' },
   { name: `HitList_${ver}_amd64.deb`, size: 5, browser_download_url: 'u/deb' },
@@ -35,6 +36,8 @@ const assetsOf = (ver) => [
 test('the right installer per computer', () => {
   const a = assetsOf('1.2.5');
   assert.match(pickAsset(a, 'darwin', 'arm64').name, /arm64\.dmg$/);
+  assert.match(pickAsset(a, 'darwin', 'arm64', true).name, /arm64\.zip$/);
+  assert.match(pickAsset(a.filter((x) => !x.name.endsWith('.zip')), 'darwin', 'arm64', true).name, /\.dmg$/);
   assert.strictEqual(pickAsset(a, 'darwin', 'x64'), null);
   assert.match(pickAsset(a, 'win32', 'x64').name, /\.exe$/);
   assert.match(pickAsset(a, 'linux', 'x64').name, /\.AppImage$/);
@@ -46,18 +49,34 @@ test('checksum lookup', () => {
   assert.strictEqual(hashFor(`${h}  x\n`, 'y'), null);
 });
 
-function makeUpdater({ releases, current = '1.1.0', files = {}, platform = 'darwin' }) {
+function bodyOf(text, chunk = 2) {
+  const buf = Buffer.from(text);
+  let at = 0;
+  return { getReader: () => ({ read: async () => (at >= buf.length ? { done: true } : { done: false, value: buf.subarray(at, (at += chunk)) }) }) };
+}
+
+function makeUpdater({ releases, current = '1.1.0', files = {}, platform = 'darwin', canSwap = false, install = async () => ({ ok: true }), slow = null }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'upd-'));
   const opened = [];
   const calls = [];
-  const fetch = async (url) => {
+  const changes = [];
+  const fetch = async (url, opts = {}) => {
     calls.push(url);
     if (url.includes('/releases')) return { ok: true, status: 200, json: async () => releases };
-    if (url in files) return { ok: true, status: 200, arrayBuffer: async () => Buffer.from(files[url]), text: async () => String(files[url]) };
+    if (url in files) {
+      if (url === slow) {
+        // Never finishes by itself; ends when the download is cancelled.
+        return { ok: true, status: 200, body: { getReader: () => ({ read: () => new Promise((_, reject) => opts.signal.addEventListener('abort', () => reject(new Error('aborted')))) }) } };
+      }
+      return { ok: true, status: 200, body: bodyOf(String(files[url])), arrayBuffer: async () => Buffer.from(files[url]), text: async () => String(files[url]) };
+    }
     return { ok: false, status: 404 };
   };
-  const u = createUpdater({ repo: 'o/r', currentVersion: current, platform, arch: 'arm64', fetch, downloadDir: dir, openFile: async (f) => opened.push(f) });
-  return { u, dir, opened, calls };
+  const u = createUpdater({
+    repo: 'o/r', currentVersion: current, platform, arch: 'arm64', fetch, downloadDir: dir, canSwap,
+    installFile: install, openFile: async (f) => opened.push(f), onChange: (s) => changes.push(s),
+  });
+  return { u, dir, opened, calls, changes };
 }
 
 const release = (tag, extra = {}) => ({ tag_name: tag, name: tag, body: 'notes', draft: false, assets: assetsOf(tag.split('_')[1]), ...extra });
@@ -96,20 +115,71 @@ test('a development run (no real version) does not check', async () => {
   assert.strictEqual(a.calls.length, 0);
 });
 
-test('download verifies the checksum, saves under the real name, and opens it', async () => {
+const sumsFor = (body, name) => `${crypto.createHash('sha256').update(body).digest('hex')}  ${name}\n`;
+
+test('download shows growing progress, verifies, and stops at ready without opening anything', async () => {
   const body = 'hello';
   const name = 'HitList-1.2.0-arm64.dmg';
-  const sum = crypto.createHash('sha256').update(body).digest('hex');
-  const a = makeUpdater({ releases: [release('HitList_1.2.0')], files: { 'u/dmg': body, 'u/sums': `${sum}  ${name}\n` } });
+  const a = makeUpdater({ releases: [release('HitList_1.2.0')], files: { 'u/dmg': body, 'u/sums': sumsFor(body, name) } });
   await a.u.check();
   const s = await a.u.download();
-  assert.strictEqual(s.phase, 'downloaded');
+  assert.strictEqual(s.phase, 'ready');
+  assert.strictEqual(s.mode, 'open');
   assert.strictEqual(fs.readFileSync(path.join(a.dir, name), 'utf8'), body);
-  assert.deepStrictEqual(a.opened, [path.join(a.dir, name)]);
+  assert.deepStrictEqual(a.opened, []);
   assert.ok(!fs.existsSync(path.join(a.dir, `${name}.part`)));
+  const phases = a.changes.map((c) => c.phase);
+  assert.ok(phases.indexOf('downloading') < phases.indexOf('verifying') && phases.indexOf('verifying') < phases.indexOf('ready'));
+  const received = a.changes.filter((c) => c.progress).map((c) => c.progress.received);
+  assert.deepStrictEqual(received, [...received].sort((x, y) => x - y));
+  assert.strictEqual(a.changes.at(-1).progress.received, 5);
 });
 
-test('a wrong checksum or size saves and opens nothing', async () => {
+test('in open mode install opens the file; nothing restarts', async () => {
+  const body = 'hello';
+  const a = makeUpdater({ releases: [release('HitList_1.2.0')], files: { 'u/dmg': body, 'u/sums': sumsFor(body, 'HitList-1.2.0-arm64.dmg') } });
+  await a.u.check(); await a.u.download();
+  const out = await a.u.install();
+  assert.strictEqual(out.restart, false);
+  assert.strictEqual(a.opened.length, 1);
+});
+
+test('where the app can replace itself, the zip is chosen and install asks the caller to restart', async () => {
+  const body = 'hello';
+  let given = null;
+  const a = makeUpdater({
+    releases: [release('HitList_1.2.0')], canSwap: true,
+    files: { 'u/zip': body, 'u/sums': sumsFor(body, 'HitList-1.2.0-arm64.zip') },
+    install: async (x) => { given = x; return { ok: true }; },
+  });
+  const s = await a.u.check();
+  assert.strictEqual(s.mode, 'swap');
+  await a.u.download();
+  const out = await a.u.install();
+  assert.strictEqual(out.restart, true);
+  assert.strictEqual(out.phase, 'installing');
+  assert.match(given.file, /arm64\.zip$/);
+  assert.deepStrictEqual(a.opened, []);
+});
+
+test('a failed swap falls back to opening the installer instead of losing the update', async () => {
+  const body = 'hello';
+  const a = makeUpdater({
+    releases: [release('HitList_1.2.0')], canSwap: true,
+    files: { 'u/zip': body, 'u/sums': sumsFor(body, 'HitList-1.2.0-arm64.zip') },
+    install: async () => ({ ok: false, reason: 'unpack-failed' }),
+  });
+  await a.u.check(); await a.u.download();
+  const out = await a.u.install();
+  assert.strictEqual(out.restart, false);
+  assert.strictEqual(out.phase, 'ready');
+  assert.strictEqual(out.error, 'unpack-failed');
+  assert.strictEqual(out.mode, 'open');
+  assert.strictEqual((await a.u.install()).restart, false);
+  assert.strictEqual(a.opened.length, 1);
+});
+
+test('a wrong checksum or size leaves nothing behind and can be retried', async () => {
   const name = 'HitList-1.2.0-arm64.dmg';
   const bad = makeUpdater({ releases: [release('HitList_1.2.0')], files: { 'u/dmg': 'hello', 'u/sums': `${'0'.repeat(64)}  ${name}\n` } });
   await bad.u.check();
@@ -117,9 +187,30 @@ test('a wrong checksum or size saves and opens nothing', async () => {
   assert.strictEqual(s.phase, 'error');
   assert.strictEqual(s.error, 'checksum-mismatch');
   assert.deepStrictEqual(fs.readdirSync(bad.dir), []);
-  assert.deepStrictEqual(bad.opened, []);
+  assert.ok(s.latest, 'the update is still known, so Try again works');
+  assert.strictEqual((await bad.u.install()).restart, false);
 
-  const short = makeUpdater({ releases: [release('HitList_1.2.0')], files: { 'u/dmg': 'hi', 'u/sums': '' } });
+  const short = makeUpdater({ releases: [release('HitList_1.2.0')], files: { 'u/dmg': 'hi', 'u/sums': sumsFor('hi', name) } });
   await short.u.check();
   assert.strictEqual((await short.u.download()).error, 'size-mismatch');
+});
+
+test('cancel stops a download, deletes the half file and keeps the update available', async () => {
+  const a = makeUpdater({ releases: [release('HitList_1.2.0')], files: { 'u/dmg': 'hello', 'u/sums': sumsFor('hello', 'HitList-1.2.0-arm64.dmg') }, slow: 'u/dmg' });
+  await a.u.check();
+  const running = a.u.download();
+  await new Promise((r) => setTimeout(r, 20));
+  assert.strictEqual(a.u.status().phase, 'downloading');
+  a.u.cancel();
+  const s = await running;
+  assert.strictEqual(s.phase, 'available');
+  assert.strictEqual(s.error, null);
+  assert.deepStrictEqual(fs.readdirSync(a.dir), []);
+});
+
+test('a half file left by a quit mid-download is removed when the app starts', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'upd-'));
+  fs.writeFileSync(path.join(dir, 'HitList-1.2.0-arm64.zip.part'), 'partial');
+  createUpdater({ repo: 'o/r', currentVersion: '1.1.0', platform: 'darwin', arch: 'arm64', fetch: async () => {}, downloadDir: dir, openFile: async () => {} });
+  assert.deepStrictEqual(fs.readdirSync(dir), []);
 });

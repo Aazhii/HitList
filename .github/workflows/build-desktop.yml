@@ -157,7 +157,7 @@ jobs:
         with: { distribution: temurin, java-version: '25' }
       - uses: actions/download-artifact@v4
         with: { name: hitlist-jar, path: desktop/resources }
-      - name: Build the .dmg
+      - name: Build the .dmg and the update .zip
         working-directory: desktop
         run: |
           pnpm install --frozen-lockfile
@@ -165,12 +165,13 @@ jobs:
           pnpm exec electron-builder --mac --arm64 --publish never -c.extraMetadata.version=${{ needs.version.outputs.version }}
       - name: Checksum
         working-directory: desktop/dist
-        run: shasum -a 256 *.dmg > SHA256SUMS-mac.txt
+        run: shasum -a 256 *.dmg *.zip > SHA256SUMS-mac.txt
       - uses: actions/upload-artifact@v4
         with:
           name: HitList-${{ needs.version.outputs.version }}-${{ needs.version.outputs.sha }}-mac
           path: |
             desktop/dist/*.dmg
+            desktop/dist/*.zip
             desktop/dist/SHA256SUMS-mac.txt
           retention-days: 3
 

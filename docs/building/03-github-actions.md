@@ -6,7 +6,7 @@ The workflow `.github/workflows/build-desktop.yml` ("Build desktop apps") builds
 
 | Platform | Built on | Files |
 |---|---|---|
-| Mac (Apple silicon) | a macOS runner | `HitList-<version>-arm64.dmg` |
+| Mac (Apple silicon) | a macOS runner | `HitList-<version>-arm64.dmg` (first install) and `HitList-<version>-arm64.zip` (what an installed app updates itself with) |
 | Windows (64-bit) | a Windows runner (on Linux the installer tool needs Wine) | `HitList-Setup-<version>-x64.exe` |
 | Linux (64-bit) | an Ubuntu runner | `HitList-<version>-x64.AppImage`, `HitList_<version>_amd64.deb` |
 

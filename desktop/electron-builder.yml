@@ -17,6 +17,7 @@ files:
   - restore.js
   - cliqAlerts.js
   - updater.js
+  - installer.js
   - dataDir.js
   - preload.js
   - signin.html
@@ -25,8 +26,12 @@ files:
 
 mac:
   category: public.app-category.productivity
+  artifactName: HitList-${version}-arm64.${ext}
   target:
     - target: dmg
+      arch: [arm64]
+    # The zip is what an installed app swaps itself with when it updates; the dmg is for the first install.
+    - target: zip
       arch: [arm64]
   extraResources:
     - from: resources/hitlist.jar

@@ -14,6 +14,7 @@ const { createBackup } = require('./backup');
 const { createRestore } = require('./restore');
 const { createCliqAlerts } = require('./cliqAlerts');
 const { createUpdater } = require('./updater');
+const installer = require('./installer');
 const { dataDirIn, migrateLegacyData, LEGACY_FOLDER } = require('./dataDir');
 const { BACKUP_FUNCTION_URL } = require('./catalyst-config');
 const { spawn } = require('node:child_process');
@@ -275,15 +276,22 @@ async function createWindow() {
   });
   cliqAlerts.startSchedule();
 
-  // App updates: look at the project's GitHub Releases, download the new installer on request, and open it.
+  // App updates: look at the project's GitHub Releases, download the new version with progress, then replace the installed app
+  // and start it again (installer.js). Where the app cannot be replaced in place, the installer file is opened instead.
+  const updatesDir = path.join(userDataDir, 'updates');
+  const swapEnv = { platform: process.platform, exePath: app.getPath('exe'), appImage: process.env.APPIMAGE, isPackaged: app.isPackaged };
+  installer.cleanupAfterUpdate({ platform: process.platform, exePath: swapEnv.exePath });
   const updater = createUpdater({
     repo: 'Aazhii/HitList',
     currentVersion: app.getVersion(),
     platform: process.platform,
     arch: process.arch,
     fetch: (url, opts) => fetch(url, opts),
-    downloadDir: app.getPath('downloads'),
+    downloadDir: updatesDir,
+    canSwap: installer.canSwap(swapEnv),
+    installFile: ({ file }) => installer.install({ ...swapEnv, file, pid: process.pid, helperDir: updatesDir }),
     openFile: async (file) => { if (process.platform === 'linux') shell.showItemInFolder(file); else await shell.openPath(file); },
+    onChange: (s) => { if (!win.isDestroyed()) win.webContents.send('update:progress', s); },
   });
   if (app.isPackaged) updater.startSchedule();
 
@@ -311,6 +319,17 @@ async function createWindow() {
   ipcMain.handle('update:status', () => updater.status());
   ipcMain.handle('update:check', () => updater.check());
   ipcMain.handle('update:download', () => updater.download());
+  ipcMain.handle('update:cancel', () => updater.cancel());
+  ipcMain.handle('update:install', async () => {
+    // Best effort, like signing out: one last backup so a recent copy exists if anything goes wrong. Never blocks the update.
+    await Promise.race([
+      backup.backupNow('update').catch(() => null),
+      new Promise((r) => setTimeout(r, QUIT_BACKUP_MS)),
+    ]);
+    const out = await updater.install();
+    if (out.restart) setTimeout(() => app.quit(), 300); // the helper takes over once this process has exited
+    return out;
+  });
   ipcMain.handle('backup:status', () => backup.status());
   ipcMain.handle('backup:now', () => backup.backupNow('manual'));
   ipcMain.handle('account:signOut', async () => {

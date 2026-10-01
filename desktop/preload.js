@@ -14,5 +14,12 @@ contextBridge.exposeInMainWorld('hitlistDesktop', {
   getUpdate: () => ipcRenderer.invoke('update:status'),
   checkUpdate: () => ipcRenderer.invoke('update:check'),
   downloadUpdate: () => ipcRenderer.invoke('update:download'),
+  cancelUpdate: () => ipcRenderer.invoke('update:cancel'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  onUpdateProgress: (listener) => {
+    const handler = (_event, status) => listener(status);
+    ipcRenderer.on('update:progress', handler);
+    return () => ipcRenderer.removeListener('update:progress', handler);
+  },
   testCliq: () => ipcRenderer.invoke('cliq:test'),
 });

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Bell, Download, Keyboard, LogIn, LogOut, MessageSquare, RefreshCw, Upload } from 'lucide-react';
 import { CliqAlertsDialog } from '@/components/shell/CliqAlertsDialog';
 import { UpdateDialog } from '@/components/shell/UpdateDialog';
@@ -40,6 +40,14 @@ export function UserMenu({ onOpenReminders, dailyLine }: {
   const [cliqOpen, setCliqOpen] = useState(false);
   const [updateOpen, setUpdateOpen] = useState(false);
   const appUpdate = useAppUpdate();
+  // Once per launch, when the daily check finds a newer version, say so; the menu item and the update screen do the rest.
+  const announced = useRef(false);
+  const foundVersion = appUpdate.status?.phase === 'available' ? appUpdate.status.latest?.version : undefined;
+  useEffect(() => {
+    if (!foundVersion || announced.current) return;
+    announced.current = true;
+    toast(`HitList ${foundVersion} is available`, { description: 'Account menu, Check for updates.', duration: 6000 });
+  }, [foundVersion]);
   const [density, setDensity] = useDensity();
   const fileInput = useRef<HTMLInputElement>(null);
   const desktop = useDesktopAccount();
