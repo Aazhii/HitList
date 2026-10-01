@@ -77,7 +77,6 @@ module.exports = async (req, res) => {
 	} catch (error) {
 		if (error instanceof BackupError) return send(res, error.status, { error: error.code, message: error.message });
 		console.error('backup failed:', error && error.message);
-		// `detail` is for bringing storage up; remove it once the smoke test passes.
-		return send(res, 500, { error: 'server_error', detail: String((error && (error.message || error.code)) || error).slice(0, 300) });
+		return send(res, 500, { error: 'server_error' });
 	}
 };
