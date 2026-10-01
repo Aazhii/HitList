@@ -23,9 +23,10 @@ const rowOf = (r) => { const row = r[TABLE] || r; return { rowId: String(row.ROW
 
 async function createCatalystStorage(req) {
 	// Storage is the service's own business, so it runs with the project's rights, after the caller was verified.
-	await zcAuth.init(req, { type: 'advancedio', appName: 'backup', scope: 'admin' });
-	const datastore = new Datastore();
-	const filestore = new Filestore();
+	// The app is passed to each package on purpose: they do not share the auth package's credentials.
+	const app = await zcAuth.init(req, { type: 'advancedio', appName: 'backup', scope: 'admin' });
+	const datastore = new Datastore(app);
+	const filestore = new Filestore(app);
 	let folder;
 	const getFolder = async () => {
 		if (folder) return folder;
