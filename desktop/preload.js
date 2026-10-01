@@ -9,4 +9,7 @@ contextBridge.exposeInMainWorld('hitlistDesktop', {
   backupNow: () => ipcRenderer.invoke('backup:now'),
   checkRestore: (opts) => ipcRenderer.invoke('restore:check', opts),
   restoreNow: () => ipcRenderer.invoke('restore:run'),
+  getCliq: () => ipcRenderer.invoke('cliq:get'),
+  setCliq: (settings) => ipcRenderer.invoke('cliq:set', settings),
+  testCliq: () => ipcRenderer.invoke('cliq:test'),
 });

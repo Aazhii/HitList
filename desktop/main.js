@@ -12,6 +12,7 @@ const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const { createAuth, ownerFor } = require('./auth');
 const { createBackup } = require('./backup');
 const { createRestore } = require('./restore');
+const { createCliqAlerts } = require('./cliqAlerts');
 const { dataDirIn, migrateLegacyData, LEGACY_FOLDER } = require('./dataDir');
 const { BACKUP_FUNCTION_URL } = require('./catalyst-config');
 const { spawn } = require('node:child_process');
@@ -259,6 +260,20 @@ async function createWindow() {
     cloudLatest: async () => { const res = await cloudFetch('/backup/latest'); if (res.status === 404) return null; if (!res.ok) throw new Error(`latest ${res.status}`); return Buffer.from(await res.arrayBuffer()); },
     lastBackupAt: () => backup.status().lastSuccessAt,
   });
+  // Cliq alerts: one message when tasks become overdue, sent through the Catalyst Function (which holds the Cliq token).
+  const cliqAlerts = createCliqAlerts({
+    stateDir: userDataDir,
+    getAccount: () => account,
+    localGet,
+    send: async (urlPath, payload) => {
+      const res = await auth.getSession().fetch(`${BACKUP_FUNCTION_URL}${urlPath}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+      });
+      return { status: res.status };
+    },
+  });
+  cliqAlerts.startSchedule();
+
   /** Set at sign-in, spent by the first check afterwards: that check may look in the cloud even if there is data here. */
   let justSignedIn = false;
 
@@ -277,6 +292,9 @@ async function createWindow() {
   });
   ipcMain.handle('restore:check', async (_e, opts) => { const out = await restore.check({ force: !!(opts && opts.force), justSignedIn }); justSignedIn = false; return out; });
   ipcMain.handle('restore:run', () => restore.restore());
+  ipcMain.handle('cliq:get', () => cliqAlerts.status());
+  ipcMain.handle('cliq:set', (_e, settings) => ({ ...cliqAlerts.setSettings(settings || {}), status: cliqAlerts.status() }));
+  ipcMain.handle('cliq:test', () => cliqAlerts.sendTest());
   ipcMain.handle('backup:status', () => backup.status());
   ipcMain.handle('backup:now', () => backup.backupNow('manual'));
   ipcMain.handle('account:signOut', async () => {
