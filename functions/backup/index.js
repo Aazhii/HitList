@@ -14,7 +14,7 @@ async function currentUser(req) {
 	try {
 		await zcAuth.init(req);
 		const user = await new UserManagement().getCurrentUser();
-		return user && user.user_id ? { user } : { reason: 'no user in the answer' };
+		return user && user.user_id ? { user } : { reason: 'no user in the answer', answerKeys: Object.keys(user || {}), answerType: typeof user, headerNames: Object.keys(req.headers).filter((h) => /zc|auth|cookie|csrf/i.test(h)), gatewayUserIsProject: req.headers['x-zc-user-id'] === req.headers['x-zc-projectid'], gatewayUserType: req.headers['x-zc-user-type'], cookieCount: String(req.headers.cookie || '').split(';').filter(Boolean).length };
 	} catch (error) {
 		// The reason is for the spike only; it carries no token or cookie.
 		return { reason: String((error && (error.message || error.code)) || error).slice(0, 300) };
@@ -25,7 +25,7 @@ module.exports = async (req, res) => {
 	const path = (req.url || '/').split('?')[0];
 	if (path === '/health') return send(res, 200, { ok: true });
 	const found = await currentUser(req);
-	if (!found.user) return send(res, 401, { error: 'unauthenticated', reason: found.reason });
+	if (!found.user) return send(res, 401, { error: 'unauthenticated', reason: found.reason, answerKeys: found.answerKeys, answerType: found.answerType, headerNames: found.headerNames, gatewayUserIsProject: found.gatewayUserIsProject, gatewayUserType: found.gatewayUserType, cookieCount: found.cookieCount });
 	const user = found.user;
 	if (path === '/whoami') return send(res, 200, { userId: String(user.user_id), email: user.email_id || null });
 	return send(res, 404, { error: 'not_found' });

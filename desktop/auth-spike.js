@@ -42,7 +42,10 @@ app.whenReady().then(async () => {
     say('whoami with cookies only          ->', await whoami(header, ''));
     say('whoami with cookies + csrf header ->', withCsrf);
     say('whoami with no cookies            ->', await whoami(''));
-    if (withCsrf.startsWith('200') || (await whoami(header, '')).startsWith('200')) {
+    // The same call made by the signed-in page itself, as a browser would.
+    const inPage = await win.webContents.executeJavaScript(`fetch('/server/backup/whoami',{credentials:'include'}).then(async (r) => r.status + ' ' + (await r.text()).slice(0, 600)).catch((e) => 'failed ' + e.message)`);
+    say('whoami from inside the window         ->', inPage);
+    if (withCsrf.startsWith('200') || inPage.startsWith('200') || (await whoami(header, '')).startsWith('200')) {
       done = true; say('SPIKE PASSED'); setTimeout(() => app.quit(), 1500);
     }
   };
