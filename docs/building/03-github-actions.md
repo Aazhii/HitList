@@ -31,12 +31,30 @@ Tick **publish** when running (or push a tag like `v1.2.0`) to also create a **G
 4. **mac / windows / linux** (in parallel): each downloads that same jar, adds its own Java runtime, and packs the app.
 5. **release** (optional): gathers everything and publishes it.
 
+## The form you fill in
+
+When you click **Run workflow** you get these fields:
+
+| Field | Meaning | Default |
+|---|---|---|
+| Release name | The title of the GitHub Release (it does not rename the app itself) | `HitList` |
+| Main version | The 1 in `1.2.5` | `1` |
+| Second number | The 2 in `1.2.5` | `1` |
+| Third number | The 5 in `1.2.5`. **Leave empty** and it becomes the run number | empty |
+| Also publish a GitHub Release | Creates a Release with every file | off |
+
+Numbers must be whole numbers, and the name may use only letters, numbers, spaces, dots, dashes and underscores. A bad value
+stops the run at once with a message. Publishing a version that already has a Release also stops with a message; choose another
+version or leave the third field empty. The logic is `scripts/ci/compute-version.sh`, tested by
+`sh scripts/ci/compute-version.test.sh`.
+
 ## Why every build is unique
 
-- The version is `<BASE_VERSION>.<run number>`, for example `1.1.57`, then `1.1.58`. GitHub's run number only ever goes up, so no
-  two builds share a version, and the version is in every file name and inside the app.
+- With the third field empty, the version is `<main>.<second>.<run number>`, for example `1.1.57`, then `1.1.58`. GitHub's run
+  number only ever goes up, so no two builds share a version, and the version is in every file name and inside the app.
+  If you type a third number yourself, you are choosing it, and you must not reuse one.
 - The commit id is in the artifact names and the release notes, and `SHA256SUMS.txt` fingerprints each file.
-- To start a new line (1.2.x), change `BASE_VERSION` at the top of the workflow. A tag build uses the tag's number instead.
+- A pushed tag such as `v1.2.0` uses its own number and publishes a Release by itself.
 - All three apps in one run contain the identical backend, because the jar is built once.
 
 ## Things to know

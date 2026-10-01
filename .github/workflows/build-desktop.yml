@@ -3,13 +3,30 @@
 # Run it by hand: GitHub -> Actions -> "Build desktop apps" -> Run workflow.
 # Or push a tag such as v1.2.0 and it runs by itself and publishes a release.
 #
-# Every run is unique: the version is <BASE_VERSION>.<run number> (1.1.57, 1.1.58, ...), the number only ever goes up, and
-# the commit id is in the artifact names and in SHA256SUMS.txt. Nothing is signed (no certificates); see docs/building.
+# The version comes from the form when you run it by hand: main.second.third (for example 1.2.5). Leave the third field empty
+# and it becomes the run number (1.1.57, 1.1.58, ...), which only ever goes up, so it can never repeat. A pushed tag v1.2.3 uses
+# its own number. The commit id is in the artifact names and in SHA256SUMS.txt. Nothing is signed (no certificates); see docs/building.
 name: Build desktop apps
 
 on:
   workflow_dispatch:
     inputs:
+      release_name:
+        description: Release name (the title of the GitHub Release)
+        type: string
+        default: HitList
+      major:
+        description: Main version (the 1 in 1.2.5)
+        type: string
+        default: '1'
+      minor:
+        description: Second number (the 2 in 1.2.5)
+        type: string
+        default: '1'
+      patch:
+        description: Third number (the 5 in 1.2.5). Leave empty for an automatic, always-new number
+        type: string
+        default: ''
       publish:
         description: Also publish a GitHub Release with the files
         type: boolean
@@ -24,23 +41,30 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  BASE_VERSION: '1.1'
-
 jobs:
   # ---- Which version and commit this run is --------------------------------------------------------------------------
   version:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.v.outputs.version }}
+      name: ${{ steps.v.outputs.name }}
       sha: ${{ steps.v.outputs.sha }}
     steps:
+      - uses: actions/checkout@v4
       - id: v
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          RUN_NUMBER: ${{ github.run_number }}
+          IN_NAME: ${{ inputs.release_name }}
+          IN_MAJOR: ${{ inputs.major }}
+          IN_MINOR: ${{ inputs.minor }}
+          IN_PATCH: ${{ inputs.patch }}
         run: |
-          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then VERSION="${GITHUB_REF_NAME#v}"; else VERSION="${BASE_VERSION}.${GITHUB_RUN_NUMBER}"; fi
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          sh scripts/ci/compute-version.sh >> "$GITHUB_OUTPUT"
           echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-          echo "Building version ${VERSION} from ${GITHUB_SHA::7}" >> "$GITHUB_STEP_SUMMARY"
+          VERSION=$(grep '^version=' "$GITHUB_OUTPUT" | cut -d= -f2)
+          echo "Building ${VERSION} from ${GITHUB_SHA::7}" >> "$GITHUB_STEP_SUMMARY"
 
   # ---- Every test, before anything is built ---------------------------------------------------------------------------
   verify:
@@ -215,11 +239,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
+          NAME: ${{ needs.version.outputs.name }}
           SHA: ${{ needs.version.outputs.sha }}
         run: |
+          if gh release view "v${VERSION}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "A release for v${VERSION} already exists. Run again with a different version (or leave the third field empty for an automatic number)." >&2
+            exit 1
+          fi
           cat SHA256SUMS-*.txt > SHA256SUMS.txt
           rm SHA256SUMS-*.txt
           gh release create "v${VERSION}" --repo "${GITHUB_REPOSITORY}" --target "${GITHUB_SHA}" \
-            --title "HitList ${VERSION}" \
+            --title "${NAME} ${VERSION}" \
             --notes "Built from commit ${SHA}. Mac (.dmg), Windows (.exe), Linux (.AppImage and .deb). The apps are not signed; see docs/INSTALL.md for the first-open steps. SHA256SUMS.txt lists the checksums." \
             ./*
