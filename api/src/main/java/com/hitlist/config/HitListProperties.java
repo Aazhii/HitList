@@ -9,6 +9,16 @@ public class HitListProperties {
     /** "cookie" (default): a signed browser cookie owns the workspace. "catalyst": Catalyst's sign-in does. */
     private String authMode = "cookie";
     private boolean debugHeaders;
+    /** Desktop build only: a per-launch secret the Electron shell sends with the signed-in account. Empty elsewhere. */
+    private String desktopToken = "";
+
+    public String getDesktopToken() {
+        return desktopToken;
+    }
+
+    public void setDesktopToken(String desktopToken) {
+        this.desktopToken = desktopToken;
+    }
 
     public String getAuthMode() {
         return authMode;

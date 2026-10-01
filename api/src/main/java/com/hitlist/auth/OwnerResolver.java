@@ -24,9 +24,15 @@ public class OwnerResolver {
     private static final int OWNER_BYTES = 32;
     private final byte[] signingSecret;
     private final boolean catalystMode;
+    private final boolean desktopMode;
+    private final byte[] desktopToken;
 
     public OwnerResolver(HitListProperties properties) {
         catalystMode = "catalyst".equalsIgnoreCase(properties.getAuthMode());
+        String token = properties.getDesktopToken() == null ? "" : properties.getDesktopToken();
+        // Desktop mode needs a real secret; without one it behaves as plain cookie mode.
+        desktopMode = "desktop".equalsIgnoreCase(properties.getAuthMode()) && token.length() >= 32;
+        desktopToken = token.getBytes(StandardCharsets.UTF_8);
         String configuredSecret = properties.getOwnerCookieSecret();
         signingSecret = configuredSecret == null || configuredSecret.isBlank()
             ? randomBytes(OWNER_BYTES)
@@ -39,6 +45,28 @@ public class OwnerResolver {
     /** True when Catalyst's own sign-in decides who a request is from, rather than a browser cookie. */
     public boolean isCatalystMode() {
         return catalystMode;
+    }
+
+    /** True in the desktop build, where the Electron shell may name the signed-in account on a request. */
+    public boolean isDesktopMode() {
+        return desktopMode;
+    }
+
+    /**
+     * The account the Electron shell attached to this request, as an owner id, or null. Both headers must be there:
+     * the per-launch secret (compared in constant time) and a 43-character owner id. Anything else, including a
+     * wrong secret, is treated as no account at all, so the request falls back to the browser cookie workspace.
+     */
+    public String desktopOwner(HttpServletRequest request) {
+        if (!desktopMode) {
+            return null;
+        }
+        String token = request.getHeader("X-Hitlist-Desktop-Token");
+        String owner = request.getHeader("X-Hitlist-Desktop-Owner");
+        if (token == null || owner == null || !isOwnerId(owner)) {
+            return null;
+        }
+        return MessageDigest.isEqual(token.getBytes(StandardCharsets.UTF_8), desktopToken) ? owner : null;
     }
 
     /**

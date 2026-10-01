@@ -20,5 +20,6 @@ spring:
 hitlist:
   debug-headers: ${HITLIST_DEBUG_HEADERS:false}
   auth-mode: ${AUTH_MODE:cookie}
+  desktop-token: ${DESKTOP_TOKEN:}
   allowed-origins: ${ALLOWED_ORIGINS:}
   owner-cookie-secret: ${OWNER_COOKIE_SECRET:}

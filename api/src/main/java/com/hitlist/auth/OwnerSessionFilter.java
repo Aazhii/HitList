@@ -45,7 +45,8 @@ public class OwnerSessionFilter extends OncePerRequestFilter {
             chain.doFilter(request, response);
             return;
         }
-        request.setAttribute(OwnerResolver.OWNER_ATTRIBUTE, owners.resolveOrIssue(request, response));
+        String account = owners.desktopOwner(request);
+        request.setAttribute(OwnerResolver.OWNER_ATTRIBUTE, account != null ? account : owners.resolveOrIssue(request, response));
         chain.doFilter(request, response);
     }
 }

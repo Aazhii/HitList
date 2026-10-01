@@ -247,6 +247,62 @@ class ApiContractTest {
     }
 
     @Test
+    void desktopAccountsAreNamedByTheShellOnlyWithItsSecretAndKeepTheOldWorkspaceOnce() throws Exception {
+        String secret = "desktop-launch-secret-0123456789abcdef";
+        String alice = "A".repeat(43);
+        String bob = "B".repeat(43);
+        RowStore store = new TestRowStore();
+        HitListProperties cookieProps = properties();
+        HitListProperties desktopProps = properties();
+        desktopProps.setAuthMode("desktop");
+        desktopProps.setDesktopToken(secret);
+        MockMvc cookieMvc = mockMvc(store, cookieProps);
+        MockMvc desktopMvc = mockMvc(store, desktopProps);
+
+        // A workspace made before sign-in, under the browser cookie.
+        MvcResult setup = desktopMvc.perform(get("/api/setup")).andReturn();
+        String setCookie = setup.getResponse().getHeader(HttpHeaders.SET_COOKIE);
+        MockCookie old = new MockCookie(OwnerResolver.COOKIE_NAME, setCookie.substring(setCookie.indexOf('=') + 1, setCookie.indexOf(';')));
+        desktopMvc.perform(post("/api/tasks").cookie(old).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"clientId\":\"local-first\",\"title\":\"Made before signing in\"}"))
+            .andExpect(status().isCreated());
+
+        // Signed out the app still opens and works from the cookie workspace.
+        desktopMvc.perform(get("/api/session").cookie(old)).andExpect(jsonPath("$.mode").value("desktop"))
+            .andExpect(jsonPath("$.authenticated").value(false));
+        desktopMvc.perform(get("/api/tasks/local-first").cookie(old)).andExpect(status().isOk());
+
+        // A wrong or missing secret never names an account: the request stays on the cookie workspace.
+        desktopMvc.perform(get("/api/tasks/local-first").cookie(old).header("X-Hitlist-Desktop-Owner", alice)
+                .header("X-Hitlist-Desktop-Token", "not-the-secret-not-the-secret-not-the-secret"))
+            .andExpect(status().isOk());
+        desktopMvc.perform(get("/api/session").cookie(old).header("X-Hitlist-Desktop-Owner", alice))
+            .andExpect(jsonPath("$.authenticated").value(false));
+
+        // The right secret names the account; it starts empty, and the old workspace is brought across once.
+        desktopMvc.perform(get("/api/tasks").header("X-Hitlist-Desktop-Owner", alice).header("X-Hitlist-Desktop-Token", secret))
+            .andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
+        desktopMvc.perform(get("/api/session").cookie(old).header("X-Hitlist-Desktop-Owner", alice).header("X-Hitlist-Desktop-Token", secret))
+            .andExpect(jsonPath("$.authenticated").value(true)).andExpect(jsonPath("$.claimed.KaizenTasks").value(1));
+        desktopMvc.perform(get("/api/tasks/local-first").header("X-Hitlist-Desktop-Owner", alice).header("X-Hitlist-Desktop-Token", secret))
+            .andExpect(status().isOk());
+        desktopMvc.perform(get("/api/session").cookie(old).header("X-Hitlist-Desktop-Owner", alice).header("X-Hitlist-Desktop-Token", secret))
+            .andExpect(jsonPath("$.claimed").doesNotExist());
+
+        // Another account on the same machine sees none of it, and the cookie no longer holds it.
+        desktopMvc.perform(get("/api/tasks/local-first").header("X-Hitlist-Desktop-Owner", bob).header("X-Hitlist-Desktop-Token", secret))
+            .andExpect(status().isNotFound());
+        desktopMvc.perform(get("/api/tasks/local-first").cookie(old)).andExpect(status().isNotFound());
+
+        // Without a real secret configured the mode is plain cookie mode: a named account is ignored.
+        HitListProperties noSecret = properties();
+        noSecret.setAuthMode("desktop");
+        MockMvc plain = mockMvc(store, noSecret);
+        plain.perform(get("/api/tasks/local-first").header("X-Hitlist-Desktop-Owner", alice).header("X-Hitlist-Desktop-Token", ""))
+            .andExpect(status().isNotFound());
+    }
+
+    @Test
     void favoritesAndRecentsAreKeptPerOwnerAndTrimmed() throws Exception {
         MockCookie browser = browser();
         MockCookie other = browser();

@@ -24,6 +24,18 @@ public class SessionController {
     @GetMapping
     Map<String, Object> session(HttpServletRequest request) {
         Map<String, Object> out = new LinkedHashMap<>();
+        if (owners.isDesktopMode()) {
+            // The app always opens; signing in only decides whose workspace it is. The first time an account is
+            // named from a browser that still holds an old cookie workspace, that workspace is brought across.
+            String account = owners.desktopOwner(request);
+            out.put("mode", "desktop");
+            out.put("authenticated", account != null);
+            if (account != null) {
+                Map<String, Integer> moved = claims.claim(owners.legacyCookieOwner(request), account);
+                if (!moved.isEmpty()) out.put("claimed", moved);
+            }
+            return out;
+        }
         if (!owners.isCatalystMode()) {
             out.put("mode", "cookie");
             out.put("authenticated", true);
