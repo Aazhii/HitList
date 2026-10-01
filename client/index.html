@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>HitList for Mac</title>
+  <meta name="description" content="HitList is a desktop app for your tasks, notes and databases. Download it for Mac." />
+  <style>
+    :root {
+      --ink: #37352f; --muted: #5f5e5b; --faint: #787774; --line: #e9e9e7; --bg: #ffffff; --soft: #f7f6f3;
+      --accent: #006eb9; --accent-hover: #005c9c; --warn-bg: #fdf3e1; --warn-line: #f0d9a8;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root { --ink: #e8e6e1; --muted: #b5b3ad; --faint: #8f8d88; --line: #3a3a38; --bg: #191919; --soft: #232322;
+        --accent: #4aa3e0; --accent-hover: #6bb5ea; --warn-bg: #3a2f17; --warn-line: #5b4a22; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
+    main { max-width: 680px; margin: 0 auto; padding: 56px 20px 80px; }
+    h1 { font-size: 32px; line-height: 1.2; letter-spacing: -0.02em; margin: 0 0 8px; }
+    h2 { font-size: 20px; margin: 40px 0 8px; }
+    p { margin: 0 0 12px; color: var(--muted); }
+    .lead { font-size: 18px; }
+    .button { display: inline-block; margin: 12px 0 4px; padding: 10px 20px; border-radius: 4px; background: var(--accent); color: #fff; font-weight: 600; text-decoration: none; }
+    .button:hover { background: var(--accent-hover); }
+    .small { font-size: 13px; color: var(--faint); }
+    ol, ul { padding-left: 22px; margin: 0 0 12px; color: var(--muted); }
+    li { margin-bottom: 8px; }
+    code { background: var(--soft); border: 1px solid var(--line); border-radius: 3px; padding: 1px 6px; font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink); }
+    pre { background: var(--soft); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; overflow-x: auto; margin: 8px 0 14px; }
+    pre code { background: none; border: 0; padding: 0; }
+    .note { background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: 6px; padding: 12px 14px; margin: 12px 0; color: var(--ink); }
+    .note p { color: var(--ink); margin: 0; }
+    details { border-top: 1px solid var(--line); padding: 12px 0; }
+    summary { cursor: pointer; font-weight: 600; color: var(--ink); }
+    details p, details ul { margin-top: 8px; }
+    hr { border: 0; border-top: 1px solid var(--line); margin: 40px 0 16px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>HitList for Mac</h1>
+  <p class="lead">Your tasks, notes and databases, in an app that runs on your own computer. It works without the internet, and nothing is sent anywhere unless you sign in to back up.</p>
+
+  <a class="button" href="https://workdrive.zohoexternal.in/external/1658ad81d16124c31bf123fcf81cd7d42f359e6a1ee60b4a2ece48d372cd397d" rel="noopener">Download HitList (.dmg)</a>
+  <p class="small">For Macs with Apple silicon (M1 and later). About 200 MB. Not available for Intel Macs or Windows yet.</p>
+
+  <h2>Install</h2>
+  <ol>
+    <li>Open the downloaded <code>HitList-….dmg</code> file.</li>
+    <li>Drag <strong>HitList</strong> onto the <strong>Applications</strong> folder in the window that opens.</li>
+    <li>Open <strong>HitList</strong> from Applications. The first time, macOS will stop it. See the next section.</li>
+  </ol>
+
+  <h2>The first time you open it</h2>
+  <div class="note"><p>HitList is not signed with an Apple developer certificate yet, so macOS warns that it can't check the app. That is expected. It is a one-time step.</p></div>
+  <ol>
+    <li>Try to open HitList. macOS shows a message that it was blocked. Click <strong>Done</strong> (or OK).</li>
+    <li>Open <strong>System Settings → Privacy &amp; Security</strong> and scroll down to <strong>Security</strong>.</li>
+    <li>Next to <em>“HitList” was blocked</em>, click <strong>Open Anyway</strong>, then confirm with your password.</li>
+    <li>Open HitList again and click <strong>Open</strong>.</li>
+  </ol>
+  <details>
+    <summary>That didn't work, or I prefer Terminal</summary>
+    <p>Run this once in Terminal, then open HitList normally:</p>
+    <pre><code>xattr -dr com.apple.quarantine /Applications/HitList.app</code></pre>
+    <p>It only removes the “downloaded from the internet” mark from this one app.</p>
+  </details>
+
+  <h2>Using it</h2>
+  <ul>
+    <li><strong>You don't need an account.</strong> HitList works straight away, and your data stays on your Mac.</li>
+    <li><strong>Sign in to back up.</strong> Open the account menu (top right) and choose <strong>Sign in to back up</strong>. Your workspace is then backed up to your account a few times a day, only when something changed.</li>
+    <li><strong>New computer?</strong> Install HitList, sign in with the same account, and choose <strong>Restore</strong> when it offers your backup.</li>
+  </ul>
+
+  <h2>Updating</h2>
+  <p>Download the new version from this page and drag it onto <strong>Applications</strong>, replacing the old one. <strong>Your data is kept</strong>: it lives in a separate folder, not inside the app.</p>
+  <details>
+    <summary>Where is my data?</summary>
+    <p>In <code>~/Library/Application Support/HitList</code>. Deleting the app does not delete it. Don't delete that folder unless you mean to, and use <strong>Export workspace</strong> in the account menu first if you want a copy.</p>
+  </details>
+
+  <hr />
+  <p class="small">HitList is the desktop app. The old web version has been retired, so it no longer opens in the browser.</p>
+</main>
+</body>
+</html>
