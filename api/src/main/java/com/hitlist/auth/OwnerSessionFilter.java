@@ -4,6 +4,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import com.hitlist.domain.SyncService;
 import java.io.IOException;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
@@ -14,9 +15,22 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class OwnerSessionFilter extends OncePerRequestFilter {
     private final OwnerResolver owners;
+    private final SyncService sync;
 
+    /** Without shared workspaces (tools and tests that build the filter by hand). */
     public OwnerSessionFilter(OwnerResolver owners) {
+        this(owners, null);
+    }
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public OwnerSessionFilter(OwnerResolver owners, SyncService sync) {
         this.owners = owners;
+        this.sync = sync;
+    }
+
+    /** Only tasks, lists and their stats can be about a shared workspace; everything else stays personal. */
+    private static boolean sharable(String uri) {
+        return uri.startsWith("/api/tasks") || uri.startsWith("/api/lists") || uri.startsWith("/api/stats");
     }
 
     @Override
@@ -46,7 +60,28 @@ public class OwnerSessionFilter extends OncePerRequestFilter {
             return;
         }
         String account = owners.desktopOwner(request);
-        request.setAttribute(OwnerResolver.OWNER_ATTRIBUTE, account != null ? account : owners.resolveOrIssue(request, response));
+        String personal = account != null ? account : owners.resolveOrIssue(request, response);
+        request.setAttribute(OwnerResolver.OWNER_ATTRIBUTE, personal);
+        request.setAttribute(OwnerResolver.PERSONAL_ATTRIBUTE, personal);
+        if (account != null) {
+            String actor = request.getHeader("X-Hitlist-Desktop-User");
+            if (actor != null && actor.matches("[0-9]{5,30}") && account.equals(owners.catalystOwner(actor))) {
+                request.setAttribute(OwnerResolver.ACTOR_ATTRIBUTE, actor);
+            }
+            // A shared workspace, picked in the app. Only for a signed-in account that belongs to it on this device; a
+            // member who was removed keeps a read-only copy.
+            String workspace = request.getHeader("X-Hitlist-Workspace");
+            if (workspace != null && !workspace.isBlank() && sharable(request.getRequestURI())) {
+                boolean write = !"GET".equalsIgnoreCase(request.getMethod());
+                if (sync == null || !sync.canUse(account, workspace, write)) {
+                    response.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                    response.setContentType("application/json");
+                    response.getWriter().write("{\"error\":\"forbidden\",\"message\":\"You do not have access to this workspace\"}");
+                    return;
+                }
+                request.setAttribute(OwnerResolver.OWNER_ATTRIBUTE, workspace);
+            }
+        }
         chain.doFilter(request, response);
     }
 }

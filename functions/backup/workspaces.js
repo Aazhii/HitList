@@ -26,7 +26,7 @@ const SEQ_RETRIES = 6;
 
 /** Fields a member may change, per table: the stored task and list fields, plus who the task is assigned to. */
 const FIELDS = {
-	tasks: new Set(['Title', 'Status', 'Quadrant', 'Priority', 'Note', 'DueDate', 'DueTime', 'Category', 'ListId', 'TaskOrder',
+	tasks: new Set(['Title', 'Status', 'Quadrant', 'TaskPriority', 'Note', 'DueDate', 'DueTime', 'Category', 'ListId', 'TaskOrder',
 		'ReminderEnabled', 'ReminderMinutesBefore', 'Recurrence', 'CompletedAt', 'CreatedAt', 'UpdatedAt',
 		'AssigneeUserId', 'AssigneeName', 'AssignedBy', 'AssignedAt']),
 	lists: new Set(['Name', 'Color', 'ListOrder', 'CreatedAt', 'UpdatedAt']),

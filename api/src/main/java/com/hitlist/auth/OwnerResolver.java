@@ -18,6 +18,10 @@ import org.springframework.http.ResponseCookie;
 @Component
 public class OwnerResolver {
     public static final String OWNER_ATTRIBUTE = OwnerResolver.class.getName() + ".owner";
+    /** The signed-in account's own workspace, even when the request is about a shared one. */
+    public static final String PERSONAL_ATTRIBUTE = OwnerResolver.class.getName() + ".personal";
+    /** The signed-in account's Catalyst user id (desktop only), when the shell named it and it matches the account. */
+    public static final String ACTOR_ATTRIBUTE = OwnerResolver.class.getName() + ".actor";
     public static final String COOKIE_NAME = "hitlist_owner_v1";
     private static final String COOKIE_VERSION = "v1";
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -97,6 +101,21 @@ public class OwnerResolver {
     /** The browser's old cookie workspace, if it carries a valid one. Never issues a new cookie. */
     public String legacyCookieOwner(HttpServletRequest request) {
         return cookieValue(request);
+    }
+
+    /** The account's own workspace (never a shared one). */
+    public String personalOwner(HttpServletRequest request) {
+        Object owner = request.getAttribute(PERSONAL_ATTRIBUTE);
+        if (owner instanceof String value && isOwnerId(value)) {
+            return value;
+        }
+        return owner(request);
+    }
+
+    /** The signed-in Catalyst user id on the desktop, or null. */
+    public String actor(HttpServletRequest request) {
+        Object actor = request.getAttribute(ACTOR_ATTRIBUTE);
+        return actor instanceof String value ? value : null;
     }
 
     public String owner(HttpServletRequest request) {
