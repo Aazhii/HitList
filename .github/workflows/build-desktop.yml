@@ -111,7 +111,14 @@ jobs:
           pnpm test
       - name: Backup function - tests
         working-directory: functions/backup
-        run: npm test
+        run: |
+          npm ci
+          npm test
+      - name: Cliq webhook - tests
+        working-directory: functions/cliq-webhook
+        run: |
+          npm ci
+          npm test
 
   # ---- The one backend that goes into all three apps (the web app is inside the jar) ------------------------------------
   backend:

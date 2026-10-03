@@ -13,6 +13,7 @@ const { createAuth, ownerFor } = require('./auth');
 const { createBackup } = require('./backup');
 const { createRestore } = require('./restore');
 const { createCliqAlerts } = require('./cliqAlerts');
+const { createCliqConnection } = require('./cliqConnection');
 const { createUpdater } = require('./updater');
 const installer = require('./installer');
 const { dataDirIn, migrateLegacyData, LEGACY_FOLDER } = require('./dataDir');
@@ -199,6 +200,11 @@ async function openWindow() {
     title: 'HitList',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
   });
+  let connection = null;
+  win.on('closed', () => { connection?.stop(); stopBackupSchedule?.(); stopAlertsSchedule?.(); stopUpdateSchedule?.(); });
+  let stopBackupSchedule;
+  let stopAlertsSchedule;
+  let stopUpdateSchedule;
 
   // Name the signed-in account on every request the app makes to its own local server, and only to it.
   win.webContents.session.webRequest.onBeforeSendHeaders({ urls: [`http://127.0.0.1:${port}/*`] }, (details, callback) => {
@@ -211,13 +217,15 @@ async function openWindow() {
   });
 
   /** The local server's answer, as the signed-in account (this is where the snapshot comes from). */
-  const localGet = (urlPath) => new Promise((resolve, reject) => {
-    const headers = account ? { 'X-Hitlist-Desktop-Token': DESKTOP_TOKEN, 'X-Hitlist-Desktop-Owner': ownerFor(account.userId) } : {};
-    require('node:http').get({ host: '127.0.0.1', port, path: urlPath, headers }, (res) => {
+  const localGet = (urlPath, { accountIdentity = account?.userId, signal } = {}) => new Promise((resolve, reject) => {
+    const headers = accountIdentity ? { 'X-Hitlist-Desktop-Token': DESKTOP_TOKEN, 'X-Hitlist-Desktop-Owner': ownerFor(accountIdentity) } : {};
+    const req = require('node:http').get({ host: '127.0.0.1', port, path: urlPath, headers, signal }, (res) => {
       const chunks = [];
       res.on('data', (c) => chunks.push(c));
       res.on('end', () => (res.statusCode === 200 ? resolve(Buffer.concat(chunks)) : reject(new Error(`local ${res.statusCode}`))));
-    }).on('error', reject);
+    });
+    req.setTimeout?.(10_000, () => req.destroy(new Error('Local request timed out')));
+    req.on('error', reject);
   });
   backup = createBackup({
     stateDir: userDataDir,
@@ -228,21 +236,43 @@ async function openWindow() {
       return { status: res.status, body: await res.text() };
     },
   });
-  backup.startSchedule();
+  stopBackupSchedule = backup.startSchedule();
 
-  const localPost = (urlPath, body) => new Promise((resolve, reject) => {
+  const localPost = (urlPath, body, { accountIdentity = account?.userId, headers: extraHeaders = {}, signal } = {}) => new Promise((resolve, reject) => {
     const payload = Buffer.from(JSON.stringify(body));
     const headers = {
       'Content-Type': 'application/json', 'Content-Length': payload.length,
-      ...(account ? { 'X-Hitlist-Desktop-Token': DESKTOP_TOKEN, 'X-Hitlist-Desktop-Owner': ownerFor(account.userId) } : {}),
+      ...extraHeaders,
+      ...(accountIdentity ? { 'X-Hitlist-Desktop-Token': DESKTOP_TOKEN, 'X-Hitlist-Desktop-Owner': ownerFor(accountIdentity) } : {}),
     };
-    const req = require('node:http').request({ host: '127.0.0.1', port, path: urlPath, method: 'POST', headers }, (res) => {
+    const req = require('node:http').request({ host: '127.0.0.1', port, path: urlPath, method: 'POST', headers, signal }, (res) => {
       const chunks = [];
       res.on('data', (c) => chunks.push(c));
       res.on('end', () => { let json = {}; try { json = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { /* not JSON */ } resolve({ status: res.statusCode, json }); });
     });
+    req.setTimeout?.(10_000, () => req.destroy(new Error('Local request timed out')));
     req.on('error', reject);
     req.end(payload);
+  });
+  connection = createCliqConnection({
+    stateDir: userDataDir, getAccount: () => account, localGet, localPost,
+    cloudPost: async (urlPath, body, { signal } = {}) => {
+      const bounded = AbortSignal.any([signal || new AbortController().signal, AbortSignal.timeout(10_000)]);
+      const res = await auth.getSession().fetch(`${BACKUP_FUNCTION_URL}${urlPath}`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: bounded,
+      });
+      if (!res.ok) {
+        const error = new Error('Cliq service unavailable');
+        error.status = res.status;
+        try {
+          const failure = await res.json();
+          if (['invalid_account', 'inactive_link'].includes(failure?.error)) error.code = failure.error;
+        } catch { }
+        throw error;
+      }
+      return res.json();
+    },
+    onApplied: () => { if (!win.isDestroyed()) win.webContents.send('cliq:commands-applied'); },
   });
   const cloudFetch = (urlPath) => auth.getSession().fetch(`${BACKUP_FUNCTION_URL}${urlPath}`);
   const restore = createRestore({
@@ -265,7 +295,7 @@ async function openWindow() {
       return { status: res.status };
     },
   });
-  cliqAlerts.startSchedule();
+  stopAlertsSchedule = cliqAlerts.startSchedule();
 
   // App updates: look at the project's GitHub Releases, download the new version with progress, then replace the installed app
   // and start it again (installer.js). Where the app cannot be replaced in place, the installer file is opened instead.
@@ -284,7 +314,7 @@ async function openWindow() {
     openFile: async (file) => { if (process.platform === 'linux') shell.showItemInFolder(file); else await shell.openPath(file); },
     onChange: (s) => { if (!win.isDestroyed()) win.webContents.send('update:progress', s); },
   });
-  if (app.isPackaged) updater.startSchedule();
+  if (app.isPackaged) stopUpdateSchedule = updater.startSchedule();
 
   /** Set at sign-in, spent by the first check afterwards: that check may look in the cloud even if there is data here. */
   let justSignedIn = false;
@@ -294,21 +324,31 @@ async function openWindow() {
     'account:get', 'account:signIn', 'account:signOut', 'restore:check', 'restore:run',
     'cliq:get', 'cliq:set', 'cliq:test', 'update:status', 'update:check',
     'update:download', 'update:cancel', 'update:install', 'backup:status', 'backup:now',
+    'cliq:connection:get', 'cliq:connection:start', 'cliq:connection:confirm',
+    'cliq:connection:enable', 'cliq:connection:fetch', 'cliq:connection:unlink',
   ]) ipcMain.removeHandler(channel);
   ipcMain.handle('account:get', () => publicAccount());
   ipcMain.handle('account:signIn', async () => {
     const signedIn = await auth.signIn(win);
     if (signedIn) {
+      connection.stop();
       account = signedIn;
       justSignedIn = true;
       win.webContents.reload();
       // After the page has asked /api/session (which brings the old local workspace into the account), not before.
       setTimeout(() => { void backup.backupNow('signed-in'); }, 15_000);
+      void connection.get();
     }
     return publicAccount();
   });
   ipcMain.handle('restore:check', async (_e, opts) => { const out = await restore.check({ force: !!(opts && opts.force), justSignedIn }); justSignedIn = false; return out; });
-  ipcMain.handle('restore:run', () => restore.restore());
+  ipcMain.handle('restore:run', async () => { await connection.beforeRestore(); return restore.restore(); });
+  ipcMain.handle('cliq:connection:get', () => connection.get());
+  ipcMain.handle('cliq:connection:start', (_e, timeZone) => connection.start(timeZone));
+  ipcMain.handle('cliq:connection:confirm', () => connection.confirm());
+  ipcMain.handle('cliq:connection:enable', (_e, enabled) => connection.enable(enabled));
+  ipcMain.handle('cliq:connection:fetch', () => connection.fetchNow());
+  ipcMain.handle('cliq:connection:unlink', () => connection.unlink());
   ipcMain.handle('cliq:get', () => cliqAlerts.status());
   ipcMain.handle('cliq:set', (_e, settings) => ({ ...cliqAlerts.setSettings(settings || {}), status: cliqAlerts.status() }));
   ipcMain.handle('cliq:test', () => cliqAlerts.sendTest());
@@ -329,6 +369,7 @@ async function openWindow() {
   ipcMain.handle('backup:status', () => backup.status());
   ipcMain.handle('backup:now', () => backup.backupNow('manual'));
   ipcMain.handle('account:signOut', async () => {
+    connection.stop();
     // The pre-logout hook: one last backup first, so signing out does not leave recent work only on this machine. Signing out
     // goes ahead either way (offline included); the page is told how the backup went and says so if it did not.
     const outcome = await Promise.race([
@@ -342,6 +383,7 @@ async function openWindow() {
   });
 
   await win.loadURL(`http://127.0.0.1:${port}`);
+  void connection.get();
 }
 
 function createWindow() {

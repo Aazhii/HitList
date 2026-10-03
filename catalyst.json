@@ -10,7 +10,8 @@
   ],
   "functions": {
     "targets": [
-      "backup"
+      "backup",
+      "cliq-webhook"
     ],
     "ignore": [],
     "source": "functions"

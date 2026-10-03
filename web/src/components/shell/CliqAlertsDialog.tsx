@@ -1,18 +1,33 @@
 /**
- * Settings for Cliq alerts (desktop only): a switch, the person's Cliq email, a test message, and one line on how it is going.
+ * Desktop Cliq alerts and command linking settings.
  * HitList sends one Cliq message when tasks become overdue, and only while it is open.
  */
 import { useEffect, useState } from 'react';
+import { Copy, Download, Link2Off } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { alertStatusLine, CLIQ_EMAIL_PATTERN, testResultMessage } from '@/lib/cliqMessage';
 import { useCliqAlerts } from '@/hooks/useCliqAlerts';
+import { useCliqConnection } from '@/hooks/useCliqConnection';
 import { cn } from '@/lib/utils';
 
 export function CliqAlertsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const cliq = useCliqAlerts();
+  const connection = useCliqConnection(open);
+  const [copyFailed, setCopyFailed] = useState(false);
+  const [expired, setExpired] = useState(false);
+  const expiresAt = connection.state?.expiresAt;
+
+  useEffect(() => {
+    if (!open || !expiresAt) return;
+    const remaining = expiresAt - Date.now();
+    setExpired(remaining <= 0);
+    if (remaining <= 0) return;
+    const timer = window.setTimeout(() => setExpired(true), remaining);
+    return () => window.clearTimeout(timer);
+  }, [open, expiresAt]);
   // The field shows what the person has typed; until they type, the saved email (which arrives a moment after opening).
   const [draft, setDraft] = useState<string | null>(null);
   const [note, setNote] = useState<{ text: string; ok: boolean } | null>(null);
@@ -42,7 +57,7 @@ export function CliqAlertsDialog({ open, onOpenChange }: { open: boolean; onOpen
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[440px]">
+      <DialogContent className="sm:max-w-[440px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Cliq alerts</DialogTitle>
           <DialogDescription>
@@ -93,6 +108,50 @@ export function CliqAlertsDialog({ open, onOpenChange }: { open: boolean; onOpen
             {cliq.status && <p className="text-[12px] text-a-faint">{alertStatusLine(cliq.status)} Switching alerts on does not announce tasks that are already overdue.</p>}
           </div>
         )}
+        <section className="border-t border-a-line pt-4 space-y-3" aria-label="Cliq commands">
+          <h3 className="text-[14px] font-semibold text-a-ink">Cliq commands</h3>
+          {!connection.available ? (
+            <p className="text-[13px] text-a-muted">Cliq commands are unavailable in this version of the desktop app.</p>
+          ) : !connection.state ? (
+            <p className="text-[13px] text-a-muted" role="status">{connection.failed ? 'Could not load Cliq commands. Reopen settings to retry.' : 'Loading Cliq commands...'}</p>
+          ) : !connection.state.available ? (
+            <p className="text-[13px] text-a-muted" role="status">{connection.state.error === 'workspace-unavailable' ? 'The local workspace is unavailable.' : 'Sign in to the desktop app to connect Cliq commands.'}</p>
+          ) : (
+            <div className="space-y-3">
+              {connection.state.linked ? (
+                <>
+                  <p className="text-[13px] text-a-muted">Linked to {connection.state.email}</p>
+                  <div className="flex items-center justify-between gap-3">
+                    <Label htmlFor="cliq-intake" className="text-[14px] text-a-ink">Receive tasks from Cliq</Label>
+                    <Switch id="cliq-intake" aria-label="Receive tasks from Cliq" checked={connection.state.enabled} disabled={connection.busy} onCheckedChange={(value) => { void connection.run('setCliqIntake', value); }} />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button type="button" disabled={connection.busy} onClick={() => { void connection.run('fetchCliqCommands'); }} className="inline-flex h-[34px] items-center gap-2 rounded-[4px] border border-a-line-strong bg-a-surface px-3 text-[13px] font-semibold text-a-ink hover:bg-a-bg disabled:opacity-50"><Download size={15} aria-hidden="true" />Fetch now</button>
+                    <button type="button" disabled={connection.busy} onClick={() => { void connection.run('unlinkCliq'); }} className="inline-flex h-[34px] items-center gap-2 rounded-[4px] border border-a-line-strong bg-a-surface px-3 text-[13px] font-semibold text-a-ink hover:bg-a-bg disabled:opacity-50"><Link2Off size={15} aria-hidden="true" />Unlink</button>
+                  </div>
+                  <p className="text-[12px] text-a-faint" role="status">{connection.state.connected ? 'Connected' : 'Not connected'} · {connection.state.lastResult}</p>
+                </>
+              ) : (
+                <>
+                  <button type="button" disabled={connection.busy} onClick={() => { void connection.run('startCliqLink'); }} className="h-[34px] rounded-[4px] border border-a-line-strong bg-a-surface px-3 text-[13px] font-semibold text-a-ink hover:bg-a-bg disabled:opacity-50">Create pairing link</button>
+                  {connection.state.code && (
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2">
+                        <code className="min-w-0 select-all break-all text-[13px] text-a-ink">link {connection.state.code}</code>
+                        <button type="button" title="Copy link command" aria-label="Copy link command" disabled={connection.busy} onClick={() => { if (!navigator.clipboard?.writeText) { setCopyFailed(true); return; } void navigator.clipboard.writeText(`link ${connection.state!.code}`).then(() => setCopyFailed(false), () => setCopyFailed(true)); }} className="shrink-0 rounded-[4px] border border-a-line-strong p-2 text-a-ink hover:bg-a-bg disabled:opacity-50"><Copy size={15} aria-hidden="true" /></button>
+                      </div>
+                      {connection.state.expiresAt && <p className="text-[12px] text-a-faint">{expired ? 'Pairing link expired.' : `Expires ${new Date(connection.state.expiresAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`}</p>}
+                      <button type="button" disabled={connection.busy || expired} onClick={() => { void connection.run('confirmCliqLink'); }} className="h-[34px] rounded-[4px] border border-a-line-strong bg-a-surface px-3 text-[13px] font-semibold text-a-ink hover:bg-a-bg disabled:opacity-50">Confirm link</button>
+                      {copyFailed && <p className="text-[13px] text-a-attention" role="status">Could not copy. Select the command instead.</p>}
+                    </div>
+                  )}
+                </>
+              )}
+              {connection.state.error && !connection.failed && <p className="text-[13px] text-a-attention" role="alert">{{ 'auth-required': 'Sign in again to use Cliq commands.', 'account-not-allowed': 'Your HitList sign-in email must be the same allowed work email you use in Cliq.', 'access-denied': 'Cliq command access was denied. Check the account link and server permissions.', 'link-conflict': 'This Cliq account is already linked elsewhere.', unavailable: 'Cliq commands are unavailable right now.', 'workspace-unavailable': 'The local workspace is unavailable.' }[connection.state.error]}</p>}
+              {connection.failed && <p className="text-[13px] text-a-attention" role="alert">Could not update Cliq commands. Try again.</p>}
+            </div>
+          )}
+        </section>
       </DialogContent>
     </Dialog>
   );

@@ -11,6 +11,17 @@ contextBridge.exposeInMainWorld('hitlistDesktop', {
   restoreNow: () => ipcRenderer.invoke('restore:run'),
   getCliq: () => ipcRenderer.invoke('cliq:get'),
   setCliq: (settings) => ipcRenderer.invoke('cliq:set', settings),
+  getCliqConnection: () => ipcRenderer.invoke('cliq:connection:get'),
+  startCliqLink: (timeZone) => ipcRenderer.invoke('cliq:connection:start', timeZone),
+  confirmCliqLink: () => ipcRenderer.invoke('cliq:connection:confirm'),
+  setCliqIntake: (enabled) => ipcRenderer.invoke('cliq:connection:enable', enabled),
+  fetchCliqCommands: () => ipcRenderer.invoke('cliq:connection:fetch'),
+  unlinkCliq: () => ipcRenderer.invoke('cliq:connection:unlink'),
+  onCliqCommandsApplied: (listener) => {
+    const handler = () => listener();
+    ipcRenderer.on('cliq:commands-applied', handler);
+    return () => ipcRenderer.removeListener('cliq:commands-applied', handler);
+  },
   getUpdate: () => ipcRenderer.invoke('update:status'),
   checkUpdate: () => ipcRenderer.invoke('update:check'),
   downloadUpdate: () => ipcRenderer.invoke('update:download'),

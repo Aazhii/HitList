@@ -6,6 +6,8 @@ const { zcAuth, UserManagement } = require('@zcatalyst/auth/node');
 const { createBackupService, BackupError, MAX_BYTES } = require('./backupService');
 const { createCatalystStorage } = require('./catalystStorage');
 const cliq = require('./cliq');
+const { createCliqRoutes } = require('./cliqRoutes');
+const handleCliqRoute = createCliqRoutes();
 
 function send(res, status, body) {
 	res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -90,6 +92,7 @@ module.exports = async (req, res) => {
 	if (path === '/whoami') return send(res, 200, caller);
 
 	try {
+		if (await handleCliqRoute(req, res, caller, path)) return;
 		if (path === '/notify/overdue' && req.method === 'POST') {
 			return await notifyCliq(req, res, (body) => {
 				const tasks = cliq.cleanTasks(body.tasks);

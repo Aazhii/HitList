@@ -9,7 +9,7 @@
     "prepare:jar": "sh scripts/prepare-jar.sh",
     "prepare:jre": "sh scripts/prepare-jre.sh",
     "build": "pnpm run prepare:jar && pnpm run prepare:jre && electron-builder",
-    "test": "node --test test.auth.js test.backup.js test.restore.js test.dataDir.js test.cliqAlerts.js test.cliqInbox.js test.cliqPush.js test.updater.js test.installer.js test.main.js",
+    "test": "node --test test.auth.js test.backup.js test.restore.js test.dataDir.js test.cliqAlerts.js test.cliqInbox.js test.cliqPush.js test.cliqConnection.js test.cliqPipeline.js test.updater.js test.installer.js test.main.js",
     "prepare:jre:win": "sh scripts/prepare-jre-win.sh",
     "build:mac": "pnpm run prepare:jar && pnpm run prepare:jre && electron-builder --mac",
     "build:win": "pnpm run prepare:jar && pnpm run prepare:jre:win && electron-builder --win --x64",

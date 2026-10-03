@@ -1,0 +1,91 @@
+response = Map();
+command = message.trim();
+if(command.equals("help"))
+{
+    response.put("text","Commands: add \"Title\" --request UNIQUE_ID; list open --request UNIQUE_ID; link CODE. Reuse the same request ID when retrying the same command.");
+    return response;
+}
+
+webhookUrl = "https://hitlist-60090109165.development.catalystserverless.in/server/cliq-webhook/";
+if(webhookUrl.equals(""))
+{
+    response.put("text","HitList command delivery is not configured yet. No task was saved.");
+    return response;
+}
+
+parts = command.toList(" --request ");
+eventId = "";
+if(parts.size() == 2)
+{
+    command = parts.get(0).trim();
+    requestId = parts.get(1).trim();
+    if(!requestId.matches("[A-Za-z0-9_-]{1,64}"))
+    {
+        response.put("text","Use a request ID with 1 to 64 letters, numbers, underscores or hyphens.");
+        return response;
+    }
+    eventId = "request:" + requestId;
+}
+else if(parts.size() == 1 && command.matches("link [a-f0-9]{32}"))
+{
+    eventId = "pair:" + command.toList(" ").get(1);
+}
+else
+{
+    response.put("text","Add a unique request ID, for example: add \"Prepare report\" --request report-001. No task was saved.");
+    return response;
+}
+
+if(user.get("id") == null || user.get("organization_id") == null || user.get("email") == null)
+{
+    response.put("text","Cliq sender identity is unavailable. No task was saved.");
+    return response;
+}
+
+sender = Map();
+sender.put("id",user.get("id").toString());
+sender.put("orgId",user.get("organization_id").toString());
+sender.put("email",user.get("email"));
+payload = Map();
+payload.put("eventId",eventId);
+payload.put("sender",sender);
+payload.put("text",command);
+
+try
+{
+    result = invokeurl
+    [
+        url : webhookUrl
+        type : POST
+        headers : {"Content-Type":"application/json"}
+        body : payload.toString()
+        connection : "hitlist_webhook"
+        detailed : true
+    ];
+    code = result.get("responseCode");
+    if(code == 202)
+    {
+        response.put("text","Queued for your HitList desktop. This is not confirmation that the task has been saved.");
+    }
+    else if(code == 200 && command.matches("link [a-f0-9]{32}"))
+    {
+        response.put("text","Pairing received. Confirm the link in HitList.");
+    }
+    else if(code == 200)
+    {
+        response.put("text","Request processed. Check HitList or the bot result message for delivery status.");
+    }
+    else if(code == 409)
+    {
+        response.put("text","This request conflicts with an existing request or link. Use a new request ID only for a new command.");
+    }
+    else
+    {
+        response.put("text","HitList did not accept this request. Check linking and server configuration before retrying.");
+    }
+}
+catch(err)
+{
+    response.put("text","The delivery result is unknown. Retry the same command with the same request ID; do not create a new ID for this retry.");
+}
+return response;

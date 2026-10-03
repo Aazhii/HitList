@@ -236,6 +236,13 @@ export function useServerSync(activeListId?: string, filterParams?: import('../l
     await loadData(online, activeListId, filterParams);
   }, [serverOnline, loadData, activeListId, filterParams]);
 
+  useEffect(() => {
+    const subscribe = (window as unknown as { hitlistDesktop?: { onCliqCommandsApplied?: (listener: () => void) => () => void } })
+      .hitlistDesktop?.onCliqCommandsApplied;
+    if (!subscribe) return;
+    return subscribe(() => { void refresh(); });
+  }, [refresh]);
+
   const refreshMomentum = useCallback(async (listId?: string) => {
     try {
       const stats = await sApi.momentum(listId ?? activeListId);

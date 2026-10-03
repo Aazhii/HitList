@@ -1,8 +1,9 @@
 {
 	"deployment": {
-		"name": "backup",
+		"name": "cliq-webhook",
 		"stack": "node20",
-		"type": "advancedio"
+		"type": "advancedio",
+		"env_variables": {}
 	},
 	"execution": {
 		"main": "index.js"

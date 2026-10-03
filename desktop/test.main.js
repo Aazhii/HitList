@@ -17,9 +17,10 @@ function launch({ failNavigation = false } = {}) {
   app.getVersion = () => '1.0.0';
 
   const windows = [];
-  class BrowserWindow {
+  class BrowserWindow extends EventEmitter {
     static getAllWindows() { return windows.filter((win) => !win.closed); }
     constructor() {
+      super();
       this.closed = false;
       this.webContents = {
         session: { webRequest: { onBeforeSendHeaders: () => {} } },
@@ -28,7 +29,7 @@ function launch({ failNavigation = false } = {}) {
       windows.push(this);
     }
     isDestroyed() { return this.closed; }
-    close() { this.closed = true; app.emit('window-all-closed'); }
+    close() { this.closed = true; this.emit('closed'); app.emit('window-all-closed'); }
     loadURL(url) {
       this.url = url;
       return failNavigation ? Promise.reject(new Error('navigation failed')) : Promise.resolve();
@@ -75,13 +76,15 @@ function launch({ failNavigation = false } = {}) {
     readFileSync: () => 'test-secret', writeFileSync: () => {},
   };
   let accounts = 0;
+  const lifecycle = [];
   const backup = () => ({ startSchedule: () => {}, status: () => ({}), backupNow: async () => ({ result: 'ok' }) });
   const mocks = {
     electron: { app, BrowserWindow, ipcMain, dialog: { showErrorBox: (_title, message) => errors.push(message) }, shell: {} },
     './auth': { createAuth: () => ({ cachedAccount: () => ({ userId: String(++accounts), email: `account-${accounts}@test.invalid` }) }), ownerFor: (id) => id },
     './backup': { createBackup: backup },
-    './restore': { createRestore: () => ({ check: async () => ({}), restore: async () => ({}) }) },
+    './restore': { createRestore: () => ({ check: async () => ({}), restore: async () => { lifecycle.push('restore'); return {}; } }) },
     './cliqAlerts': { createCliqAlerts: () => ({ startSchedule: () => {}, status: () => ({}), setSettings: () => ({}), sendTest: async () => ({}) }) },
+    './cliqConnection': { createCliqConnection: () => ({ stop: () => { lifecycle.push('stop'); }, beforeRestore: async () => { lifecycle.push('beforeRestore'); }, get: async () => ({}), start: async () => ({}), confirm: async () => ({}), enable: async () => ({}), fetchNow: async () => ({}), unlink: async () => ({}) }) },
     './updater': { createUpdater: () => ({ status: () => ({}), check: () => {}, download: () => {}, cancel: () => {}, install: () => {} }) },
     './installer': { cleanupAfterUpdate: () => {}, canSwap: () => false },
     './dataDir': { dataDirIn: () => '/fake/HitList', migrateLegacyData: () => null, LEGACY_FOLDER: 'old' },
@@ -99,7 +102,7 @@ function launch({ failNavigation = false } = {}) {
     console: { log: () => {}, error: () => {} },
     Buffer, setTimeout, setInterval: () => {}, fetch: () => {},
   }, { filename: 'main.js' });
-  return { app, windows, children, handlers, errors };
+  return { app, windows, children, handlers, errors, lifecycle };
 }
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
@@ -132,4 +135,20 @@ test('failed navigation reports the startup error instead of silently leaving a 
   await settle();
   assert.match(errors[0], /navigation failed/);
   assert.equal(app.quitCalls, 1);
+});
+
+test('restore invalidates the connection first and reopens without duplicate connection IPC', async () => {
+  const { app, windows, handlers, lifecycle } = launch();
+  await settle();
+  for (const channel of ['get', 'start', 'confirm', 'enable', 'fetch', 'unlink']) {
+    assert.equal(typeof handlers.get(`cliq:connection:${channel}`), 'function');
+  }
+  await handlers.get('restore:run')();
+  assert.deepEqual(lifecycle.slice(-2), ['beforeRestore', 'restore']);
+  windows[0].close();
+  assert.equal(lifecycle.at(-1), 'stop');
+  app.emit('activate');
+  await settle();
+  assert.equal(windows.length, 2);
+  assert.equal(typeof handlers.get('cliq:connection:get'), 'function');
 });

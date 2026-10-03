@@ -16,6 +16,9 @@ files:
   - backup.js
   - restore.js
   - cliqAlerts.js
+  - cliqConnection.js
+  - cliqInbox.js
+  - cliqPush.js
   - updater.js
   - installer.js
   - dataDir.js
