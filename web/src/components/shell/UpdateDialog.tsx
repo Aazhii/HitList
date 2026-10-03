@@ -82,8 +82,12 @@ export function UpdateDialog({ open, onOpenChange }: { open: boolean; onOpenChan
           <DialogDescription>{s ? `You have version ${s.current}.` : 'Look for a newer HitList.'}</DialogDescription>
         </DialogHeader>
 
-        {!update.available || !s ? (
+        {!update.visible ? (
           <p className="text-[13px] text-a-muted">Updates are part of the HitList desktop app.</p>
+        ) : !update.available ? (
+          <p className="text-[13px] text-a-muted">This desktop build does not include in-app updates yet. Install the latest Windows setup from GitHub Releases.</p>
+        ) : !s ? (
+          <p className="text-[13px] text-a-muted">Look for a newer HitList.</p>
         ) : (
           <div className="flex flex-col gap-4">
             <p className={cn('text-[14px]', s.phase === 'error' || (s.phase === 'ready' && s.error) ? 'text-a-attention' : 'text-a-ink')} role="status">{updateHeadline(s)}</p>
