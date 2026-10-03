@@ -13,7 +13,8 @@ interface UpdateBridge {
 
 export function useAppUpdate() {
   const bridge = typeof window === 'undefined' ? undefined : (window as unknown as { hitlistDesktop?: UpdateBridge }).hitlistDesktop;
-  const available = !!bridge?.getUpdate && !!bridge.checkUpdate && !!bridge.downloadUpdate;
+  const visible = !!bridge;
+  const available = !!bridge?.getUpdate && !!bridge?.checkUpdate && !!bridge?.downloadUpdate && !!bridge?.installUpdate;
   const [status, setStatus] = useState<UpdateStatus | null>(null);
 
   const run = useCallback(async (call?: () => Promise<UpdateStatus>) => {
@@ -29,5 +30,5 @@ export function useAppUpdate() {
   const download = useCallback(() => run(bridge?.downloadUpdate), [bridge, run]);
   const cancel = useCallback(() => run(bridge?.cancelUpdate), [bridge, run]);
   const install = useCallback(() => run(bridge?.installUpdate), [bridge, run]);
-  return { available, status, check, download, cancel, install };
+  return { visible, available, status, check, download, cancel, install };
 }

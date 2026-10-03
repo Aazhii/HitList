@@ -161,7 +161,7 @@ export function UserMenu({ onOpenReminders, dailyLine }: {
                 </span>
               </DropdownMenuItem>
             )}
-            {appUpdate.available && (
+            {appUpdate.visible && (
               <DropdownMenuItem onSelect={() => setUpdateOpen(true)} className="gap-2.5 px-2.5 py-2 text-[14px] text-a-muted">
                 <RefreshCw className="size-[15px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
                 <span className="flex min-w-0 flex-1 flex-col">
