@@ -8,6 +8,8 @@ const { createCatalystStorage } = require('./catalystStorage');
 const cliq = require('./cliq');
 const { createCliqRoutes } = require('./cliqRoutes');
 const handleCliqRoute = createCliqRoutes();
+const { createWorkspaceRoutes } = require('./workspaceRoutes');
+const handleWorkspaceRoute = createWorkspaceRoutes();
 
 function send(res, status, body) {
 	res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -35,7 +37,8 @@ async function callerOf(req) {
 		await zcAuth.init(req, { type: 'advancedio', appName: 'backup', scope: 'admin' });
 		const user = await new UserManagement().getUserDetails(id);
 		const role = user && user.role_details && user.role_details.role_name;
-		return user && String(user.user_id) === id && role === 'App User' ? { userId: id, email: user.email_id || null } : null;
+		const name = [user && user.first_name, user && user.last_name].filter(Boolean).join(' ').trim() || null;
+		return user && String(user.user_id) === id && role === 'App User' ? { userId: id, email: user.email_id || null, name } : null;
 	} catch {
 		return null;
 	}
@@ -93,6 +96,7 @@ module.exports = async (req, res) => {
 
 	try {
 		if (await handleCliqRoute(req, res, caller, path)) return;
+		if (await handleWorkspaceRoute(req, res, caller, path)) return;
 		if (path === '/notify/overdue' && req.method === 'POST') {
 			return await notifyCliq(req, res, (body) => {
 				const tasks = cliq.cleanTasks(body.tasks);
