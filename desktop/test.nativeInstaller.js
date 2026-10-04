@@ -27,7 +27,7 @@ test('Windows executes its helper with spaces and exclamation marks and passes t
     fs.writeFileSync(app, `@echo off\r\nsetlocal disabledelayedexpansion\r\necho launched>"${marker}"\r\nexit 0\r\n`);
     const helper = path.join(dir, 'swap.cmd');
     fs.writeFileSync(helper, winScript({ pid: 99999999, installer, app }));
-    execFileSync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', `"${helper}"`], { windowsVerbatimArguments: true, timeout: 15_000, stdio: 'pipe' });
+    execFileSync(process.env.ComSpec || 'cmd.exe', ['/c', helper], { timeout: 15_000, stdio: 'pipe' });
     await waitForFile(marker);
     assert.equal(fs.readFileSync(args, 'utf8').trim(), `/S /D=${dir}`);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
