@@ -80,14 +80,18 @@ function launch({ failNavigation = false, backupGate, platform = 'darwin', packa
     readFileSync: () => 'test-secret', writeFileSync: () => {},
   };
   let accounts = 0;
+  let backupOptions;
+  const uploads = [];
   const lifecycle = [];
-  const backup = () => ({ startSchedule: () => {}, status: () => ({}), backupNow: async () => ({ result: 'ok' }),
+  const backup = (options) => { backupOptions = options; return { startSchedule: () => {}, status: () => ({}), backupNow: async () => ({ result: 'ok' }),
     beforeSignOut: async () => { lifecycle.push('backup-start'); await backupGate; lifecycle.push('backup-end'); return { result: 'backed-up' }; },
     cancel: async () => { lifecycle.push('backup-cancel'); },
-  });
+  }; };
   const mocks = {
     electron: { app, BrowserWindow, ipcMain, dialog: { showErrorBox: (_title, message) => errors.push(message) }, shell: {} },
-    './auth': { createAuth: () => ({ cachedAccount: () => ({ userId: String(++accounts), email: `account-${accounts}@test.invalid` }), signOut: async () => { lifecycle.push('clear-session'); } }), ownerFor: (id) => id },
+    './auth': { createAuth: () => ({ cachedAccount: () => ({ userId: String(++accounts), email: `account-${accounts}@test.invalid` }), signOut: async () => { lifecycle.push('clear-session'); },
+      fetchAs: async (identity, url, options, isCurrent) => { uploads.push({ identity, url, options, current: isCurrent() }); return { status: 201, text: async () => '{}' }; },
+    }), ownerFor: (id) => id },
     './backup': { createBackup: backup },
     './restore': { createRestore: () => ({ check: async () => ({}), restore: async () => { lifecycle.push('restore'); return {}; } }) },
     './cliqAlerts': { createCliqAlerts: () => ({ startSchedule: () => {}, status: () => ({}), setSettings: () => ({}), sendTest: async () => ({}) }) },
@@ -109,7 +113,7 @@ function launch({ failNavigation = false, backupGate, platform = 'darwin', packa
     console: { log: () => {}, error: () => {} },
     Buffer, setTimeout, clearTimeout, setInterval: () => {}, fetch: () => {},
   }, { filename: 'main.js' });
-  return { app, windows, children, handlers, errors, lifecycle, requestHeaders: (method) => {
+  return { app, windows, children, handlers, errors, lifecycle, uploads, uploadBackup: (...args) => backupOptions.upload(...args), requestHeaders: (method) => {
     let result;
     headerHandler({ method, requestHeaders: {}, url: 'http://127.0.0.1:41000/api/notes' }, out => { result = out; });
     return result;
@@ -117,6 +121,20 @@ function launch({ failNavigation = false, backupGate, platform = 'darwin', packa
 }
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+test('backup upload forwards the trigger reason through the account-pinned cloud request', async () => {
+  const { windows, uploads, uploadBackup } = launch();
+  await settle();
+  for (const reason of ['manual', 'signed-in', 'sign-out']) {
+    const result = await uploadBackup(Buffer.from('snapshot'), 'content-hash', { accountIdentity: '1', signal: new AbortController().signal, reason });
+    assert.equal(result.status, 201);
+    assert.equal(uploads.at(-1).options.headers['x-backup-reason'], reason);
+    assert.equal(uploads.at(-1).options.headers['x-content-hash'], 'content-hash');
+    assert.equal(uploads.at(-1).identity, '1');
+    assert.equal(uploads.at(-1).current, true);
+  }
+  windows[0].close();
+});
 
 test('Java spawn failure reports a controlled startup error instead of an unhandled event', async () => {
   const { errors, app, windows } = launch({ packaged: true, spawnError: true });

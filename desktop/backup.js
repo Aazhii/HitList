@@ -31,6 +31,7 @@ function createBackup({ stateDir, localGet, upload, getAccount, now = () => Date
   const stateFile = path.join(stateDir, 'backup-state.json');
   const readState = () => { try { return JSON.parse(fs.readFileSync(stateFile, 'utf8')); } catch { return {}; } };
   let running = null;
+  let runningReason = null;
   let controller = null;
   let generation = 0;
 
@@ -54,7 +55,9 @@ function createBackup({ stateDir, localGet, upload, getAccount, now = () => Date
     // The state belongs to one account: another account's last hash says nothing about this one.
     const mine = state.userId === account.userId ? state : {};
     // Told by the server it was at today's limit: do not ask again until it said it would allow another.
-    if (mine.blockedUntil && mine.blockedUntil > now()) return { result: 'daily-limit', retryAt: mine.blockedUntil };
+    const manual = reason === 'manual';
+    const manualBlockedUntil = mine.manualBlockedUntil ?? mine.blockedUntil;
+    if (manual && manualBlockedUntil && manualBlockedUntil > now()) return { result: 'daily-limit', retryAt: manualBlockedUntil };
 
     let snapshot;
     try { snapshot = JSON.parse((await bounded(localGet('/api/backup', { accountIdentity: account.userId, signal }))).toString('utf8')); }
@@ -68,7 +71,7 @@ function createBackup({ stateDir, localGet, upload, getAccount, now = () => Date
 
     const bytes = zlib.gzipSync(Buffer.from(JSON.stringify(snapshot)));
     let reply;
-    try { reply = await bounded(upload(bytes, hash, { accountIdentity: account.userId, signal })); }
+    try { reply = await bounded(upload(bytes, hash, { accountIdentity: account.userId, signal, reason })); }
     catch (error) {
       if (!isCurrent()) return { result: 'cancelled' };
       const result = error.code === 'account-mismatch' ? 'sign-in-needed' : 'offline';
@@ -80,12 +83,14 @@ function createBackup({ stateDir, localGet, upload, getAccount, now = () => Date
     if (reply.status === 429) {
       let retryAt = now() + ERROR_BACKOFF;
       try { const parsed = typeof reply.body === 'string' ? JSON.parse(reply.body) : reply.body; if (parsed && Number(parsed.retryAt) > now()) retryAt = Number(parsed.retryAt); } catch { /* keep the default wait */ }
-      writeState({ userId: account.userId, lastAttemptAt: now(), lastResult: 'daily-limit', blockedUntil: retryAt });
+      writeState({ userId: account.userId, lastAttemptAt: now(), lastResult: 'daily-limit',
+        ...(manual ? { manualBlockedUntil: retryAt, blockedUntil: null } : { retryAfter: retryAt }) });
       return { result: 'daily-limit', retryAt };
     }
     if (reply.status === 401) { writeState({ userId: account.userId, lastAttemptAt: now(), lastResult: 'sign-in-needed' }); return { result: 'sign-in-needed' }; }
     if (reply.status === 200 || reply.status === 201) {
-      writeState({ userId: account.userId, lastHash: hash, lastSuccessAt: now(), lastAttemptAt: now(), lastResult: 'backed-up', lastReason: reason, blockedUntil: null, retryAfter: null });
+      writeState({ userId: account.userId, lastHash: hash, lastSuccessAt: now(), lastAttemptAt: now(), lastResult: 'backed-up', lastReason: reason,
+        ...(manual ? { manualBlockedUntil: null, blockedUntil: null } : {}), retryAfter: null });
       return { result: 'backed-up', stored: reply.status === 201 };
     }
     writeState({ userId: account.userId, lastAttemptAt: now(), lastResult: `error-${reply.status}`, retryAfter: now() + ERROR_BACKOFF });
@@ -94,9 +99,16 @@ function createBackup({ stateDir, localGet, upload, getAccount, now = () => Date
 
   /** One backup at a time: asking while one is running gets that one's answer. */
   const backupNow = (reason = 'manual') => {
+    if (running && runningReason !== reason) {
+      const started = generation;
+      const identity = getAccount()?.userId;
+      return running.then(() => started === generation && identity === getAccount()?.userId
+        ? backupNow(reason) : { result: 'cancelled' });
+    }
     if (!running) {
       controller = new AbortController();
-      running = run(reason, controller.signal).finally(() => { running = null; controller = null; });
+      runningReason = reason;
+      running = run(reason, controller.signal).finally(() => { running = null; runningReason = null; controller = null; });
     }
     return running;
   };
@@ -113,7 +125,7 @@ function createBackup({ stateDir, localGet, upload, getAccount, now = () => Date
     const account = getAccount();
     if (!account) return false;
     const state = readState();
-    if (state.userId === account.userId && ((state.blockedUntil && state.blockedUntil > now()) || (state.retryAfter && state.retryAfter > now()))) return false;
+    if (state.userId === account.userId && state.retryAfter && state.retryAfter > now()) return false;
     return state.userId !== account.userId || !state.lastSuccessAt || now() - state.lastSuccessAt >= interval;
   }
 

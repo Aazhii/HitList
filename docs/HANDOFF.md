@@ -48,10 +48,28 @@ Repository: GitHub `Aazhii/HitList` (public). Working branch `master`. The owner
 
 ### 3.1 Backup and restore
 Every 3 days and just before sign-out (not on quit), `desktop/backup.js` takes `GET /api/backup` (the whole workspace as JSON),
-gzips it and `PUT`s it to the function's `/backup`. The function keeps at most 3 per person per 24 h, dedupes by hash, prunes at 14
-keeping 7, stores bytes in File Store and a row in Data Store table `Backups`. Restore (`desktop/restore.js`) offers the latest
+gzips it and `PUT`s it to the function's `/backup`. The function allows at most 10 changed **manual** backups per person per
+rolling 24 h. Login (`signed-in`), logout (`sign-out`), scheduled and update triggers bypass this allowance and consume no
+manual slots. A cached manual rejection does not block those triggers; their success does not clear the manual rejection.
+Different in-flight trigger types wait and run separately, with cancellation/account-switch guards preserved.
+It dedupes by hash and prunes at 14, retaining the latest 7 plus recent manual entries so pruning cannot reset the allowance.
+It stores bytes in File Store and a row in Data Store table `Backups`. The pending rollout requires an additive optional
+`BackupReason` Text column before deploying the function, then a rebuilt desktop. Missing legacy reasons/headers count as
+manual. Trigger labels are client-reported, not server-attested lifecycle events. No schema change or deployment has been
+performed. An older deployed function can still reject automatic triggers under its shared cap.
+Restore (`desktop/restore.js`) offers the latest
 backup when the local workspace is empty (or on demand) and **only adds** rows (`POST /api/backup`). Free-tier numbers are in
 `docs/desktop-first/01-BUDGET.md`.
+
+Manual-only backup policy validation (2026-10-05, uncommitted source on base `5361875`): macOS 26.6.2 arm64, Node 24.19.0,
+Java 25. `node --test functions/backup/test.backupReasons.js`: 2 passed, including the authenticated route and persistence
+adapter. `node --test desktop/test.backup.js desktop/test.auth.js desktop/test.restore.js desktop/test.main.js`: 48 passed
+before adding the shell-header test; the subsequent `node --test desktop/test.main.js`: 13 passed. The complete final
+`node scripts/ci/validate-desktop.cjs` and `sh scripts/ci/compute-version.test.sh` passed with Java 25 and the cached Maven
+3.9.12 executable. This includes frontend checks, API tests, a fresh embedded jar/local Java smoke, 27 two-replica assertions
+and 16 version cases; scratch replica processes/storage were cleaned up. Native platform helper skips remain skips.
+No new distributable artifact, installed GUI/login/logout/account-switch test, native Windows/Linux run or live Catalyst
+schema/policy check was performed. No commit, cloud mutation, push or deployment was performed for this backup change.
 
 ### 3.2 Updates (in-app, from GitHub Releases)
 `desktop/updater.js` checks `Aazhii/HitList` releases (a minute after launch, then daily; also "Account → Check for updates"). It

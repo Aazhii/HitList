@@ -106,7 +106,8 @@ module.exports = async (req, res) => {
 		if (path === '/notify/test' && req.method === 'POST') return await notifyCliq(req, res, () => cliq.TEST_MESSAGE);
 		const backups = createBackupService(await createCatalystStorage(req));
 		if (path === '/backup' && (req.method === 'PUT' || req.method === 'POST')) {
-			const { stored, entry } = await backups.save(caller.userId, await readBody(req), String(req.headers['x-content-hash'] || ''));
+			const { stored, entry } = await backups.save(caller.userId, await readBody(req), String(req.headers['x-content-hash'] || ''),
+				String(req.headers['x-backup-reason'] || 'manual'));
 			return send(res, stored ? 201 : 200, { stored, at: entry.at, hash: entry.hash, size: entry.size });
 		}
 		if (path === '/backup/list' && req.method === 'GET') return send(res, 200, await backups.list(caller.userId));

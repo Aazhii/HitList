@@ -10,13 +10,11 @@
  * one taken from that user's own entry. A user id is never accepted from the request body.
  */
 const KEEP = 7;
-// Old backups are removed in one batch once a user has twice KEEP, not one by one: the free tier counts every delete
-// request, so a user at the limit costs one delete call per KEEP backups instead of one per backup.
+// Old backups are removed in batches once a user has twice KEEP; recent entries remain for daily-limit accounting.
 const MAX_BYTES = 25 * 1024 * 1024;
-// The free tier counts uploads (2,000 per 30 days). Three stored backups per person per rolling 24 hours keeps 20 active
-// people at no more than 20 x 3 x 30 = 1,800, whatever the desktop app does.
-const MAX_PER_DAY = 3;
+const MAX_PER_DAY = 10;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const BACKUP_REASONS = new Set(['manual', 'signed-in', 'sign-out', 'scheduled', 'update']);
 
 class BackupError extends Error {
 	constructor(status, code, message, extra) {
@@ -33,7 +31,8 @@ function createBackupService({ index, files, now = () => Date.now(), keep = KEEP
 	const pruneAt = keep * 2;
 	return {
 		/** Stores a snapshot unless the newest one already has the same content hash. */
-		async save(userId, bytes, hash) {
+		async save(userId, bytes, hash, reason = 'manual') {
+			if (!BACKUP_REASONS.has(reason)) throw new BackupError(400, 'bad_reason', 'Unknown backup trigger');
 			if (!/^[0-9a-f]{64}$/.test(String(hash || ''))) throw new BackupError(400, 'bad_hash', 'x-content-hash must be a SHA-256 in hex');
 			if (!bytes || bytes.length === 0) throw new BackupError(400, 'empty', 'The backup is empty');
 			if (bytes.length > maxBytes) throw new BackupError(413, 'too_large', `A backup may be at most ${maxBytes} bytes`);
@@ -45,22 +44,21 @@ function createBackupService({ index, files, now = () => Date.now(), keep = KEEP
 			if (newest && newest.hash === hash) return { stored: false, entry: newest };
 
 			const at = now();
-			// The newest three within the last day: a fourth would be refused until the oldest of them is a day old.
-			const recent = existing.filter((e) => e.at > at - DAY_MS);
-			if (recent.length >= maxPerDay) {
+			// Only successfully stored, changed snapshots consume the rolling daily allowance.
+			const recent = existing.filter((entry) => (!entry.reason || entry.reason === 'manual') && entry.at > at - DAY_MS);
+			if (reason === 'manual' && recent.length >= maxPerDay) {
 				const retryAt = recent[maxPerDay - 1].at + DAY_MS;
-				throw new BackupError(429, 'daily_limit', `At most ${maxPerDay} backups a day. Try again later.`, { retryAt });
+				throw new BackupError(429, 'daily_limit', `At most ${maxPerDay} manual backups a day. Try again later.`, { retryAt });
 			}
 			const fileId = await files.put(userId, `${userId}_${at}_${hash.slice(0, 8)}.json.gz`, bytes);
-			const entry = await index.add({ userId, at, hash, size: bytes.length, fileId });
+			const entry = await index.add({ userId, at, hash, size: bytes.length, fileId, reason });
 
-			// Only after the new backup is safely stored, and only once there are twice `keep`: drop everything beyond the
-			// newest `keep`, in one batch.
+			// Keep recent entries for daily-cap accounting even when they exceed snapshot retention.
 			const all = [entry, ...existing];
 			if (all.length >= pruneAt) {
-				const old = all.slice(keep);
+				const old = all.slice(keep).filter((entry) => entry.at <= at - DAY_MS || (entry.reason && entry.reason !== 'manual'));
 				for (const o of old) await files.remove(o.fileId);
-				await index.removeMany(userId, old);
+				if (old.length) await index.removeMany(userId, old);
 			}
 			return { stored: true, entry };
 		},

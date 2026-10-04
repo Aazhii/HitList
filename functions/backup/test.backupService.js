@@ -54,7 +54,8 @@ test('does not store the same content twice in a row', async () => {
 });
 
 test('prunes to the newest seven in one batch once there are fourteen, and deletes the files with them', async () => {
-	const s = fakeStorage(); const svc = service(s);
+	const s = fakeStorage(); let time = 0;
+	const svc = service(s, { now: () => (time += 24 * 60 * 60 * 1000) });
 	for (let i = 0; i < 13; i++) { const x = snap(`v${i}`); await svc.save('111', x.bytes, x.hash); }
 	assert.equal((await svc.list('111')).length, 13);
 	assert.equal(s.stats.deleteCalls, 0);
@@ -103,22 +104,82 @@ test('refuses a bad hash, an empty body, a non-gzip body and an oversize one', a
 	await assert.rejects(big, (e) => e.status === 413);
 });
 
-test('at most three stored backups per person per rolling day, and says when the next one is allowed', async () => {
+test('allows ten stored backups per person per rolling day, and says when the eleventh is allowed', async () => {
 	const s = fakeStorage(); let t = 10_000_000;
 	const svc = createBackupService({ ...s, now: () => t });
 	const day = 24 * 60 * 60 * 1000;
 	const stamps = [];
-	for (let i = 0; i < 3; i++) { t += 1000; stamps.push(t); const x = snap(`d${i}`); assert.equal((await svc.save('111', x.bytes, x.hash)).stored, true); }
+	for (let i = 0; i < 10; i++) { t += 1000; stamps.push(t); const x = snap(`d${i}`); assert.equal((await svc.save('111', x.bytes, x.hash)).stored, true); }
 	t += 1000;
-	const fourth = snap('d3');
-	await assert.rejects(svc.save('111', fourth.bytes, fourth.hash), (e) => e.status === 429 && e.code === 'daily_limit' && e.extra.retryAt === stamps[0] + day);
-	assert.equal((await svc.list('111')).length, 3);
+	const eleventh = snap('d10');
+	await assert.rejects(svc.save('111', eleventh.bytes, eleventh.hash), (e) => e.status === 429 && e.code === 'daily_limit' && e.extra.retryAt === stamps[0] + day);
+	assert.equal((await svc.list('111')).length, 10);
 	// Unchanged content is still not a new backup, and is not refused.
-	const same = snap('d2');
+	const same = snap('d9');
 	assert.equal((await svc.save('111', same.bytes, same.hash)).stored, false);
 	// Someone else is unaffected.
-	assert.equal((await svc.save('222', fourth.bytes, fourth.hash)).stored, true);
+	assert.equal((await svc.save('222', eleventh.bytes, eleventh.hash)).stored, true);
 	// A day after the oldest, the next is allowed.
-	t = stamps[0] + day + 1;
-	assert.equal((await svc.save('111', fourth.bytes, fourth.hash)).stored, true);
+	t = stamps[0] + day;
+	assert.equal((await svc.save('111', eleventh.bytes, eleventh.hash)).stored, true);
+});
+
+test('pruning preserves recent entries so it cannot reset the ten-backup allowance', async () => {
+	const storage = fakeStorage(); let time = 1000;
+	const day = 24 * 60 * 60 * 1000;
+	const svc = createBackupService({ ...storage, now: () => time });
+	for (let index = 0; index < 4; index++) {
+		const snapshot = snap(`old-${index}`);
+		await svc.save('111', snapshot.bytes, snapshot.hash);
+		time += 1000;
+	}
+	time += day;
+	const oldestRecent = time;
+	for (let index = 0; index < 10; index++) {
+		const snapshot = snap(`recent-${index}`);
+		assert.equal((await svc.save('111', snapshot.bytes, snapshot.hash)).stored, true);
+		time += 1000;
+	}
+	assert.equal(storage.rows.length, 10);
+	assert.equal(storage.blobs.size, 10);
+	const extra = snap('over-limit');
+	await assert.rejects(svc.save('111', extra.bytes, extra.hash),
+		(error) => error.code === 'daily_limit' && error.extra.retryAt === oldestRecent + day);
+});
+
+test('automatic backups bypass a full manual allowance without consuming or resetting its slots', async () => {
+	const storage = fakeStorage(); let time = 1000;
+	const svc = createBackupService({ ...storage, now: () => ++time });
+	for (let index = 0; index < 10; index++) {
+		const snapshot = snap(`manual-${index}`);
+		await svc.save('111', snapshot.bytes, snapshot.hash, 'manual');
+	}
+	for (const reason of ['sign-out', 'signed-in', 'scheduled', 'update']) {
+		for (let index = 0; index < 12; index++) {
+			const snapshot = snap(`${reason}-${index}`);
+			assert.equal((await svc.save('111', snapshot.bytes, snapshot.hash, reason)).stored, true);
+		}
+	}
+	assert.equal(storage.rows.filter((entry) => entry.reason === 'manual').length, 10);
+	assert.ok(storage.rows.length <= 17);
+	const extra = snap('manual-eleventh');
+	await assert.rejects(svc.save('111', extra.bytes, extra.hash, 'manual'), (error) => error.code === 'daily_limit');
+	assert.equal((await svc.save('222', extra.bytes, extra.hash, 'manual')).stored, true);
+});
+
+test('automatic backups before manual use consume no manual slots, and legacy entries count conservatively', async () => {
+	const storage = fakeStorage(); let time = 1000;
+	const svc = createBackupService({ ...storage, now: () => ++time });
+	for (let index = 0; index < 12; index++) {
+		const snapshot = snap(`login-${index}`);
+		await svc.save('111', snapshot.bytes, snapshot.hash, 'signed-in');
+	}
+	for (let index = 0; index < 10; index++) {
+		const snapshot = snap(`manual-${index}`);
+		await svc.save('111', snapshot.bytes, snapshot.hash);
+	}
+	for (const entry of storage.rows) if (entry.reason === 'manual') delete entry.reason;
+	const extra = snap('another');
+	await assert.rejects(svc.save('111', extra.bytes, extra.hash), (error) => error.code === 'daily_limit');
+	await assert.rejects(svc.save('111', extra.bytes, extra.hash, 'invented'), (error) => error.code === 'bad_reason');
 });

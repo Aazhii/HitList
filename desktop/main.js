@@ -263,9 +263,9 @@ async function openWindow() {
     stateDir: userDataDir,
     getAccount: () => account,
     localGet,
-    upload: async (bytes, hash, { accountIdentity, signal }) => {
+    upload: async (bytes, hash, { accountIdentity, signal, reason }) => {
       if (account?.userId !== accountIdentity || signal.aborted) throw new Error('Account changed');
-      const res = await auth.fetchAs(accountIdentity, `${BACKUP_FUNCTION_URL}/backup`, { method: 'PUT', body: bytes, signal, headers: { 'x-content-hash': hash } }, () => account?.userId === accountIdentity);
+      const res = await auth.fetchAs(accountIdentity, `${BACKUP_FUNCTION_URL}/backup`, { method: 'PUT', body: bytes, signal, headers: { 'x-content-hash': hash, 'x-backup-reason': reason } }, () => account?.userId === accountIdentity);
       return { status: res.status, body: await res.text() };
     },
   });

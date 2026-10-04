@@ -48,7 +48,7 @@ most once a day instead of every 6 hours (about 66 people), or store snapshots i
 - The AppSail (the web version) is not part of normal use and is stopped (D5), so it costs nothing.
 - One backup is one file, however many tasks it holds.
 
-## Plan for about 20 active people inside the 30-day limits
+## Historical plan: three-backup cap (superseded 2026-10-05)
 
 The aim is to stay under every limit with room to spare, whatever anyone does:
 
@@ -75,6 +75,31 @@ Account-isolation update (2026-10-04): each changed backup upload verifies cloud
 
 Per person per month: about 10 scheduled backups, plus a few sign-outs and manual ones, so **about 12–15 uploads**. At
 15 uploads a person, File Store's 2,000 uploads cover about **130 people** (it was about 33), and the other limits cover more.
-The server's cap of 3 stored backups per person per 24 hours stays as a safety net. The cost of this choice is that up to
+The server's cap was initially 3 stored backups per person per 24 hours (raised to 10 below). The cost of this choice is that up to
 3 days of work can be lost if a computer is lost between backups.
+
+## Update 2026-10-05: up to ten manual backups per rolling day
+
+The owner requested up to 10 manual backups per day. The source now permits **10 successfully stored changed manual snapshots
+per person per rolling 24 hours**. Login, logout, scheduled and update snapshots are exempt and consume no manual slots.
+Unchanged snapshots consume no slot; failed attempts that store no snapshot consume no slot. The eleventh changed manual
+backup returns the daily-limit response and retry time. Same-trigger concurrent clicks join one request; a different trigger
+waits and runs under its own policy. Account switching/cancellation also cancels queued requests.
+
+Pruning keeps the latest seven plus manual entries from the last 24 hours; recent manual entries must remain available for
+allowance accounting. Pruning starts at fourteen retained entries and removes eligible entries outside that retention in a batch. The old fixed
+one-delete-per-seven cost estimate is no longer guaranteed when a batch retains recent snapshots.
+
+At maximum manual usage, one person can make **300 manual uploads per 30 days, plus automatic uploads**. Twenty people
+reaching the manual cap every day can use **6,000 manual uploads and inserts**, above the recorded 2,000-upload and
+5,000-insert allowances even before automatic backups. The upload allowance covers approximately six people at maximum
+manual usage with no automatic uploads. Automatic triggers are uncapped by this policy, so there is no overall monthly
+maximum derived from it. Typical 12-15 monthly uploads per person remain much cheaper; this is not a free-tier guarantee.
+
+This is a source change, not a deployment. Add the optional `BackupReason` Text column to `Backups` before deploying the
+updated function, with explicit authorization, and distribute a rebuilt desktop that sends `x-backup-reason`. Missing legacy
+row reasons and older desktops' missing headers count as manual. Cached retry times apply only to the manual button in the
+new desktop; automatic successes preserve that block. An older cloud function can still reject automatic backups under its
+shared cap. Labels are client-reported, not lifecycle attestation. No cloud schema, live account limits or stored backups
+were modified.
 

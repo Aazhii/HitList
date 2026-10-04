@@ -6,7 +6,7 @@
  * caller must already have been verified; nothing here reads a user id from a request.
  *
  * Data Store table to create once, in the console (Data Store -> Create Table):
- *   Backups:  UserId (Text), BackedUpAt (Big Int), Hash (Text), SizeBytes (Big Int), FileId (Text)
+ *   Backups: UserId (Text), BackedUpAt (Big Int), Hash (Text), SizeBytes (Big Int), FileId (Text), BackupReason (Text)
  */
 const fs = require('node:fs');
 const os = require('node:os');
@@ -20,11 +20,11 @@ const TABLE = 'Backups';
 const FOLDER_NAME = 'backups';
 
 const digits = (id) => { if (!/^[0-9]{5,30}$/.test(String(id))) throw new Error('bad user id'); return String(id); };
-const rowOf = (r) => { const row = r[TABLE] || r; return { rowId: String(row.ROWID), userId: row.UserId, at: Number(row.BackedUpAt), hash: row.Hash, size: Number(row.SizeBytes), fileId: row.FileId }; };
+const rowOf = (r) => { const row = r[TABLE] || r; return { rowId: String(row.ROWID), userId: row.UserId, at: Number(row.BackedUpAt), hash: row.Hash, size: Number(row.SizeBytes), fileId: row.FileId, reason: row.BackupReason || 'manual' }; };
 
-async function createCatalystStorage(req) {
+async function createCatalystStorage(req, sdk = catalyst) {
 	// Storage is the service's own business, so it runs with the project's rights, after the caller was verified.
-	const app = catalyst.initialize(req, { type: 'advancedio', appName: 'backup', scope: 'admin' });
+	const app = sdk.initialize(req, { type: 'advancedio', appName: 'backup', scope: 'admin' });
 	const datastore = app.datastore();
 	const filestore = app.filestore();
 	let folder;
@@ -43,8 +43,8 @@ async function createCatalystStorage(req) {
 		index: {
 			latest: async (userId) => (await query(userId, 1))[0] || null,
 			list: async (userId) => query(userId, 100),
-			add: async ({ userId, at, hash, size, fileId }) => rowOf(await datastore.table(TABLE).insertRow({
-				UserId: digits(userId), BackedUpAt: at, Hash: hash, SizeBytes: size, FileId: String(fileId),
+			add: async ({ userId, at, hash, size, fileId, reason = 'manual' }) => rowOf(await datastore.table(TABLE).insertRow({
+				UserId: digits(userId), BackedUpAt: at, Hash: hash, SizeBytes: size, FileId: String(fileId), BackupReason: reason,
 			})),
 			// One request for the whole batch.
 			removeMany: async (_userId, entries) => { if (entries.length) await datastore.table(TABLE).deleteRows(entries.map((e) => e.rowId)); },

@@ -33,4 +33,4 @@ Problems we have already met, and the fix.
 | Linux `apt` prints `N: Download is performed unsandboxed as root…` | Harmless; the install worked |
 | Linux AppImage mentions FUSE | `sudo apt install libfuse2` (Ubuntu 24.04: `libfuse2t64`) or run with `--appimage-extract-and-run` |
 | Ubuntu 24.04: the app will not start | The system blocks Chromium's sandbox; the app detects it and starts without the sandbox in that case |
-| "Back up now" says the daily limit is reached | Three stored backups per 24 hours per person is the server's cap; it says when the next is allowed |
+| "Back up now" says the daily limit is reached | Ten changed manual backups per rolling 24 hours per person is the cap; the server supplies a retry time. Login/logout/scheduled/update uploads are exempt and do not clear or inherit the cached manual block. Legacy cached limits remain manual-only until expiry. This needs the new `BackupReason` column, updated function and rebuilt desktop; an old function still enforces its shared cap, while old desktops omit the trigger header and count every upload as manual. |
