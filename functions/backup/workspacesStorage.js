@@ -2,11 +2,12 @@
 
 /**
  * Catalyst Data Store tables for shared workspaces. Create them in the Catalyst console (ids are stored as text):
- *   Workspaces  WorkspaceId (unique), Name, OwnerUserId, CreatedAt (bigint)
+ *   Workspaces  WorkspaceId (unique), Name, OwnerUserId
  *   WsMembers   MemberKey (unique, "<workspaceId>:<userId>"), WorkspaceId, UserId, Email, Name, Role, JoinedAt (bigint)
  *   WsInvites   TokenHash (unique), WorkspaceId, Email, InvitedBy, ExpiresAt (bigint), Status
  *   WsChanges   ChangeKey (unique, "<workspaceId>:<seq>"), BatchKey (unique), WorkspaceId, Seq (bigint), AuthorUserId,
- *               DeviceId, Ops (text, up to 10,000 characters), CreatedAt (bigint)
+ *               DeviceId, Ops (text, up to 10,000 characters)
+ * When a row was created is read from Catalyst's own CREATEDTIME column, so Workspaces and WsChanges need no CreatedAt column.
  * Uniqueness must be enforced by the database on insert: the sequence numbers and single-use invites depend on it.
  * Every value placed in a query is checked against a strict pattern first; free text (names, emails) is only ever inserted.
  */
@@ -25,6 +26,11 @@ const seqNumber = (v) => { if (!Number.isSafeInteger(v) || v < 0) throw new Erro
 const changeKey = (ws, seq) => `${wsKey(ws)}:${String(seqNumber(seq)).padStart(12, '0')}`;
 const duplicate = (error) => /duplicate|unique|already.exists/i.test(`${error && error.code || ''} ${error && error.message || ''}`);
 const num = (v) => Number(v) || 0;
+/** Catalyst's own created time ("2026-10-04 12:30:00:123") as milliseconds, or 0 if it cannot be read. */
+const createdAt = (r) => {
+	const m = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:[.:](\d{1,3}))?/.exec(String((r && r.CREATEDTIME) || ''));
+	return m ? Date.parse(`${m[1]}T${m[2]}.${(m[3] || '0').padEnd(3, '0')}Z`) || 0 : 0;
+};
 
 function createWorkspacesStorage(req, { tables = TABLES, app = catalyst.initialize(req, { type: 'advancedio', appName: 'backup', scope: 'admin' }) } = {}) {
 	const t = { ...TABLES, ...tables };
@@ -35,15 +41,15 @@ function createWorkspacesStorage(req, { tables = TABLES, app = catalyst.initiali
 	const insert = (table, row) => app.datastore().table(table).insertRow(row);
 
 	const member = (r) => r && { workspaceId: r.WorkspaceId, userId: String(r.UserId), email: r.Email, name: r.Name, role: r.Role, joinedAt: num(r.JoinedAt), rowId: r.ROWID };
-	const change = (r) => r && { seq: num(r.Seq), workspaceId: r.WorkspaceId, authorUserId: String(r.AuthorUserId), deviceId: r.DeviceId, ops: JSON.parse(r.Ops), createdAt: num(r.CreatedAt), batchKey: r.BatchKey };
+	const change = (r) => r && { seq: num(r.Seq), workspaceId: r.WorkspaceId, authorUserId: String(r.AuthorUserId), deviceId: r.DeviceId, ops: JSON.parse(r.Ops), createdAt: createdAt(r), batchKey: r.BatchKey };
 
 	return {
 		async createWorkspace(w) {
-			await insert(t.workspaces, { WorkspaceId: wsKey(w.workspaceId), Name: w.name, OwnerUserId: userKey(w.ownerUserId), CreatedAt: w.createdAt });
+			await insert(t.workspaces, { WorkspaceId: wsKey(w.workspaceId), Name: w.name, OwnerUserId: userKey(w.ownerUserId) });
 		},
 		async getWorkspace(id) {
 			const r = (await select(t.workspaces, `WorkspaceId='${wsKey(id)}'`, '', 1))[0];
-			return r ? { workspaceId: r.WorkspaceId, name: r.Name, ownerUserId: String(r.OwnerUserId), createdAt: num(r.CreatedAt) } : null;
+			return r ? { workspaceId: r.WorkspaceId, name: r.Name, ownerUserId: String(r.OwnerUserId), createdAt: createdAt(r) } : null;
 		},
 		async addMember(m) {
 			try {
@@ -88,7 +94,7 @@ function createWorkspacesStorage(req, { tables = TABLES, app = catalyst.initiali
 			try {
 				await insert(t.changes, {
 					ChangeKey: changeKey(c.workspaceId, c.seq), BatchKey: batchKey(c.batchKey), WorkspaceId: c.workspaceId, Seq: c.seq,
-					AuthorUserId: userKey(c.authorUserId), DeviceId: c.deviceId, Ops: JSON.stringify(c.ops), CreatedAt: c.createdAt,
+					AuthorUserId: userKey(c.authorUserId), DeviceId: c.deviceId, Ops: JSON.stringify(c.ops),
 				});
 				return 'ok';
 			} catch (error) {
