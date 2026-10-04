@@ -40,6 +40,11 @@ export interface ApiTask {
   /** Set when the task was added from a database's text column via the @ menu. */
   sourceRecordId?: string | null;
   sourceFieldId?: string | null;
+  /** Shared workspaces: who the task is for. Absent from older servers and personal tasks. */
+  assigneeUserId?: string | null;
+  assigneeName?: string | null;
+  assignedBy?: string | null;
+  assignedAt?: string | null;
 }
 
 export interface ApiList {
@@ -82,6 +87,9 @@ export interface TaskCreateRequest {
   /** The database record + field this task was added from; '' clears on update. */
   sourceRecordId?: string;
   sourceFieldId?: string;
+  /** Who the task is for (a member's user id); '' clears on update. */
+  assigneeUserId?: string;
+  assigneeName?: string;
   /** Stable local id used only by the one-time offline migration. */
   clientId?: string;
 }

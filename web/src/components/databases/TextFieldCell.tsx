@@ -87,7 +87,7 @@ export function TextFieldCell({ recordId, fieldId, value, ariaLabel, onChange, l
     return () => document.removeEventListener('mousedown', handler);
   }, [mention]);
 
-  const handleMentionSelect = useCallback(async (listId: string, quadrant: Quadrant) => {
+  const handleMentionSelect = useCallback(async (listId: string, quadrant: Quadrant, assignee?: { userId: string; name: string }) => {
     if (!mention || !linking) return;
     const el = inputRef.current;
     const original = el?.value ?? draft;
@@ -104,7 +104,7 @@ export function TextFieldCell({ recordId, fieldId, value, ariaLabel, onChange, l
     commit(content);
     requestAnimationFrame(() => el?.setSelectionRange(caret, caret));
 
-    const task = await linking.createTask({ listId, quadrant, title, recordId, fieldId });
+    const task = await linking.createTask({ listId, quadrant, title, recordId, fieldId, ...(assignee ? { assignee } : {}) });
     setPending(false);
 
     if (!task) {
@@ -170,7 +170,7 @@ export function TextFieldCell({ recordId, fieldId, value, ariaLabel, onChange, l
           pending={false}
           message={mention.message}
           contextLabel="Column"
-          onSelect={(listId, quadrant) => { void handleMentionSelect(listId, quadrant); }}
+          onSelect={(listId, quadrant, assignee) => { void handleMentionSelect(listId, quadrant, assignee); }}
           onClose={() => setMention(null)}
         />
       )}

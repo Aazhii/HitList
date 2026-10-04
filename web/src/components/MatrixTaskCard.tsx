@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { AssigneeChip } from '@/components/tasks/AssigneeChip';
 import { FileText, Trash2 } from 'lucide-react';
 import { RepeatMark } from '@/components/RepeatMark';
 import { cn } from '@/lib/utils';
@@ -72,7 +73,7 @@ export function MatrixTaskCard({
   const fromNote = !!todo.sourceNoteId && !!onOpenNote;
   const hasFieldChips = !!fieldDefs && !!fieldValues
     && fieldDefs.some((f) => f.showOnCard && fieldValues[f.id] !== undefined);
-  const hasMeta = !!categoryConfig || !!dueInfo || !!todo.note || fromNote || hasFieldChips;
+  const hasMeta = !!categoryConfig || !!dueInfo || !!todo.note || fromNote || hasFieldChips || !!todo.assigneeName;
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -112,6 +113,7 @@ export function MatrixTaskCard({
             </span>
           )}
           {fieldDefs && <FieldChips fields={fieldDefs} values={fieldValues} chipClass={CHIP} />}
+          <AssigneeChip userId={todo.assigneeUserId} name={todo.assigneeName} />
           {fromNote && (
             <button
               type="button"
@@ -206,6 +208,8 @@ export function MatrixTaskCard({
           )}
 
           {fieldDefs && <FieldChips fields={fieldDefs} values={fieldValues} chipClass={CHIP} />}
+
+          <AssigneeChip userId={todo.assigneeUserId} name={todo.assigneeName} />
 
           {fromNote && (
             <button

@@ -430,6 +430,8 @@ export function apiTaskToTodo(t: ApiTask) {
     sourceBlockId:         t.sourceBlockId || undefined,
     sourceRecordId:        t.sourceRecordId || undefined,
     sourceFieldId:         t.sourceFieldId || undefined,
+    assigneeUserId:        t.assigneeUserId || undefined,
+    assigneeName:          t.assigneeName || undefined,
   };
 }
 

@@ -130,6 +130,9 @@ export interface Todo {
   /** Set when added from a database's text column via the @ menu. */
   sourceRecordId?: string;
   sourceFieldId?: string;
+  /** Shared workspaces: the member the task is for. */
+  assigneeUserId?: string;
+  assigneeName?: string;
 }
 
 export interface KaizenList {
@@ -159,7 +162,7 @@ export interface TaskLinking<Source extends Record<string, string>> {
   tasksLoaded: boolean;
   preferredListId?: string;
   /** Resolves with the created task (real id), or null when it could not be saved. */
-  createTask: (args: { listId: string; quadrant: Quadrant; title: string } & Source) => Promise<Todo | null>;
+  createTask: (args: { listId: string; quadrant: Quadrant; title: string; assignee?: { userId: string; name: string } } & Source) => Promise<Todo | null>;
   updateTaskTitle: (taskId: string, title: string) => void;
   unlinkTask: (taskId: string) => void;
   openTask: (taskId: string) => void;

@@ -191,6 +191,15 @@ export function useAppSync(activeListId?: string): ServerSyncState {
     return () => window.removeEventListener('online', reconnect);
   }, [refresh]);
 
+  // Tasks arrived from outside the page (another member's change in a shared workspace, or a command from Cliq): read them again.
+  useEffect(() => {
+    const changed = () => { void refresh(); };
+    window.addEventListener('hitlist:workspace-data-changed', changed);
+    const bridge = (window as unknown as { hitlistDesktop?: { onCliqCommandsApplied?: (l: () => void) => () => void } }).hitlistDesktop;
+    const stopCliq = bridge?.onCliqCommandsApplied?.(changed);
+    return () => { window.removeEventListener('hitlist:workspace-data-changed', changed); stopCliq?.(); };
+  }, [refresh]);
+
   const createTask = useCallback(async (req: TaskCreateRequest): Promise<ApiTask | null> => {
     clearError();
     if (loading || !req.listId || !lists.some((list) => list.id === req.listId)) {

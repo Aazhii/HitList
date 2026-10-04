@@ -34,6 +34,10 @@ import { ColumnsMenu } from '@/components/tasks/ColumnsMenu';
 import { sortByColumnOrder } from '@/components/tasks/TaskTableView';
 import { TaskDetailPanel } from '@/components/TaskDetailPanel';
 import { AppShell } from '@/components/shell/AppShell';
+import { WorkspaceSwitcher } from '@/components/shell/WorkspaceSwitcher';
+import { AssignedPage } from '@/pages/AssignedPage';
+import { useWorkspaces } from '@/hooks/useWorkspaces';
+import { openWorkspace } from '@/lib/workspaceStore';
 import { Sidebar, type AppView } from '@/components/shell/Sidebar';
 import { AppHeader } from '@/components/shell/AppHeader';
 import { ViewLayoutContext } from '@/components/shell/ViewLayout';
@@ -490,6 +494,7 @@ function UserScopedApp() {
   // Remembered across reloads, same as tasksMode — a refresh must not always
   // dump you back on Tasks.
   const [activeView, setActiveView] = useLocalStorage<AppView>('hitlist-active-view', 'today');
+  const workspaceSnapshot = useWorkspaces();
   // P5.1: a fresh open lands on Today. A refresh or Back carries a history entry (`initialScreen`) and
   // keeps the screen it was on.
   useEffect(() => {
@@ -705,7 +710,7 @@ function UserScopedApp() {
   );
 
   useEffect(() => {
-    if (activeView === 'today' || activeView === 'tasks' || activeView === 'notes' || activeView === 'databases' || activeView === 'calendar' || activeView === 'automations' || activeView === 'library') {
+    if (activeView === 'today' || activeView === 'tasks' || activeView === 'notes' || activeView === 'databases' || activeView === 'calendar' || activeView === 'automations' || activeView === 'library' || activeView === 'assigned') {
       return;
     }
     setActiveView('tasks');
@@ -1054,6 +1059,8 @@ function UserScopedApp() {
       if (changes.quadrant !== undefined) req.quadrant = quadrantMap[changes.quadrant];
       if (changes.status !== undefined)   req.status   = statusMap[changes.status];
       if (changes.recurrence !== undefined) req.recurrence = toApiRecurrence(changes.recurrence);
+      if (changes.assigneeUserId !== undefined)    req.assigneeUserId = changes.assigneeUserId;
+      if (changes.assigneeName !== undefined)      req.assigneeName = changes.assigneeName;
       if (changes.reminderEnabled !== undefined)       req.reminderEnabled = changes.reminderEnabled;
       if (changes.reminderMinutesBefore !== undefined) req.reminderMinutesBefore = changes.reminderMinutesBefore;
 
@@ -1250,7 +1257,7 @@ function UserScopedApp() {
    */
   const createLinkedTask = useCallback(
     async (
-      { listId, quadrant, title }: { listId: string; quadrant: Quadrant; title: string },
+      { listId, quadrant, title, assignee }: { listId: string; quadrant: Quadrant; title: string; assignee?: { userId: string; name: string } },
       source: { sourceNoteId?: string; sourceBlockId?: string; sourceRecordId?: string; sourceFieldId?: string },
     ) => {
       const maxOrder = todosRef.current
@@ -1273,6 +1280,7 @@ function UserScopedApp() {
         sourceBlockId: source.sourceBlockId && safeId(source.sourceBlockId),
         sourceRecordId: source.sourceRecordId && safeId(source.sourceRecordId),
         sourceFieldId: source.sourceFieldId && safeId(source.sourceFieldId),
+        ...(assignee ? { assigneeUserId: assignee.userId, assigneeName: assignee.name } : {}),
       });
       if (!created) {
         toast.error("Couldn't add it to the quadrant", { description: 'Nothing here changed.', duration: 3000 });
@@ -1282,7 +1290,7 @@ function UserScopedApp() {
       setTodos((prev) => (prev.some((t) => t.id === todo.id) ? prev : [todo, ...prev]));
       const listName = lists.find((l) => l.id === listId)?.name;
       toast.success(`Added to ${getQuadrantConfig(quadrant).label}${listName ? ` · ${listName}` : ''}`, {
-        description: title,
+        description: assignee ? `${title} · for ${assignee.name}` : title,
         duration: 2500,
       });
       return todo;
@@ -1291,14 +1299,14 @@ function UserScopedApp() {
   );
 
   const handleCreateLinkedTask = useCallback<NoteTaskLinking['createTask']>(
-    ({ listId, quadrant, title, noteId, blockId }) =>
-      createLinkedTask({ listId, quadrant, title }, { sourceNoteId: noteId, sourceBlockId: blockId }),
+    ({ listId, quadrant, title, assignee, noteId, blockId }) =>
+      createLinkedTask({ listId, quadrant, title, assignee }, { sourceNoteId: noteId, sourceBlockId: blockId }),
     [createLinkedTask],
   );
 
   const handleCreateLinkedTaskFromRecord = useCallback<DatabaseTaskLinking['createTask']>(
-    ({ listId, quadrant, title, recordId, fieldId }) =>
-      createLinkedTask({ listId, quadrant, title }, { sourceRecordId: recordId, sourceFieldId: fieldId }),
+    ({ listId, quadrant, title, assignee, recordId, fieldId }) =>
+      createLinkedTask({ listId, quadrant, title, assignee }, { sourceRecordId: recordId, sourceFieldId: fieldId }),
     [createLinkedTask],
   );
 
@@ -1571,8 +1579,8 @@ function UserScopedApp() {
     />
   );
 
-  const shellView = activeView === 'today' || activeView === 'notes' || activeView === 'databases' || activeView === 'calendar' || activeView === 'automations' || activeView === 'library' ? activeView : 'tasks';
-  const crumb1 = shellView === 'today' ? 'Today' : shellView === 'notes' ? 'Notes' : shellView === 'databases' ? 'Databases' : shellView === 'calendar' ? 'Calendar' : shellView === 'automations' ? 'Automations' : shellView === 'library' ? 'Home' : 'Tasks';
+  const shellView = activeView === 'today' || activeView === 'assigned' || activeView === 'notes' || activeView === 'databases' || activeView === 'calendar' || activeView === 'automations' || activeView === 'library' ? activeView : 'tasks';
+  const crumb1 = shellView === 'today' ? 'Today' : shellView === 'assigned' ? 'Assigned to me' : shellView === 'notes' ? 'Notes' : shellView === 'databases' ? 'Databases' : shellView === 'calendar' ? 'Calendar' : shellView === 'automations' ? 'Automations' : shellView === 'library' ? 'Home' : 'Tasks';
   const openPageName = (kind: 'note' | 'database', id: string | null) =>
     id ? pageDirectory.find((p) => p.kind === kind && p.id === id)?.name : undefined;
   const crumb2 = shellView === 'notes' ? openPageName('note', activeNoteId)
@@ -1623,6 +1631,7 @@ function UserScopedApp() {
             activeView={shellView}
             onViewChange={setActiveView}
             onSearch={() => setPaletteOpen(true)}
+            workspace={<WorkspaceSwitcher />}
             pages={
               <PageSections
                 favorites={favoritePages}
@@ -1715,6 +1724,17 @@ function UserScopedApp() {
             onOpenTasks={() => setActiveView('tasks')}
             onOpenSidebar={() => setSidebarOpen(true)}
             dailyLine={{ enabled: dailyLineOn, seenDay: dailyLineSeen, onSeen: setDailyLineSeen, onTurnOff: () => setDailyLineOn(false) }}
+          />
+        ) : activeView === 'assigned' ? (
+          <AssignedPage
+            onOpen={(task) => {
+              setActiveView('tasks');
+              if (task.workspaceId === workspaceSnapshot.active) return;
+              // Saved now, because the page reloads to show the other workspace.
+              try { window.localStorage.setItem('hitlist-active-view', JSON.stringify('tasks')); } catch { /* the view resets to Today */ }
+              void openWorkspace(task.workspaceId);
+            }}
+            onOpenSidebar={() => setSidebarOpen(true)}
           />
         ) : activeView === 'library' ? (
           <LibraryPage

@@ -1,15 +1,18 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { CalendarDays, Leaf, Sun, ListChecks, Search, StickyNote, Table2, Zap } from 'lucide-react';
+import { CalendarDays, Leaf, Sun, ListChecks, Search, StickyNote, Table2, UserCheck, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { useIsDesktop } from '@/components/shell/ViewLayout';
+import { useWorkspaces } from '@/hooks/useWorkspaces';
 
-export type AppView = 'tasks' | 'notes' | 'databases' | 'calendar' | 'automations' | 'library' | 'today';
+export type AppView = 'tasks' | 'notes' | 'databases' | 'calendar' | 'automations' | 'library' | 'today' | 'assigned';
 
 const VIEWS: ReadonlyArray<{ id: AppView; label: string; icon: typeof ListChecks }> = [
   // The front door: the one task to do next.
   { id: 'today', label: 'Today', icon: Sun },
   { id: 'tasks', label: 'Tasks', icon: ListChecks },
+  // Only shown when there are shared workspaces to be assigned in.
+  { id: 'assigned', label: 'Assigned to me', icon: UserCheck },
   { id: 'notes', label: 'Notes', icon: StickyNote },
   { id: 'databases', label: 'Databases', icon: Table2 },
   // One calendar for everything that has a date: tasks and database records.
@@ -30,6 +33,8 @@ export interface SidebarProps {
   pages?: ReactNode;
   /** Opens the ⌘K palette. */
   onSearch?: () => void;
+  /** The workspace row at the top (the switcher); the plain app name when omitted. */
+  workspace?: ReactNode;
   /** Whether the sidebar's mobile sheet is open, and how to change that. */
   mobileOpen: boolean;
   onMobileOpenChange: (open: boolean) => void;
@@ -56,6 +61,7 @@ export function Sidebar({
   contextFoot,
   pages,
   onSearch,
+  workspace,
   mobileOpen,
   onMobileOpenChange,
 }: SidebarProps) {
@@ -66,7 +72,7 @@ export function Sidebar({
     if (isDesktop) onMobileOpenChange(false);
   }, [isDesktop, onMobileOpenChange]);
 
-  const body = <SidebarBody activeView={activeView} onViewChange={onViewChange} counts={counts} context={context} contextFoot={contextFoot} pages={pages} onSearch={onSearch} />;
+  const body = <SidebarBody activeView={activeView} onViewChange={onViewChange} counts={counts} context={context} contextFoot={contextFoot} pages={pages} onSearch={onSearch} workspace={workspace} />;
 
   if (isDesktop) {
     return (
@@ -87,15 +93,21 @@ export function Sidebar({
   );
 }
 
-function SidebarBody({ activeView, onViewChange, counts, context, contextFoot, pages, onSearch }: Omit<SidebarProps, 'mobileOpen' | 'onMobileOpenChange'>) {
+function SidebarBody({ activeView, onViewChange, counts, context, contextFoot, pages, onSearch, workspace }: Omit<SidebarProps, 'mobileOpen' | 'onMobileOpenChange'>) {
+  const shared = useWorkspaces();
+  const views = VIEWS.filter((v) => v.id !== 'assigned' || (shared.available && shared.workspaces.length > 0));
   return (
     <div className="flex h-full min-h-0 flex-col">
       {/* Logo / workspace row */}
-      <div className="flex flex-shrink-0 items-center gap-2 px-3.5 pt-3 pb-1.5">
-        <span className="flex size-[22px] flex-shrink-0 items-center justify-center rounded-[4px] bg-a-accent" aria-hidden>
-          <Leaf className="size-[13px] text-white" strokeWidth={1.75} />
-        </span>
-        <span className="text-[14px] font-semibold text-a-ink">HitList</span>
+      <div className="flex min-w-0 flex-shrink-0 items-center gap-2 px-3.5 pt-3 pb-1.5">
+        {workspace ?? (
+          <>
+            <span className="flex size-[22px] flex-shrink-0 items-center justify-center rounded-[4px] bg-a-accent" aria-hidden>
+              <Leaf className="size-[13px] text-white" strokeWidth={1.75} />
+            </span>
+            <span className="text-[14px] font-semibold text-a-ink">HitList</span>
+          </>
+        )}
       </div>
 
       {/* Search row: opens the ⌘K palette. */}
@@ -113,7 +125,7 @@ function SidebarBody({ activeView, onViewChange, counts, context, contextFoot, p
 
       {/* Primary nav */}
       <nav aria-label="Views" className="flex flex-shrink-0 flex-col gap-[1px] px-2 pt-1.5 pb-2">
-        {VIEWS.map(({ id, label, icon: Icon }) => {
+        {views.map(({ id, label, icon: Icon }) => {
           const active = id === activeView;
           const count = counts?.[id];
           return (

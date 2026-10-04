@@ -208,6 +208,18 @@ async function openWindow() {
   let stopAlertsSchedule;
   let stopUpdateSchedule;
 
+  // The shared workspace the person has open, remembered per account. Requests for tasks, lists and stats carry it; notes and
+  // databases stay personal.
+  const activeFile = path.join(userDataDir, 'active-workspace.json');
+  const readActive = () => {
+    try { const v = JSON.parse(fs.readFileSync(activeFile, 'utf8')); return v && v.userId === account?.userId && /^[A-Za-z0-9_-]{43}$/.test(v.workspaceId) ? v.workspaceId : null; } catch { return null; }
+  };
+  let activeWorkspace = null;
+  const writeActive = (workspaceId) => {
+    activeWorkspace = workspaceId;
+    try { fs.writeFileSync(activeFile, JSON.stringify({ userId: account?.userId, workspaceId }), { mode: 0o600 }); } catch { /* kept in memory */ }
+  };
+
   // Name the signed-in account on every request the app makes to its own local server, and only to it.
   win.webContents.session.webRequest.onBeforeSendHeaders({ urls: [`http://127.0.0.1:${port}/*`] }, (details, callback) => {
     const headers = { ...details.requestHeaders };
@@ -215,6 +227,7 @@ async function openWindow() {
       headers['X-Hitlist-Desktop-Token'] = DESKTOP_TOKEN;
       headers['X-Hitlist-Desktop-Owner'] = ownerFor(account.userId);
       headers['X-Hitlist-Desktop-User'] = account.userId;
+      if (activeWorkspace && /^\/api\/(tasks|lists|stats)(\/|$)/.test(new URL(details.url).pathname)) headers['X-Hitlist-Workspace'] = activeWorkspace;
     }
     callback({ requestHeaders: headers });
   });
@@ -313,7 +326,7 @@ async function openWindow() {
   win.webContents.session.webRequest.onCompleted?.({ urls: [`http://127.0.0.1:${port}/api/*`] }, (details) => {
     if (details.method !== 'GET' && details.statusCode < 300 && /\/api\/(tasks|lists)(\/|$|\?)/.test(details.url)) workspaces.kick();
   });
-  if (account) void workspaces.start();
+  if (account) { activeWorkspace = readActive(); void workspaces.start(); }
   const cloudFetch = (urlPath) => auth.getSession().fetch(`${BACKUP_FUNCTION_URL}${urlPath}`);
   const restore = createRestore({
     getAccount: () => account,
@@ -359,18 +372,28 @@ async function openWindow() {
   /** Set at sign-in, spent by the first check afterwards: that check may look in the cloud even if there is data here. */
   let justSignedIn = false;
 
-  const publicAccount = () => (account ? { email: account.email } : null);
+  const publicAccount = () => (account ? { email: account.email, userId: account.userId } : null);
   for (const channel of [
     'account:get', 'account:signIn', 'account:signOut', 'restore:check', 'restore:run',
     'cliq:get', 'cliq:set', 'cliq:test', 'update:status', 'update:check',
     'update:download', 'update:cancel', 'update:install', 'backup:status', 'backup:now',
     'cliq:connection:get', 'cliq:connection:start', 'cliq:connection:confirm',
     'cliq:connection:enable', 'cliq:connection:fetch', 'cliq:connection:unlink',
-    'ws:refresh', 'ws:create', 'ws:invite', 'ws:accept', 'ws:remove', 'ws:leave', 'ws:status',
+    'ws:refresh', 'ws:active', 'ws:select', 'ws:create', 'ws:invite', 'ws:accept', 'ws:remove', 'ws:leave', 'ws:status',
   ]) ipcMain.removeHandler(channel);
   ipcMain.handle('account:get', () => publicAccount());
   const text = (v) => (typeof v === 'string' ? v : '');
   ipcMain.handle('ws:status', () => workspaces.status());
+  ipcMain.handle('ws:active', () => ({ workspaceId: activeWorkspace }));
+  ipcMain.handle('ws:select', async (_e, o) => {
+    const id = typeof o?.workspaceId === 'string' ? o.workspaceId : null;
+    if (id === null) { writeActive(null); return { ok: true, workspaceId: null }; }
+    let known = [];
+    try { known = JSON.parse((await localGet('/api/sync/workspaces')).toString('utf8')); } catch { /* none */ }
+    if (!known.some((w) => w.workspaceId === id)) return { ok: false, reason: 'unknown-workspace' };
+    writeActive(id);
+    return { ok: true, workspaceId: id };
+  });
   ipcMain.handle('ws:refresh', async () => { try { await workspaces.refresh(); return { ok: true }; } catch { return { ok: false, reason: 'offline' }; } });
   ipcMain.handle('ws:create', (_e, o) => workspaces.create({ name: text(o?.name), listIds: Array.isArray(o?.listIds) ? o.listIds.filter((x) => typeof x === 'string') : [] }));
   ipcMain.handle('ws:invite', (_e, o) => workspaces.invite(text(o?.workspaceId), text(o?.email)));
@@ -387,6 +410,7 @@ async function openWindow() {
       // After the page has asked /api/session (which brings the old local workspace into the account), not before.
       setTimeout(() => { void backup.backupNow('signed-in'); }, 15_000);
       void connection.get();
+      activeWorkspace = readActive();
       void workspaces.start();
     }
     return publicAccount();
@@ -421,6 +445,7 @@ async function openWindow() {
   ipcMain.handle('account:signOut', async () => {
     connection.stop();
     workspaces.stop();
+    activeWorkspace = null;
     // The pre-logout hook: one last backup first, so signing out does not leave recent work only on this machine. Signing out
     // goes ahead either way (offline included); the page is told how the backup went and says so if it did not.
     const outcome = await Promise.race([

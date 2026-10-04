@@ -25,6 +25,8 @@ import { QuadrantPicker } from '@/components/tasks/QuadrantPicker';
 import { CATEGORIES, getQuadrantConfig } from '@/types/todo';
 import type { Todo, TodoStatus, Quadrant } from '@/types/todo';
 import { getDueInfo } from '@/components/MatrixTaskCard';
+import { useWorkspaces } from '@/hooks/useWorkspaces';
+import { memberLabel } from '@/lib/workspaceMessage';
 import { TaskFieldsSection } from '@/components/fields/TaskFieldsSection';
 import type { FieldDef, FieldValue } from '@/types/fields';
 
@@ -94,6 +96,9 @@ export function TaskDetailPanel({
   const [dueDate, setDueDate] = useState(todo?.dueDate ?? '');
   const [dueTime, setDueTime] = useState(todo?.dueTime ?? '');
   const [category, setCategory] = useState(todo?.category ?? '');
+  const [assignee, setAssignee] = useState(todo?.assigneeUserId ?? '');
+  const workspaces = useWorkspaces();
+  const members = workspaces.current && workspaces.current.state === 'active' ? workspaces.current.members : [];
   const [quadrant, setQuadrant] = useState<Quadrant>(todo?.quadrant ?? 'schedule');
   const [status, setStatus] = useState<TodoStatus>(todo?.status ?? 'todo');
   /** 'off', or the minutes before the due time the reminder fires. */
@@ -112,6 +117,7 @@ export function TaskDetailPanel({
     setDueDate(todo.dueDate ?? '');
     setDueTime(todo.dueTime ?? '');
     setCategory(todo.category ?? '');
+    setAssignee(todo.assigneeUserId ?? '');
     setQuadrant(todo.quadrant ?? 'schedule');
     setStatus(todo.status ?? 'todo');
     setReminder(todo.reminderEnabled ? String(todo.reminderMinutesBefore ?? getDefaultReminderMinutes()) : 'off');
@@ -130,6 +136,10 @@ export function TaskDetailPanel({
       dueDate: dueDate || undefined,
       dueTime: dueTime || undefined,
       category: category || undefined,
+      // Only sent in a shared workspace, and only when it changed: '' means "no one".
+      ...(members.length > 0 && assignee !== (todo.assigneeUserId ?? '')
+        ? { assigneeUserId: assignee, assigneeName: assignee ? memberLabel(members.find((m) => m.userId === assignee) ?? {}) : '' }
+        : {}),
       quadrant,
       // A repeat needs a date to repeat from.
       recurrence: dueDate ? recurrence : '',
@@ -142,7 +152,7 @@ export function TaskDetailPanel({
     }
     onUpdate(todo.id, changes);
     setIsDirty(false);
-  }, [todo, text, note, dueDate, dueTime, category, quadrant, status, reminder, recurrence, onUpdate, onStatusChange]);
+  }, [todo, text, note, dueDate, dueTime, category, assignee, members, quadrant, status, reminder, recurrence, onUpdate, onStatusChange]);
 
   // Auto-save on close if dirty
   const handleClose = useCallback(() => {
@@ -321,6 +331,23 @@ export function TaskDetailPanel({
               </SelectContent>
             </Select>
           </div>
+
+          {members.length > 0 && (
+            <div className="flex flex-col gap-2">
+              <Label className={LABEL}>Assigned to</Label>
+              <Select value={assignee || '__none__'} onValueChange={(v) => { setAssignee(v === '__none__' ? '' : v); markDirty(); }}>
+                <SelectTrigger className="w-full" aria-label="Assigned to">
+                  <SelectValue placeholder="No one" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__"><span className="text-a-faint">No one</span></SelectItem>
+                  {members.map((m) => (
+                    <SelectItem key={m.userId} value={m.userId}>{memberLabel(m)}{m.userId === workspaces.me?.userId ? ' (you)' : ''}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           {fields && (
             <TaskFieldsSection

@@ -775,7 +775,7 @@ export function NoteEditor({
     });
   }, [blocks, linking, noteId, pendingLinks]);
 
-  const handleMentionSelect = useCallback(async (listId: string, quadrant: Quadrant) => {
+  const handleMentionSelect = useCallback(async (listId: string, quadrant: Quadrant, assignee?: { userId: string; name: string }) => {
     if (!mention || !linking || !noteId) return;
     const { blockId, trigger } = mention;
     const block = blocks.find((b) => b.id === blockId);
@@ -794,7 +794,7 @@ export function NoteEditor({
     onUpdateBlock(blockId, { content });
     pendingSelection.current = { id: blockId, start: caret, end: caret };
 
-    const task = await linking.createTask({ listId, quadrant, title, noteId, blockId });
+    const task = await linking.createTask({ listId, quadrant, title, noteId, blockId, ...(assignee ? { assignee } : {}) });
 
     setPendingLinks((prev) => {
       const next = new Set(prev);
@@ -1066,7 +1066,7 @@ export function NoteEditor({
           pending={false}
           message={mention.message}
           contextLabel="Note block"
-          onSelect={(listId, quadrant) => { void handleMentionSelect(listId, quadrant); }}
+          onSelect={(listId, quadrant, assignee) => { void handleMentionSelect(listId, quadrant, assignee); }}
           onClose={() => setMention(null)}
         />
       )}

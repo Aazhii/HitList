@@ -5,11 +5,16 @@
  *
  * The editor keeps focus in its textarea throughout and forwards navigation keys here through
  * the imperative handle: arrows move the quadrant, ↵ / Tab adds, Esc closes.
+ *
+ * In an open shared workspace the card also lists its members ("Assign to"): typing a name after the "@" picks that person,
+ * and the task is created for them. Without members (a personal workspace) the card is unchanged.
  */
 import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { QUADRANTS, type KaizenList, type Quadrant } from '@/types/todo';
+import { useWorkspaces } from '@/hooks/useWorkspaces';
+import { initialOf, memberLabel } from '@/lib/workspaceMessage';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 export interface MentionMenuHandle {
@@ -30,7 +35,7 @@ interface MentionMenuProps {
   message?: string | null;
   /** What is being added to a quadrant (a note block, a column); kept for callers, the card's title is fixed. */
   contextLabel: string;
-  onSelect: (listId: string, quadrant: Quadrant) => void;
+  onSelect: (listId: string, quadrant: Quadrant, assignee?: { userId: string; name: string }) => void;
   onClose: () => void;
 }
 
@@ -43,6 +48,13 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
 ) {
   const [quadrant, setQuadrant] = useState<Quadrant>(DEFAULT_QUADRANT);
   const [listId, setListId] = useState<string | undefined>(preferredListId ?? lists[0]?.id);
+  const workspaces = useWorkspaces();
+  const people = useMemo(
+    () => (workspaces.current && workspaces.current.state === 'active' ? workspaces.current.members : []),
+    [workspaces.current],
+  );
+  const [personId, setPersonId] = useState<string | null>(null);
+  const person = people.find((m) => m.userId === personId) ?? null;
 
   const orderedLists = useMemo(() => {
     const pref = lists.find((l) => l.id === preferredListId);
@@ -56,13 +68,16 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
     if (!q) return;
     const quad = QUADRANTS.find((x) => x.label.toLowerCase().startsWith(q) || x.id.startsWith(q));
     if (quad) { setQuadrant(quad.id); return; }
+    const who = people.find((m) => memberLabel(m).toLowerCase().startsWith(q) || m.email.toLowerCase().startsWith(q));
+    if (who) { setPersonId(who.userId); return; }
     const list = orderedLists.find((l) => l.name.toLowerCase().includes(q));
     if (list) setListId(list.id);
-  }, [q, orderedLists]);
+  }, [q, orderedLists, people]);
 
   const add = () => {
     if (pending || !activeListId) return;
-    onSelect(activeListId, quadrant);
+    if (person) onSelect(activeListId, quadrant, { userId: person.userId, name: memberLabel(person) });
+    else onSelect(activeListId, quadrant);
   };
 
   useImperativeHandle(ref, () => ({
@@ -83,10 +98,10 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
         default: return false;
       }
     },
-  }), [quadrant, message, pending, activeListId, onClose]);
+  }), [quadrant, message, pending, activeListId, onClose, person]);
 
   const left = Math.max(8, Math.min(position.left, window.innerWidth - CARD_W - 8));
-  const estHeight = message ? 96 : 272;
+  const estHeight = message ? 96 : 272 + (people.length > 0 ? 64 : 0);
   const top = position.top + estHeight > window.innerHeight - 8 ? Math.max(8, position.top - estHeight - 30) : position.top;
 
   return (
@@ -129,6 +144,42 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
             })}
           </div>
 
+          {people.length > 0 && (
+            <div className="flex flex-col gap-1">
+              <span id="mention-person-label">Assign to</span>
+              <div role="radiogroup" aria-labelledby="mention-person-label" className="flex flex-wrap gap-1.5">
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={!person}
+                  disabled={pending}
+                  onClick={() => setPersonId(null)}
+                  className={cn('h-7 rounded-[4px] border px-2.5 text-[11px] font-semibold', !person ? 'border-a-accent text-a-accent-700' : 'border-a-line text-a-muted hover:text-a-ink')}
+                >
+                  No one
+                </button>
+                {people.map((m) => {
+                  const on = person?.userId === m.userId;
+                  return (
+                    <button
+                      key={m.userId}
+                      type="button"
+                      role="radio"
+                      aria-checked={on}
+                      disabled={pending}
+                      onClick={() => setPersonId(m.userId)}
+                      title={m.email}
+                      className={cn('flex h-7 items-center gap-1.5 rounded-[4px] border px-2 text-[11px] font-semibold', on ? 'border-a-accent text-a-accent-700' : 'border-a-line text-a-muted hover:text-a-ink')}
+                    >
+                      <span className="flex size-[16px] items-center justify-center rounded-full bg-a-line text-[11px] text-a-ink" aria-hidden>{initialOf(memberLabel(m))}</span>
+                      {memberLabel(m)}{m.userId === workspaces.me?.userId ? ' (you)' : ''}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           <div className="flex flex-col gap-1">
             <span id="mention-list-label">List</span>
             <Select value={activeListId} onValueChange={setListId} disabled={pending || orderedLists.length === 0}>
@@ -157,7 +208,7 @@ export const MentionMenu = forwardRef<MentionMenuHandle, MentionMenuProps>(funct
               className="flex h-7 items-center gap-1.5 rounded-[3px] bg-a-accent px-3 text-[11px] font-semibold text-white transition-colors duration-[120ms] hover:bg-a-accent-600 disabled:opacity-50"
             >
               {pending && <Loader2 className="size-3 animate-spin" aria-hidden />}
-              Add task
+              {person ? `Add task for ${memberLabel(person)}` : 'Add task'}
             </button>
           </div>
         </>
