@@ -108,6 +108,12 @@ cloud: ordered change log in Data Store ─> Ably doorbell {seq} ─> other comp
   API tests: 47 passed; desktop: 122; function: 55; web: 595 plus design/types/lint; scratch E2E: 16/16. Scratch servers and data were
   cleaned up. This is not proof of live Catalyst/Ably synchronization.
 - Free-tier cost: one Data Store insert per batch (≈5,000 inserts per 30 days for the whole project).
+- Workspace live-sync recovery now retries known subscription/channel failures with backoff and catches up without logout. The
+  workspace menu exposes status and **Sync now**. Failed publish results are returned as `signalDelivered: false`; desktop retains
+  the batch for deduplicated republishing. Account-scoped operation-ID checkpoints preserve batch identity across restart and new
+  edits. No idle polling or independent cloud retry worker was added. These source changes need a desktop rebuild and separately
+  approved backup deployment. Verify Ably server permissions include Publish/Subscribe on `hitlist:ws:*`; an inbox-only key is
+  insufficient. Live two-account recovery has not been verified by the assistant.
 
 ### 3.6 Notes: Tab / Shift+Tab indent
 `NoteBlock.indent` (optional, 0-6). Pure helpers in `web/src/lib/noteBlocks.ts` (`indentBlock`, `outdentBlock`, `normalizeIndents`,

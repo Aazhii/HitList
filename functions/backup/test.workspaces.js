@@ -129,6 +129,21 @@ test('retrying the same batch returns the same number and stores nothing new', a
 	assert.equal(ctx.store.changes.length, 1);
 });
 
+test('a failed notification is reported and a batch retry republishes without another insert', async () => {
+	let delivered = false;
+	let attempts = 0;
+	const ctx = setup({ publish: async () => { attempts += 1; return delivered; } });
+	const ws = await ctx.svc.createWorkspace(alice, { name: 'Team' });
+	const body = { deviceId: 'mac-1', batchId: 'retry-signal', ops: [task('t1', { Title: 'once' })] };
+	assert.equal((await ctx.svc.pushChanges(alice, ws.workspaceId, body)).signalDelivered, false);
+	delivered = true;
+	const retry = await ctx.svc.pushChanges(alice, ws.workspaceId, body);
+	assert.equal(retry.signalDelivered, true);
+	assert.equal(retry.duplicate, true);
+	assert.equal(attempts, 2);
+	assert.equal(ctx.store.changes.length, 1);
+});
+
 test('two writers racing for the same number both end up stored, one after the other', async () => {
 	const ctx = setup();
 	const { ws } = await sharedWithBob(ctx);

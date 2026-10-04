@@ -6,7 +6,7 @@ import { ShareWorkspaceDialog } from '@/components/shell/ShareWorkspaceDialog';
 import { JoinWorkspaceDialog } from '@/components/shell/JoinWorkspaceDialog';
 import { MentionMenu } from '@/components/notes/MentionMenu';
 import { AssigneeChip } from '@/components/tasks/AssigneeChip';
-import { pageControls, refreshWorkspaces, resetWorkspaceStore, type SharedWorkspace } from '@/lib/workspaceStore';
+import { pageControls, refreshWorkspaces, resetWorkspaceStore, type SharedWorkspace, type WorkspaceSyncStatus } from '@/lib/workspaceStore';
 
 const WS = 'W'.repeat(43);
 const TOKEN = 'abcDEF0123456789abcDEF0123456789abcDEF01234';
@@ -50,6 +50,41 @@ beforeEach(() => { resetWorkspaceStore(); pageControls.reload = vi.fn(); });
 afterEach(() => { delete (window as unknown as { hitlistDesktop?: unknown }).hitlistDesktop; vi.unstubAllGlobals(); });
 
 describe('WorkspaceSwitcher', () => {
+  it('shows push failures and manually catches up without logging out', async () => {
+    let updateStatus: ((status: WorkspaceSyncStatus) => void) | undefined;
+    const stop = vi.fn();
+    const b = bridge(WS, {
+      status: vi.fn(async () => ({ running: true, pushOn: false, lastError: 'push-unavailable' })),
+      onStatus: vi.fn((listener) => { updateStatus = listener; return stop; }),
+    });
+    serve([team()]);
+    const changed = vi.fn();
+    window.addEventListener('hitlist:workspace-data-changed', changed);
+    const view = render(<WorkspaceSwitcher />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Workspace: Team tasks' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Live sync reconnecting');
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Sync now' }));
+    await waitFor(() => expect(b.workspaces.refresh).toHaveBeenCalledOnce());
+    await waitFor(() => expect(changed).toHaveBeenCalledOnce());
+    expect(pageControls.reload).not.toHaveBeenCalled();
+    await act(async () => { updateStatus?.({ running: true, pushOn: true, lastError: null }); });
+    await userEvent.click(screen.getByRole('button', { name: 'Workspace: Team tasks' }));
+    expect(screen.getByRole('status')).toHaveTextContent('Live sync connected');
+    view.unmount();
+    expect(stop).toHaveBeenCalledOnce();
+    window.removeEventListener('hitlist:workspace-data-changed', changed);
+  });
+
+  it('displays a failed manual sync instead of silently claiming success', async () => {
+    bridge(WS, { refresh: vi.fn(async () => ({ ok: false, reason: 'offline' })) });
+    serve([team()]);
+    render(<WorkspaceSwitcher />);
+    await userEvent.click(await screen.findByRole('button', { name: 'Workspace: Team tasks' }));
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Sync now' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Workspace: Team tasks' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('Sync needs attention');
+  });
+
   it('is just the app name where shared workspaces are not available', () => {
     render(<WorkspaceSwitcher />);
     expect(screen.getByText('HitList')).toBeInTheDocument();

@@ -58,6 +58,21 @@ function createWorkspaceSync({
   fetchTask = async () => null, now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout, uuid = randomUUID,
 }) {
   const deviceFile = path.join(stateDir, 'workspace-device.json');
+  const batchFile = path.join(stateDir, 'workspace-batches.json');
+  let pendingBatches = {};
+  let batchStateError = false;
+  try {
+    const saved = JSON.parse(fs.readFileSync(batchFile, 'utf8'));
+    if (saved && typeof saved === 'object' && !Array.isArray(saved)) pendingBatches = saved;
+    else batchStateError = true;
+  } catch (error) { if (error.code !== 'ENOENT') batchStateError = true; }
+  const saveBatch = (key, ids) => {
+    const next = { ...pendingBatches };
+    if (ids) next[key] = ids; else delete next[key];
+    fs.writeFileSync(`${batchFile}.tmp`, JSON.stringify(next), { mode: 0o600 });
+    fs.renameSync(`${batchFile}.tmp`, batchFile);
+    pendingBatches = next;
+  };
   let deviceId;
   try { deviceId = JSON.parse(fs.readFileSync(deviceFile, 'utf8')).deviceId; } catch { /* first run */ }
   if (typeof deviceId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(deviceId)) {
@@ -73,6 +88,7 @@ function createWorkspaceSync({
   let timers = { flush: null, retry: null };
   let retryStep = 0;
   let lastFlushAt = 0;
+  let refreshing = null;
   const chains = new Map();      // per workspace: one sync at a time
   const state = { lastError: null, skippedFields: 0, rejectedOps: 0 };
 
@@ -98,36 +114,61 @@ function createWorkspaceSync({
   }
 
   /** Reads the account's workspaces from the cloud and mirrors them locally; anything it no longer belongs to is kept read-only. */
-  async function refresh() {
+  function refresh() {
+    if (refreshing?.epoch === epoch) return refreshing.promise;
+    const current = { epoch, promise: null };
+    current.promise = refreshNow().finally(() => { if (refreshing === current) refreshing = null; });
+    refreshing = current;
+    return current.promise;
+  }
+
+  async function refreshNow() {
     const version = epoch;
     if (!me()) return;
     const res = await cloud('GET', '/ws', undefined, { signal: abort?.signal });
-    if (res.status !== 200 || !Array.isArray(res.json?.workspaces)) { fail(res.status === 503 ? 'workspaces-unavailable' : 'cloud-error'); return; }
+    if (res.status !== 200 || !Array.isArray(res.json?.workspaces)) { fail(res.status === 503 ? 'workspaces-unavailable' : 'cloud-error'); scheduleRetry(); return; }
     if (version !== epoch) return;
     const mine = res.json.workspaces;
+    if (['offline', 'cloud-error', 'workspaces-unavailable'].includes(state.lastError)) state.lastError = null;
     const known = await localWorkspaces();
+    if (version !== epoch) return;
     for (const ws of mine) await register(ws, 'active');
+    if (version !== epoch) return;
     const still = new Set(mine.map((w) => w.workspaceId));
     for (const ws of known) {
       if (!still.has(ws.workspaceId) && ws.state === 'active') await register(ws, 'removed');
     }
     onChange(status());
     await ensurePush(mine.map((w) => w.workspaceId));
+    if (version !== epoch) return;
     await Promise.all(mine.map((w) => syncWorkspace(w.workspaceId)));
+    if (mine.length && !stopPush) {
+      if (!state.lastError) fail('push-unavailable');
+      scheduleRetry();
+    }
+    if (!state.lastError && timers.retry) { clearTimer(timers.retry); timers.retry = null; }
   }
 
   // ── sending ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
   async function flush(id) {
     const version = epoch;
+    const batchKey = `${me()}:${id}`;
     for (let round = 0; round < 20; round += 1) {
       const outbox = await local(`/api/sync/outbox?workspaceId=${encodeURIComponent(id)}&limit=${MAX_OPS}`);
-      if (!outbox.ops.length) return true;
+      if (version !== epoch) return false;
+      if (batchStateError) throw new Error('Workspace retry state unavailable');
+      if (!outbox.ops.length) { if (pendingBatches[batchKey]) saveBatch(batchKey, null); return true; }
+      const savedIds = pendingBatches[batchKey];
+      if (savedIds && (!Array.isArray(savedIds) || savedIds.some((opId) => typeof opId !== 'string'))) throw new Error('Invalid workspace retry state');
+      const entries = savedIds ? outbox.ops.filter((entry) => savedIds.includes(entry.opId)) : outbox.ops;
+      if (savedIds && !entries.length) { saveBatch(batchKey, null); continue; }
+      if (savedIds && entries.length !== savedIds.length) throw new Error('Incomplete workspace retry batch');
       // Batches are cut from the front; a batch is a run of queued ops that fits one cloud write.
       const batch = [];
       const opIds = [];
       let size = 2;
-      for (const entry of outbox.ops) {
+      for (const entry of entries) {
         const fitted = fitOp(entry.op);
         state.skippedFields += fitted.skipped;
         const cost = bytes(fitted.ops);
@@ -139,11 +180,14 @@ function createWorkspaceSync({
       if (!batch.length) { await localPost('/api/sync/outbox/ack', { workspaceId: id, opIds }); continue; }
       // The batch id is derived from the queued ops, so a retry after a lost reply is recognised and stored once.
       const batchId = createHash('sha256').update(opIds.join(',')).digest('hex').slice(0, 40);
+      saveBatch(batchKey, opIds);
       const res = await cloud('POST', `/ws/${id}/changes`, { deviceId, batchId, ops: batch }, { signal: abort?.signal });
       if (version !== epoch) return false;
       if (res.status === 200) {
+        if (res.json.signalDelivered === false) throw Object.assign(new Error('Notification unavailable'), { code: 'notification-delayed' });
         await localPost('/api/sync/outbox/ack', { workspaceId: id, opIds });
-        state.lastError = null;
+        saveBatch(batchKey, null);
+        if (state.lastError !== 'push-unavailable') state.lastError = null;
         continue;
       }
       if (res.status === 403) { await markRemoved(id); return false; }
@@ -152,6 +196,7 @@ function createWorkspaceSync({
         // copy still has it, it just is not shared.
         state.rejectedOps += opIds.length;
         await localPost('/api/sync/outbox/ack', { workspaceId: id, opIds });
+        saveBatch(batchKey, null);
         fail('change-rejected');
         continue;
       }
@@ -211,14 +256,17 @@ function createWorkspaceSync({
     return serial(id, async () => {
       const version = epoch;
       try {
-        await flush(id);
+        let sendError;
+        try { await flush(id); } catch (error) { sendError = error; }
         if (version !== epoch) return;
         await pull(id);
-        retryStep = 0;
+        if (sendError) throw sendError;
+        if (stopPush && (!state.lastError || state.lastError === 'offline')) retryStep = 0;
         state.lastError = state.lastError === 'offline' ? null : state.lastError;
         onChange(status());
-      } catch {
-        fail('offline');
+      } catch (error) {
+        if (version !== epoch) return;
+        fail(error?.code === 'notification-delayed' ? 'notification-delayed' : 'offline');
         scheduleRetry();
       }
     });
@@ -236,7 +284,10 @@ function createWorkspaceSync({
     if (timers.retry || !running) return;
     const delay = RETRY_STEPS[Math.min(retryStep, RETRY_STEPS.length - 1)];
     retryStep += 1;
-    timers.retry = setTimer(() => { timers.retry = null; void syncAll().catch(() => {}); }, delay);
+    timers.retry = setTimer(() => {
+      timers.retry = null;
+      void refresh().catch(() => { fail('offline'); scheduleRetry(); });
+    }, delay);
     timers.retry.unref?.();
   }
 
@@ -253,6 +304,7 @@ function createWorkspaceSync({
   }
 
   async function ensurePush(ids) {
+    const version = epoch;
     const key = [...ids].sort().join(',');
     if (key === pushIds && (stopPush || !ids.length)) return;
     if (stopPush) { stopPush(); stopPush = null; }
@@ -272,11 +324,29 @@ function createWorkspaceSync({
           return res.json;
         },
       });
-      stopPush = await push.subscribe({ signal: abort.signal, onSignal: (id) => ring(id), onReconnect: () => { void syncAll().catch(() => {}); } });
+      const stop = await push.subscribe({
+        signal: abort.signal,
+        onSignal: (id) => { if (version === epoch) ring(id); },
+        onReconnect: () => { if (version === epoch) void refresh().catch(() => { fail('offline'); scheduleRetry(); }); },
+        onUnavailable: () => {
+          if (version !== epoch || !running) return;
+          if (stopPush) stopPush();
+          stopPush = null;
+          pushIds = '';
+          fail('push-unavailable');
+          scheduleRetry();
+        },
+      });
+      if (version !== epoch) { stop?.(); return; }
+      stopPush = stop;
+      if (!stop) throw new Error('No workspace subscription');
+      if (state.lastError === 'push-unavailable') state.lastError = null;
     } catch {
+      if (version !== epoch) return;
       stopPush = null;
       pushIds = '';
       fail('push-unavailable');
+      scheduleRetry();
     }
     onChange(status());
   }

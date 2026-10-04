@@ -28,6 +28,13 @@ cloud: ordered change log (Data Store) ──> Ably "something changed" doorbell
    two replicas disagree after simultaneous edits. Incoming application suppresses journaling so it does not enqueue another write.
 - The doorbell carries only a number. After a reconnect, at start and after being offline, the app pulls everything it missed.
 - Nothing runs on a timer while idle. A failed send is retried after 30 s, 1, 2, then 5 minutes, only while something is waiting.
+- Failed initial subscriptions and failed/suspended live channels use the same backoff, refreshing membership and pulling missed
+   changes. Healthy connections do not schedule cloud polling. The workspace menu shows sync status and offers **Sync now**.
+- If a batch is saved but its Ably notification fails, the desktop keeps it queued and retries the same batch. The cloud republishes
+   duplicate batches without inserting them again. Only operation IDs are checkpointed in `workspace-batches.json`, scoped by account
+   and workspace, so newer edits cannot change a retry's identity, including after restart. Recovery requires the sender to be open
+   and signed in; there is no independent cloud retry worker. Old cloud deployments without `signalDelivered` cannot enable this path.
+   Incoming changes are still pulled while an outgoing notification is retrying.
 - Only lists and tasks are shared. Links from a task to someone's own note or database row stay on their computer.
 - Free allowance: every batch is one Data Store insert (about 5,000 inserts per 30 days for the whole project). Batches are sent at
   most once every 5 seconds per computer and join everything changed in between.
@@ -55,6 +62,21 @@ cloud: ordered change log (Data Store) ──> Ably "something changed" doorbell
 3. Deploy: `sh scripts/deploy-backup-function.sh`, and upload `client/invite.html` with the web client
    (`catalyst deploy --only client`).
 4. Everyone must sign in to HitList (a Catalyst account) with the email the invite was sent to.
+
+The Ably server key must allow **Publish and Subscribe on `hitlist:ws:*`**, as well as the existing `hitlist:inbox:*` permissions
+if Cliq is used. An inbox-only key cannot deliver workspace notifications. Desktop tokens remain subscribe-only for the caller's
+specific workspaces. Never paste the key into chat or logs. A successful `/ws/token` response only proves a JWT was generated,
+not that Ably accepted its capabilities.
+
+To verify a release, keep two members signed in to the same workspace, edit a task on one, and check that the other updates without
+logout. Disconnect/reconnect one computer and confirm catch-up. Check **Sync now** and the status during an outage. Local tests use
+fake Ably transports; a real two-account test remains required. Both a desktop rebuild and an approved backup-function deployment
+are needed for the new notification-retry response.
+
+Recovery implementation verification (2026-10-04): 143 desktop tests, 56 function tests, 606 web tests, 47 Java tests, and all 16
+scratch two-replica assertions passed; frontend design, types, lint and diff checks passed. Push-failure tests include increasing
+backoff, late failure, incoming changes during failed publishing, stable retries across restart/new edits, membership restart,
+overlapping refreshes and sign-out cancellation. UI tests cover status events and manual catch-up. These are not live Ably tests.
 
 ## Diagnosed creation failure (2026-10-04)
 

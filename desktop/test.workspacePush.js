@@ -19,7 +19,7 @@ function rig(auth = AUTH) {
       options = o;
       return {
         channels: { get: (name) => ({
-          on: (_e, h) => { handlers[`${name}:attached`] = h; },
+          on: (event, handler) => { handlers[`${name}:${event}`] = handler; },
           off: () => calls.push(`off ${name}`),
           subscribe: async (event, h) => { calls.push(`subscribe ${name} ${event}`); handlers[name] = h; },
           unsubscribe: () => calls.push(`unsubscribe ${name}`),
@@ -85,5 +85,15 @@ test('cancelling stops listening', async () => {
   const r = rig(); const c = new AbortController();
   await r.push.subscribe({ signal: c.signal, onSignal() {}, onReconnect() {} });
   c.abort();
+  assert.ok(r.calls.includes('close'));
+});
+
+test('a channel failure closes the client and requests recovery once', async () => {
+  const r = rig();
+  let failures = 0;
+  await r.push.subscribe({ signal: new AbortController().signal, onSignal() {}, onReconnect() {}, onUnavailable: () => { failures += 1; } });
+  r.handlers[`${CH('a')}:failed`]();
+  r.handlers[`${CH('b')}:suspended`]();
+  assert.equal(failures, 1);
   assert.ok(r.calls.includes('close'));
 });

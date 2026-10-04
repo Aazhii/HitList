@@ -26,7 +26,10 @@ export interface WorkspaceSnapshot {
 }
 
 export type BridgeResult<T = object> = ({ ok: true } & T) | { ok: false; reason: string };
+export interface WorkspaceSyncStatus { running: boolean; pushOn: boolean; lastError: string | null }
 export interface WorkspaceBridge {
+  status?: () => Promise<WorkspaceSyncStatus>;
+  onStatus?: (listener: (status: WorkspaceSyncStatus) => void) => () => void;
   active?: () => Promise<{ workspaceId: string | null }>;
   select?: (o: { workspaceId: string | null }) => Promise<{ ok: boolean; reason?: string }>;
   refresh?: () => Promise<{ ok: boolean; reason?: string }>;

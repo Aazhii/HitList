@@ -15,7 +15,7 @@ function createWorkspacePush({ requestToken, createRealtime = (options) => new (
    * Starts listening. `onSignal(workspaceId, seq)` for each doorbell; `onReconnect()` after every re-attach.
    * Resolves a stop() function, or null when there is nothing to listen to yet (no workspaces).
    */
-  async function subscribe({ signal, onSignal, onReconnect }) {
+  async function subscribe({ signal, onSignal, onReconnect, onUnavailable = () => {} }) {
     if (signal.aborted) throw new Error('Push subscription cancelled');
     let first = await requestToken({ signal });
     const valid = (auth) => auth && typeof auth.channels === 'object' && auth.channels
@@ -28,16 +28,28 @@ function createWorkspacePush({ requestToken, createRealtime = (options) => new (
     let client;
     let closed = false;
     let attachedOnce = 0;
+    let ready = false;
     const channels = [];
+    const unavailable = () => {
+      if (closed || signal.aborted) return;
+      stop();
+      if (ready) onUnavailable();
+    };
     const stop = () => {
       if (closed) return;
       closed = true;
       signal.removeEventListener('abort', stop);
       for (const { channel, handlers } of channels) {
         channel.off('attached', handlers.attached);
+        channel.off('failed', unavailable);
+        channel.off('suspended', unavailable);
         channel.unsubscribe(EVENT, handlers.message);
       }
-      if (client) client.close();
+      if (client) {
+        client.connection?.off('failed', unavailable);
+        client.connection?.off('suspended', unavailable);
+        client.close();
+      }
     };
     signal.addEventListener('abort', stop, { once: true });
     try {
@@ -53,6 +65,8 @@ function createWorkspacePush({ requestToken, createRealtime = (options) => new (
           }).catch(() => callback(new Error('Push authorization unavailable')));
         },
       });
+      client.connection?.on('failed', unavailable);
+      client.connection?.on('suspended', unavailable);
       for (const [workspaceId, name] of Object.entries(expected)) {
         const channel = client.channels.get(name);
         const handlers = {
@@ -63,12 +77,15 @@ function createWorkspacePush({ requestToken, createRealtime = (options) => new (
           attached: () => { attachedOnce += 1; if (attachedOnce > channels.length && !closed && !signal.aborted) void onReconnect(); },
         };
         channel.on('attached', handlers.attached);
+        channel.on('failed', unavailable);
+        channel.on('suspended', unavailable);
         channels.push({ channel, handlers });
       }
       client.connect();
       await Promise.all(channels.map(({ channel, handlers }) => channel.subscribe(EVENT, handlers.message)));
       if (closed || signal.aborted) throw new Error('Push subscription cancelled');
       first = null;
+      ready = true;
       return stop;
     } catch {
       stop();

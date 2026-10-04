@@ -181,17 +181,16 @@ function createWorkspaceService({ store, publish = async () => false, sendInvite
 		const clean = cleanOps(ops);
 		const batchKey = `${workspaceId}:${deviceId}:${batchId}`;
 		const existing = await store.changeByBatch(batchKey);
-		if (existing) return { seq: existing.seq, duplicate: true };
+		if (existing) return { seq: existing.seq, duplicate: true, signalDelivered: await publish(workspaceId, existing.seq) };
 		for (let attempt = 0; attempt < SEQ_RETRIES; attempt += 1) {
 			const seq = (await store.lastSeq(workspaceId)) + 1;
 			const outcome = await store.insertChange({ workspaceId, seq, batchKey, authorUserId: caller.userId, deviceId, ops: clean, createdAt: now() });
 			if (outcome === 'ok') {
-				await publish(workspaceId, seq);
-				return { seq, duplicate: false };
+				return { seq, duplicate: false, signalDelivered: await publish(workspaceId, seq) };
 			}
 			if (outcome === 'duplicate-batch') {
 				const again = await store.changeByBatch(batchKey);
-				if (again) return { seq: again.seq, duplicate: true };
+				if (again) return { seq: again.seq, duplicate: true, signalDelivered: await publish(workspaceId, again.seq) };
 			}
 			// 'duplicate-seq': someone else took that number first; read the new last seq and try the next one.
 		}

@@ -9,6 +9,15 @@ const { createWorkspaceSync, fitOp } = require('./workspaceSync');
 const WS = 'w'.repeat(43);
 const ME = '100001';
 const OTHER = '200002';
+const fixtures = new Set();
+
+test.afterEach(() => {
+  for (const fixture of fixtures) {
+    fixture.engine.stop();
+    fs.rmSync(fixture.dir, { recursive: true, force: true });
+  }
+  fixtures.clear();
+});
 
 function fakeTimers() {
   const queue = [];
@@ -117,7 +126,9 @@ function rig(overrides = {}) {
     fetchTask: async () => ({ title: 'Fetched title' }),
     now: () => clock, setTimer: timers.setTimer, clearTimer: timers.clearTimer, ...overrides,
   });
-  return { engine, cloud, local, push, timers, events, advance: (ms) => { clock += ms; }, dir };
+  const fixture = { engine, cloud, local, push, timers, events, advance: (ms) => { clock += ms; }, dir };
+  fixtures.add(fixture);
+  return fixture;
 }
 
 test('start mirrors the cloud\'s workspaces locally, listens for pushes, and catches up from the cursor', async () => {
@@ -269,6 +280,192 @@ test('no account, no work', async () => {
   await t.engine.start();
   assert.equal(t.push.starts, 0);
   assert.equal(t.local.workspaces.length, 0);
+});
+
+test('a failed push subscription retries, catches up, and stops scheduling once healthy', async () => {
+  let attempts = 0;
+  const t = rig({ createPush: () => ({ subscribe: async () => {
+    attempts += 1;
+    if (attempts === 1) throw new Error('unavailable');
+    return () => {};
+  } }) });
+  try {
+    await t.engine.start();
+    assert.equal(t.engine.status().lastError, 'push-unavailable');
+    assert.equal(t.engine.status().pushOn, false);
+    assert.equal(t.timers.queue[0].ms, 30_000);
+    t.cloud.changes.push({ seq: 1, deviceId: 'other', authorUserId: OTHER, ops: [] });
+    await t.timers.runAll({ includeRetries: true });
+    assert.equal(attempts, 2);
+    assert.equal(t.local.workspaces[0].cursor, 1);
+    assert.equal(t.engine.status().lastError, null);
+    assert.equal(t.engine.status().pushOn, true);
+    assert.equal(t.timers.queue.length, 0);
+  } finally {
+    t.engine.stop();
+    fs.rmSync(t.dir, { recursive: true, force: true });
+  }
+});
+
+test('a saved batch whose notification failed stays queued for a deduplicated retry', async () => {
+  const t = rig();
+  const call = t.cloud.call;
+  let delivered = false;
+  t.cloud.call = async (...args) => {
+    const res = await call(...args);
+    if (args[0] === 'POST' && args[1].endsWith('/changes')) res.json.signalDelivered = delivered;
+    return res;
+  };
+  try {
+    await t.engine.start();
+    t.local.queue(1);
+    t.engine.kick();
+    await t.timers.runAll();
+    assert.equal(t.local.outbox.length, 1);
+    assert.equal(t.engine.status().lastError, 'notification-delayed');
+    t.cloud.changes.push({ seq: 2, deviceId: 'other', authorUserId: OTHER, ops: [{ table: 'tasks', id: 'remote', fields: { Title: 'Incoming' } }] });
+    await t.engine.syncAll();
+    assert.equal(t.local.workspaces[0].cursor, 2);
+    assert.equal(t.local.applied.at(-1).ops[0].fields.Title, 'Incoming');
+    delivered = true;
+    await t.timers.runAll({ includeRetries: true });
+    assert.equal(t.local.outbox.length, 0);
+    assert.equal(t.cloud.changes.length, 2);
+    assert.equal(t.engine.status().lastError, null);
+  } finally {
+    t.engine.stop();
+    fs.rmSync(t.dir, { recursive: true, force: true });
+  }
+});
+
+test('persistent push failures back off and stop cancels recovery', async () => {
+  const t = rig({ createPush: () => ({ subscribe: async () => { throw new Error('unavailable'); } }) });
+  try {
+    await t.engine.start();
+    assert.equal(t.timers.queue[0].ms, 30_000);
+    for (const delay of [60_000, 120_000, 300_000, 300_000]) {
+      await t.timers.queue.shift().fn();
+      await new Promise((resolve) => setImmediate(resolve));
+      assert.equal(t.timers.queue.length, 1);
+      assert.equal(t.timers.queue[0].ms, delay);
+    }
+    t.engine.stop();
+    assert.equal(t.timers.queue.length, 0);
+  } finally { t.engine.stop(); fs.rmSync(t.dir, { recursive: true, force: true }); }
+});
+
+test('successful uploads do not cancel recovery of a failed subscription', async () => {
+  const t = rig({ createPush: () => ({ subscribe: async () => { throw new Error('unavailable'); } }) });
+  try {
+    t.local.queue(1);
+    await t.engine.start();
+    assert.equal(t.local.outbox.length, 0);
+    assert.equal(t.engine.status().lastError, 'push-unavailable');
+    assert.equal(t.timers.queue.length, 1);
+  } finally { t.engine.stop(); fs.rmSync(t.dir, { recursive: true, force: true }); }
+});
+
+test('overlapping refresh requests share one subscription attempt', async () => {
+  let release;
+  let attempts = 0;
+  const t = rig({ createPush: () => ({ subscribe: () => {
+    attempts += 1;
+    return new Promise((resolve) => { release = () => resolve(() => {}); });
+  } }) });
+  try {
+    const starting = t.engine.start();
+    await new Promise((resolve) => setImmediate(resolve));
+    const first = t.engine.refresh();
+    const second = t.engine.refresh();
+    release();
+    await Promise.all([starting, first, second]);
+    assert.equal(attempts, 1);
+  } finally { t.engine.stop(); fs.rmSync(t.dir, { recursive: true, force: true }); }
+});
+
+test('a notification retry preserves its batch across restart and sends new edits separately', async () => {
+  const t = rig();
+  const call = t.cloud.call;
+  let delivered = false;
+  t.cloud.call = async (...args) => {
+    const res = await call(...args);
+    if (args[0] === 'POST' && args[1].endsWith('/changes')) res.json.signalDelivered = delivered;
+    return res;
+  };
+  let restarted;
+  try {
+    await t.engine.start();
+    t.local.queue(1, { Title: 'First' });
+    t.engine.kick();
+    await t.timers.runAll();
+    const originalBatch = t.cloud.posts[0].batchId;
+    t.engine.stop();
+    t.local.queue(1, { Title: 'Later' });
+    delivered = true;
+    restarted = createWorkspaceSync({ stateDir: t.dir, getAccount: () => ({ userId: ME }), localGet: t.local.get, localPost: t.local.post, cloud: t.cloud.call, createPush: t.push.createPush, setTimer: t.timers.setTimer, clearTimer: t.timers.clearTimer });
+    await restarted.start();
+    assert.equal(t.cloud.posts[1].batchId, originalBatch);
+    assert.equal(t.cloud.posts[1].ops.length, 1);
+    assert.equal(t.cloud.posts[2].ops[0].fields.Title, 'Later');
+    assert.equal(t.cloud.changes.length, 2);
+    assert.equal(t.local.outbox.length, 0);
+  } finally { t.engine.stop(); restarted?.stop(); fs.rmSync(t.dir, { recursive: true, force: true }); }
+});
+
+test('a late push failure reconnects and pulls changes missed while disconnected', async () => {
+  let unavailable;
+  let attempts = 0;
+  const t = rig({ createPush: () => ({ subscribe: async (options) => {
+    attempts += 1;
+    unavailable = options.onUnavailable;
+    return () => {};
+  } }) });
+  try {
+    await t.engine.start();
+    unavailable();
+    assert.equal(t.engine.status().pushOn, false);
+    t.cloud.changes.push({ seq: 1, deviceId: 'other', authorUserId: OTHER, ops: [] });
+    await t.timers.runAll({ includeRetries: true });
+    assert.equal(attempts, 2);
+    assert.equal(t.local.workspaces[0].cursor, 1);
+    assert.equal(t.timers.queue.length, 0);
+  } finally { t.engine.stop(); fs.rmSync(t.dir, { recursive: true, force: true }); }
+});
+
+test('a membership refresh restarts subscriptions only when workspace IDs change', async () => {
+  const t = rig();
+  const call = t.cloud.call;
+  let joined = false;
+  t.cloud.call = async (...args) => {
+    const res = await call(...args);
+    if (joined && args[0] === 'GET' && args[1] === '/ws') res.json.workspaces.push({ workspaceId: 'j'.repeat(43), name: 'Joined', role: 'member', members: [] });
+    return res;
+  };
+  try {
+    await t.engine.start();
+    await t.engine.refresh();
+    assert.equal(t.push.starts, 1);
+    joined = true;
+    await t.engine.refresh();
+    assert.equal(t.push.starts, 2);
+    assert.equal(t.push.stops, 1);
+  } finally { t.engine.stop(); fs.rmSync(t.dir, { recursive: true, force: true }); }
+});
+
+test('a delayed subscription is closed instead of retained after sign-out', async () => {
+  let resolvePush;
+  let closed = 0;
+  const t = rig({ createPush: () => ({ subscribe: () => new Promise((resolve) => { resolvePush = resolve; }) }) });
+  try {
+    const starting = t.engine.start();
+    await new Promise((resolve) => setImmediate(resolve));
+    t.engine.stop();
+    resolvePush(() => { closed += 1; });
+    await starting;
+    assert.equal(closed, 1);
+    assert.equal(t.engine.status().pushOn, false);
+    assert.equal(t.timers.queue.length, 0);
+  } finally { t.engine.stop(); fs.rmSync(t.dir, { recursive: true, force: true }); }
 });
 
 test('a workspace this account just joined is pulled from the start', async () => {

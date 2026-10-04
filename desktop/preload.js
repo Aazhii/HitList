@@ -36,6 +36,11 @@ contextBridge.exposeInMainWorld('hitlistDesktop', {
   // Shared workspaces. Everything goes through the shell, which holds the cloud session.
   workspaces: {
     status: () => ipcRenderer.invoke('ws:status'),
+    onStatus: (listener) => {
+      const handler = (_event, status) => listener(status);
+      ipcRenderer.on('workspaces:status', handler);
+      return () => ipcRenderer.removeListener('workspaces:status', handler);
+    },
     active: () => ipcRenderer.invoke('ws:active'),
     select: (options) => ipcRenderer.invoke('ws:select', options),
     refresh: () => ipcRenderer.invoke('ws:refresh'),
