@@ -229,3 +229,35 @@ test('when the app cannot replace itself, the reason is passed on so the screen 
   assert.strictEqual(s.swapBlock, 'disk-image');
   assert.ok(a);
 });
+
+test('an update that is downloaded but not installed is replaced when a newer release appears', async () => {
+  const body = 'hello';
+  const releases = [release('HitList_1.2.0')];
+  const a = makeUpdater({ releases, files: { 'u/dmg': body, 'u/sums': sumsFor(body, 'HitList-1.2.0-arm64.dmg') } });
+  await a.u.check(); await a.u.download();
+  assert.strictEqual(a.u.status().phase, 'ready');
+  const oldFile = a.u.status().file;
+  assert.ok(fs.existsSync(oldFile));
+
+  // Checking again with nothing newer keeps the downloaded one, even without a connection.
+  assert.strictEqual((await a.u.check()).phase, 'ready');
+
+  // 1.3.0 is released: the screen moves to it, and the old file is deleted.
+  releases.push(release('HitList_1.3.0'));
+  const s = await a.u.check();
+  assert.strictEqual(s.phase, 'available');
+  assert.strictEqual(s.latest.version, '1.3.0');
+  assert.strictEqual(s.file, null);
+  assert.ok(!fs.existsSync(oldFile), 'the superseded download is removed');
+});
+
+test('old installers of other versions are removed when a new one is downloaded', async () => {
+  const body = 'hello';
+  const releases = [release('HitList_1.2.0')];
+  const a = makeUpdater({ releases, files: { 'u/dmg': body, 'u/sums': sumsFor(body, 'HitList-1.2.0-arm64.dmg') } });
+  fs.writeFileSync(path.join(a.dir, 'HitList-1.0.5-arm64.dmg'), 'leftover');
+  await a.u.check(); await a.u.download();
+  assert.deepStrictEqual(fs.readdirSync(a.dir), ['HitList-1.2.0-arm64.dmg']);
+  // Offline while the download waits: it is still there to install.
+  a.cloudDown = true;
+});

@@ -99,9 +99,11 @@ function createUpdater({
 
   /** Looks for a newer release. Quiet on failure (offline is normal): the phase becomes 'error' and the next check retries. */
   async function check() {
-    if (['checking', 'downloading', 'verifying', 'installing', 'ready'].includes(state.phase)) return status();
+    if (['checking', 'downloading', 'verifying', 'installing'].includes(state.phase)) return status();
     if (!current) { set({ phase: 'error', error: 'dev-build' }); return status(); }
-    set({ phase: 'checking', error: null });
+    // An update that is downloaded and waiting stays on screen while we look: only a NEWER release replaces it.
+    const staged = state.phase === 'ready' && latest ? latest : null;
+    if (!staged) set({ phase: 'checking', error: null });
     try {
       const res = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=20`, { headers });
       if (!res.ok) throw new Error(`releases ${res.status}`);
@@ -116,7 +118,13 @@ function createUpdater({
         if (!asset) continue;
         if (!best || compareVersions(v, best.parsed) > 0) best = { parsed: v, r, asset };
       }
+      if (staged && !(best && compareVersions(best.parsed, parseVersion(staged.version) || current) > 0)) {
+        set({ checkedAt: now() }); // nothing newer than what is already downloaded
+        return status();
+      }
       if (best && compareVersions(best.parsed, current) > 0) {
+        // A newer release than the downloaded one: the old file is no use any more.
+        if (staged && state.file) fs.rmSync(state.file, { force: true });
         latest = {
           version: best.r.tag_name.replace(/^.*?(\d+\.\d+\.\d+.*)$/, '$1'),
           name: best.r.name || best.r.tag_name,
@@ -131,6 +139,8 @@ function createUpdater({
         set({ phase: 'current', checkedAt: now(), error: null, file: null, progress: null });
       }
     } catch (e) {
+      // Offline while an update is waiting: it is still there to install.
+      if (staged) return status();
       set({ phase: 'error', checkedAt: now(), error: e && e.message ? e.message : 'failed' });
     }
     return status();
@@ -147,6 +157,12 @@ function createUpdater({
     const asset = latest.asset;
     const target = path.join(downloadDir, asset.name);
     const part = `${target}.part`;
+    // Installers of other versions that were downloaded and never used are removed, so they do not pile up.
+    try {
+      for (const name of fs.readdirSync(downloadDir)) {
+        if (name !== asset.name && /^HitList.*\.(zip|dmg|exe|AppImage|deb)$/.test(name)) fs.rmSync(path.join(downloadDir, name), { force: true });
+      }
+    } catch { /* no folder yet */ }
     controller = new AbortController();
     const { signal } = controller;
     const total = asset.size || 0;
