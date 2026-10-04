@@ -155,6 +155,15 @@ class SharedWorkspaceTest {
     }
 
     @Test
+    void aChangeThisDeviceSentItselfOnlyMovesTheCursor() throws Exception {
+        register(BOB, "active");
+        send(as(post("/api/sync/apply"), BOB), Map.of("workspaceId", WS, "changes", List.of(
+            Map.of("seq", 1, "own", true, "ops", List.of(Map.of("table", "lists", "id", "list-1", "fields", Map.of("Name", "Mine")))))))
+            .andExpect(jsonPath("$.cursor").value(1)).andExpect(jsonPath("$.applied").value(1));
+        mvc.perform(inWorkspace(get("/api/lists"), BOB)).andExpect(jsonPath("$.length()").value(0));
+    }
+
+    @Test
     void aFieldChangedHereAndNotYetSentIsNotOverwrittenByAnOlderRemoteChange() throws Exception {
         register(BOB, "active");
         send(as(post("/api/sync/apply"), BOB), Map.of("workspaceId", WS, "changes", List.of(

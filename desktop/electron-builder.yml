@@ -21,6 +21,8 @@ files:
   - cliqPush.js
   - updater.js
   - installer.js
+  - workspaceSync.js
+  - workspacePush.js
   - dataDir.js
   - preload.js
   - signin.html

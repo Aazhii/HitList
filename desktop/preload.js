@@ -33,4 +33,24 @@ contextBridge.exposeInMainWorld('hitlistDesktop', {
     return () => ipcRenderer.removeListener('update:progress', handler);
   },
   testCliq: () => ipcRenderer.invoke('cliq:test'),
+  // Shared workspaces. Everything goes through the shell, which holds the cloud session.
+  workspaces: {
+    status: () => ipcRenderer.invoke('ws:status'),
+    refresh: () => ipcRenderer.invoke('ws:refresh'),
+    create: (options) => ipcRenderer.invoke('ws:create', options),
+    invite: (options) => ipcRenderer.invoke('ws:invite', options),
+    accept: (options) => ipcRenderer.invoke('ws:accept', options),
+    removeMember: (options) => ipcRenderer.invoke('ws:remove', options),
+    leave: (options) => ipcRenderer.invoke('ws:leave', options),
+    onChanged: (listener) => {
+      const handler = (_event, info) => listener(info);
+      ipcRenderer.on('workspaces:changed', handler);
+      return () => ipcRenderer.removeListener('workspaces:changed', handler);
+    },
+    onAssigned: (listener) => {
+      const handler = (_event, info) => listener(info);
+      ipcRenderer.on('workspaces:assigned', handler);
+      return () => ipcRenderer.removeListener('workspaces:assigned', handler);
+    },
+  },
 });

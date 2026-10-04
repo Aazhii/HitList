@@ -8,13 +8,15 @@
  * background process, no OS-level scheduling, no LaunchAgent: the backend
  * lives exactly as long as this app's own process does.
  */
-const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, shell, Notification } = require('electron');
 const { createAuth, ownerFor } = require('./auth');
 const { createBackup } = require('./backup');
 const { createRestore } = require('./restore');
 const { createCliqAlerts } = require('./cliqAlerts');
 const { createCliqConnection } = require('./cliqConnection');
 const { createUpdater } = require('./updater');
+const { createWorkspaceSync } = require('./workspaceSync');
+const { createWorkspacePush } = require('./workspacePush');
 const installer = require('./installer');
 const { dataDirIn, migrateLegacyData, LEGACY_FOLDER } = require('./dataDir');
 const { BACKUP_FUNCTION_URL } = require('./catalyst-config');
@@ -212,13 +214,16 @@ async function openWindow() {
     if (account) {
       headers['X-Hitlist-Desktop-Token'] = DESKTOP_TOKEN;
       headers['X-Hitlist-Desktop-Owner'] = ownerFor(account.userId);
+      headers['X-Hitlist-Desktop-User'] = account.userId;
     }
     callback({ requestHeaders: headers });
   });
 
   /** The local server's answer, as the signed-in account (this is where the snapshot comes from). */
-  const localGet = (urlPath, { accountIdentity = account?.userId, signal } = {}) => new Promise((resolve, reject) => {
-    const headers = accountIdentity ? { 'X-Hitlist-Desktop-Token': DESKTOP_TOKEN, 'X-Hitlist-Desktop-Owner': ownerFor(accountIdentity) } : {};
+  const localGet = (urlPath, { accountIdentity = account?.userId, signal, headers: extraHeaders = {} } = {}) => new Promise((resolve, reject) => {
+    const headers = accountIdentity
+      ? { ...extraHeaders, 'X-Hitlist-Desktop-Token': DESKTOP_TOKEN, 'X-Hitlist-Desktop-Owner': ownerFor(accountIdentity), 'X-Hitlist-Desktop-User': accountIdentity }
+      : { ...extraHeaders };
     const req = require('node:http').get({ host: '127.0.0.1', port, path: urlPath, headers, signal }, (res) => {
       const chunks = [];
       res.on('data', (c) => chunks.push(c));
@@ -243,7 +248,7 @@ async function openWindow() {
     const headers = {
       'Content-Type': 'application/json', 'Content-Length': payload.length,
       ...extraHeaders,
-      ...(accountIdentity ? { 'X-Hitlist-Desktop-Token': DESKTOP_TOKEN, 'X-Hitlist-Desktop-Owner': ownerFor(accountIdentity) } : {}),
+      ...(accountIdentity ? { 'X-Hitlist-Desktop-Token': DESKTOP_TOKEN, 'X-Hitlist-Desktop-Owner': ownerFor(accountIdentity), 'X-Hitlist-Desktop-User': accountIdentity } : {}),
     };
     const req = require('node:http').request({ host: '127.0.0.1', port, path: urlPath, method: 'POST', headers, signal }, (res) => {
       const chunks = [];
@@ -274,6 +279,41 @@ async function openWindow() {
     },
     onApplied: () => { if (!win.isDestroyed()) win.webContents.send('cliq:commands-applied'); },
   });
+  // Shared workspaces: other members' changes arrive by push (Ably), ours go up in batches; nothing polls.
+  const cloudJson = async (method, urlPath, body, { signal } = {}) => {
+    const bounded = AbortSignal.any([signal || new AbortController().signal, AbortSignal.timeout(15_000)]);
+    const res = await auth.getSession().fetch(`${BACKUP_FUNCTION_URL}${urlPath}`, {
+      method, signal: bounded,
+      ...(method === 'GET' ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body ?? {}) }),
+    });
+    let json = {};
+    try { json = await res.json(); } catch { /* not JSON */ }
+    return { status: res.status, json };
+  };
+  const toPage = (channel, payload) => { if (!win.isDestroyed()) win.webContents.send(channel, payload); };
+  const workspaces = createWorkspaceSync({
+    stateDir: userDataDir,
+    getAccount: () => account,
+    localGet, localPost,
+    cloud: cloudJson,
+    createPush: createWorkspacePush,
+    onApplied: (workspaceId) => toPage('workspaces:changed', { workspaceId }),
+    onChange: (status) => toPage('workspaces:status', status),
+    onAssigned: (info) => {
+      toPage('workspaces:assigned', info);
+      if (Notification && Notification.isSupported && Notification.isSupported()) {
+        new Notification({ title: 'A task was assigned to you', body: info.title }).show();
+      }
+    },
+    fetchTask: async (workspaceId, taskId) => JSON.parse((await localGet(`/api/tasks/${encodeURIComponent(taskId)}`, { headers: { 'X-Hitlist-Workspace': workspaceId } })).toString('utf8')),
+  });
+  win.on('closed', () => workspaces.stop());
+  // Something was just changed in the app: send it. Only writes to tasks or lists count; the engine ignores it when
+  // nothing is queued for a shared workspace.
+  win.webContents.session.webRequest.onCompleted?.({ urls: [`http://127.0.0.1:${port}/api/*`] }, (details) => {
+    if (details.method !== 'GET' && details.statusCode < 300 && /\/api\/(tasks|lists)(\/|$|\?)/.test(details.url)) workspaces.kick();
+  });
+  if (account) void workspaces.start();
   const cloudFetch = (urlPath) => auth.getSession().fetch(`${BACKUP_FUNCTION_URL}${urlPath}`);
   const restore = createRestore({
     getAccount: () => account,
@@ -326,8 +366,17 @@ async function openWindow() {
     'update:download', 'update:cancel', 'update:install', 'backup:status', 'backup:now',
     'cliq:connection:get', 'cliq:connection:start', 'cliq:connection:confirm',
     'cliq:connection:enable', 'cliq:connection:fetch', 'cliq:connection:unlink',
+    'ws:refresh', 'ws:create', 'ws:invite', 'ws:accept', 'ws:remove', 'ws:leave', 'ws:status',
   ]) ipcMain.removeHandler(channel);
   ipcMain.handle('account:get', () => publicAccount());
+  const text = (v) => (typeof v === 'string' ? v : '');
+  ipcMain.handle('ws:status', () => workspaces.status());
+  ipcMain.handle('ws:refresh', async () => { try { await workspaces.refresh(); return { ok: true }; } catch { return { ok: false, reason: 'offline' }; } });
+  ipcMain.handle('ws:create', (_e, o) => workspaces.create({ name: text(o?.name), listIds: Array.isArray(o?.listIds) ? o.listIds.filter((x) => typeof x === 'string') : [] }));
+  ipcMain.handle('ws:invite', (_e, o) => workspaces.invite(text(o?.workspaceId), text(o?.email)));
+  ipcMain.handle('ws:accept', (_e, o) => workspaces.accept(text(o?.token)));
+  ipcMain.handle('ws:remove', (_e, o) => workspaces.removeMember(text(o?.workspaceId), text(o?.userId)));
+  ipcMain.handle('ws:leave', (_e, o) => workspaces.leave(text(o?.workspaceId)));
   ipcMain.handle('account:signIn', async () => {
     const signedIn = await auth.signIn(win);
     if (signedIn) {
@@ -338,6 +387,7 @@ async function openWindow() {
       // After the page has asked /api/session (which brings the old local workspace into the account), not before.
       setTimeout(() => { void backup.backupNow('signed-in'); }, 15_000);
       void connection.get();
+      void workspaces.start();
     }
     return publicAccount();
   });
@@ -370,6 +420,7 @@ async function openWindow() {
   ipcMain.handle('backup:now', () => backup.backupNow('manual'));
   ipcMain.handle('account:signOut', async () => {
     connection.stop();
+    workspaces.stop();
     // The pre-logout hook: one last backup first, so signing out does not leave recent work only on this machine. Signing out
     // goes ahead either way (offline included); the page is told how the backup went and says so if it did not.
     const outcome = await Promise.race([
