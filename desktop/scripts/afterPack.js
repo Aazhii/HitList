@@ -4,8 +4,16 @@
 // makes the signature match the contents again. It does not make the app "trusted": the first-open steps still apply.
 const { execFileSync } = require('node:child_process');
 const path = require('node:path');
+const { smokeBackend } = require('./smoke-backend');
 
 exports.default = async function afterPack(context) {
+  const resources = context.electronPlatformName === 'darwin'
+    ? path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`, 'Contents', 'Resources')
+    : path.join(context.appOutDir, 'resources');
+  await smokeBackend({
+    java: path.join(resources, 'jre', 'bin', context.electronPlatformName === 'win32' ? 'java.exe' : 'java'),
+    jar: path.join(resources, 'hitlist.jar'),
+  });
   if (context.electronPlatformName !== 'darwin') return;
   const app = path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`);
   execFileSync('codesign', ['--force', '--deep', '--sign', '-', app], { stdio: 'inherit' });

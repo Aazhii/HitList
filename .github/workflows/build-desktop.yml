@@ -109,6 +109,10 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           pnpm test
+      - name: Desktop - validation contract and script syntax
+        run: |
+          node scripts/ci/validate-desktop.cjs --check
+          sh scripts/ci/compute-version.test.sh
       - name: Backup function - tests
         working-directory: functions/backup
         run: |
@@ -144,6 +148,8 @@ jobs:
           cp -R web/dist/. api/src/main/resources/static/
           mvn -B -f api/pom.xml -DskipTests package
           cp api/target/hitlist.jar hitlist.jar
+      - name: Shared workspace replicas - real backend smoke
+        run: node desktop/e2e/workspaces.e2e.js
       - uses: actions/upload-artifact@v4
         with:
           name: hitlist-jar
@@ -168,11 +174,14 @@ jobs:
         working-directory: desktop
         run: |
           pnpm install --frozen-lockfile
+          node --test test.main.js test.updater.js test.auth.js test.backup.js test.restore.js test.nativeInstaller.js test.buildSmoke.js
           sh scripts/prepare-jre.sh
           pnpm exec electron-builder --mac --arm64 --publish never -c.extraMetadata.version=${{ needs.version.outputs.version }}
       - name: Checksum
         working-directory: desktop/dist
-        run: shasum -a 256 *.dmg *.zip > SHA256SUMS-mac.txt
+        run: |
+          shasum -a 256 *.dmg *.zip > SHA256SUMS-mac.txt
+          shasum -a 256 -c SHA256SUMS-mac.txt
       - uses: actions/upload-artifact@v4
         with:
           name: HitList-${{ needs.version.outputs.version }}-${{ needs.version.outputs.sha }}-mac
@@ -201,11 +210,14 @@ jobs:
         working-directory: desktop
         run: |
           pnpm install --frozen-lockfile
+          node --test test.main.js test.updater.js test.auth.js test.backup.js test.restore.js test.nativeInstaller.js test.buildSmoke.js
           bash scripts/prepare-jre-win.sh
           pnpm exec electron-builder --win --x64 --publish never -c.extraMetadata.version=${{ needs.version.outputs.version }}
       - name: Checksum
         working-directory: desktop/dist
-        run: sha256sum *.exe > SHA256SUMS-windows.txt
+        run: |
+          sha256sum *.exe > SHA256SUMS-windows.txt
+          sha256sum -c SHA256SUMS-windows.txt
       - uses: actions/upload-artifact@v4
         with:
           name: HitList-${{ needs.version.outputs.version }}-${{ needs.version.outputs.sha }}-windows
@@ -230,11 +242,14 @@ jobs:
         working-directory: desktop
         run: |
           pnpm install --frozen-lockfile
+          node --test test.main.js test.updater.js test.auth.js test.backup.js test.restore.js test.nativeInstaller.js test.buildSmoke.js
           sh scripts/prepare-jre-linux.sh
           pnpm exec electron-builder --linux --x64 --publish never -c.extraMetadata.version=${{ needs.version.outputs.version }}
       - name: Checksum
         working-directory: desktop/dist
-        run: sha256sum *.AppImage *.deb > SHA256SUMS-linux.txt
+        run: |
+          sha256sum *.AppImage *.deb > SHA256SUMS-linux.txt
+          sha256sum -c SHA256SUMS-linux.txt
       - uses: actions/upload-artifact@v4
         with:
           name: HitList-${{ needs.version.outputs.version }}-${{ needs.version.outputs.sha }}-linux
@@ -272,6 +287,7 @@ jobs:
             exit 1
           fi
           cat SHA256SUMS-*.txt > SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
           rm SHA256SUMS-*.txt
           FLAGS=""
           if [ "${PRERELEASE}" = "true" ]; then FLAGS="--prerelease"; fi

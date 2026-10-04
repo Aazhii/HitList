@@ -103,6 +103,16 @@ test('paths with quotes cannot break out of the script', () => {
   assert.ok(text.includes(`'/Users/o'\\''brien/HitList.app'`));
 });
 
+test('Windows update paths preserve exclamation marks and the custom install directory', () => {
+  const script = winScript({ pid: 4242, installer: 'C:\\Users\\A! B\\Setup.exe', app: 'D:\\Apps & tools\\HitList!\\HitList.exe' });
+  assert.ok(script.startsWith('@echo off\nsetlocal disabledelayedexpansion\n'));
+  assert.ok(script.indexOf('endlocal') < script.indexOf('start /wait'));
+  assert.ok(script.includes('"C:\\Users\\A! B\\Setup.exe" /S /D=D:\\Apps ^& tools\\HitList!'));
+  assert.match(script, /if errorlevel 1/);
+  assert.ok(winScript({ pid: 1, installer: 'C:\\100%\\Setup.exe', app: 'C:\\HitList\\HitList.exe' }).includes('100%%'));
+  assert.throws(() => winScript({ pid: 1, installer: 'bad"path', app: 'C:\\HitList.exe' }), /Invalid update path/);
+});
+
 test('install on Mac unpacks beside the app, checks the signature, and starts the helper', async () => {
   const dir = tmp();
   const bundle = fakeApp(dir, 'HitList.app', 'old');

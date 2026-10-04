@@ -105,12 +105,14 @@ function getJavaExecutable() {
   if (!app.isPackaged) return process.platform === 'win32' ? 'java.exe' : 'java';
   // The Windows installer bundles Temurin's runtime (bin/java.exe); the Mac build bundles a jlink runtime (bin/java).
   const jre = path.join(process.resourcesPath, 'jre', 'bin', process.platform === 'win32' ? 'java.exe' : 'java');
-  return fs.existsSync(jre) ? jre : (process.platform === 'win32' ? 'java.exe' : 'java');
+  if (!fs.existsSync(jre)) throw new Error('Bundled Java runtime is missing. Reinstall HitList from a complete desktop release.');
+  return jre;
 }
 
 function waitForHealth(port) {
   const deadline = Date.now() + HEALTH_TIMEOUT_MS;
   const tryOnce = () => new Promise((resolve) => {
+    if (backendStartError) { resolve(false); return; }
     const req = require('node:http').get(`http://127.0.0.1:${port}/api/health`, (res) => {
       res.resume();
       resolve(res.statusCode === 200);
@@ -119,6 +121,7 @@ function waitForHealth(port) {
   });
   return (async function poll() {
     if (await tryOnce()) return true;
+    if (backendStartError) return false;
     if (Date.now() > deadline) return false;
     await new Promise((r) => setTimeout(r, HEALTH_POLL_MS));
     return poll();
@@ -126,6 +129,7 @@ function waitForHealth(port) {
 }
 
 let backendProcess = null;
+let backendStartError = null;
 let backendPort = null;
 let windowCreation = null;
 /** Set once the window is up. Used by the quit handler to take a last backup. */
@@ -135,6 +139,7 @@ const QUIT_BACKUP_MS = 8000;
 const DESKTOP_TOKEN = crypto.randomBytes(32).toString('hex');
 
 function startBackend(port, userDataDir) {
+  backendStartError = null;
   const jarPath = getJarPath();
   if (!fs.existsSync(jarPath)) {
     throw new Error(`hitlist.jar not found at ${jarPath} — build api/ first (mvn package).`);
@@ -159,6 +164,9 @@ function startBackend(port, userDataDir) {
   // narrated, but a silent one that never becomes healthy is undebuggable
   // without this.
   let log = '';
+  backendProcess.once('error', (error) => {
+    backendStartError = new Error(`Java could not start (${error.code || 'process error'}). Check the bundled runtime and security software permissions.`);
+  });
   backendProcess.stdout.on('data', (chunk) => { log += chunk; });
   backendProcess.stderr.on('data', (chunk) => { log += chunk; });
   backendProcess.on('exit', (code) => {
@@ -170,7 +178,7 @@ function startBackend(port, userDataDir) {
 
 function stopBackend() {
   return new Promise((resolve) => {
-    if (!backendProcess || backendProcess.exitCode !== null) { resolve(); return; }
+    if (!backendProcess || backendStartError || backendProcess.exitCode !== null) { resolve(); return; }
     backendProcess.once('exit', resolve);
     backendProcess.kill('SIGTERM');
     // A hung JVM shouldn't hold the app open indefinitely.
@@ -187,8 +195,10 @@ async function openWindow() {
     startBackend(backendPort, userDataDir);
     if (!await waitForHealth(backendPort)) {
       await stopBackend();
+      if (backendStartError) throw backendStartError;
       throw new Error('The local backend did not respond in time. Check that Java is installed and try again.');
     }
+    if (backendStartError) throw backendStartError;
   }
   const port = backendPort;
 

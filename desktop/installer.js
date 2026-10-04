@@ -126,7 +126,13 @@ fi
  */
 function winScript({ pid, installer, app }) {
   const id = Number(pid);
+  const batchPath = (value) => {
+    if (/["\r\n]/.test(value)) throw new Error('Invalid update path');
+    return value.replace(/%/g, '%%');
+  };
+  const destination = batchPath(path.win32.dirname(app)).replace(/[&|<>()^]/g, '^$&');
   return `@echo off
+setlocal disabledelayedexpansion
 setlocal enabledelayedexpansion
 set n=0
 :wait
@@ -137,8 +143,13 @@ if not errorlevel 1 (
   ping -n 2 127.0.0.1 >NUL
   goto wait
 )
-start /wait "" "${installer}" /S
-start "" "${app}"
+endlocal
+start /wait "" "${batchPath(installer)}" /S /D=${destination}
+if errorlevel 1 (
+  start "" "${batchPath(app)}"
+  exit /b 1
+)
+start "" "${batchPath(app)}"
 `;
 }
 

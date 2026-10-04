@@ -5,9 +5,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-function launch({ failNavigation = false } = {}) {
+function launch({ failNavigation = false, platform = 'darwin', packaged = false, missingJava = false, spawnError = false } = {}) {
   const app = new EventEmitter();
-  app.isPackaged = false;
+  app.isPackaged = packaged;
   app.getPath = (name) => name === 'appData' ? '/fake' : '/fake/HitList';
   app.setPath = () => {};
   app.requestSingleInstanceLock = () => true;
@@ -45,13 +45,16 @@ function launch({ failNavigation = false } = {}) {
     removeHandler: (channel) => handlers.delete(channel),
   };
   const children = [];
-  const spawn = () => {
+  const spawn = (executable, args) => {
     const child = new EventEmitter();
     child.stdout = new EventEmitter();
     child.stderr = new EventEmitter();
     child.exitCode = null;
+    child.executable = executable;
+    child.args = args;
     child.kill = () => { child.exitCode = 0; child.emit('exit', 0); };
     children.push(child);
+    if (spawnError) queueMicrotask(() => child.emit('error', Object.assign(new Error('denied'), { code: 'EACCES' })));
     return child;
   };
   const createServer = () => {
@@ -72,7 +75,7 @@ function launch({ failNavigation = false } = {}) {
     },
   };
   const mockFs = {
-    mkdirSync: () => {}, existsSync: () => true,
+    mkdirSync: () => {}, existsSync: (target) => !(missingJava && /[\\/]jre[\\/]bin[\\/]java/.test(target)),
     readFileSync: () => 'test-secret', writeFileSync: () => {},
   };
   let accounts = 0;
@@ -85,7 +88,7 @@ function launch({ failNavigation = false } = {}) {
     './restore': { createRestore: () => ({ check: async () => ({}), restore: async () => { lifecycle.push('restore'); return {}; } }) },
     './cliqAlerts': { createCliqAlerts: () => ({ startSchedule: () => {}, status: () => ({}), setSettings: () => ({}), sendTest: async () => ({}) }) },
     './cliqConnection': { createCliqConnection: () => ({ stop: () => { lifecycle.push('stop'); }, beforeRestore: async () => { lifecycle.push('beforeRestore'); }, get: async () => ({}), start: async () => ({}), confirm: async () => ({}), enable: async () => ({}), fetchNow: async () => ({}), unlink: async () => ({}) }) },
-    './updater': { createUpdater: () => ({ status: () => ({}), check: () => {}, download: () => {}, cancel: () => {}, install: () => {} }) },
+    './updater': { createUpdater: () => ({ status: () => ({}), check: () => {}, download: () => {}, cancel: () => {}, install: () => {}, startSchedule: () => () => {} }) },
     './installer': { cleanupAfterUpdate: () => {}, canSwap: () => false, swapPlan: () => ({ ok: false, reason: 'dev-run' }) },
     './dataDir': { dataDirIn: () => '/fake/HitList', migrateLegacyData: () => null, LEGACY_FOLDER: 'old' },
     './catalyst-config': { BACKUP_FUNCTION_URL: 'https://example.invalid' },
@@ -98,7 +101,7 @@ function launch({ failNavigation = false } = {}) {
   const source = fs.readFileSync(path.join(__dirname, 'main.js'), 'utf8');
   vm.runInNewContext(source, {
     require: (name) => mocks[name] || require(name),
-    __dirname, process: { ...process, platform: 'darwin', env: {} },
+    __dirname, process: { ...process, platform, resourcesPath: '/fake/resources', env: {} },
     console: { log: () => {}, error: () => {} },
     Buffer, setTimeout, setInterval: () => {}, fetch: () => {},
   }, { filename: 'main.js' });
@@ -106,6 +109,33 @@ function launch({ failNavigation = false } = {}) {
 }
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+test('Java spawn failure reports a controlled startup error instead of an unhandled event', async () => {
+  const { errors, app, windows } = launch({ packaged: true, spawnError: true });
+  await settle();
+  assert.match(errors[0], /Java could not start \(EACCES\)/);
+  assert.equal(app.quitCalls, 1);
+  assert.equal(windows.length, 0);
+});
+
+for (const platform of ['darwin', 'win32', 'linux']) {
+  test(`${platform}: packaged startup uses bundled Java and jar`, async () => {
+    const { children, errors } = launch({ platform, packaged: true });
+    await settle();
+    assert.equal(children.length, 1);
+    assert.equal(children[0].executable, path.join('/fake/resources', 'jre', 'bin', platform === 'win32' ? 'java.exe' : 'java'));
+    assert.deepEqual(Array.from(children[0].args), ['-jar', path.join('/fake/resources', 'hitlist.jar')]);
+    assert.deepEqual(errors, []);
+  });
+
+  test(`${platform}: missing bundled Java is reported without using system Java`, async () => {
+    const { children, errors, app } = launch({ platform, packaged: true, missingJava: true });
+    await settle();
+    assert.equal(children.length, 0);
+    assert.match(errors[0], /Bundled Java runtime is missing/);
+    assert.equal(app.quitCalls, 1);
+  });
+}
 
 test('ready, close, and two activations reuse one live backend and rebind window IPC', async () => {
   const { app, windows, children, handlers, errors } = launch();
