@@ -20,6 +20,24 @@ test('finds the app bundle from the running executable', () => {
   assert.strictEqual(macBundleOf('/usr/local/bin/electron'), null);
 });
 
+test('inaccessible update leftovers do not prevent startup or cleanup of other files', () => {
+  const attempted = [];
+  const removed = [];
+  const denied = new Set(['/Applications/HitList.app.old', '/updates/Contents.old', '/updates/stage-denied', '/Applications/.HitList-update-denied']);
+  assert.doesNotThrow(() => cleanupAfterUpdate({
+    platform: 'darwin', exePath: '/Applications/HitList.app/Contents/MacOS/HitList', helperDir: '/updates',
+    list: (dir) => dir === '/updates' ? ['stage-denied', 'stage-ok', 'keep'] : ['.HitList-update-denied', '.HitList.app.new', 'HitList.app'],
+    rm: (target) => {
+      attempted.push(target);
+      if (denied.has(target)) throw Object.assign(new Error('Permission denied'), { code: 'EACCES' });
+      removed.push(target);
+    },
+  }));
+  assert.deepStrictEqual(removed, ['/updates/stage-ok', '/Applications/.HitList.app.new']);
+  assert.strictEqual(attempted.length, 6);
+  assert.ok(!attempted.includes('/Applications/HitList.app'));
+});
+
 test('one-click replacing is only offered where it can work', () => {
   const ok = () => {};
   const no = () => { throw new Error('EACCES'); };

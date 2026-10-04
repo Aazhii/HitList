@@ -239,15 +239,16 @@ function cleanupAfterUpdate({ platform, exePath, helperDir, rm = (p) => fs.rmSyn
   if (platform !== 'darwin') return;
   const bundle = macBundleOf(exePath);
   if (!bundle) return;
-  rm(`${bundle}.old`);
+  const remove = (target) => { try { rm(target); } catch { /* cleanup must not prevent startup */ } };
+  remove(`${bundle}.old`);
   if (helperDir) {
-    rm(path.join(helperDir, 'Contents.old'));
-    try { for (const name of list(helperDir)) if (name.startsWith('stage-')) rm(path.join(helperDir, name)); } catch { /* no folder yet */ }
+    remove(path.join(helperDir, 'Contents.old'));
+    try { for (const name of list(helperDir)) if (name.startsWith('stage-')) remove(path.join(helperDir, name)); } catch { /* no folder yet */ }
   }
   const dir = path.dirname(bundle);
   try {
     for (const name of list(dir)) {
-      if (name.startsWith('.HitList-update-') || name === `.${path.basename(bundle)}.new`) rm(path.join(dir, name));
+      if (name.startsWith('.HitList-update-') || name === `.${path.basename(bundle)}.new`) remove(path.join(dir, name));
     }
   } catch { /* the folder cannot be listed: nothing to clean */ }
 }
