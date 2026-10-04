@@ -99,6 +99,14 @@ cloud: ordered change log in Data Store ─> Ably doorbell {seq} ─> other comp
   assignee chip, `AssignedPage`. Switching workspace reloads the page.
 - **End-to-end proof without Catalyst:** `node desktop/e2e/workspaces.e2e.js` (two real servers + real engine + real cloud logic over
   memory) passes. The real Catalyst/Ably/Mail path is **untried**.
+- **Verified 2026-10-04:** the Development `backup` ZIP still lacks `workspaceRoutes.js`, `workspaces.js`, `workspacesStorage.js`,
+  and `workspaceDelivery.js`; its `index.js` has no `/ws` handler. `WS_ENABLED` is already true. The four live table schemas match
+  the code, including unique keys and `WsChanges.Ops` at 10,000 characters. This is a code-deployment mismatch, not a missing table.
+  Table permissions still need independent verification. No deployment or cloud data writes were performed during diagnosis.
+- The scratch two-replica test exposed a same-field convergence bug: skipping one's own cloud echoes left replicas with different
+  titles. `SyncService` now applies every echo in cloud order while preserving newer locally queued fields and suppressing journaling.
+  API tests: 47 passed; desktop: 122; function: 55; web: 595 plus design/types/lint; scratch E2E: 16/16. Scratch servers and data were
+  cleaned up. This is not proof of live Catalyst/Ably synchronization.
 - Free-tier cost: one Data Store insert per batch (≈5,000 inserts per 30 days for the whole project).
 
 ### 3.6 Notes: Tab / Shift+Tab indent
@@ -114,10 +122,12 @@ at the start outdents, code blocks keep real Tab). Stored inside the note's `blo
 - `backup` function environment variable **names**: `CLIQ_BOT`, `CLIQ_TOKEN`, `CLIQ_ALLOWED_DOMAINS`, `CLIQ_DC`, `CLIQ_LINKS_TABLE`,
   `CLIQ_RECORDS_TABLE`, `CLIQ_INBOUND_ENABLED`, `CLIQ_WEBHOOK_SECRET`, `ABLY_API_KEY`, `WS_ENABLED`, `WS_MAIL_FROM`,
   optional `WS_ALLOWED_DOMAINS`, `WS_INVITE_URL`.
-- **A deploy REPLACES the function's whole environment** with the git-ignored local file `functions/backup/.env.cliq`
-  (`scripts/deploy-backup-function.sh`). That file currently holds only four Cliq settings, so deploying now would wipe the rest.
-  The script refuses to deploy without `ABLY_API_KEY` and warns about the others.
-- Catalyst CLI cannot create Data Store tables or read function environments; those are console-only. Free tier resets every 30 days
+- **The deployment script explicitly REPLACES the function's whole environment** with the git-ignored local file
+  `functions/backup/.env.cliq`. The script refuses to deploy without `ABLY_API_KEY` and warns about omitted settings. Never read or
+  print that file to diagnose a failure. A direct code-only `catalyst deploy --only functions:backup` omits environment updates when
+  the local config omits `deployment.env_variables`, as the current config does. Verify saved setting names after any deployment.
+- Catalyst MCP can discover Data Store tables, schemas, and permissions; avoid function/env listing tools that return secrets.
+  Console actions are a fallback when the necessary MCP tool is unavailable. Free tier resets every 30 days
   (File Store upload 2,000; Data Store insert 5,000, fetch 10,000, delete 1,000).
 - `getCurrentUser()` returns null for app users here; identity is `callerOf(req)` (user-scope SDK init + admin lookup, role
   "App User"). Use `zcatalyst-sdk-node` for Data Store/File Store, not mixed `@zcatalyst/*` packages. ids are 17 digits: text.
@@ -145,13 +155,15 @@ at the start outdents, code blocks keep real Tab). Stored inside the note's `blo
 ## 7. Open work, in priority order
 1. **Deploy the cloud side for shared workspaces and try it for real** with two Catalyst accounts: fill `.env.cliq` completely
    (values live only in the Catalyst console), `sh scripts/deploy-backup-function.sh`, `catalyst deploy --only client` (invite page).
-   Until then "Create workspace" in the app answers that the service is not deployed. Confirm Ably (free-tier limits, token
+  Read-only diagnosis confirmed that the deployed function lacks `/ws`, although the flag and schemas are present. An older
+  installed UI may show only a generic failure. Get explicit owner approval before a code-only deployment, and never overwrite
+  console secrets with an incomplete local environment file. Confirm Ably (free-tier limits, token
    capability format), Catalyst Mail sender verification (and any development-environment sending limits), the Data Store column
    names/types exactly as in `docs/workspaces/00-INDEX.md`, and that `Ops` (Text) holds 10,000 characters.
 2. **Prove the in-app update on a real release**: build and publish version N+1 (publish ticked), install N, update through the app on
    Mac (both Applications-writable and read-only cases), then Windows and Linux on real machines. Nothing past unit tests and
    Mac copy-swaps has been seen.
-3. **Cliq inbound**: deploy `cliq-webhook`, create the tables, set the settings, test the `link 123456` flow with a real bot; fix what
+3. **Cliq inbound**: verify the deployed `cliq-webhook`, tables and settings, test `link <32-character code>` with a real bot; fix what
    real Cliq reveals. Same caution about secrets.
 4. **Shared-workspace follow-ups**: `hitlist://` invite links, change-log compaction (snapshots), a "shared writes used this month"
    counter, sharing notes/databases, conflict UI if ever needed, tests for `ensurePush` restart when membership changes, a way to

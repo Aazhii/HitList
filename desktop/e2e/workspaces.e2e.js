@@ -87,7 +87,14 @@ async function desktop(who, port) {
     onApplied: () => { events.applied += 1; }, onAssigned: (a) => events.assigned.push(a),
     fetchTask: async () => null,
   });
-  return { who, port, dir, call, engine, events, kill: () => proc.kill('SIGTERM'), inWs: (id) => ({ 'X-Hitlist-Workspace': id }) };
+  const kill = async () => {
+    if (proc.exitCode === null && proc.signalCode === null) {
+      await new Promise((resolve) => { proc.once('exit', resolve); proc.kill('SIGTERM'); });
+    }
+    fs.rmSync(dir, { recursive: true, force: true });
+    console.log(`CLEANUP ${who}: PID ${proc.pid} exited; scratch directory removed: ${dir}`);
+  };
+  return { who, port, dir, call, engine, events, kill, inWs: (id) => ({ 'X-Hitlist-Workspace': id }) };
 }
 
 (async () => {
@@ -147,7 +154,11 @@ async function desktop(who, port) {
     await A.engine.syncAll(); await B.engine.syncAll(); await sleep(300);
     const a3 = (await A.call('GET', `/api/tasks/${taskId}`, undefined, A.inWs(ws))).json.title;
     const b3 = (await B.call('GET', `/api/tasks/${taskId}`, undefined, B.inWs(ws))).json.title;
-    check('the same field edited at once ends identical on both', a3 === b3, `A="${a3}" B="${b3}"`);
+    const titleChanges = (await store.changesAfter(ws, 0, 200)).flatMap((change) => change.ops)
+      .filter((op) => op.table === 'tasks' && op.id === taskId && typeof op.fields?.Title === 'string');
+    const expectedTitle = titleChanges.at(-1).fields.Title;
+    check('the same field edited at once matches the later cloud sequence on both', a3 === expectedTitle && b3 === expectedTitle,
+      `A="${a3}" B="${b3}" expected="${expectedTitle}"`);
 
     // Delete propagates; nothing is journaled for personal work.
     await B.call('DELETE', `/api/tasks/${taskId}`, undefined, B.inWs(ws));
@@ -158,7 +169,7 @@ async function desktop(who, port) {
     check('personal work never goes to the cloud', store.stats().writes === before);
     console.log(`\nCloud change-log writes for the whole scenario: ${store.stats().writes}`);
   } catch (e) { console.log('ERROR', e && e.stack || e); results.push(false); }
-  finally { A.engine.stop(); B.engine.stop(); A.kill(); B.kill(); }
+  finally { A.engine.stop(); B.engine.stop(); await Promise.all([A.kill(), B.kill()]); }
   console.log(results.every(Boolean) ? '\nALL PASSED' : '\nSOME FAILED');
   process.exit(results.every(Boolean) ? 0 : 1);
 })();

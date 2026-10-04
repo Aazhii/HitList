@@ -68,7 +68,7 @@ function createWorkspaceRoutes({ config = process.env, createStorage = createWor
 			respond(res, 200, await route[2](service, caller, body, id));
 		} catch (error) {
 			if (error instanceof WorkspaceError) respond(res, error.status, { error: error.code });
-			else { console.error('workspaces failed:', error && error.message); respond(res, 503, { error: 'workspaces_unavailable' }); }
+			else { console.error('workspaces failed'); respond(res, 503, { error: 'workspaces_unavailable' }); }
 		}
 		return true;
 	};

@@ -30,6 +30,8 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.test.web.servlet.MockMvc;
@@ -155,12 +157,61 @@ class SharedWorkspaceTest {
     }
 
     @Test
-    void aChangeThisDeviceSentItselfOnlyMovesTheCursor() throws Exception {
+    void aChangeThisDeviceSentItselfAppliesWithoutBeingSentBack() throws Exception {
         register(BOB, "active");
         send(as(post("/api/sync/apply"), BOB), Map.of("workspaceId", WS, "changes", List.of(
-            Map.of("seq", 1, "own", true, "ops", List.of(Map.of("table", "lists", "id", "list-1", "fields", Map.of("Name", "Mine")))))))
+            Map.of("seq", 1, "own", true, "ops", List.of(Map.of("table", "lists", "id", "list-1",
+                "fields", Map.of("Name", "Mine", "CreatedAt", 1, "UpdatedAt", 1)))))))
             .andExpect(jsonPath("$.cursor").value(1)).andExpect(jsonPath("$.applied").value(1));
-        mvc.perform(inWorkspace(get("/api/lists"), BOB)).andExpect(jsonPath("$.length()").value(0));
+        mvc.perform(inWorkspace(get("/api/lists"), BOB)).andExpect(jsonPath("$[0].name").value("Mine"));
+        assertThat(outbox(BOB)).isEmpty();
+    }
+
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void acknowledgedSameFieldEditsConvergeToTheLaterCloudSequence(boolean ownLater) throws Exception {
+        register(BOB, "active");
+        send(inWorkspace(post("/api/lists"), BOB), Map.of("name", "Shared", "clientId", "list-1"))
+            .andExpect(status().isCreated());
+        send(inWorkspace(post("/api/tasks"), BOB), Map.of("title", "From B", "listId", "list-1", "clientId", "task-1"))
+            .andExpect(status().isCreated());
+        send(as(post("/api/sync/outbox/ack"), BOB), Map.of("workspaceId", WS,
+            "opIds", outbox(BOB).stream().map(entry -> entry.get("opId")).toList())).andExpect(status().isOk());
+        List<Map<String, Object>> changes = List.of(
+            Map.of("seq", 1, "own", !ownLater, "ops", List.of(Map.of("table", "tasks", "id", "task-1",
+                "fields", Map.of("Title", ownLater ? "From A" : "From B")))),
+            Map.of("seq", 2, "own", ownLater, "ops", List.of(Map.of("table", "tasks", "id", "task-1",
+                "fields", Map.of("Title", ownLater ? "From B" : "From A")))));
+        send(as(post("/api/sync/apply"), BOB), Map.of("workspaceId", WS, "changes", changes))
+            .andExpect(jsonPath("$.cursor").value(2)).andExpect(jsonPath("$.applied").value(2));
+        mvc.perform(inWorkspace(get("/api/tasks/task-1"), BOB))
+            .andExpect(jsonPath("$.title").value(ownLater ? "From B" : "From A"));
+        assertThat(outbox(BOB)).isEmpty();
+        send(as(post("/api/sync/apply"), BOB), Map.of("workspaceId", WS, "changes", changes))
+            .andExpect(jsonPath("$.applied").value(0));
+    }
+
+    @Test
+    void ownEchoPreservesANewerPendingFieldButAppliesOtherFields() throws Exception {
+        register(BOB, "active");
+        send(inWorkspace(post("/api/lists"), BOB), Map.of("name", "Shared", "clientId", "list-1"))
+            .andExpect(status().isCreated());
+        send(inWorkspace(post("/api/tasks"), BOB), Map.of("title", "Sent title", "listId", "list-1", "clientId", "task-1"))
+            .andExpect(status().isCreated());
+        send(as(post("/api/sync/outbox/ack"), BOB), Map.of("workspaceId", WS,
+            "opIds", outbox(BOB).stream().map(entry -> entry.get("opId")).toList())).andExpect(status().isOk());
+        send(inWorkspace(put("/api/tasks/task-1"), BOB), Map.of("title", "New pending title"))
+            .andExpect(status().isOk());
+        List<Map<String, Object>> pending = outbox(BOB);
+        send(as(post("/api/sync/apply"), BOB), Map.of("workspaceId", WS, "changes", List.of(
+            Map.of("seq", 1, "ops", List.of(Map.of("table", "tasks", "id", "task-1",
+                "fields", Map.of("Title", "Remote title", "Status", "DONE")))),
+            Map.of("seq", 2, "own", true, "ops", List.of(Map.of("table", "tasks", "id", "task-1",
+                "fields", Map.of("Title", "Sent title", "Status", "TODO", "Quadrant", "SCHEDULE")))))))
+            .andExpect(jsonPath("$.cursor").value(2));
+        mvc.perform(inWorkspace(get("/api/tasks/task-1"), BOB)).andExpect(jsonPath("$.title").value("New pending title"))
+            .andExpect(jsonPath("$.status").value("TODO")).andExpect(jsonPath("$.quadrant").value("SCHEDULE"));
+        assertThat(outbox(BOB)).isEqualTo(pending);
     }
 
     @Test

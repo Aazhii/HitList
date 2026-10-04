@@ -25,7 +25,9 @@ test('ignores other paths and stays off until enabled', async () => {
 	assert.deepEqual(await request(off, '/ws', {}, 'GET'), { handled: true, status: 503, body: { error: 'workspaces_unavailable' } });
 });
 
-test('routes reach the service with the verified caller, and errors never leak details', async () => {
+test('routes reach the service with the verified caller, and errors never leak details', async (context) => {
+	const errors = [];
+	context.mock.method(console, 'error', (...args) => errors.push(args));
 	let pushed;
 	const router = createWorkspaceRoutes({ config: { WS_ENABLED: 'true' }, delivery, mailer: async () => false,
 		createStorage: () => fakeStore({ insertChange: async (c) => { pushed = c; return 'ok'; } }) });
@@ -38,6 +40,7 @@ test('routes reach the service with the verified caller, and errors never leak d
 	assert.equal((await request(router, `/ws/short/changes`, {}, 'GET')).status, 404);
 	const broken = createWorkspaceRoutes({ config: { WS_ENABLED: 'true' }, delivery, createStorage: () => { throw new Error('SDK token=secret'); } });
 	assert.deepEqual(await request(broken, '/ws', {}, 'GET'), { handled: true, status: 503, body: { error: 'workspaces_unavailable' } });
+	assert.deepEqual(errors, [['workspaces failed']]);
 	const bad = await request(router, `/ws/${ws}/changes`, { deviceId: 'mac-1', batchId: 'b1', ops: [] });
 	assert.deepEqual(bad.body, { error: 'invalid_ops' });
 	assert.equal(bad.status, 400);

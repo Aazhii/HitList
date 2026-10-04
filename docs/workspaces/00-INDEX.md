@@ -24,6 +24,8 @@ cloud: ordered change log (Data Store) ──> Ably "something changed" doorbell
   SQLite and a cursor (the last change it applied). Changes apply in the cloud's order, so every copy ends the same.
 - **Different fields** edited at the same moment both survive. The **same field** edited at the same moment: the later change wins on
   every computer. A field you changed that has not been sent yet is never overwritten by an incoming change.
+- Own cloud echoes are applied too, in sequence, once a field has no newer pending local edit. Skipping these echoes can make
+   two replicas disagree after simultaneous edits. Incoming application suppresses journaling so it does not enqueue another write.
 - The doorbell carries only a number. After a reconnect, at start and after being offline, the app pulls everything it missed.
 - Nothing runs on a timer while idle. A failed send is retried after 30 s, 1, 2, then 5 minutes, only while something is waiting.
 - Only lists and tasks are shared. Links from a task to someone's own note or database row stay on their computer.
@@ -46,12 +48,27 @@ cloud: ordered change log (Data Store) ──> Ably "something changed" doorbell
 2. **Function settings** on `backup`: `ABLY_API_KEY` (the Ably key), `WS_ENABLED=true`, `WS_MAIL_FROM` (an address verified under
    Catalyst Mail; without it invites are not emailed but the link is still shown to copy), optional `WS_ALLOWED_DOMAINS`
    (comma list) and `WS_INVITE_URL` (defaults to the project's `/app/invite.html`).
-   **A deploy replaces the function's whole environment** with `functions/backup/.env.cliq`, so every setting above (and the Cliq
-   ones) must be in that local, git-ignored file; `scripts/deploy-backup-function.sh` refuses to deploy without `ABLY_API_KEY`
-   and warns about the others.
+   **The deployment script replaces the function's whole environment** with `functions/backup/.env.cliq`, so every setting above
+   (and the Cliq ones) must be in that local, git-ignored file when using the script. It refuses deployment without `ABLY_API_KEY`
+   and warns about omitted settings. Direct code-only deployment can preserve console settings when `deployment.env_variables`
+   is omitted from the local function config. Do not use an empty map or an incomplete file as a replacement environment.
 3. Deploy: `sh scripts/deploy-backup-function.sh`, and upload `client/invite.html` with the web client
    (`catalyst deploy --only client`).
 4. Everyone must sign in to HitList (a Catalyst account) with the email the invite was sent to.
+
+## Diagnosed creation failure (2026-10-04)
+
+Read-only inspection of the Development `backup` download found an older handler without `/ws` routes or any workspace modules.
+`WS_ENABLED` was already true. The live four-table schemas match this guide, including the required unique columns and 10,000
+characters for `Ops`; missing tables are not the creation blocker. Permissions remain unverified.
+
+The current source contains the missing routes. After owner approval, deploy only `backup` with a complete environment or the
+code-only configuration described above; do not deploy all functions merely to fix workspace creation. Then verify an authenticated
+`GET /ws` before creating a workspace. Changing a flag or rebuilding only the desktop cannot add routes to the cloud function.
+
+Local verification passes: 122 desktop tests, 55 function tests, 47 Java tests, 595 web tests with design/types/lint, and all 16
+scratch end-to-end assertions. The latter uses real local servers and memory-backed cloud logic, not real Catalyst/Ably. It now
+checks both replicas against the cloud's winning title and removes its scratch data/processes on completion.
 
 ## Where the code is
 | Part | Files |

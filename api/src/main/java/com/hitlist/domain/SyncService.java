@@ -129,10 +129,7 @@ public class SyncService {
             if (seq != cursor + 1) { gap = true; break; }
             Object ops = change.get("ops");
             if (!(ops instanceof List<?> opList)) throw ApiException.invalid("ops must be a list");
-            // A change this device sent itself is already here (and may have been edited since): it only moves the cursor.
-            if (!Boolean.TRUE.equals(change.get("own"))) {
-                journal.applyingRemote(() -> { opList.forEach(op -> applyOp(workspaceId, op)); return null; });
-            }
+            journal.applyingRemote(() -> { opList.forEach(op -> applyOp(workspaceId, op)); return null; });
             cursor = seq;
             applied++;
         }
