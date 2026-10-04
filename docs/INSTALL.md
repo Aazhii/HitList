@@ -51,9 +51,13 @@ deleted). **Restart and update** then closes HitList, replaces the installed app
 drag. Choose **Later** to keep the download for next time. Your tasks are kept, because they live in the data folder and not in
 the app, and a backup is attempted first when you are signed in. If the swap fails, the old app is put back.
 
-The one-click replace works when HitList is installed somewhere you can write to (the normal Applications folder on Mac, an
-AppImage you own on Linux, the installer on Windows). If it is not (for example it is running straight from the disk image), the last
-step opens the installer instead, and the by-hand steps below apply. Stable installs are only offered stable releases; an alpha or
+The one-click replace works on all three systems: on **Mac** it replaces the app in place, including when your account cannot change the
+Applications folder itself (it then swaps what is inside the app, which you own); on **Windows** it runs the installer silently
+and starts the new version; on **Linux** it replaces the AppImage file. It cannot work (and the last step opens the installer
+instead, saying why) when HitList is run straight from the disk image or from the temporary place macOS uses for a freshly
+downloaded app (move it to Applications first), when it sits on another disk than the update files, or when it was installed from a
+`.deb` package (a package cannot replace itself). A build made before this feature only offers the installer, so install one
+newer build by hand once; after that it updates itself. Stable installs are only offered stable releases; an alpha or
 beta install is offered newer alpha, beta and stable ones. Only releases made with *publish* ticked count, and the repository must stay public.
 
 **By hand.** Download the new version and drag it onto **Applications**, replacing the old one. Your data is kept, because it lives in

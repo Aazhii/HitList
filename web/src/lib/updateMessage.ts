@@ -8,6 +8,8 @@ export interface UpdateStatus {
   progress: { received: number; total: number } | null;
   /** 'swap': HitList replaces itself and restarts. 'open': the downloaded installer is opened for the person. */
   mode: 'swap' | 'open' | null;
+  /** Why HitList could not replace itself here, when the last step opens the installer instead. */
+  swapBlock?: string | null;
   latest: { version: string; name: string; notes: string; size: number } | null;
 }
 
@@ -73,6 +75,19 @@ export function updateErrorMessage(code: string | null): string {
     case 'install-failed':
     case 'not-installed': return 'HitList could not replace itself here. Open the installer to finish the update by hand.';
     default: return 'Could not reach the update server. Try again when you are online.';
+  }
+}
+
+/** Why this install cannot update itself, in a sentence. */
+export function swapBlockMessage(reason: string | null | undefined): string {
+  switch (reason) {
+    case 'disk-image': return 'HitList is running from the disk image. Move it to the Applications folder first, then update from there.';
+    case 'translocated': return 'macOS is running HitList from a temporary location. Move it to the Applications folder, open it from there, and update again.';
+    case 'not-writable': return 'HitList is installed somewhere this account cannot change, so it cannot replace itself.';
+    case 'other-disk': return 'HitList is on a different disk than the update files, so it cannot replace itself.';
+    case 'package-install': return 'HitList was installed from a package (.deb), which cannot replace itself. Install the new package.';
+    case 'dev-run': return 'This is a development run; installed apps update themselves.';
+    default: return 'HitList could not replace itself here.';
   }
 }
 

@@ -22,22 +22,40 @@ function macBundleOf(exePath) {
 }
 
 /**
- * Whether this install can be replaced in place by us. Anything else falls back to "download and open".
- * `env` is injected for tests: { platform, exePath, appImage, isPackaged, access }.
+ * How this install can be replaced in place by us, or why it cannot. Anything else falls back to "download and open".
+ *   { ok: true, mode: 'replace' }   Mac: the whole .app is swapped (needs a writable folder around it)
+ *   { ok: true, mode: 'contents' }  Mac: the folder around the app is not ours (typical for /Applications on a standard account),
+ *                                   but the app itself is, so what is inside it is swapped and the app keeps its place
+ *   { ok: true, mode: 'installer' } Windows: the installer runs silently over the existing install
+ *   { ok: true, mode: 'appimage' }  Linux: the AppImage file is replaced
+ *   { ok: false, reason }           'dev-run' | 'disk-image' | 'translocated' | 'not-writable' | 'other-disk' | 'package-install' | 'unsupported'
+ * `env` is injected for tests: { platform, exePath, appImage, isPackaged, access, sameDisk }.
  */
-function canSwap({ platform, exePath, appImage, isPackaged, access = (p) => fs.accessSync(p, fs.constants.W_OK) }) {
-  if (!isPackaged) return false;
+function swapPlan({ platform, exePath, appImage, isPackaged, access = (p) => fs.accessSync(p, fs.constants.W_OK), sameDisk = () => true }) {
+  if (!isPackaged) return { ok: false, reason: 'dev-run' };
   const writable = (p) => { try { access(p); return true; } catch { return false; } };
   if (platform === 'darwin') {
     const bundle = macBundleOf(exePath);
-    if (!bundle) return false;
+    if (!bundle) return { ok: false, reason: 'dev-run' };
     // Opened from a disk image, or run from the temporary read-only copy macOS makes for a freshly downloaded app.
-    if (bundle.startsWith('/Volumes/') || bundle.includes('/AppTranslocation/')) return false;
-    return writable(path.dirname(bundle)) && writable(bundle);
+    if (bundle.startsWith('/Volumes/')) return { ok: false, reason: 'disk-image' };
+    if (bundle.includes('/AppTranslocation/')) return { ok: false, reason: 'translocated' };
+    if (!writable(bundle)) return { ok: false, reason: 'not-writable' };
+    if (writable(path.dirname(bundle))) return { ok: true, mode: 'replace' };
+    // The new files are prepared on this computer's data disk; moving them in must be a rename, never a slow copy.
+    return sameDisk(bundle) ? { ok: true, mode: 'contents' } : { ok: false, reason: 'other-disk' };
   }
-  if (platform === 'win32') return true; // the installer puts itself back in the same place
-  if (platform === 'linux') return !!appImage && writable(path.dirname(appImage)) && writable(appImage);
-  return false;
+  if (platform === 'win32') return { ok: true, mode: 'installer' }; // the installer puts itself back in the same place
+  if (platform === 'linux') {
+    if (!appImage) return { ok: false, reason: 'package-install' };
+    return writable(path.dirname(appImage)) && writable(appImage) ? { ok: true, mode: 'appimage' } : { ok: false, reason: 'not-writable' };
+  }
+  return { ok: false, reason: 'unsupported' };
+}
+
+/** Whether this install can be replaced in place by us (see swapPlan for how, or why not). */
+function canSwap(env) {
+  return swapPlan(env).ok;
 }
 
 /** sh script for Mac: wait for `pid` to exit, swap the bundle, open it. On failure restore the old one. */
@@ -68,16 +86,55 @@ fi
 `;
 }
 
-/** cmd script for Windows: wait for `pid`, run the installer silently, start the app. */
+/**
+ * sh script for Mac when the folder around the app is not ours: wait for `pid` to exit, then swap what is INSIDE the app
+ * (its Contents folder) and open it. The app keeps its name and place. The old Contents is kept in `keep` until the new app
+ * has started (it is removed then, outside the app, so the app's seal is never left with extra files). On failure the old
+ * Contents goes back.
+ */
+function macContentsScript({ pid, bundle, stagedContents, keep, open = 'open' }) {
+  return `#!/bin/sh
+PID=${Number(pid)}
+BUNDLE=${quote(bundle)}
+NEW=${quote(stagedContents)}
+OLD=${quote(keep)}
+i=0
+while kill -0 "$PID" 2>/dev/null; do
+  i=$((i+1))
+  if [ "$i" -gt ${WAIT_SECONDS * 2} ]; then echo "old app still running; not replacing it"; rm -rf "$NEW"; exit 1; fi
+  sleep 0.5
+done
+rm -rf "$OLD"
+if mv "$BUNDLE/Contents" "$OLD" && mv "$NEW" "$BUNDLE/Contents"; then
+  xattr -dr com.apple.quarantine "$BUNDLE" 2>/dev/null
+  ${open} "$BUNDLE"
+else
+  echo "swap failed; putting the old app back"
+  if [ ! -d "$BUNDLE/Contents" ] && [ -d "$OLD" ]; then mv "$OLD" "$BUNDLE/Contents"; fi
+  rm -rf "$NEW"
+  ${open} "$BUNDLE"
+  exit 1
+fi
+`;
+}
+
+/**
+ * cmd script for Windows: wait for `pid` to exit, run the installer silently over the existing install, start the app.
+ * The wait uses ping (not `timeout`, which refuses to run without a console) and matches the pid as a whole CSV field, so
+ * another process whose numbers merely contain it does not hold the update back. The installer is run unattended; the app is
+ * started here, because a silent NSIS install does not start it.
+ */
 function winScript({ pid, installer, app }) {
+  const id = Number(pid);
   return `@echo off
-set /a n=0
+setlocal enabledelayedexpansion
+set n=0
 :wait
-tasklist /FI "PID eq ${Number(pid)}" 2>NUL | find "${Number(pid)}" >NUL
+tasklist /FI "PID eq ${id}" /FO CSV /NH 2>NUL | find """${id}""" >NUL
 if not errorlevel 1 (
   set /a n+=1
-  if %n% GTR ${WAIT_SECONDS} exit /b 1
-  timeout /t 1 /nobreak >NUL
+  if !n! GTR ${WAIT_SECONDS} exit /b 1
+  ping -n 2 127.0.0.1 >NUL
   goto wait
 )
 start /wait "" "${installer}" /S
@@ -98,6 +155,8 @@ while kill -0 "$PID" 2>/dev/null; do
   sleep 0.5
 done
 chmod +x "$STAGED"
+# The new app starts clean: nothing from the old AppImage's mount is passed on.
+unset APPDIR APPIMAGE ARGV0 OWD
 if mv -f "$STAGED" "$TARGET"; then
   nohup "$TARGET" >/dev/null 2>&1 &
 else
@@ -122,13 +181,25 @@ async function install({ platform, file, exePath, appImage, pid, helperDir, deps
     if (platform === 'darwin') {
       const bundle = macBundleOf(exePath);
       if (!bundle) return { ok: false, reason: 'not-installed' };
-      // Unpack next to the app so the final move stays on one disk and is instant.
-      const stageParent = fs.mkdtempSync(path.join(path.dirname(bundle), '.HitList-update-'));
+      const plan = deps.plan || swapPlan({ platform, exePath, appImage, isPackaged: true, sameDisk: (p) => fs.statSync(p).dev === fs.statSync(helperDir).dev });
+      if (!plan.ok) return { ok: false, reason: 'not-installed' };
+      // 'replace' prepares the new app beside the old one; 'contents' prepares it in our own folder (the folder around the app is not ours).
+      const stageParent = plan.mode === 'replace'
+        ? fs.mkdtempSync(path.join(path.dirname(bundle), '.HitList-update-'))
+        : fs.mkdtempSync(path.join(helperDir, 'stage-'));
       try {
         run('ditto', ['-x', '-k', file, stageParent]);
         const app = fs.readdirSync(stageParent).find((n) => n.endsWith('.app'));
         if (!app) throw new Error('no-app-in-zip');
         run('codesign', ['--verify', '--deep', '--strict', path.join(stageParent, app)]);
+        if (plan.mode === 'contents') {
+          const script = path.join(helperDir, 'swap-contents.sh');
+          fs.writeFileSync(script, macContentsScript({
+            pid, bundle, stagedContents: path.join(stageParent, app, 'Contents'), keep: path.join(helperDir, 'Contents.old'),
+          }), { mode: 0o700 });
+          spawnDetached('/bin/sh', [script]);
+          return { ok: true };
+        }
         const staged = path.join(path.dirname(bundle), `.${path.basename(bundle)}.new`);
         rm(staged);
         fs.renameSync(path.join(stageParent, app), staged);
@@ -164,11 +235,15 @@ async function install({ platform, file, exePath, appImage, pid, helperDir, deps
 }
 
 /** After a successful start: remove what an earlier update left beside the app (the old copy, unpack folders). */
-function cleanupAfterUpdate({ platform, exePath, rm = (p) => fs.rmSync(p, { recursive: true, force: true }), list = (d) => fs.readdirSync(d) }) {
+function cleanupAfterUpdate({ platform, exePath, helperDir, rm = (p) => fs.rmSync(p, { recursive: true, force: true }), list = (d) => fs.readdirSync(d) }) {
   if (platform !== 'darwin') return;
   const bundle = macBundleOf(exePath);
   if (!bundle) return;
   rm(`${bundle}.old`);
+  if (helperDir) {
+    rm(path.join(helperDir, 'Contents.old'));
+    try { for (const name of list(helperDir)) if (name.startsWith('stage-')) rm(path.join(helperDir, name)); } catch { /* no folder yet */ }
+  }
   const dir = path.dirname(bundle);
   try {
     for (const name of list(dir)) {
@@ -177,4 +252,4 @@ function cleanupAfterUpdate({ platform, exePath, rm = (p) => fs.rmSync(p, { recu
   } catch { /* the folder cannot be listed: nothing to clean */ }
 }
 
-module.exports = { canSwap, install, cleanupAfterUpdate, macBundleOf, macScript, winScript, linuxScript };
+module.exports = { canSwap, swapPlan, install, cleanupAfterUpdate, macBundleOf, macScript, macContentsScript, winScript, linuxScript };

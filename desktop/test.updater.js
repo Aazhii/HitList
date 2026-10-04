@@ -214,3 +214,18 @@ test('a half file left by a quit mid-download is removed when the app starts', (
   createUpdater({ repo: 'o/r', currentVersion: '1.1.0', platform: 'darwin', arch: 'arm64', fetch: async () => {}, downloadDir: dir, openFile: async () => {} });
   assert.deepStrictEqual(fs.readdirSync(dir), []);
 });
+
+test('when the app cannot replace itself, the reason is passed on so the screen can say why', async () => {
+  const body = 'hello';
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'upd-'));
+  const a = makeUpdater({ releases: [release('HitList_1.2.0')], files: { 'u/dmg': body, 'u/sums': sumsFor(body, 'HitList-1.2.0-arm64.dmg') } });
+  const u = createUpdater({
+    repo: 'o/r', currentVersion: '1.1.0', platform: 'darwin', arch: 'arm64', downloadDir: dir, canSwap: false, swapBlock: 'disk-image',
+    fetch: async (url) => (url.includes('/releases') ? { ok: true, status: 200, json: async () => [release('HitList_1.2.0')] } : { ok: false, status: 404 }),
+    openFile: async () => {},
+  });
+  const s = await u.check();
+  assert.strictEqual(s.mode, 'open');
+  assert.strictEqual(s.swapBlock, 'disk-image');
+  assert.ok(a);
+});

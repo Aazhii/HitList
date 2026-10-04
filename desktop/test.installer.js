@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { execFileSync } = require('node:child_process');
-const { canSwap, install, cleanupAfterUpdate, macBundleOf, macScript, winScript, linuxScript } = require('./installer');
+const { canSwap, swapPlan, install, cleanupAfterUpdate, macBundleOf, macScript, macContentsScript, winScript, linuxScript } = require('./installer');
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'inst-'));
 const fakeApp = (dir, name, marker) => {
@@ -71,6 +71,12 @@ test('the helper waits for the running app to exit before touching anything', ()
   const text = macScript({ pid: 4242, bundle: '/Applications/HitList.app', staged: '/Applications/.HitList.app.new' });
   assert.ok(text.indexOf('kill -0') < text.indexOf('mv "$BUNDLE"'));
   assert.match(winScript({ pid: 4242, installer: 'C:\\u\\Setup.exe', app: 'C:\\a\\HitList.exe' }), /tasklist[^\n]*4242[\s\S]*Setup\.exe" \/S[\s\S]*start "" "C:\\a\\HitList\.exe"/);
+  const w = winScript({ pid: 4242, installer: 'C:\\u\\Setup.exe', app: 'C:\\a\\HitList.exe' });
+  assert.match(w, /enabledelayedexpansion/);
+  assert.match(w, /if !n! GTR 60/, 'the wait limit is read at run time, not frozen when the block is parsed');
+  assert.match(w, /ping -n 2/);
+  assert.doesNotMatch(w, /timeout \/t/);
+  assert.match(w, /\/FO CSV/);
   assert.match(linuxScript({ pid: 4242, appImage: '/h/HitList.AppImage', staged: '/h/.HitList.AppImage.new' }), /kill -0[\s\S]*chmod \+x[\s\S]*mv -f/);
 });
 
@@ -116,4 +122,82 @@ test('install refuses and cleans up when the signature check or the package is b
   assert.strictEqual(spawned, false);
   assert.deepStrictEqual(fs.readdirSync(dir).filter((n) => n.startsWith('.HitList')), []);
   assert.strictEqual(marker(bundle), 'old');
+});
+
+const mac = (extra = {}) => ({ platform: 'darwin', exePath: '/Applications/HitList.app/Contents/MacOS/HitList', isPackaged: true, ...extra });
+
+test('a Mac where only the app itself is ours (a standard account in /Applications) swaps what is inside the app', () => {
+  const onlyBundle = (p) => { if (p === '/Applications') throw new Error('EACCES'); };
+  assert.deepEqual(swapPlan(mac({ access: onlyBundle })), { ok: true, mode: 'contents' });
+  assert.deepEqual(swapPlan(mac({ access: () => {} })), { ok: true, mode: 'replace' });
+  assert.deepEqual(swapPlan(mac({ access: onlyBundle, sameDisk: () => false })), { ok: false, reason: 'other-disk' });
+  assert.deepEqual(swapPlan(mac({ access: () => { throw new Error('EACCES'); } })), { ok: false, reason: 'not-writable' });
+  assert.strictEqual(canSwap(mac({ access: onlyBundle })), true);
+});
+
+test('every reason the app cannot replace itself is named', () => {
+  const ok = () => {};
+  assert.deepEqual(swapPlan({ ...mac(), isPackaged: false, access: ok }), { ok: false, reason: 'dev-run' });
+  assert.deepEqual(swapPlan(mac({ exePath: '/Volumes/HitList/HitList.app/Contents/MacOS/HitList', access: ok })), { ok: false, reason: 'disk-image' });
+  assert.deepEqual(swapPlan(mac({ exePath: '/private/var/x/AppTranslocation/A/d/HitList.app/Contents/MacOS/HitList', access: ok })), { ok: false, reason: 'translocated' });
+  assert.deepEqual(swapPlan({ platform: 'linux', isPackaged: true, access: ok }), { ok: false, reason: 'package-install' });
+  assert.deepEqual(swapPlan({ platform: 'linux', appImage: '/h/HitList.AppImage', isPackaged: true, access: ok }), { ok: true, mode: 'appimage' });
+  assert.deepEqual(swapPlan({ platform: 'win32', exePath: 'C:\\a\\HitList.exe', isPackaged: true, access: ok }), { ok: true, mode: 'installer' });
+});
+
+test('the contents helper really swaps what is inside the app, keeps the app\'s place, and the old contents go aside', () => {
+  const dir = tmp();
+  const bundle = fakeApp(dir, 'HitList.app', 'old');
+  const stage = path.join(dir, 'stage-1');
+  fs.mkdirSync(stage);
+  const newApp = fakeApp(stage, 'HitList.app', 'new');
+  const keep = path.join(dir, 'Contents.old');
+  const opened = path.join(dir, 'opened.txt');
+  const open = path.join(dir, 'fake-open.sh');
+  fs.writeFileSync(open, `#!/bin/sh\necho "$1" > ${JSON.stringify(opened)}\n`, { mode: 0o755 });
+  const script = path.join(dir, 'swap.sh');
+  fs.writeFileSync(script, macContentsScript({ pid: 99999999, bundle, stagedContents: path.join(newApp, 'Contents'), keep, open }));
+  execFileSync('/bin/sh', [script]);
+  assert.strictEqual(marker(bundle), 'new');
+  assert.strictEqual(fs.readFileSync(path.join(keep, 'marker'), 'utf8'), 'old');
+  assert.deepStrictEqual(fs.readdirSync(bundle), ['Contents'], 'nothing extra is left inside the app');
+  assert.strictEqual(fs.readFileSync(opened, 'utf8').trim(), bundle);
+  cleanupAfterUpdate({ platform: 'darwin', exePath: path.join(bundle, 'Contents/MacOS/HitList'), helperDir: dir });
+  assert.ok(!fs.existsSync(keep));
+  assert.ok(!fs.existsSync(stage));
+});
+
+test('if the new contents cannot be moved in, the old ones are put back and the app opens', () => {
+  const dir = tmp();
+  const bundle = fakeApp(dir, 'HitList.app', 'old');
+  const opened = path.join(dir, 'opened.txt');
+  const open = path.join(dir, 'fake-open.sh');
+  fs.writeFileSync(open, `#!/bin/sh\necho "$1" > ${JSON.stringify(opened)}\n`, { mode: 0o755 });
+  const script = path.join(dir, 'swap.sh');
+  fs.writeFileSync(script, macContentsScript({ pid: 99999999, bundle, stagedContents: path.join(dir, 'missing', 'Contents'), keep: path.join(dir, 'Contents.old'), open }));
+  try { execFileSync('/bin/sh', [script], { stdio: 'pipe' }); } catch { /* exits 1 on purpose */ }
+  assert.strictEqual(marker(bundle), 'old');
+  assert.ok(!fs.existsSync(path.join(dir, 'Contents.old')));
+  assert.strictEqual(fs.readFileSync(opened, 'utf8').trim(), bundle);
+});
+
+test('install on a Mac whose Applications folder is not ours prepares the new contents in our own folder', async () => {
+  const dir = tmp();
+  const bundle = fakeApp(dir, 'HitList.app', 'old');
+  const exe = path.join(bundle, 'Contents/MacOS/HitList');
+  const helper = path.join(dir, 'helper');
+  let started = null;
+  const out = await install({
+    platform: 'darwin', file: '/dl/x.zip', exePath: exe, pid: 7, helperDir: helper,
+    deps: {
+      plan: { ok: true, mode: 'contents' },
+      run: (cmd, args) => { if (cmd === 'ditto') fakeApp(args[3], 'HitList.app', 'new'); },
+      spawnDetached: (cmd, args) => { started = [cmd, ...args]; },
+    },
+  });
+  assert.deepStrictEqual(out, { ok: true });
+  assert.ok(started[1].endsWith('swap-contents.sh'));
+  assert.ok(fs.readdirSync(helper).some((n) => n.startsWith('stage-')), 'unpacked under our own folder');
+  assert.deepStrictEqual(fs.readdirSync(dir).filter((n) => n.startsWith('.HitList')), [], 'nothing was made beside the app');
+  assert.strictEqual(marker(bundle), 'old', 'the running app is untouched until the helper runs');
 });

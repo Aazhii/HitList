@@ -5,7 +5,7 @@
 import { useEffect } from 'react';
 import { Check, Circle, Loader2, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { installHint, percentOf, progressLabel, sizeLabel, updateHeadline, updateSteps } from '@/lib/updateMessage';
+import { installHint, percentOf, progressLabel, sizeLabel, swapBlockMessage, updateHeadline, updateSteps } from '@/lib/updateMessage';
 import type { StepState, UpdateStatus } from '@/lib/updateMessage';
 import { useAppUpdate } from '@/hooks/useAppUpdate';
 import { cn } from '@/lib/utils';
@@ -104,7 +104,12 @@ export function UpdateDialog({ open, onOpenChange }: { open: boolean; onOpenChan
             {showSteps && <Steps s={s} />}
             {(s.phase === 'downloading' || s.phase === 'verifying') && <Bar s={s} />}
 
-            {s.phase === 'ready' && s.mode === 'open' && <p className="text-[13px] text-a-muted">{installHint(platform)}</p>}
+            {s.phase === 'ready' && s.mode === 'open' && (
+              <div className="flex flex-col gap-1.5">
+                <p className="text-[13px] text-a-muted">{swapBlockMessage(s.swapBlock)}</p>
+                <p className="text-[13px] text-a-muted">{installHint(platform)}</p>
+              </div>
+            )}
             {(s.phase === 'ready' || s.phase === 'installing') && s.mode === 'swap' && (
               <p className="text-[13px] text-a-muted">Your tasks are kept. HitList closes for a moment and opens again on the new version.</p>
             )}

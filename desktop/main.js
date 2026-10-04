@@ -353,8 +353,9 @@ async function openWindow() {
   // App updates: look at the project's GitHub Releases, download the new version with progress, then replace the installed app
   // and start it again (installer.js). Where the app cannot be replaced in place, the installer file is opened instead.
   const updatesDir = path.join(userDataDir, 'updates');
+  fs.mkdirSync(updatesDir, { recursive: true });
   const swapEnv = { platform: process.platform, exePath: app.getPath('exe'), appImage: process.env.APPIMAGE, isPackaged: app.isPackaged };
-  installer.cleanupAfterUpdate({ platform: process.platform, exePath: swapEnv.exePath });
+  installer.cleanupAfterUpdate({ platform: process.platform, exePath: swapEnv.exePath, helperDir: updatesDir });
   const updater = createUpdater({
     repo: 'Aazhii/HitList',
     currentVersion: app.getVersion(),
@@ -362,7 +363,7 @@ async function openWindow() {
     arch: process.arch,
     fetch: (url, opts) => fetch(url, opts),
     downloadDir: updatesDir,
-    canSwap: installer.canSwap(swapEnv),
+    ...(() => { const plan = installer.swapPlan({ ...swapEnv, sameDisk: (p) => { try { return fs.statSync(p).dev === fs.statSync(updatesDir).dev; } catch { return false; } } }); return { canSwap: plan.ok, swapBlock: plan.ok ? null : plan.reason }; })(),
     installFile: ({ file }) => installer.install({ ...swapEnv, file, pid: process.pid, helperDir: updatesDir }),
     openFile: async (file) => { if (process.platform === 'linux') shell.showItemInFolder(file); else await shell.openPath(file); },
     onChange: (s) => { if (!win.isDestroyed()) win.webContents.send('update:progress', s); },

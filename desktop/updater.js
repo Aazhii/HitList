@@ -67,7 +67,7 @@ function hashFor(sumsText, fileName) {
 }
 
 function createUpdater({
-  repo, currentVersion, platform, arch, fetch, downloadDir, canSwap = false, installFile, openFile, onChange = () => {}, now = () => Date.now(),
+  repo, currentVersion, platform, arch, fetch, downloadDir, canSwap = false, swapBlock = null, installFile, openFile, onChange = () => {}, now = () => Date.now(),
 }) {
   const current = parseVersion(currentVersion);
   let latest = null; // { version, name, notes, asset, sums, mode }
@@ -90,6 +90,8 @@ function createUpdater({
     file: state.file,
     progress: state.progress,
     mode: latest ? latest.mode : null,
+    // Why the app cannot replace itself here (and the installer is opened instead), when that is the case.
+    swapBlock: latest && latest.mode === 'open' ? (latest.swapBlock || swapBlock) : null,
     latest: latest ? { version: latest.version, name: latest.name, notes: latest.notes, size: latest.asset.size } : null,
   });
 
@@ -221,7 +223,7 @@ function createUpdater({
     const out = await installFile({ file: state.file, asset: latest.asset });
     if (out && out.ok) return { ...status(), restart: true };
     // The in-place swap did not work: fall back to opening the installer so the update is not lost.
-    latest = { ...latest, mode: 'open' };
+    latest = { ...latest, mode: 'open', swapBlock: out && out.reason ? out.reason : 'install-failed' };
     set({ phase: 'ready', error: out && out.reason ? out.reason : 'install-failed' });
     return { ...status(), restart: false };
   }
