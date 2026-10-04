@@ -32,6 +32,8 @@ import { LatestValueQueue } from '@/lib/latestValueQueue';
 import { DEFAULT_FILTERS, FIELD_EMPTY, applyRecordFilters, isGroupableField, knownFieldFilters, matchesFieldFilters } from '@/lib/taskFilters';
 import type { FieldDef, FieldValue } from '@/types/fields';
 import type { DatabaseTaskLinking } from '@/pages/DatabasesPage';
+import { getActiveTaskStorageId } from '@/lib/storage';
+import { flushSourceSaves, onSourceSave, sourceWritesPending, sourceWriteVersion, waitForSourceWrites } from '@/lib/sourceSaves';
 
 /** recordId → fieldId → value, the same shape tasks use. */
 export type RecordValues = Record<string, Record<string, FieldValue>>;
@@ -63,6 +65,7 @@ export interface WorkspaceHeaderContext {
 }
 
 export interface DatabaseWorkspaceProps {
+  openRecordId?: string | null;
   database: ApiDatabase;
   store: DatabaseStore;
   linking?: DatabaseTaskLinking;
@@ -74,7 +77,7 @@ export interface DatabaseWorkspaceProps {
   startOn?: 'table' | 'board';
 }
 
-export function DatabaseWorkspace({ database, store, linking, inline = false, header, startOn }: DatabaseWorkspaceProps) {
+export function DatabaseWorkspace({ database, store, linking, inline = false, header, startOn, openRecordId }: DatabaseWorkspaceProps) {
   const open = database;
   const { rows, rowsLoading, createRow, updateRow, deleteRow, updateDatabase } = store;
   const notify = useCallback((message: string) => toast.error(message, { duration: 3000 }), []);
@@ -82,12 +85,23 @@ export function DatabaseWorkspace({ database, store, linking, inline = false, he
    * The field a database's board groups by. Per database and per device —
    * unlike table/board itself, this isn't part of a saved view's layout.
    */
-  const [boardFieldByDatabase, setBoardFieldByDatabase] = useLocalStorage<Record<string, string>>('hitlist-db-board-field-v1', {});
+  const scope = getActiveTaskStorageId() ?? 'anonymous';
+  const [boardFieldByDatabase, setBoardFieldByDatabase] = useLocalStorage<Record<string, string>>(`hitlist-db-board-field-v1:${scope}`, {});
 
   const [fields, setFields] = useState<FieldDef[]>([]);
   const [values, setValues] = useState<RecordValues>({});
   const valuesRef = useRef<RecordValues>({});
   const valueQueue = useRef(new LatestValueQueue<FieldValue | null | undefined>());
+  useEffect(() => onSourceSave(() => valueQueue.current.flush()), []);
+  const [revision, setRevision] = useState(0);
+  useEffect(() => {
+    let live = true;
+    const refresh = async () => {
+      try { await flushSourceSaves(); if (live) setRevision((value) => value + 1); } catch { /* retain pending edits */ }
+    };
+    window.addEventListener('hitlist:workspace-data-changed', refresh);
+    return () => { live = false; window.removeEventListener('hitlist:workspace-data-changed', refresh); };
+  }, []);
   const updateValues = useCallback((update: (current: RecordValues) => RecordValues) => {
     const next = update(valuesRef.current);
     valuesRef.current = next;
@@ -112,7 +126,8 @@ export function DatabaseWorkspace({ database, store, linking, inline = false, he
   /** The toolbar's Filter (showcase 727–738): one column, "contains", some text. Ad hoc, like search. */
   const [filterOpen, setFilterOpen] = useState(false);
   /** The record open in the peek panel (the Title cell's page icon). */
-  const [peekId, setPeekId] = useState<string | null>(null);
+  const [peekId, setPeekId] = useState<string | null>(openRecordId ?? null);
+  useEffect(() => { if (openRecordId) setPeekId(openRecordId); }, [openRecordId]);
   const [textFilter, setTextFilter] = useState<{ col: string; text: string }>({ col: 'title', text: '' });
   // The column-menu table controls: hidden/sorted/grouped/calculated/frozen/
   // wrapped columns. Ad-hoc per open database for now, same as fieldFilters —
@@ -142,7 +157,7 @@ export function DatabaseWorkspace({ database, store, linking, inline = false, he
     hidden: string[]; sort: { fieldId: string; dir: 1 | -1 } | null; groupField: string | null;
     calc: Record<string, string>; frozenFieldId: string | null; wrapFieldIds: string[]; widths: Record<string, number>;
   };
-  const [tableMemory, setTableMemory] = useLocalStorage<Record<string, TableControls>>('hitlist-db-table-controls-v1', {});
+  const [tableMemory, setTableMemory] = useLocalStorage<Record<string, TableControls>>(`hitlist-db-table-controls-v1:${scope}`, {});
   const tableMemoryRef = useRef(tableMemory);
   // Declared before the effect that reads it, so it is current when that one runs.
   useEffect(() => { tableMemoryRef.current = tableMemory; });
@@ -215,20 +230,35 @@ export function DatabaseWorkspace({ database, store, linking, inline = false, he
   useEffect(() => {
     if (!database.id) { setFields([]); updateValues(() => ({})); return; }
     let cancelled = false;
+    const before = valuesRef.current;
+    const version = sourceWriteVersion();
+    const startedDuringWrite = sourceWritesPending();
     Promise.all([fieldApi.listFields(database.id), databaseApi.listFieldValues(database.id)])
-      .then(([defs, rawValues]) => {
+      .then(async ([defs, rawValues]) => {
         if (cancelled) return;
+        if (startedDuringWrite || sourceWritesPending() || version !== sourceWriteVersion()) {
+          await waitForSourceWrites();
+          if (!cancelled) setRevision(value => value + 1);
+          return;
+        }
         setFields([...defs].sort((a, b) => a.fieldOrder - b.fieldOrder || a.createdAt - b.createdAt));
         const map: RecordValues = {};
         for (const row of rawValues) {
           if (row.value === null) continue;
           (map[row.recordId] ??= {})[row.fieldId] = row.value;
         }
-        updateValues(() => map);
+        updateValues((current) => {
+          for (const [recordId, row] of Object.entries(current)) {
+            for (const [fieldId, value] of Object.entries(row)) {
+              if (valueQueue.current.has(`${recordId}:${fieldId}`) || before[recordId]?.[fieldId] !== value) (map[recordId] ??= {})[fieldId] = value;
+            }
+          }
+          return map;
+        });
       })
       .catch(() => { if (!cancelled) notify("Couldn't load this database's columns"); });
     return () => { cancelled = true; };
-  }, [database.id, notify, updateValues]);
+  }, [database.id, notify, updateValues, revision]);
 
   const setValue = useCallback(async (recordId: string, fieldId: string, value: FieldValue | null) => {
     const before = valuesRef.current[recordId]?.[fieldId];

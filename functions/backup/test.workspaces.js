@@ -167,13 +167,84 @@ test('pulling is paged', async () => {
 
 test('change batches are checked: known tables and fields, plain values, bounded size', () => {
 	assert.throws(() => cleanOps([]), { code: 'invalid_ops' });
-	assert.throws(() => cleanOps([{ table: 'notes', id: 'n1', fields: { Title: 'x' } }]), { code: 'invalid_ops' });
+	assert.throws(() => cleanOps([{ table: 'unknown', id: 'n1', fields: { Title: 'x' } }]), { code: 'invalid_ops' });
 	assert.throws(() => cleanOps([task('t1', { OwnerId: 'steal' })]), { code: 'invalid_field' });
 	assert.throws(() => cleanOps([task('t1', { Title: { nested: true } })]), { code: 'invalid_field' });
 	assert.throws(() => cleanOps([task('bad id!', { Title: 'x' })]), { code: 'invalid_ops' });
 	assert.throws(() => cleanOps([task('t1', { Note: 'x'.repeat(5000) }), task('t2', { Note: 'x'.repeat(5000) })]), { code: 'ops_too_large' });
 	assert.deepEqual(cleanOps([{ table: 'lists', id: 'l1', deleted: true, fields: { Name: 'ignored' } }]), [{ table: 'lists', id: 'l1', deleted: true }]);
 	assert.deepEqual(cleanOps([task('t1', { AssigneeUserId: '200002', AssigneeName: 'Bob', DueDate: null })])[0].fields, { AssigneeUserId: '200002', AssigneeName: 'Bob', DueDate: null });
+});
+
+const sourceOps = () => [
+	{ table: 'notes', id: 'note-1', fields: { Title: 'Bug report', BlocksJson: '[]', Emoji: '', Pinned: false, CreatedAt: 1, UpdatedAt: 2 } },
+	{ table: 'databases', id: 'db-1', fields: { Name: 'Bugs', Icon: '', DateFieldId: 'field-1', TitleLabel: 'Issue', DbOrder: 0, CreatedAt: 1, UpdatedAt: 2 } },
+	{ table: 'records', id: 'record-1', fields: { DatabaseId: 'db-1', Title: 'Reproduce', RowOrder: 0, CreatedAt: 1, UpdatedAt: 2 } },
+	{ table: 'fields', id: 'field-1', fields: { DatabaseId: 'db-1', Name: 'Details', FieldKind: 'text', OptionsJson: '[]', ShowOnCard: true, DefOrder: 0, CreatedAt: 1, UpdatedAt: 2 } },
+	{ table: 'values', id: 'value-1', fields: { TaskId: 'record-1', DefId: 'field-1', ValueText: 'Check the source', EncodedKind: 'text', UpdatedAt: 2 } },
+	{ table: 'fragments', id: 'fragment-1', fields: { Table: 'notes', EntityId: 'note-1', Field: 'BlocksJson', Version: 'version-1', Part: 0, Parts: 2, Value: '[{"id":"block-1",' } },
+	task('task-1', { Title: 'Fix source', SourceNoteId: 'note-1', SourceBlockId: 'block-1', SourceRecordId: 'record-1', SourceFieldId: 'field-1' }),
+];
+
+test('members ship known source tables, fields, values and fragments unchanged; nonmembers cannot read or write them', async () => {
+	const ctx = setup();
+	const { ws } = await sharedWithBob(ctx);
+	const ops = sourceOps();
+	assert.deepEqual(cleanOps(ops), ops);
+	const body = { deviceId: 'source-device', batchId: 'source-batch', ops };
+	await ctx.svc.pushChanges(alice, ws.workspaceId, body);
+	assert.deepEqual((await ctx.svc.pullChanges(bob, ws.workspaceId, { after: 0 })).changes[0].ops, ops);
+	await ctx.svc.pushChanges(bob, ws.workspaceId, { ...body, batchId: 'member-edit' });
+	assert.equal(ctx.store.changes.length, 2);
+	for (const op of ops) {
+		await assert.rejects(ctx.svc.pushChanges(eve, ws.workspaceId, { ...body, ops: [op] }), { status: 403, code: 'not_a_member' });
+	}
+	await assert.rejects(ctx.svc.pullChanges(eve, ws.workspaceId, { after: 0 }), { status: 403, code: 'not_a_member' });
+	await ctx.svc.removeMember(alice, ws.workspaceId, bob.userId);
+	await assert.rejects(ctx.svc.pushChanges(bob, ws.workspaceId, body), { status: 403, code: 'not_a_member' });
+	await assert.rejects(ctx.svc.pullChanges(bob, ws.workspaceId, { after: 0 }), { status: 403, code: 'not_a_member' });
+	assert.equal(ctx.store.changes.length, 2, 'denied writes never reach storage');
+});
+
+test('source operations reject private owner fields directly and through fragments', async () => {
+	const ctx = setup();
+	const { ws } = await sharedWithBob(ctx);
+	for (const op of sourceOps()) {
+		for (const key of ['OwnerId', 'owner_id', 'ROWID', 'LocalOwners', 'SourceKey']) {
+			const privateOp = { ...op, fields: { ...op.fields, [key]: 'private-owner' } };
+			assert.throws(() => cleanOps([privateOp]), { status: 400, code: 'invalid_field' });
+			await assert.rejects(ctx.svc.pushChanges(bob, ws.workspaceId, { deviceId: 'member', batchId: 'private-field', ops: [privateOp] }), { status: 400, code: 'invalid_field' });
+		}
+	}
+	const fragment = sourceOps().find((op) => op.table === 'fragments');
+	for (const table of ['notes', 'databases', 'records', 'fields', 'values', 'tasks']) {
+		assert.throws(() => cleanOps([{ ...fragment, fields: { ...fragment.fields, Table: table, Field: 'OwnerId' } }]), { status: 400, code: 'invalid_fragment' });
+	}
+	assert.equal(ctx.store.changes.length, 0);
+});
+
+test('malformed fragment envelopes are rejected before a member can store them', async () => {
+	const ctx = setup();
+	const { ws } = await sharedWithBob(ctx);
+	const fragment = sourceOps().find((op) => op.table === 'fragments');
+	const invalid = [
+		{ Table: 'unknown' }, { Table: 'fragments' }, { Field: 'PrivateField' },
+		{ EntityId: '' }, { EntityId: 'bad id' }, { Version: '' }, { Version: 'bad version' },
+		{ Part: -1 }, { Part: 2 }, { Part: 0.5 }, { Part: '0' },
+		{ Parts: 0 }, { Parts: 65 }, { Parts: 1.5 }, { Parts: '2' },
+		{ Value: null }, { Value: 1 }, { Value: 'x'.repeat(4001) },
+	];
+	for (const patch of invalid) {
+		const op = { ...fragment, fields: { ...fragment.fields, ...patch } };
+		assert.throws(() => cleanOps([op]), { status: 400, code: 'invalid_fragment' }, JSON.stringify(patch));
+		await assert.rejects(ctx.svc.pushChanges(bob, ws.workspaceId, { deviceId: 'member', batchId: 'malformed', ops: [op] }), { status: 400, code: 'invalid_fragment' });
+	}
+	for (const key of Object.keys(fragment.fields)) {
+		const fields = { ...fragment.fields };
+		delete fields[key];
+		assert.throws(() => cleanOps([{ ...fragment, fields }]), { code: 'invalid_fragment' }, `missing ${key}`);
+	}
+	assert.equal(ctx.store.changes.length, 0, 'invalid fragments never enter the ordered log');
 });
 
 test('the owner removes a member, a member can leave, the owner cannot', async () => {

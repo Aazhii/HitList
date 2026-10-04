@@ -87,7 +87,7 @@ export function TextFieldCell({ recordId, fieldId, value, ariaLabel, onChange, l
     return () => document.removeEventListener('mousedown', handler);
   }, [mention]);
 
-  const handleMentionSelect = useCallback(async (listId: string, quadrant: Quadrant, assignee?: { userId: string; name: string }) => {
+  const handleMentionSelect = useCallback(async (listId: string, quadrant: Quadrant, assignee?: import('@/types/todo').TaskAssignee) => {
     if (!mention || !linking) return;
     const el = inputRef.current;
     const original = el?.value ?? draft;
@@ -145,7 +145,10 @@ export function TextFieldCell({ recordId, fieldId, value, ariaLabel, onChange, l
             if (title) linking.updateTaskTitle(linkedTask.id, title);
           }
         }}
-        onBlur={() => { commit(draft); setMention(null); }}
+        onBlur={(event) => {
+          commit(draft);
+          if (!(event.relatedTarget instanceof Element && event.relatedTarget.closest('[data-mention-menu]'))) setMention(null);
+        }}
         onKeyDown={handleKeyDown}
         placeholder=""
         aria-label={ariaLabel}

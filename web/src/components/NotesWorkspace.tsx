@@ -8,6 +8,7 @@ import type { Note } from '@/types/notes';
 import { NOTE_EMOJIS, NOTE_SYNC_LIMIT, NOTE_SYNC_WARN, formatNoteEdited, getNotePreview } from '@/types/notes';
 import type { BlockType } from '@/types/notes';
 import { useNotes } from '@/hooks/useNotes';
+import { ShareSourceControl } from '@/components/shell/ShareSourceControl';
 import type { SaveStatus } from '@/hooks/useNotes';
 import { useSyncStatus } from '@/hooks/useSyncStatus';
 import type { SyncStatus } from '@/hooks/useSyncStatus';
@@ -448,6 +449,7 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
     changeBlockType,
     moveBlock,
     setBlockIndent,
+    flushNote,
   } = useNotes();
 
   const [search, setSearch] = useState('');
@@ -461,8 +463,8 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
       setActiveNoteId(openNoteId);
       setSearch('');
     } else {
-      toast.error("That note isn't on this device", {
-        description: 'Notes are kept on the device they were written on.',
+      toast.error('That note is not available in this workspace', {
+        description: 'Sync the workspace and try again.',
         duration: 3500,
       });
     }
@@ -576,6 +578,7 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
       actions={
         <>
           {(activeNote || notes.length > 0) && <SyncIndicatorWrapper saveStatus={saveStatus} />}
+          {activeNote && <ShareSourceControl kind="note" id={activeNote.id} title={activeNote.title || 'Untitled'} flush={() => flushNote(activeNote.id)} />}
 
           {/* Pin and delete for the open note, in the one quiet pill. */}
           {activeNote && (

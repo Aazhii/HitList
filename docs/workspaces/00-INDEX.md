@@ -1,7 +1,9 @@
 # Shared workspaces
 
-Several people work in one workspace: the lists and tasks are shared, every person keeps their own notes and databases, and a task
+Several people work in one workspace: lists, tasks and explicitly shared notes/databases are shared; other personal content stays private. A task
 can be given to a member (`@` → pick a person). Everything stays local-first: each computer holds a full copy and works offline.
+
+Account-isolation update: personal and shared task caches/migration journals are separate within each account. Sign-in does not automatically adopt anonymous database rows or unlabelled notes. See the [account isolation audit](../desktop-first/02-ACCOUNT-ISOLATION.md) for logout ordering, verification limits, and coordinated release requirements.
 
 ## What a person does
 1. **Create:** the workspace name at the top of the sidebar → *New shared workspace* → name it, tick the lists to copy in (the
@@ -14,6 +16,20 @@ can be given to a member (`@` → pick a person). Everything stays local-first: 
    name), choose a quadrant and list, *Add task for …*. Or open any task and set *Assigned to*. The person gets a desktop
    notification and the task appears under *Assigned to me*.
 5. **Leave / remove:** members can leave; the owner can remove members. A person who left keeps a read-only copy on their computer.
+
+### Assigning from a personal source
+In a personal note line or database text cell, type `@`, select an existing active shared workspace, its member, quadrant and list.
+Confirm **Share and create task**. The confirmation names all workspace members: sharing grants the entire page, or the entire
+database including records, columns and values, to every member, not only the assignee. Cancel sends no assignment request.
+The first share creates a canonical workspace copy and opens it. The personal original stays an independent snapshot; subsequent
+personal edits do not propagate. Repeat sharing opens the existing shared copy without replacing other members' edits.
+The recipient finds the task in **Assigned to me** and can **Open source** in the corresponding workspace.
+
+Sharing and assignment are one local transaction, with a stable request ID for retrying uncertain replies without creating another
+task. Source saves must finish before sharing or workspace switching. Shared notes use separate account/workspace caches; incoming
+refreshes do not upload stale cache entries over remote edits. Pending database writes still block logout after leaving the editor.
+Notes containing embedded database blocks currently reject sharing explicitly; those dependencies are not silently copied or leaked.
+There is no recipient-only source ACL. Use a workspace with exactly the intended members, and review membership before confirming.
 
 ## How it works (no polling)
 ```
@@ -35,11 +51,24 @@ cloud: ordered change log (Data Store) ──> Ably "something changed" doorbell
    and workspace, so newer edits cannot change a retry's identity, including after restart. Recovery requires the sender to be open
    and signed in; there is no independent cloud retry worker. Old cloud deployments without `signalDelivered` cannot enable this path.
    Incoming changes are still pulled while an outgoing notification is retrying.
-- Only lists and tasks are shared. Links from a task to someone's own note or database row stay on their computer.
+- Source links are transmitted only for canonical sources in the shared workspace. Links to personal sources stay local.
+- Shared database copies remap database, row, column and value relationships; personal originals retain their IDs and content.
 - Free allowance: every batch is one Data Store insert (about 5,000 inserts per 30 days for the whole project). Batches are sent at
   most once every 5 seconds per computer and join everything changed in between.
-- A text field over 4,900 characters (a very long task note) is not shared; it stays complete on your computer. One batch holds
-  about 8.5 KB, bigger edits are split.
+- Long shared text is journaled as bounded escaped fragments, reassembled only when complete. Fragments can span multiple ordered
+   batches and are retained across restart. One batch holds about 8.5 KB; source content is not truncated to fit it.
+
+### Source-sharing validation (2026-10-05)
+On macOS arm64, Node 24.19.0 and Java 25.0.4, the mandatory `node scripts/ci/validate-desktop.cjs` gate passed, including types,
+design, lint, frontend build, API packaging, scratch jar smoke and 27 real two-local-server replica checks. The replica scenario
+covers a 9,927-character note in 10 fragments across five batches, assignment retries, recipient source navigation data, unchanged
+personal originals, database definitions/rows/typed values, and convergent edits. Cloud storage and push in that scenario are fakes.
+Mocked Playwright UI checks at 1440x1000 and 390x844 verified member selection, explicit consent, no pre-consent assignment request
+and canonical navigation without horizontal overflow. These are not live account, connectivity or packaged desktop passes.
+The owner approved a provisional local commit of account isolation and source sharing on 2026-10-05 after these gaps were disclosed.
+No push or deployment is authorized. Native Windows/Linux, current-change native macOS packaging, installed desktop lifecycle and live two-account Catalyst/Ably
+checks are NOT RUN for this change. Deploying the updated backup function and rebuilding desktop together require owner authorization;
+old cloud code rejects the new source/fragment tables. Do not release based solely on these local checks.
 
 ## Setting it up (once, by the project owner)
 1. **Data Store tables** (Catalyst console; names and columns are case-sensitive). Catalyst's own created-time column is used for
@@ -102,7 +131,7 @@ checks both replicas against the cloud's winning title and removes its scratch d
 | End-to-end check | `node desktop/e2e/workspaces.e2e.js` (two real servers, the real engine, the real cloud logic over memory; needs the jar built) |
 
 ## Not built yet
-- Shared notes and databases (only lists and tasks are shared in this version).
+- Recipient-only source permissions, embedded-database note sharing, and live cloud verification of source sharing.
 - `hitlist://` links (the invite page has a copy button instead).
 - Compacting the change log (a long-lived busy workspace will replay a long log on a new member's first join).
 - A visible "writes used this month" counter.

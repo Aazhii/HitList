@@ -67,6 +67,23 @@ public class SyncController {
         return sync.seed(account(request), text(body.get("workspaceId")), body.get("listIds"));
     }
 
+    @GetMapping("/source-lists")
+    public List<Map<String, Object>> sourceLists(@RequestParam String workspaceId, HttpServletRequest request) {
+        return sync.sourceLists(account(request), workspaceId);
+    }
+
+    @PostMapping("/source-task")
+    public Map<String, Object> sourceTask(@RequestBody Map<String, Object> body, HttpServletRequest request) {
+        String actor = owners.actor(request);
+        if (actor == null) throw ApiException.unauthenticated();
+        return sync.sourceTask(account(request), actor, body);
+    }
+
+    @PostMapping("/share-source")
+    public Map<String, Object> shareSource(@RequestBody Map<String, Object> body, HttpServletRequest request) {
+        return sync.shareSource(account(request), text(body.get("workspaceId")), text(body.get("kind")), text(body.get("id")));
+    }
+
     @GetMapping("/assigned")
     public List<Map<String, Object>> assigned(HttpServletRequest request) {
         String actor = owners.actor(request);

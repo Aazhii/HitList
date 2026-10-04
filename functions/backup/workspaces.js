@@ -28,8 +28,14 @@ const SEQ_RETRIES = 6;
 const FIELDS = {
 	tasks: new Set(['Title', 'Status', 'Quadrant', 'TaskPriority', 'Note', 'DueDate', 'DueTime', 'Category', 'ListId', 'TaskOrder',
 		'ReminderEnabled', 'ReminderMinutesBefore', 'Recurrence', 'CompletedAt', 'CreatedAt', 'UpdatedAt',
-		'AssigneeUserId', 'AssigneeName', 'AssignedBy', 'AssignedAt']),
+		'AssigneeUserId', 'AssigneeName', 'AssignedBy', 'AssignedAt', 'SourceNoteId', 'SourceBlockId', 'SourceRecordId', 'SourceFieldId']),
 	lists: new Set(['Name', 'Color', 'ListOrder', 'CreatedAt', 'UpdatedAt']),
+	notes: new Set(['Title', 'BlocksJson', 'Emoji', 'Pinned', 'CreatedAt', 'UpdatedAt']),
+	databases: new Set(['Name', 'Icon', 'DateFieldId', 'TitleLabel', 'DbOrder', 'CreatedAt', 'UpdatedAt']),
+	records: new Set(['DatabaseId', 'Title', 'RowOrder', 'CreatedAt', 'UpdatedAt']),
+	fields: new Set(['DatabaseId', 'Name', 'FieldKind', 'OptionsJson', 'ShowOnCard', 'DefOrder', 'CreatedAt', 'UpdatedAt']),
+	values: new Set(['TaskId', 'DefId', 'ValueText', 'EncodedKind', 'UpdatedAt']),
+	fragments: new Set(['Table', 'EntityId', 'Field', 'Version', 'Part', 'Parts', 'Value']),
 };
 
 const digest = (value) => createHash('sha256').update(value).digest('hex');
@@ -67,6 +73,12 @@ function cleanOps(ops) {
 			clean[key] = value;
 		}
 		if (Object.keys(clean).length === 0) fail(400, 'invalid_ops');
+		if (op.table === 'fragments' && (!FIELDS[clean.Table] || clean.Table === 'fragments'
+			|| !FIELDS[clean.Table].has(clean.Field) || !validEntityId(clean.EntityId) || !validEntityId(clean.Version)
+			|| !Number.isInteger(clean.Part) || !Number.isInteger(clean.Parts) || clean.Parts < 1 || clean.Parts > 64
+			|| clean.Part < 0 || clean.Part >= clean.Parts || typeof clean.Value !== 'string' || clean.Value.length > 4000)) {
+			fail(400, 'invalid_fragment');
+		}
 		return { table: op.table, id: op.id, fields: clean };
 	});
 	if (Buffer.byteLength(JSON.stringify(out)) > MAX_OPS_BYTES) fail(413, 'ops_too_large');

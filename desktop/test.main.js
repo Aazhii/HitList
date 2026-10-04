@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-function launch({ failNavigation = false, platform = 'darwin', packaged = false, missingJava = false, spawnError = false } = {}) {
+function launch({ failNavigation = false, backupGate, platform = 'darwin', packaged = false, missingJava = false, spawnError = false } = {}) {
   const app = new EventEmitter();
   app.isPackaged = packaged;
   app.getPath = (name) => name === 'appData' ? '/fake' : '/fake/HitList';
@@ -17,13 +17,14 @@ function launch({ failNavigation = false, platform = 'darwin', packaged = false,
   app.getVersion = () => '1.0.0';
 
   const windows = [];
+  let headerHandler;
   class BrowserWindow extends EventEmitter {
     static getAllWindows() { return windows.filter((win) => !win.closed); }
     constructor() {
       super();
       this.closed = false;
       this.webContents = {
-        session: { webRequest: { onBeforeSendHeaders: () => {} } },
+        session: { webRequest: { onBeforeSendHeaders: (_filter, handler) => { headerHandler = handler; } } },
         send: () => {}, reload: () => {},
       };
       windows.push(this);
@@ -80,10 +81,13 @@ function launch({ failNavigation = false, platform = 'darwin', packaged = false,
   };
   let accounts = 0;
   const lifecycle = [];
-  const backup = () => ({ startSchedule: () => {}, status: () => ({}), backupNow: async () => ({ result: 'ok' }) });
+  const backup = () => ({ startSchedule: () => {}, status: () => ({}), backupNow: async () => ({ result: 'ok' }),
+    beforeSignOut: async () => { lifecycle.push('backup-start'); await backupGate; lifecycle.push('backup-end'); return { result: 'backed-up' }; },
+    cancel: async () => { lifecycle.push('backup-cancel'); },
+  });
   const mocks = {
     electron: { app, BrowserWindow, ipcMain, dialog: { showErrorBox: (_title, message) => errors.push(message) }, shell: {} },
-    './auth': { createAuth: () => ({ cachedAccount: () => ({ userId: String(++accounts), email: `account-${accounts}@test.invalid` }) }), ownerFor: (id) => id },
+    './auth': { createAuth: () => ({ cachedAccount: () => ({ userId: String(++accounts), email: `account-${accounts}@test.invalid` }), signOut: async () => { lifecycle.push('clear-session'); } }), ownerFor: (id) => id },
     './backup': { createBackup: backup },
     './restore': { createRestore: () => ({ check: async () => ({}), restore: async () => { lifecycle.push('restore'); return {}; } }) },
     './cliqAlerts': { createCliqAlerts: () => ({ startSchedule: () => {}, status: () => ({}), setSettings: () => ({}), sendTest: async () => ({}) }) },
@@ -103,9 +107,13 @@ function launch({ failNavigation = false, platform = 'darwin', packaged = false,
     require: (name) => mocks[name] || require(name),
     __dirname, process: { ...process, platform, resourcesPath: '/fake/resources', env: {} },
     console: { log: () => {}, error: () => {} },
-    Buffer, setTimeout, setInterval: () => {}, fetch: () => {},
+    Buffer, setTimeout, clearTimeout, setInterval: () => {}, fetch: () => {},
   }, { filename: 'main.js' });
-  return { app, windows, children, handlers, errors, lifecycle };
+  return { app, windows, children, handlers, errors, lifecycle, requestHeaders: (method) => {
+    let result;
+    headerHandler({ method, requestHeaders: {}, url: 'http://127.0.0.1:41000/api/notes' }, out => { result = out; });
+    return result;
+  } };
 }
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
@@ -136,6 +144,34 @@ for (const platform of ['darwin', 'win32', 'linux']) {
     assert.equal(app.quitCalls, 1);
   });
 }
+
+test('logout waits for the outgoing backup before clearing cookies and blocks concurrent sign-in', async () => {
+  let release;
+  const backupGate = new Promise(resolve => { release = resolve; });
+  const { handlers, lifecycle } = launch({ backupGate });
+  await settle();
+  const logout = handlers.get('account:signOut')();
+  await settle();
+  assert.equal(lifecycle.includes('clear-session'), false);
+  assert.equal((await handlers.get('account:signIn')()).userId, '1');
+  release();
+  assert.equal((await logout).backup, 'backed-up');
+  assert.deepEqual(lifecycle.slice(-4), ['backup-start', 'backup-end', 'backup-cancel', 'clear-session']);
+  assert.equal(handlers.get('account:get')(), null);
+});
+
+test('outgoing renderer writes stay blocked after logout until the new identity is confirmed', async () => {
+  const { handlers, requestHeaders } = launch();
+  await settle();
+  assert.equal(requestHeaders('POST').requestHeaders['X-Hitlist-Desktop-User'], '1');
+  await handlers.get('account:signOut')();
+  assert.equal(requestHeaders('POST').cancel, true);
+  assert.throws(() => handlers.get('account:ready')(null, '1'), /does not match/);
+  assert.equal(requestHeaders('POST').cancel, true);
+  handlers.get('account:ready')(null, 'desktop-local-v1');
+  assert.equal(requestHeaders('POST').cancel, undefined);
+  assert.equal(requestHeaders('POST').requestHeaders['X-Hitlist-Desktop-User'], undefined);
+});
 
 test('ready, close, and two activations reuse one live backend and rebind window IPC', async () => {
   const { app, windows, children, handlers, errors } = launch();

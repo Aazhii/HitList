@@ -28,9 +28,11 @@ public class OwnerSessionFilter extends OncePerRequestFilter {
         this.sync = sync;
     }
 
-    /** Only tasks, lists and their stats can be about a shared workspace; everything else stays personal. */
+    /** Shared task and source editors use the selected partition; account services remain personal. */
     private static boolean sharable(String uri) {
-        return uri.startsWith("/api/tasks") || uri.startsWith("/api/lists") || uri.startsWith("/api/stats");
+        return uri.startsWith("/api/tasks") || uri.startsWith("/api/lists") || uri.startsWith("/api/stats")
+            || uri.startsWith("/api/notes") || uri.startsWith("/api/databases") || uri.startsWith("/api/fields")
+            || uri.startsWith("/api/field-values") || uri.startsWith("/api/views") || uri.equals("/api/calendar");
     }
 
     @Override

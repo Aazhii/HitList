@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { claimLegacyNotes, notesStorageKey } from '@/lib/notesStorage';
+import { claimLegacyNotes, loadAccountNotes, notesStorageKey } from '@/lib/notesStorage';
 import { NOTES_STORAGE_KEY, type Note } from '@/types/notes';
 
 const note = (id: string, updatedAt: number, title = id): Note => ({
@@ -7,6 +7,13 @@ const note = (id: string, updatedAt: number, title = id): Note => ({
 });
 
 describe('notesStorageKey', () => {
+  it('does not assign unowned legacy notes to the next signed-in account', () => {
+    localStorage.setItem(NOTES_STORAGE_KEY, JSON.stringify([note('legacy-private', 5)]));
+    localStorage.setItem(notesStorageKey('u1'), JSON.stringify([note('private-u1', 6)]));
+    expect(loadAccountNotes(localStorage, 'u2')).toEqual([]);
+    expect(loadAccountNotes(localStorage, 'u1')).toEqual([note('private-u1', 6)]);
+    expect(localStorage.getItem(NOTES_STORAGE_KEY)).not.toBeNull();
+  });
   it('gives each user their own key', () => {
     expect(notesStorageKey('u1')).not.toBe(notesStorageKey('u2'));
     expect(notesStorageKey('u1')).toContain(NOTES_STORAGE_KEY);

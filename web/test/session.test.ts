@@ -1,9 +1,44 @@
-import { afterEach, describe, expect, it } from 'vitest';
-import { rememberClaimed, resolveSession, takeClaimedMessage } from '@/lib/session';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { rememberClaimed, resolveSession, resolveStorageIdentity, takeClaimedMessage } from '@/lib/session';
+import { getActiveUserId, loadAppState, saveAppState, setActiveTaskWorkspace, setActiveUserId } from '@/lib/storage';
 
-afterEach(() => sessionStorage.clear());
+afterEach(() => { sessionStorage.clear(); localStorage.clear(); setActiveUserId(null); vi.unstubAllGlobals(); });
 
 describe('session gate', () => {
+  it('uses the desktop cached identity offline and a separate signed-out namespace', async () => {
+    const getAccount = vi.fn().mockResolvedValue({ userId: '12345', email: null });
+    vi.stubGlobal('window', { hitlistDesktop: { getAccount } });
+    expect(await resolveStorageIdentity(null)).toBe('12345');
+    getAccount.mockResolvedValue(null);
+    expect(await resolveStorageIdentity(null)).toBe('desktop-local-v1');
+  });
+
+  it('separates personal and shared task caches without changing the personal identity', () => {
+    setActiveUserId('12345');
+    const personal = loadAppState();
+    personal.todos = [{ id: 'personal', text: 'Private', status: 'todo', quadrant: 'do', createdAt: 1, listId: 'private-list', order: 0 }];
+    saveAppState(personal);
+    setActiveTaskWorkspace('shared-workspace');
+    expect(loadAppState().todos.some(todo => todo.id === 'personal')).toBe(false);
+    expect(getActiveUserId()).toBe('12345');
+    setActiveTaskWorkspace(null);
+    expect(loadAppState().todos[0].id).toBe('personal');
+  });
+  it('does not migrate or expose account A tasks from the cache to account B', async () => {
+    setActiveUserId(await resolveStorageIdentity({ mode: 'catalyst', authenticated: true, userId: '12345' }));
+    const state = loadAppState();
+    state.todos = [{ id: 'private-a', text: 'Account A private task', status: 'todo', quadrant: 'do', createdAt: 1, listId: 'private-list', order: 0 }];
+    saveAppState(state);
+    setActiveUserId(await resolveStorageIdentity({ mode: 'catalyst', authenticated: true, userId: '67890' }));
+    expect(loadAppState().todos.some(todo => todo.id === 'private-a')).toBe(false);
+    setActiveUserId(await resolveStorageIdentity({ mode: 'catalyst', authenticated: true, userId: '12345' }));
+    expect(loadAppState().todos[0].id).toBe('private-a');
+  });
+
+  it('refuses an unknown authenticated identity and an offline browser identity', async () => {
+    await expect(resolveStorageIdentity({ mode: 'catalyst', authenticated: true })).rejects.toThrow('storage identity');
+    await expect(resolveStorageIdentity(null)).rejects.toThrow('workspace identity');
+  });
   it('lets every non-Catalyst build straight in', async () => {
     const out = await resolveSession(async () => ({ mode: 'cookie', authenticated: true }));
     expect(out.kind).toBe('ready');

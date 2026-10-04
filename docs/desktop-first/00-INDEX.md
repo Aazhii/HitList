@@ -50,12 +50,12 @@ machine after sign-in. The web link (AppSail) stops being the way people use Hit
 | D1.0 | Spike: can a desktop window sign in with Catalyst's hosted login and call a Function as that user? | **done 2026-10-01** | `desktop/auth-spike.js` printed SPIKE PASSED: the window's session reaches the `backup` Function, which returned the user id and email; a call with no cookies is refused |
 | D1.1 | Desktop opens Catalyst's hosted login in its own window, keeps the session cookie in the app's partition | **built, awaiting a click-through** | `desktop/auth.js`: the window closes itself on /app/, the account is remembered in `account.json`, sign-out clears the session; `test.auth.js` (4) |
 | D1.2 | The jar learns the signed-in user: Electron passes it in, the jar runs in `cookie` mode locally with that user as owner | **built** | `AUTH_MODE=desktop`: the shell names the owner on its own local requests with a per-launch secret; a wrong or missing secret falls back to the cookie workspace; `ApiContractTest` desktop case |
-| D1.3 | First sign-in brings the existing local (cookie) workspace under the account (reuse `WorkspaceClaimService`) | **built** | same Java test: claimed once, another account sees nothing, the cookie no longer holds it |
+| D1.3 | Keep anonymous data separate at sign-in; do not infer its account owner | **changed 2026-10-04, locally tested** | Automatic cookie-workspace and legacy-note claiming removed after the isolation audit; see [02-ACCOUNT-ISOLATION.md](02-ACCOUNT-ISOLATION.md). Existing data is preserved separately. |
 | D1.4 | Works offline: no network means the app opens as before; sign-in only when backing up or restoring | **built** | the account is read from disk at launch; the network is used only to sign in and to back up |
 | D2.1 | Catalyst Function `backup` (Advanced I/O): `PUT` a snapshot, `GET` the latest, `GET` the list; user from the request, never from the body | **done 2026-10-01** | `desktop/backup-smoke.js` printed SMOKE PASSED against the deployed Function: upload stored, same content skipped, list, download matches, signed-out calls refused |
 | D2.2 | Storage: snapshot JSON in File Store/Stratus, one index row per snapshot in Data Store (`Backups`: user, time, size, counts, file id) | **done 2026-10-01** | files in one File Store folder `backups` (made by the Function); index in the Data Store table `Backups` (UserId, BackedUpAt, Hash, SizeBytes, FileId; mandatory, PII-flagged); seen in the console after the smoke test |
 | D2.3 | Keep the last N snapshots per user (say 7), delete older ones | **done (unit-tested, not yet exercised live)** | `functions/backup/test.backupService.js`: 5 tests incl. per-user isolation and pruning to 7 |
-| D3.1 | Scheduler in the desktop shell (not the jar): every 6 h while open, on quit, and "Back up now" in the Account menu | **built, awaiting a click-through** | `desktop/backup.js` + `test.backup.js` (8): due only after 3 days (changed 2026-10-01 from 6 h), a 15-minute local check, a last backup on sign-out capped at 8 s that tells the person if it failed (no longer on quit) |
+| D3.1 | Scheduler every 3 days, pre-logout, and "Back up now" | **locally tested; live account-switch click-through pending** | Latest local saves are awaited before a fresh account-pinned snapshot; eight-second timeout cancels remaining work before cookies clear; backup failure survives reload. See [02-ACCOUNT-ISOLATION.md](02-ACCOUNT-ISOLATION.md). |
 | D3.2 | Skip the upload when nothing changed since the last one (hash of the snapshot) | **built** | the hash ignores export time and row order; unchanged means no cloud call at all |
 | D3.3 | Compress (gzip) before upload; show "Backed up 2 h ago" in the Account menu | **built** | Account menu: Back up now plus the last-backup time (`useDesktopAccount`, `backupMessage`) |
 | D4.1 | After sign-in on an empty install: "Restore from backup (Oct 1, 9:40 AM)?" | **built, awaiting a click-through** | `desktop/restore.js` + `test.restore.js` (8); the app offers a Restore toast on an empty install or just after sign-in (`RestoreOffer`), and Account → Restore from backup on demand; a normal launch with data makes no cloud call |
@@ -68,7 +68,7 @@ machine after sign-in. The web link (AppSail) stops being the way people use Hit
 
 ## Rules for whoever does a task
 
-- No data loss (the standing rule): restore and claim only ever add; a backup is never deleted
+- No data loss (the standing rule): restore only ever adds; anonymous data is not automatically claimed; a backup is never deleted
   until a newer one is safely stored.
 - Every network call has a budget line in `01-BUDGET.md` before it is written.
 - The desktop must work with no network at all. Cloud is backup, not a dependency.

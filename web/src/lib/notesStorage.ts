@@ -8,8 +8,9 @@
  */
 import { NOTES_STORAGE_KEY, type Note } from '@/types/notes';
 
-export function notesStorageKey(userId: string | null): string {
-  return userId ? `${NOTES_STORAGE_KEY}-${userId}` : NOTES_STORAGE_KEY;
+export function notesStorageKey(userId: string | null, workspaceId?: string | null): string {
+  const identity = workspaceId ? `${userId}:workspace:${workspaceId}` : userId;
+  return identity ? `${NOTES_STORAGE_KEY}-${identity}` : NOTES_STORAGE_KEY;
 }
 
 function parseNotes(raw: string | null): Note[] | null {
@@ -20,6 +21,11 @@ function parseNotes(raw: string | null): Note[] | null {
   } catch {
     return null;
   }
+}
+
+export function loadAccountNotes(storage: Storage, userId: string | null, workspaceId?: string | null): Note[] {
+  try { return parseNotes(storage.getItem(notesStorageKey(userId, workspaceId))) ?? []; }
+  catch { return []; }
 }
 
 /**

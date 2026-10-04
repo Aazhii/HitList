@@ -1,10 +1,28 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { afterEach, describe, expect, it, vi } from 'vitest';
-import { useDesktopAccount } from '@/hooks/useDesktopAccount';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { desktopPageControls, useDesktopAccount } from '@/hooks/useDesktopAccount';
+import { onPreLogout } from '@/lib/preLogout';
+import { takeSignOutBackup } from '@/lib/backupMessage';
 
-afterEach(() => { delete window.hitlistDesktop; });
+beforeEach(() => { vi.spyOn(desktopPageControls, 'reload').mockImplementation(() => {}); });
+afterEach(() => { delete window.hitlistDesktop; sessionStorage.clear(); vi.restoreAllMocks(); });
 
 describe('useDesktopAccount', () => {
+  it('does not clear the account when a pending save fails before logout', async () => {
+    window.hitlistDesktop = {
+      getAccount: vi.fn().mockResolvedValue({ email: 'a@b.c' }),
+      signIn: vi.fn(), signOut: vi.fn(),
+    };
+    const stop = onPreLogout(async () => { throw new Error('unsaved changes'); });
+    try {
+      const { result } = renderHook(() => useDesktopAccount());
+      await waitFor(() => expect(result.current.account?.email).toBe('a@b.c'));
+      await act(async () => { await expect(result.current.signOut()).rejects.toThrow('unsaved changes'); });
+      expect(window.hitlistDesktop.signOut).not.toHaveBeenCalled();
+      expect(result.current.account?.email).toBe('a@b.c');
+      expect(result.current.busy).toBe(false);
+    } finally { stop(); }
+  });
   it('is not available in a plain browser', () => {
     const { result } = renderHook(() => useDesktopAccount());
     expect(result.current.available).toBe(false);
@@ -28,6 +46,9 @@ describe('useDesktopAccount', () => {
     expect(backupOutcome).toBe('offline');
     expect(result.current.account).toBeNull();
     expect(window.hitlistDesktop.signOut).toHaveBeenCalled();
+    expect(desktopPageControls.reload).toHaveBeenCalled();
+    expect(takeSignOutBackup()).toBe('offline');
+    expect(takeSignOutBackup()).toBeNull();
   });
 
   it('says so when sign-in fails, and recovers on the next try', async () => {

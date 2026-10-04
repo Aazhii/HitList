@@ -30,12 +30,26 @@ function contentHash(snapshot) {
 function createBackup({ stateDir, localGet, upload, getAccount, now = () => Date.now(), interval = BACKUP_INTERVAL }) {
   const stateFile = path.join(stateDir, 'backup-state.json');
   const readState = () => { try { return JSON.parse(fs.readFileSync(stateFile, 'utf8')); } catch { return {}; } };
-  const writeState = (patch) => fs.writeFileSync(stateFile, JSON.stringify({ ...readState(), ...patch }));
   let running = null;
+  let controller = null;
+  let generation = 0;
 
-  async function run(reason) {
+  async function run(reason, signal) {
     const account = getAccount();
     if (!account) return { result: 'signed-out' };
+    const isCurrent = () => !signal.aborted && getAccount()?.userId === account.userId;
+    const writeState = (patch) => {
+      if (!isCurrent()) return;
+      const previous = readState();
+      fs.writeFileSync(stateFile, JSON.stringify({ ...(previous.userId === account.userId ? previous : {}), userId: account.userId, ...patch }));
+    };
+    const bounded = (operation) => Promise.race([
+      operation,
+      new Promise((resolve, reject) => {
+        if (signal.aborted) reject(new Error('Backup cancelled'));
+        else signal.addEventListener('abort', () => reject(new Error('Backup cancelled')), { once: true });
+      }),
+    ]);
     const state = readState();
     // The state belongs to one account: another account's last hash says nothing about this one.
     const mine = state.userId === account.userId ? state : {};
@@ -43,8 +57,9 @@ function createBackup({ stateDir, localGet, upload, getAccount, now = () => Date
     if (mine.blockedUntil && mine.blockedUntil > now()) return { result: 'daily-limit', retryAt: mine.blockedUntil };
 
     let snapshot;
-    try { snapshot = JSON.parse((await localGet('/api/backup')).toString('utf8')); }
-    catch { writeState({ lastAttemptAt: now(), lastResult: 'local-error' }); return { result: 'local-error' }; }
+    try { snapshot = JSON.parse((await bounded(localGet('/api/backup', { accountIdentity: account.userId, signal }))).toString('utf8')); }
+    catch { if (!isCurrent()) return { result: 'cancelled' }; writeState({ lastAttemptAt: now(), lastResult: 'local-error' }); return { result: 'local-error' }; }
+    if (!isCurrent()) return { result: 'cancelled' };
     const hash = contentHash(snapshot);
     if (mine.lastHash === hash && mine.lastSuccessAt) {
       writeState({ userId: account.userId, lastCheckedAt: now(), lastResult: 'unchanged' });
@@ -53,8 +68,14 @@ function createBackup({ stateDir, localGet, upload, getAccount, now = () => Date
 
     const bytes = zlib.gzipSync(Buffer.from(JSON.stringify(snapshot)));
     let reply;
-    try { reply = await upload(bytes, hash); }
-    catch { writeState({ userId: account.userId, lastAttemptAt: now(), lastResult: 'offline' }); return { result: 'offline' }; }
+    try { reply = await bounded(upload(bytes, hash, { accountIdentity: account.userId, signal })); }
+    catch (error) {
+      if (!isCurrent()) return { result: 'cancelled' };
+      const result = error.code === 'account-mismatch' ? 'sign-in-needed' : 'offline';
+      writeState({ userId: account.userId, lastAttemptAt: now(), lastResult: result });
+      return { result };
+    }
+    if (!isCurrent()) return { result: 'cancelled' };
 
     if (reply.status === 429) {
       let retryAt = now() + ERROR_BACKOFF;
@@ -72,7 +93,20 @@ function createBackup({ stateDir, localGet, upload, getAccount, now = () => Date
   }
 
   /** One backup at a time: asking while one is running gets that one's answer. */
-  const backupNow = (reason = 'manual') => (running ||= run(reason).finally(() => { running = null; }));
+  const backupNow = (reason = 'manual') => {
+    if (!running) {
+      controller = new AbortController();
+      running = run(reason, controller.signal).finally(() => { running = null; controller = null; });
+    }
+    return running;
+  };
+  const cancel = async () => { generation += 1; controller?.abort(); await running; };
+  const beforeSignOut = async () => {
+    const started = generation;
+    if (running) await running;
+    if (started !== generation) return { result: 'cancelled' };
+    return backupNow('sign-out');
+  };
 
   /** Whether a scheduled backup is due: signed in, and the last good one is older than the interval (three days). */
   function due() {
@@ -100,7 +134,7 @@ function createBackup({ stateDir, localGet, upload, getAccount, now = () => Date
     return () => { clearTimeout(first); clearTimer(timer); };
   }
 
-  return { backupNow, due, status, startSchedule, contentHash };
+  return { backupNow, beforeSignOut, cancel, due, status, startSchedule, contentHash };
 }
 
 module.exports = { createBackup, contentHash, BACKUP_INTERVAL, ERROR_BACKOFF };

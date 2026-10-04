@@ -24,6 +24,8 @@ public final class StorageTables {
     public static final String WORKSPACE_INFO = "KaizenWorkspaceInfo";
     /** Changes to a shared workspace made on this device and not yet accepted by the cloud. */
     public static final String SYNC_OUTBOX = "KaizenSyncOutbox";
+    public static final String SYNC_FRAGMENTS = "KaizenSyncFragments";
+    public static final String SHARED_SOURCES = "KaizenSharedSources";
 
     private static final Map<String, String> PRIMARY_KEYS = Map.ofEntries(
         Map.entry(TASKS, "TaskId"),
@@ -44,7 +46,9 @@ public final class StorageTables {
         Map.entry(MIGRATION_MARKERS, "MarkerId"),
         Map.entry(CLIQ_COMMAND_RECEIPTS, "CommandKey"),
         Map.entry(WORKSPACE_INFO, "WorkspaceId"),
-        Map.entry(SYNC_OUTBOX, "OpId")
+        Map.entry(SYNC_OUTBOX, "OpId"),
+        Map.entry(SYNC_FRAGMENTS, "FragmentId"),
+        Map.entry(SHARED_SOURCES, "SourceKey")
     );
 
     private StorageTables() {

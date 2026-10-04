@@ -37,7 +37,12 @@ import { AppShell } from '@/components/shell/AppShell';
 import { WorkspaceSwitcher } from '@/components/shell/WorkspaceSwitcher';
 import { AssignedPage } from '@/pages/AssignedPage';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
+import { useSourceTaskAssignment } from '@/hooks/useSourceTaskAssignment';
+import { SourceTaskConfirmation } from '@/components/notes/SourceTaskConfirmation';
 import { openWorkspace } from '@/lib/workspaceStore';
+import { assignedSourceLocation, findRecordDatabase, listSourceNotes, readSourceLocation } from '@/lib/sharedSource';
+import { notesSyncService } from '@/services/notesSyncService';
+import { flushSourceSaves } from '@/lib/sourceSaves';
 import { Sidebar, type AppView } from '@/components/shell/Sidebar';
 import { AppHeader } from '@/components/shell/AppHeader';
 import { ViewLayoutContext } from '@/components/shell/ViewLayout';
@@ -66,7 +71,7 @@ import type { PaletteItem } from '@/lib/paletteSearch';
 import { notesStorageKey } from '@/lib/notesStorage';
 import { databaseApi } from '@/lib/api';
 import { useInAppNotifications } from '@/hooks/useInAppNotifications';
-import { loadAppState, saveAppState, setActiveUserId, getActiveUserId } from '@/lib/storage';
+import { loadAppState, saveAppState, getActiveUserId, getActiveTaskStorageId } from '@/lib/storage';
 import {
   applyTaskFilters, compareAcrossQuadrants, compareForFilters, countNarrowingFilters, describeActiveFilters, FIELD_EMPTY,
   groupFieldFor, isGroupableField, normaliseFilters, sameFilters,
@@ -402,8 +407,7 @@ function ErrorBanner({ message, onRetry, onDismiss }: { message: string; onRetry
 // ── App ────────────────────────────────────────────────────────────────────
 
 function App() {
-  setActiveUserId(null);
-  return <UserScopedApp key="local" />;
+  return <UserScopedApp key={getActiveTaskStorageId() ?? 'local'} />;
 }
 
 function UserScopedApp() {
@@ -495,6 +499,7 @@ function UserScopedApp() {
   // dump you back on Tasks.
   const [activeView, setActiveView] = useLocalStorage<AppView>('hitlist-active-view', 'today');
   const workspaceSnapshot = useWorkspaces();
+  const sourceAssignment = useSourceTaskAssignment();
   // P5.1: a fresh open lands on Today. A refresh or Back carries a history entry (`initialScreen`) and
   // keeps the screen it was on.
   useEffect(() => {
@@ -546,6 +551,25 @@ function UserScopedApp() {
   /** The database DatabasesPage currently has open — unlike pendingDatabaseId, this
    * doesn't clear itself once acted on; it's what Back/refresh should return to. */
   const [activeDatabaseId, setActiveDatabaseId] = useState<string | null>(() => initialScreen?.databaseId ?? null);
+  const [pendingRecordId, setPendingRecordId] = useState<string | null>(null);
+  const [sourceTarget] = useState(() => readSourceLocation());
+  useEffect(() => {
+    if (!sourceTarget || !workspaceSnapshot.loaded || sourceTarget.workspaceId !== workspaceSnapshot.active) return;
+    let live = true;
+    if (sourceTarget.kind === 'note') {
+      setPendingNoteId(sourceTarget.id); setActiveView('notes');
+    } else if (sourceTarget.kind === 'database') {
+      setPendingDatabaseId(sourceTarget.id); setPendingRecordId(sourceTarget.recordId); setActiveView('databases');
+    } else {
+      void findRecordDatabase(sourceTarget.id).then((databaseId) => {
+        if (!live) return;
+        if (!databaseId) { toast.error('That source record is not available. Sync the workspace and try again.'); return; }
+        setPendingDatabaseId(databaseId); setPendingRecordId(sourceTarget.id); setActiveView('databases');
+      }).catch(() => { if (live) toast.error('The source record could not be loaded'); });
+    }
+    window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search);
+    return () => { live = false; };
+  }, [sourceTarget, workspaceSnapshot.loaded, workspaceSnapshot.active, setActiveView]);
 
   // ── Derived ──────────────────────────────────────────────────────────────
 
@@ -1257,9 +1281,15 @@ function UserScopedApp() {
    */
   const createLinkedTask = useCallback(
     async (
-      { listId, quadrant, title, assignee }: { listId: string; quadrant: Quadrant; title: string; assignee?: { userId: string; name: string } },
+      { listId, quadrant, title, assignee }: { listId: string; quadrant: Quadrant; title: string; assignee?: import('@/types/todo').TaskAssignee },
       source: { sourceNoteId?: string; sourceBlockId?: string; sourceRecordId?: string; sourceFieldId?: string },
     ) => {
+      if (!workspaceSnapshot.active && assignee?.workspaceId) {
+        const quadrantMap = { do: 'DO', schedule: 'SCHEDULE', delegate: 'DELEGATE', eliminate: 'ELIMINATE' } as const;
+        return sourceAssignment.createTask({ ...source, workspaceId: assignee.workspaceId, title, quadrant: quadrantMap[quadrant], listId, assigneeUserId: assignee.userId });
+      }
+      try { await flushSourceSaves(); }
+      catch (failure) { toast.error(failure instanceof Error ? failure.message : 'Save the source before assigning'); return null; }
       const maxOrder = todosRef.current
         .filter((t) => t.listId === listId)
         .reduce((m, t) => Math.max(m, t.order), -1);
@@ -1295,7 +1325,7 @@ function UserScopedApp() {
       });
       return todo;
     },
-    [lists, server, setTodos],
+    [lists, server, setTodos, workspaceSnapshot.active, sourceAssignment],
   );
 
   const handleCreateLinkedTask = useCallback<NoteTaskLinking['createTask']>(
@@ -1392,7 +1422,9 @@ function UserScopedApp() {
   const getPaletteItems = useCallback(async (): Promise<PaletteItem[]> => {
     const listName = new Map(lists.map((l) => [l.id, l.name]));
     let notes: Array<{ id: string; title: string; emoji?: string }> = [];
-    try { notes = JSON.parse(localStorage.getItem(notesStorageKey(getActiveUserId())) ?? '[]'); } catch { /* unreadable: no notes */ }
+    try { notes = JSON.parse(localStorage.getItem(notesStorageKey(getActiveTaskStorageId())) ?? '[]'); } catch { /* unreadable: no notes */ }
+    const cached = notes;
+    notes = await listSourceNotes().then((remote) => [...remote.filter((note) => !notesSyncService.hasPending(note.id)), ...cached.filter((note) => notesSyncService.hasPending(note.id))]).catch(() => cached);
     const databases = await databaseApi.list().catch(() => []);
     return [
       ...lists.map((l) => ({ kind: 'list' as const, id: l.id, title: l.name })),
@@ -1413,7 +1445,9 @@ function UserScopedApp() {
     let live = true;
     (async () => {
       let notes: Array<{ id: string; title: string; emoji?: string; updatedAt?: number }> = [];
-      try { notes = JSON.parse(localStorage.getItem(notesStorageKey(getActiveUserId())) ?? '[]'); } catch { /* unreadable: no notes */ }
+      try { notes = JSON.parse(localStorage.getItem(notesStorageKey(getActiveTaskStorageId())) ?? '[]'); } catch { /* unreadable: no notes */ }
+      const cached = notes;
+      notes = await listSourceNotes().then((remote) => [...remote.filter((note) => !notesSyncService.hasPending(note.id)), ...cached.filter((note) => notesSyncService.hasPending(note.id))]).catch(() => cached);
       const databases = await databaseApi.list().catch(() => []);
       if (!live) return;
       setPageDirectory([
@@ -1727,6 +1761,10 @@ function UserScopedApp() {
           />
         ) : activeView === 'assigned' ? (
           <AssignedPage
+            onOpenSource={(task) => {
+              const location = assignedSourceLocation(task);
+              if (location) void openWorkspace(task.workspaceId, location).catch((failure) => toast.error(failure instanceof Error ? failure.message : 'Could not open the source'));
+            }}
             onOpen={(task) => {
               setActiveView('tasks');
               if (task.workspaceId === workspaceSnapshot.active) return;
@@ -1763,6 +1801,7 @@ function UserScopedApp() {
         ) : activeView === 'databases' ? (
           <DatabasesPage
             openDatabaseId={pendingDatabaseId}
+            openRecordId={pendingRecordId}
             onOpenHandled={() => setPendingDatabaseId(null)}
             createOnOpen={createDatabaseOnOpen}
             onCreateHandled={() => setCreateDatabaseOnOpen(false)}
@@ -2058,6 +2097,7 @@ function UserScopedApp() {
       />
 
       {/* Weekly progress — reached from the momentum foot. */}
+      <SourceTaskConfirmation consent={sourceAssignment.consent} onDecision={sourceAssignment.decide} />
       <Dialog open={showStreak} onOpenChange={setShowStreak}>
         <DialogContent className="sm:max-w-[720px]">
           <DialogHeader>

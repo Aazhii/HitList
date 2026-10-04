@@ -71,6 +71,8 @@ The owner decided that losing a machine is rare enough for a scheduled backup **
 one when someone signs out (the "pre-logout" backup) and the *Back up now* button. There is no backup on quit any more.
 If the person is offline when they sign out, the app says so and their data stays on the computer.
 
+Account-isolation update (2026-10-04): each changed backup upload verifies cloud identity with one additional `GET /whoami` before sending private bytes. Restore list/download requests also verify identity. Unchanged local snapshots still make no upload or identity call. Pending local-save failures now cancel sign-out; cloud-backup failures remain best-effort and are reported after reload. See [02-ACCOUNT-ISOLATION.md](02-ACCOUNT-ISOLATION.md).
+
 Per person per month: about 10 scheduled backups, plus a few sign-outs and manual ones, so **about 12–15 uploads**. At
 15 uploads a person, File Store's 2,000 uploads cover about **130 people** (it was about 33), and the other limits cover more.
 The server's cap of 3 stored backups per person per 24 hours stays as a safety net. The cost of this choice is that up to

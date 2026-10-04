@@ -5,6 +5,9 @@
  * Kept outside React so the sidebar switcher, the share dialog and the "@" menu all see the same answer, and so a change from
  * another member refreshes all of them at once.
  */
+import { flushSourceSaves } from '@/lib/sourceSaves';
+import { toast } from 'sonner';
+
 export interface WorkspaceMember { userId: string; email: string; name: string; role: 'owner' | 'member' }
 export interface SharedWorkspace {
   workspaceId: string;
@@ -92,12 +95,26 @@ export function subscribeWorkspaces(listener: () => void): () => void {
 
 /** Opens a shared workspace (or the person's own with null). The page reloads so everything shows the right data. */
 export const pageControls = { reload: () => window.location.reload() };
+let opening = false;
 
-export async function openWorkspace(workspaceId: string | null): Promise<boolean> {
-  const out = await workspaceBridge()?.select?.({ workspaceId });
-  if (!out?.ok) return false;
-  pageControls.reload();
-  return true;
+export async function openWorkspace(workspaceId: string | null, sourceHash?: string): Promise<boolean> {
+  if (opening) return false;
+  opening = true;
+  const root = document.getElementById('root');
+  const wasInert = root?.inert ?? false;
+  if (root) root.inert = true;
+  try {
+    await flushSourceSaves();
+    const out = await workspaceBridge()?.select?.({ workspaceId });
+    if (!out?.ok) { toast.error('The workspace could not be opened'); return false; }
+    if (sourceHash) window.history.replaceState(null, '', sourceHash);
+    else if (new URLSearchParams(window.location.hash.slice(1)).has('source')) window.history.replaceState(null, '', window.location.pathname + window.location.search);
+    pageControls.reload();
+    return true;
+  } catch (failure) {
+    toast.error(failure instanceof Error ? failure.message : 'Save pending edits before switching workspace');
+    return false;
+  } finally { opening = false; if (root) root.inert = wasInert; }
 }
 
 export function currentWorkspace(s: WorkspaceSnapshot = snapshot): SharedWorkspace | null {

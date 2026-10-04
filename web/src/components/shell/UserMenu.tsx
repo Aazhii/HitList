@@ -8,7 +8,7 @@ import { toast } from 'sonner';
 import { backupApi } from '@/lib/api';
 import { currentSession, signOut } from '@/lib/session';
 import { agoLabel } from '@/lib/pages';
-import { backupMessage, signOutBackupFailed, signOutBackupMessage } from '@/lib/backupMessage';
+import { backupMessage, signOutBackupFailed, signOutBackupMessage, takeSignOutBackup } from '@/lib/backupMessage';
 import { noOfferMessage } from '@/lib/restoreMessage';
 import { offerRestore } from '@/components/shell/RestoreOffer';
 import { backupFileName, importSummary, parseBackupText } from '@/lib/backupFile';
@@ -51,6 +51,10 @@ export function UserMenu({ onOpenReminders, dailyLine }: {
   const [density, setDensity] = useDensity();
   const fileInput = useRef<HTMLInputElement>(null);
   const desktop = useDesktopAccount();
+  useEffect(() => {
+    const result = takeSignOutBackup();
+    if (signOutBackupFailed(result)) toast.warning(signOutBackupMessage, { duration: 8000 });
+  }, []);
 
   /** Everything in the workspace, as one JSON file the person keeps. */
   const exportBackup = async () => {
@@ -195,7 +199,8 @@ export function UserMenu({ onOpenReminders, dailyLine }: {
               <DropdownMenuItem
                 disabled={desktop.busy}
                 onSelect={() => {
-                  void desktop.signOut().then((backup) => { if (signOutBackupFailed(backup)) toast.warning(signOutBackupMessage, { duration: 8000 }); });
+                  void desktop.signOut().then((backup) => { if (signOutBackupFailed(backup)) toast.warning(signOutBackupMessage, { duration: 8000 }); })
+                    .catch(() => toast.error('Sign-out cancelled: pending changes could not be saved.', { duration: 8000 }));
                 }}
                 className="gap-2.5 px-2.5 py-2 text-[14px] text-a-muted"
               >

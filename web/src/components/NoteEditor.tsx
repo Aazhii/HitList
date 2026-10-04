@@ -775,7 +775,7 @@ export function NoteEditor({
     });
   }, [blocks, linking, noteId, pendingLinks]);
 
-  const handleMentionSelect = useCallback(async (listId: string, quadrant: Quadrant, assignee?: { userId: string; name: string }) => {
+  const handleMentionSelect = useCallback(async (listId: string, quadrant: Quadrant, assignee?: import('@/types/todo').TaskAssignee) => {
     if (!mention || !linking || !noteId) return;
     const { blockId, trigger } = mention;
     const block = blocks.find((b) => b.id === blockId);

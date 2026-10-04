@@ -500,3 +500,45 @@ test('long text is left out of the batch instead of being cut, and big edits are
   assert.deepEqual(many.ops.flatMap((o) => Object.keys(o.fields)), ['A', 'B', 'C']);
   assert.deepEqual(fitOp({ table: 'tasks', id: 't', deleted: true }).ops, [{ table: 'tasks', id: 't', deleted: true }]);
 });
+
+test('escaped journal fragments cross bounded batches intact and retry without losing shared content', async () => {
+  const fixture = rig();
+  await fixture.engine.start();
+  const value = '\\"\n'.repeat(580);
+  assert.ok(Buffer.byteLength(JSON.stringify(value)) <= 3500);
+  const fragments = Array.from({ length: 5 }, (_, index) => ({
+    table: 'fragments', id: `fragment-${index}`,
+    fields: { Table: 'notes', EntityId: 'shared-note', Field: 'BlocksJson', Version: 'version-1', Part: index, Parts: 5, Value: value },
+  }));
+  for (const fragment of fragments) assert.deepEqual(fitOp(fragment), { ops: [fragment], skipped: 0 });
+  fixture.local.outbox.push(...fragments.map((op, index) => ({ opId: `fragment-op-${index}`, op })));
+  const call = fixture.cloud.call;
+  let loseReply = true;
+  fixture.cloud.call = async (...args) => {
+    const result = await call(...args);
+    if (args[0] === 'POST' && args[1].endsWith('/changes') && loseReply) {
+      loseReply = false;
+      throw new Error('lost reply after insert');
+    }
+    return result;
+  };
+  await fixture.engine.syncAll();
+  assert.equal(fixture.local.outbox.length, 5, 'a lost reply must not acknowledge fragments');
+  const firstBatch = fixture.cloud.posts[0];
+  assert.equal(firstBatch.ops.length, 2);
+  fixture.local.queue(1, { Title: 'Later edit', SourceNoteId: 'shared-note', SourceBlockId: 'todo-block' });
+  await fixture.engine.syncAll();
+  assert.deepEqual(fixture.cloud.posts[1], firstBatch, 'retry preserves the original batch despite a new edit');
+  assert.ok(fixture.cloud.changes.length >= 3, 'the fragment version spans multiple cloud writes');
+  assert.deepEqual(fixture.cloud.changes.flatMap((change) => change.ops).filter((op) => op.table === 'fragments'), fragments);
+  for (const post of fixture.cloud.posts) {
+    assert.ok(Buffer.byteLength(JSON.stringify(post.ops)) <= 8500, 'escaped batches stay within the desktop limit');
+    assert.ok(post.ops.length <= 200);
+  }
+  assert.equal(fixture.local.outbox.length, 0);
+  assert.equal(fixture.local.acks.flat().length, 6);
+  assert.equal(new Set(fixture.local.acks.flat()).size, 6, 'each journal entry is acknowledged once');
+  assert.equal(fixture.engine.status().skippedFields, 0);
+  assert.equal(fixture.engine.status().rejectedOps, 0);
+  assert.equal(fixture.engine.status().lastError, null);
+});

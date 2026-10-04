@@ -11,12 +11,13 @@ import { DUE_TONE_CLASS, dueTone, getDueInfo } from '@/lib/dueInfo';
 import { memberLabel } from '@/lib/workspaceMessage';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import type { ApiTask } from '@/lib/api';
+import { FileText } from 'lucide-react';
 
 export interface AssignedTask extends ApiTask { workspaceId: string; workspaceName: string }
 
 const STATUS_LABEL: Record<string, string> = { TODO: 'To do', IN_PROGRESS: 'In progress', DONE: 'Done' };
 
-export function AssignedPage({ onOpen, onOpenSidebar }: { onOpen: (task: AssignedTask) => void; onOpenSidebar?: () => void }) {
+export function AssignedPage({ onOpen, onOpenSource, onOpenSidebar }: { onOpen: (task: AssignedTask) => void; onOpenSource?: (task: AssignedTask) => void; onOpenSidebar?: () => void }) {
   const ws = useWorkspaces();
   const [tasks, setTasks] = useState<AssignedTask[] | null>(null);
 
@@ -62,6 +63,12 @@ export function AssignedPage({ onOpen, onOpenSidebar }: { onOpen: (task: Assigne
             {by && <span>from {by}</span>}
           </span>
         </button>
+        {onOpenSource && (t.sourceNoteId || t.sourceRecordId) && (
+          <button type="button" onClick={() => onOpenSource(t)} className="mt-1 flex items-center gap-1.5 rounded-[4px] px-2 py-1 text-[13px] font-medium text-a-accent-700 hover:bg-a-line-soft">
+            <FileText className="size-3.5" strokeWidth={1.75} aria-hidden />
+            Open source {t.sourceNoteId ? 'note' : 'record'}
+          </button>
+        )}
       </li>
     );
   };

@@ -8,6 +8,7 @@
  */
 
 import { simpleRequest } from './simpleRequest';
+import { trackSourceWrite } from './sourceSaves';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -176,7 +177,13 @@ function browserTimeZone(): string {
   }
 }
 
-async function request<T>(
+function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const write = performRequest<T>(path, options);
+  return options.method && options.method !== 'GET' && /^\/(databases|fields|field-values|views)(\/|$)/.test(path)
+    ? trackSourceWrite(write) : write;
+}
+
+async function performRequest<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {

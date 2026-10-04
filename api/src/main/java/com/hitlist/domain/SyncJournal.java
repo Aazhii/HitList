@@ -28,10 +28,17 @@ public class SyncJournal {
         StorageTables.TASKS, Set.of("Title", "Status", "Quadrant", "TaskPriority", "Note", "DueDate", "DueTime", "Category", "ListId",
             "TaskOrder", "ReminderEnabled", "ReminderMinutesBefore", "Recurrence", "CompletedAt", "CreatedAt", "UpdatedAt",
             "AssigneeUserId", "AssigneeName", "AssignedBy", "AssignedAt"),
-        StorageTables.LISTS, Set.of("Name", "Color", "ListOrder", "CreatedAt", "UpdatedAt")
+        StorageTables.LISTS, Set.of("Name", "Color", "ListOrder", "CreatedAt", "UpdatedAt"),
+        StorageTables.NOTES, Set.of("Title", "BlocksJson", "Emoji", "Pinned", "CreatedAt", "UpdatedAt"),
+        StorageTables.DATABASES, Set.of("Name", "Icon", "DateFieldId", "TitleLabel", "DbOrder", "CreatedAt", "UpdatedAt"),
+        StorageTables.DATABASE_ROWS, Set.of("DatabaseId", "Title", "RowOrder", "CreatedAt", "UpdatedAt"),
+        StorageTables.FIELD_DEFS, Set.of("DatabaseId", "Name", "FieldKind", "OptionsJson", "ShowOnCard", "DefOrder", "CreatedAt", "UpdatedAt"),
+        StorageTables.FIELD_VALUES, Set.of("TaskId", "DefId", "ValueText", "EncodedKind", "UpdatedAt")
     );
     /** The table names the cloud uses for these. */
-    public static final Map<String, String> WIRE_NAMES = Map.of(StorageTables.TASKS, "tasks", StorageTables.LISTS, "lists");
+    public static final Map<String, String> WIRE_NAMES = Map.of(StorageTables.TASKS, "tasks", StorageTables.LISTS, "lists",
+        StorageTables.NOTES, "notes", StorageTables.DATABASES, "databases", StorageTables.DATABASE_ROWS, "records",
+        StorageTables.FIELD_DEFS, "fields", StorageTables.FIELD_VALUES, "values");
 
     private static final ThreadLocal<Boolean> REMOTE = ThreadLocal.withInitial(() -> false);
     private final RowStore store;
@@ -74,6 +81,11 @@ public class SyncJournal {
         for (String key : SHARED_FIELDS.get(table)) {
             if (before.containsKey(key) && !after.containsKey(key)) changed.put(key, "");
         }
+        if (StorageTables.TASKS.equals(table)) {
+            for (String key : List.of("SourceNoteId", "SourceBlockId", "SourceRecordId", "SourceFieldId")) {
+                if (!EntityRepository.text(before.get(key)).isBlank() && EntityRepository.text(after.get(key)).isBlank()) changed.put(key, "");
+            }
+        }
         if (!changed.isEmpty()) queue(owner, op(table, id(table, after), changed, false));
     }
 
@@ -95,6 +107,10 @@ public class SyncJournal {
         Set<String> out = new java.util.HashSet<>();
         for (Map<String, Object> row : store.findByOwner(StorageTables.SYNC_OUTBOX, workspaceId)) {
             Map<String, Object> op = parse(row.get("Op"));
+            if ("fragments".equals(op.get("table")) && op.get("fields") instanceof Map<?, ?> fields
+                && wireTable.equals(fields.get("Table")) && entityId.equals(fields.get("EntityId"))) {
+                out.add(String.valueOf(fields.get("Field")));
+            }
             if (wireTable.equals(op.get("table")) && entityId.equals(op.get("id"))) {
                 if (Boolean.TRUE.equals(op.get("deleted"))) out.add("*");
                 if (op.get("fields") instanceof Map<?, ?> fields) fields.keySet().forEach(k -> out.add(String.valueOf(k)));
@@ -126,12 +142,27 @@ public class SyncJournal {
         return SHARED_FIELDS.containsKey(table) && !REMOTE.get() && isShared(owner);
     }
 
-    private static Map<String, Object> shared(String table, Map<String, Object> row) {
+    private Map<String, Object> shared(String table, Map<String, Object> row) {
         Map<String, Object> out = new LinkedHashMap<>();
         for (String key : SHARED_FIELDS.get(table)) {
             if (row.containsKey(key)) out.put(key, row.get(key));
         }
+        if (StorageTables.TASKS.equals(table)) {
+            String owner = EntityRepository.text(row.get("OwnerId"));
+            if (hasSource(StorageTables.NOTES, owner, row.get("SourceNoteId"))) {
+                for (String key : List.of("SourceNoteId", "SourceBlockId")) out.put(key, row.getOrDefault(key, ""));
+            }
+            if (hasSource(StorageTables.DATABASE_ROWS, owner, row.get("SourceRecordId"))) {
+                for (String key : List.of("SourceRecordId", "SourceFieldId")) out.put(key, row.getOrDefault(key, ""));
+            }
+        }
         return out;
+    }
+
+    private boolean hasSource(String table, String owner, Object id) {
+        String sourceId = EntityRepository.text(id);
+        return !sourceId.isBlank() && store.findByOwner(table, owner).stream()
+            .anyMatch(source -> sourceId.equals(EntityRepository.text(source.get(StorageTables.primaryKey(table)))));
     }
 
     private static Object normal(Object value) {
@@ -152,6 +183,49 @@ public class SyncJournal {
     }
 
     private void queue(String owner, Map<String, Object> op) {
+        if (op.get("fields") instanceof Map<?, ?> fields && !"fragments".equals(op.get("table"))) {
+            Map<String, Object> shortFields = new LinkedHashMap<>();
+            fields.forEach((key, value) -> {
+                if (value instanceof String text && (text.length() > 4000 || encodedSize(text) > 6000)) {
+                    List<String> parts = splitContent(text);
+                    String version = UUID.randomUUID().toString();
+                    for (int index = 0; index < parts.size(); index++) {
+                        queue(owner, Map.of("table", "fragments", "id", UUID.randomUUID().toString(), "fields",
+                            Map.of("Table", op.get("table"), "EntityId", op.get("id"), "Field", key,
+                                "Version", version, "Part", index, "Parts", parts.size(), "Value", parts.get(index))));
+                    }
+                } else shortFields.put(String.valueOf(key), value);
+            });
+            if (shortFields.isEmpty()) return;
+            Map<String, Object> compact = new LinkedHashMap<>(op);
+            compact.put("fields", shortFields);
+            enqueue(owner, compact);
+            return;
+        }
+        enqueue(owner, op);
+    }
+
+    private int encodedSize(String text) {
+        try { return json.writeValueAsBytes(text).length; }
+        catch (JsonProcessingException error) { throw new IllegalStateException(error); }
+    }
+
+    private List<String> splitContent(String text) {
+        List<String> parts = new java.util.ArrayList<>();
+        StringBuilder part = new StringBuilder();
+        text.codePoints().forEach(codePoint -> {
+            String character = new String(Character.toChars(codePoint));
+            if (part.length() > 0 && encodedSize(part.toString() + character) > 3500) {
+                parts.add(part.toString());
+                part.setLength(0);
+            }
+            part.append(character);
+        });
+        if (!part.isEmpty()) parts.add(part.toString());
+        return parts;
+    }
+
+    private void enqueue(String owner, Map<String, Object> op) {
         long seq = clock.updateAndGet(last -> Math.max(last + 1, System.currentTimeMillis() * 1000));
         Map<String, Object> row = new LinkedHashMap<>();
         row.put("OwnerId", owner);

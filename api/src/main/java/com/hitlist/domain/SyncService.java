@@ -30,7 +30,8 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class SyncService {
-    private static final Map<String, String> TABLES = Map.of("tasks", StorageTables.TASKS, "lists", StorageTables.LISTS);
+    private static final Map<String, String> TABLES = SyncJournal.WIRE_NAMES.entrySet().stream()
+        .collect(java.util.stream.Collectors.toUnmodifiableMap(Map.Entry::getValue, Map.Entry::getKey));
     private static final int MAX_MEMBERS = 100;
 
     private final RowStore store;
@@ -141,6 +142,10 @@ public class SyncService {
     private void applyOp(String workspaceId, Object raw) {
         if (!(raw instanceof Map<?, ?> op)) throw ApiException.invalid("each op must be an object");
         String wire = String.valueOf(op.get("table"));
+        if ("fragments".equals(wire)) {
+            applyFragment(workspaceId, op);
+            return;
+        }
         String table = TABLES.get(wire);
         String id = String.valueOf(op.get("id"));
         if (table == null || !Values.SAFE_ID.matcher(id).matches()) throw ApiException.invalid("unknown op");
@@ -153,6 +158,8 @@ public class SyncService {
                 }
                 repository.delete(table, workspaceId, id);
             }
+            repository.deleteRows(StorageTables.SYNC_FRAGMENTS, workspaceId,
+                part -> wire.equals(part.get("Table")) && id.equals(part.get("EntityId")));
             return;
         }
         if (pending.contains("*")) return; // deleted here, and that is about to be sent
@@ -161,7 +168,8 @@ public class SyncService {
             Set<String> allowed = SyncJournal.SHARED_FIELDS.get(table);
             given.forEach((k, v) -> {
                 String key = String.valueOf(k);
-                if (allowed.contains(key) && !pending.contains(key)) fields.put(key, v);
+                if ((allowed.contains(key) || (StorageTables.TASKS.equals(table) && sourceFieldAllowed(workspaceId, key, given)))
+                    && !pending.contains(key)) fields.put(key, v);
             });
         }
         if (existing.isPresent()) {
@@ -174,6 +182,186 @@ public class SyncService {
             created.put(StorageTables.primaryKey(table), id);
             repository.insert(table, workspaceId, created);
         }
+    }
+
+    private boolean sourceFieldAllowed(String owner, String key, Map<?, ?> fields) {
+        if (List.of("SourceNoteId", "SourceBlockId").contains(key)) {
+            String id = EntityRepository.text(fields.get("SourceNoteId"));
+            return id.isBlank() || repository.find(StorageTables.NOTES, owner, id).isPresent();
+        }
+        if (List.of("SourceRecordId", "SourceFieldId").contains(key)) {
+            String id = EntityRepository.text(fields.get("SourceRecordId"));
+            return id.isBlank() || repository.find(StorageTables.DATABASE_ROWS, owner, id).isPresent();
+        }
+        return false;
+    }
+
+    private void applyFragment(String owner, Map<?, ?> op) {
+        if (!(op.get("fields") instanceof Map<?, ?> fields)) throw ApiException.invalid("invalid content fragment");
+        String wire = EntityRepository.text(fields.get("Table"));
+        String table = TABLES.get(wire);
+        String id = EntityRepository.text(fields.get("EntityId"));
+        String field = EntityRepository.text(fields.get("Field"));
+        String version = EntityRepository.text(fields.get("Version"));
+        int index = (int) Values.number(fields.get("Part"), -1);
+        int count = (int) Values.number(fields.get("Parts"), -1);
+        String value = EntityRepository.text(fields.get("Value"));
+        if (table == null || !SyncJournal.SHARED_FIELDS.get(table).contains(field)
+            || !Values.SAFE_ID.matcher(id).matches() || !Values.SAFE_ID.matcher(version).matches()
+            || count < 1 || count > 64 || index < 0 || index >= count || value.length() > 4000) {
+            throw ApiException.invalid("invalid content fragment");
+        }
+        String fragmentId = version + "-" + index;
+        Map<String, Object> part = new LinkedHashMap<>();
+        fields.forEach((key, item) -> part.put(String.valueOf(key), item));
+        part.put("FragmentId", fragmentId);
+        if (repository.find(StorageTables.SYNC_FRAGMENTS, owner, fragmentId).isPresent()) {
+            repository.replace(StorageTables.SYNC_FRAGMENTS, owner, fragmentId, part);
+        } else repository.insert(StorageTables.SYNC_FRAGMENTS, owner, part);
+        List<Map<String, Object>> parts = repository.list(StorageTables.SYNC_FRAGMENTS, owner).stream()
+            .filter(row -> version.equals(row.get("Version")) && wire.equals(row.get("Table")) && id.equals(row.get("EntityId")) && field.equals(row.get("Field")))
+            .sorted(java.util.Comparator.comparingLong(row -> Values.number(row.get("Part"), -1))).toList();
+        if (parts.size() != count) return;
+        StringBuilder content = new StringBuilder();
+        for (int position = 0; position < count; position++) {
+            Map<String, Object> row = parts.get(position);
+            if (Values.number(row.get("Part"), -1) != position || Values.number(row.get("Parts"), -1) != count) {
+                throw ApiException.invalid("inconsistent content fragments");
+            }
+            content.append(EntityRepository.text(row.get("Value")));
+        }
+        applyOp(owner, Map.of("table", wire, "id", id, "fields", Map.of(field, content.toString())));
+        repository.deleteRows(StorageTables.SYNC_FRAGMENTS, owner, row -> version.equals(row.get("Version")));
+    }
+
+    @Transactional
+    public Map<String, Object> shareSource(String personal, String workspaceId, String kind, String id) {
+        require(personal, workspaceId);
+        if (!canUse(personal, workspaceId, true)) throw ApiException.forbidden();
+        Values.id(id);
+        String table = switch (kind) {
+            case "note" -> StorageTables.NOTES;
+            case "database" -> StorageTables.DATABASES;
+            default -> throw ApiException.invalid("unknown source kind");
+        };
+        Map<String, Object> source = repository.require(table, personal, id);
+        String key = UUID.nameUUIDFromBytes((workspaceId + ":" + kind + ":" + id).getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString();
+        var existing = repository.find(StorageTables.SHARED_SOURCES, personal, key);
+        if (existing.isPresent()) return journal.parse(existing.get().get("Result"));
+        Map<String, String> recordIds = new LinkedHashMap<>();
+        Map<String, String> fieldIds = new LinkedHashMap<>();
+        String sharedId = UUID.randomUUID().toString();
+        if ("database".equals(kind)) {
+            List<Map<String, Object>> fields = repository.list(StorageTables.FIELD_DEFS, personal).stream()
+                .filter(row -> id.equals(row.get("DatabaseId"))).toList();
+            List<Map<String, Object>> records = repository.list(StorageTables.DATABASE_ROWS, personal).stream()
+                .filter(row -> id.equals(row.get("DatabaseId"))).toList();
+            fields.forEach(row -> fieldIds.put(EntityRepository.text(row.get("DefId")), UUID.randomUUID().toString()));
+            records.forEach(row -> recordIds.put(EntityRepository.text(row.get("RecordId")), UUID.randomUUID().toString()));
+            Map<String, Object> copy = only(source, table);
+            copy.put("DatabaseId", sharedId);
+            copy.put("DateFieldId", fieldIds.getOrDefault(EntityRepository.text(source.get("DateFieldId")), ""));
+            repository.insert(table, workspaceId, copy);
+            for (Map<String, Object> field : fields) {
+                Map<String, Object> copied = only(field, StorageTables.FIELD_DEFS);
+                copied.put("DefId", fieldIds.get(EntityRepository.text(field.get("DefId"))));
+                copied.put("DatabaseId", sharedId);
+                repository.insert(StorageTables.FIELD_DEFS, workspaceId, copied);
+            }
+            for (Map<String, Object> record : records) {
+                Map<String, Object> copied = only(record, StorageTables.DATABASE_ROWS);
+                copied.put("RecordId", recordIds.get(EntityRepository.text(record.get("RecordId"))));
+                copied.put("DatabaseId", sharedId);
+                repository.insert(StorageTables.DATABASE_ROWS, workspaceId, copied);
+            }
+            for (Map<String, Object> value : repository.list(StorageTables.FIELD_VALUES, personal)) {
+                String record = recordIds.get(EntityRepository.text(value.get("TaskId")));
+                String field = fieldIds.get(EntityRepository.text(value.get("DefId")));
+                if (record == null || field == null) continue;
+                Map<String, Object> copied = only(value, StorageTables.FIELD_VALUES);
+                copied.put("PropId", UUID.randomUUID().toString());
+                copied.put("TaskId", record);
+                copied.put("DefId", field);
+                repository.insert(StorageTables.FIELD_VALUES, workspaceId, copied);
+            }
+        } else {
+            Map<String, Object> copy = only(source, table);
+            try {
+                List<Map<String, Object>> blocks = json.readValue(EntityRepository.text(copy.get("BlocksJson")),
+                    new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() { });
+                for (Map<String, Object> block : blocks) {
+                    block.remove("taskId");
+                    if ("database".equals(block.get("type"))) {
+                        throw ApiException.invalid("Share embedded databases separately before sharing this note");
+                    }
+                }
+                copy.put("BlocksJson", write(blocks));
+            } catch (JsonProcessingException error) { throw ApiException.invalid("source note content is invalid"); }
+            copy.put("NoteId", sharedId);
+            repository.insert(table, workspaceId, copy);
+        }
+        Map<String, Object> result = Map.of("kind", kind, "id", sharedId, "recordIds", recordIds, "fieldIds", fieldIds);
+        repository.insert(StorageTables.SHARED_SOURCES, personal, Map.of("SourceKey", key, "Result", write(result)));
+        return result;
+    }
+
+    public List<Map<String, Object>> sourceLists(String personal, String workspaceId) {
+        require(personal, workspaceId);
+        return new ListService(repository).list(workspaceId);
+    }
+
+    @Transactional
+    public Map<String, Object> sourceTask(String personal, String actor, Map<String, Object> body) {
+        String workspaceId = workspaceId(body.get("workspaceId"));
+        require(personal, workspaceId);
+        if (!canUse(personal, workspaceId, true)) throw ApiException.forbidden();
+        String assignee = Values.required(body, "assigneeUserId", 30);
+        Map<String, Object> member = members(read(info(workspaceId).get("Members"))).stream()
+            .filter(candidate -> assignee.equals(candidate.get("userId"))).findFirst().orElseThrow(ApiException::forbidden);
+        String clientId = Values.required(body, "clientId", 64);
+        Values.id(clientId);
+        String receiptId = UUID.nameUUIDFromBytes((workspaceId + ":task:" + clientId).getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString();
+        var receipt = repository.find(StorageTables.SHARED_SOURCES, personal, receiptId);
+        if (receipt.isPresent()) return journal.parse(receipt.get().get("Result"));
+        String noteId = EntityRepository.text(body.get("sourceNoteId"));
+        String recordId = EntityRepository.text(body.get("sourceRecordId"));
+        if (noteId.isBlank() == recordId.isBlank()) throw ApiException.invalid("one source is required");
+        String kind = noteId.isBlank() ? "database" : "note";
+        String sourceId = noteId;
+        if (noteId.isBlank()) sourceId = EntityRepository.text(repository.require(StorageTables.DATABASE_ROWS, personal, recordId).get("DatabaseId"));
+        Map<String, Object> source = shareSource(personal, workspaceId, kind, sourceId);
+        Map<String, Object> taskBody = new LinkedHashMap<>(body);
+        taskBody.put("assignedBy", actor);
+        taskBody.put("assigneeName", member.get("name"));
+        if (!noteId.isBlank()) {
+            taskBody.put("sourceNoteId", source.get("id"));
+        } else {
+            taskBody.put("sourceRecordId", ((Map<?, ?>) source.get("recordIds")).get(recordId));
+            String oldField = EntityRepository.text(body.get("sourceFieldId"));
+            if (!oldField.isBlank()) {
+                Object field = ((Map<?, ?>) source.get("fieldIds")).get(oldField);
+                if (field == null) throw ApiException.invalid("source field is not in the database");
+                taskBody.put("sourceFieldId", field);
+            }
+        }
+        Map<String, Object> task = tasks.create(workspaceId, taskBody);
+        if (!noteId.isBlank()) {
+            String sharedId = String.valueOf(source.get("id"));
+            Map<String, Object> note = new LinkedHashMap<>(repository.require(StorageTables.NOTES, workspaceId, sharedId));
+            try {
+                List<Map<String, Object>> blocks = json.readValue(EntityRepository.text(note.get("BlocksJson")),
+                    new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() { });
+                String blockId = EntityRepository.text(body.get("sourceBlockId"));
+                Map<String, Object> block = blocks.stream().filter(item -> blockId.equals(item.get("id"))).findFirst().orElseThrow(ApiException::notFound);
+                block.put("taskId", task.get("id"));
+                note.put("BlocksJson", write(blocks));
+                note.put("UpdatedAt", System.currentTimeMillis());
+                repository.replace(StorageTables.NOTES, workspaceId, sharedId, note);
+            } catch (JsonProcessingException error) { throw ApiException.invalid("source note content is invalid"); }
+        }
+        Map<String, Object> result = Map.of("task", task, "source", source);
+        repository.insert(StorageTables.SHARED_SOURCES, personal, Map.of("SourceKey", receiptId, "Result", write(result)));
+        return result;
     }
 
     // ── Starting a shared workspace from personal lists ────────────────────────────────────────────────────────────────

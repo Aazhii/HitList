@@ -33,8 +33,10 @@ Repository: GitHub `Aazhii/HitList` (public). Working branch `master`. The owner
   (the Catalyst user id), and, for a shared workspace, `X-Hitlist-Workspace`. Without the token the headers are ignored (cookie
   workspace). `OwnerSessionFilter` + `OwnerResolver` do this.
 - **Sign-in is optional.** The app works without an account. Signing in uses Catalyst hosted auth in a window; the shell stores
-  `{userId,email}` in `account.json`. The first sign-in re-owns the old cookie workspace to the account (`WorkspaceClaimService`:
-  rows are moved, never copied or deleted).
+  `{userId,email}` in `account.json`. The uncommitted account-isolation changes stop automatic claiming of anonymous rows and
+  legacy caches. Identity is established before mounting content hooks; personal/shared task caches are separate. See
+  [the account-isolation audit](desktop-first/02-ACCOUNT-ISOLATION.md) for logout ordering and validation evidence. Unknown-origin
+  data stays separate rather than being assigned to the next account. Existing mixed data is not automatically repaired.
 - **Data folder.** Installed app and `pnpm start` share `~/Library/Application Support/HitList` (Windows `%APPDATA%\HitList`, Linux
   `~/.config/HitList`). A one-time COPY from the legacy `hitlist-desktop` folder happens only if `HitList` has no database.
 - **Never lose data.** Any change to a stored shape needs an additive, safe migration. Imports/restores only add. A task already
@@ -83,7 +85,10 @@ you edit ─> local server journals the change (same transaction) ─> ~3-5 s la
 cloud: ordered change log in Data Store ─> Ably doorbell {seq} ─> other computers pull after their cursor and apply
 ```
 - A shared workspace is **just another owner partition** (random 43-char id) on every member's computer. Only lists and tasks
-  are shared (notes/databases stay personal). Replicas converge by applying the cloud's ordered changes; different fields edited at
+  and explicitly shared notes/databases are shared; other personal content stays private. Personal-source `@` assignment selects a
+  shared workspace and confirms whole-source access for ALL its members, then atomically shares a canonical copy and creates the task.
+  The original stays a separate snapshot, not a competing synchronized copy. Source-sharing details and 2026-10-05 validation limits
+  are in the workspace guide. Replicas converge by applying the cloud's ordered changes; different fields edited at
   once both survive; the same field: later change wins; a locally-pending field is never overwritten.
 - Cloud (`functions/backup/workspaces*.js`, routes under `/ws`, off until `WS_ENABLED=true`): create, invite by email (single-use,
   hashed token, 7 days, only the invited email can accept), accept, remove/leave, push a batch, pull after a cursor, one
@@ -94,7 +99,7 @@ cloud: ordered change log in Data Store ─> Ably doorbell {seq} ─> other comp
   account only).
 - Desktop engine: `desktop/workspaceSync.js` + `workspacePush.js` (Ably, no data in the message), wired in `main.js`/`preload.js`
   (`window.hitlistDesktop.workspaces`). The open workspace is remembered per account and sent as `X-Hitlist-Workspace` on
-  tasks/lists/stats requests only.
+  tasks/lists/stats and source-editor requests. Notes/database cache identities include the active workspace.
 - UI: sidebar `WorkspaceSwitcher`, `ShareWorkspaceDialog`, `JoinWorkspaceDialog`, `@` card people section, task "Assigned to",
   assignee chip, `AssignedPage`. Switching workspace reloads the page.
 - **End-to-end proof without Catalyst:** `node desktop/e2e/workspaces.e2e.js` (two real servers + real engine + real cloud logic over

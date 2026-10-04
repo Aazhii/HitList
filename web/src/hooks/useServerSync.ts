@@ -28,7 +28,7 @@ import {
   TaskUpdateRequest,
 } from '../lib/api';
 import { mockTaskApi, mockListApi, mockStatsApi } from '../lib/mockApi';
-import { getActiveUserId, loadAppState, saveAppState } from '../lib/storage';
+import { getActiveTaskStorageId, loadAppState, saveAppState } from '../lib/storage';
 import { migrateLocalState } from '../lib/localMigration';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -182,7 +182,7 @@ export function useServerSync(activeListId?: string, filterParams?: import('../l
     migrationRunning.current = true;
 
     try {
-      await migrateLocalState(loadAppState(), getActiveUserId(), {
+      await migrateLocalState(loadAppState(), getActiveTaskStorageId(), {
         lists: listApi,
         tasks: taskApi,
       });

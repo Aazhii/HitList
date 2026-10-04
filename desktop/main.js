@@ -205,6 +205,9 @@ async function openWindow() {
   const auth = createAuth({ userDataDir });
   /** Who is signed in, as remembered on disk: the app opens signed in with no network. */
   let account = auth.cachedAccount();
+  let accountTransition = false;
+  let rendererChanging = false;
+  const reloadAccountWindow = () => { rendererChanging = true; win.webContents.reload(); };
 
   const win = new BrowserWindow({
     width: 1280,
@@ -218,7 +221,7 @@ async function openWindow() {
   let stopAlertsSchedule;
   let stopUpdateSchedule;
 
-  // The shared workspace the person has open, remembered per account. Requests for tasks, lists and stats carry it; notes and
+  // The shared workspace the person has open, remembered per account. Task and source-editor requests carry it; account services
   // databases stay personal.
   const activeFile = path.join(userDataDir, 'active-workspace.json');
   const readActive = () => {
@@ -232,12 +235,13 @@ async function openWindow() {
 
   // Name the signed-in account on every request the app makes to its own local server, and only to it.
   win.webContents.session.webRequest.onBeforeSendHeaders({ urls: [`http://127.0.0.1:${port}/*`] }, (details, callback) => {
+    if ((accountTransition || rendererChanging) && details.method !== 'GET') { callback({ cancel: true }); return; }
     const headers = { ...details.requestHeaders };
     if (account) {
       headers['X-Hitlist-Desktop-Token'] = DESKTOP_TOKEN;
       headers['X-Hitlist-Desktop-Owner'] = ownerFor(account.userId);
       headers['X-Hitlist-Desktop-User'] = account.userId;
-      if (activeWorkspace && /^\/api\/(tasks|lists|stats)(\/|$)/.test(new URL(details.url).pathname)) headers['X-Hitlist-Workspace'] = activeWorkspace;
+      if (activeWorkspace && /^\/api\/(tasks|lists|stats|notes|databases|fields|field-values|views|calendar)(\/|$)/.test(new URL(details.url).pathname)) headers['X-Hitlist-Workspace'] = activeWorkspace;
     }
     callback({ requestHeaders: headers });
   });
@@ -259,8 +263,9 @@ async function openWindow() {
     stateDir: userDataDir,
     getAccount: () => account,
     localGet,
-    upload: async (bytes, hash) => {
-      const res = await auth.getSession().fetch(`${BACKUP_FUNCTION_URL}/backup`, { method: 'PUT', body: bytes, headers: { 'x-content-hash': hash } });
+    upload: async (bytes, hash, { accountIdentity, signal }) => {
+      if (account?.userId !== accountIdentity || signal.aborted) throw new Error('Account changed');
+      const res = await auth.fetchAs(accountIdentity, `${BACKUP_FUNCTION_URL}/backup`, { method: 'PUT', body: bytes, signal, headers: { 'x-content-hash': hash } }, () => account?.userId === accountIdentity);
       return { status: res.status, body: await res.text() };
     },
   });
@@ -334,10 +339,13 @@ async function openWindow() {
   // Something was just changed in the app: send it. Only writes to tasks or lists count; the engine ignores it when
   // nothing is queued for a shared workspace.
   win.webContents.session.webRequest.onCompleted?.({ urls: [`http://127.0.0.1:${port}/api/*`] }, (details) => {
-    if (details.method !== 'GET' && details.statusCode < 300 && /\/api\/(tasks|lists)(\/|$|\?)/.test(details.url)) workspaces.kick();
+    if (details.method !== 'GET' && details.statusCode < 300 && /\/api\/(tasks|lists|notes|databases|fields|field-values|sync\/(share-source|source-task))(\/|$|\?)/.test(details.url)) workspaces.kick();
   });
   if (account) { activeWorkspace = readActive(); void workspaces.start(); }
-  const cloudFetch = (urlPath) => auth.getSession().fetch(`${BACKUP_FUNCTION_URL}${urlPath}`);
+  const cloudFetch = (urlPath) => {
+    const identity = account?.userId;
+    return auth.fetchAs(identity, `${BACKUP_FUNCTION_URL}${urlPath}`, { signal: AbortSignal.timeout(15_000) }, () => !accountTransition && account?.userId === identity);
+  };
   const restore = createRestore({
     getAccount: () => account,
     localGet,
@@ -385,7 +393,7 @@ async function openWindow() {
 
   const publicAccount = () => (account ? { email: account.email, userId: account.userId } : null);
   for (const channel of [
-    'account:get', 'account:signIn', 'account:signOut', 'restore:check', 'restore:run',
+    'account:get', 'account:ready', 'account:signIn', 'account:signOut', 'restore:check', 'restore:run',
     'cliq:get', 'cliq:set', 'cliq:test', 'update:status', 'update:check',
     'update:download', 'update:cancel', 'update:install', 'backup:status', 'backup:now',
     'cliq:connection:get', 'cliq:connection:start', 'cliq:connection:confirm',
@@ -393,6 +401,10 @@ async function openWindow() {
     'ws:refresh', 'ws:active', 'ws:select', 'ws:create', 'ws:invite', 'ws:accept', 'ws:remove', 'ws:leave', 'ws:status',
   ]) ipcMain.removeHandler(channel);
   ipcMain.handle('account:get', () => publicAccount());
+  ipcMain.handle('account:ready', (_event, identity) => {
+    if (identity !== (account?.userId ?? 'desktop-local-v1')) throw new Error('Renderer account does not match');
+    rendererChanging = false;
+  });
   const text = (v) => (typeof v === 'string' ? v : '');
   ipcMain.handle('ws:status', () => workspaces.status());
   ipcMain.handle('ws:active', () => ({ workspaceId: activeWorkspace }));
@@ -412,19 +424,25 @@ async function openWindow() {
   ipcMain.handle('ws:remove', (_e, o) => workspaces.removeMember(text(o?.workspaceId), text(o?.userId)));
   ipcMain.handle('ws:leave', (_e, o) => workspaces.leave(text(o?.workspaceId)));
   ipcMain.handle('account:signIn', async () => {
-    const signedIn = await auth.signIn(win);
-    if (signedIn) {
-      connection.stop();
-      account = signedIn;
-      justSignedIn = true;
-      win.webContents.reload();
-      // After the page has asked /api/session (which brings the old local workspace into the account), not before.
-      setTimeout(() => { void backup.backupNow('signed-in'); }, 15_000);
-      void connection.get();
-      activeWorkspace = readActive();
-      void workspaces.start();
-    }
-    return publicAccount();
+    if (accountTransition || account) return publicAccount();
+    accountTransition = true;
+    try {
+      await backup.cancel();
+      const signedIn = await auth.signIn(win);
+      if (signedIn) {
+        connection.stop();
+        workspaces.stop();
+        account = signedIn;
+        justSignedIn = true;
+        reloadAccountWindow();
+        const identity = signedIn.userId;
+        setTimeout(() => { if (!accountTransition && account?.userId === identity) void backup.backupNow('signed-in'); }, 15_000);
+        void connection.get();
+        activeWorkspace = readActive();
+        void workspaces.start();
+      }
+      return publicAccount();
+    } finally { accountTransition = false; }
   });
   ipcMain.handle('restore:check', async (_e, opts) => { const out = await restore.check({ force: !!(opts && opts.force), justSignedIn }); justSignedIn = false; return out; });
   ipcMain.handle('restore:run', async () => { await connection.beforeRestore(); return restore.restore(); });
@@ -452,21 +470,25 @@ async function openWindow() {
     return out;
   });
   ipcMain.handle('backup:status', () => backup.status());
-  ipcMain.handle('backup:now', () => backup.backupNow('manual'));
+  ipcMain.handle('backup:now', () => accountTransition ? { result: 'cancelled' } : backup.backupNow('manual'));
   ipcMain.handle('account:signOut', async () => {
-    connection.stop();
-    workspaces.stop();
-    activeWorkspace = null;
-    // The pre-logout hook: one last backup first, so signing out does not leave recent work only on this machine. Signing out
-    // goes ahead either way (offline included); the page is told how the backup went and says so if it did not.
-    const outcome = await Promise.race([
-      backup.backupNow('sign-out').catch(() => ({ result: 'error' })),
-      new Promise((r) => setTimeout(() => r({ result: 'timeout' }), QUIT_BACKUP_MS)),
-    ]);
-    await auth.signOut();
-    account = null;
-    win.webContents.reload();
-    return { backup: outcome.result };
+    if (accountTransition) throw new Error('Account change already in progress');
+    accountTransition = true;
+    let timeout;
+    try {
+      connection.stop();
+      workspaces.stop();
+      activeWorkspace = null;
+      const outcome = await Promise.race([
+        backup.beforeSignOut().catch(() => ({ result: 'error' })),
+        new Promise((r) => { timeout = setTimeout(() => r({ result: 'timeout' }), QUIT_BACKUP_MS); }),
+      ]);
+      await backup.cancel();
+      await auth.signOut();
+      account = null;
+      rendererChanging = true;
+      return { backup: outcome.result };
+    } finally { clearTimeout(timeout); accountTransition = false; }
   });
 
   await win.loadURL(`http://127.0.0.1:${port}`);

@@ -7,13 +7,14 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { viewApi, type ApiSavedView, type SavedViewInput } from '@/lib/api';
-import { getActiveUserId } from '@/lib/storage';
+import { getActiveTaskStorageId } from '@/lib/storage';
 import { normaliseFilters } from '@/lib/taskFilters';
+import { flushSourceSaves, sourceWriteVersion, sourceWritesPending } from '@/lib/sourceSaves';
 
 const BASE_KEY = 'hitlist-views-v1';
 
 function storageKey(): string {
-  const userId = getActiveUserId();
+  const userId = getActiveTaskStorageId();
   return userId ? `${BASE_KEY}-${userId}` : BASE_KEY;
 }
 
@@ -62,9 +63,13 @@ export function useSavedViews(onError: (message: string) => void): UseSavedViews
 
   useEffect(() => {
     let cancelled = false;
-    viewApi.list()
+    let generation = 0;
+    const load = () => {
+    const request = ++generation;
+    const version = sourceWriteVersion();
+    void viewApi.list()
       .then((fetched) => {
-        if (cancelled) return;
+        if (cancelled || request !== generation || version !== sourceWriteVersion() || sourceWritesPending()) return;
         setViews(fetched.map(clean).sort(byOrder));
         setOnline(true);
       })
@@ -74,7 +79,11 @@ export function useSavedViews(onError: (message: string) => void): UseSavedViews
         setViews(loadLocal());
       })
       .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+    };
+    const refresh = async () => { try { await flushSourceSaves(); if (!cancelled) load(); } catch { /* retain pending view edits */ } };
+    load();
+    window.addEventListener('hitlist:workspace-data-changed', refresh);
+    return () => { cancelled = true; window.removeEventListener('hitlist:workspace-data-changed', refresh); };
   }, []);
 
   const writeLocal = useCallback((next: ApiSavedView[]) => {

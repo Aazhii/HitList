@@ -23,6 +23,10 @@ import com.hitlist.web.ApiExceptionHandler;
 import com.hitlist.web.ListController;
 import com.hitlist.web.SyncController;
 import com.hitlist.web.TaskController;
+import com.hitlist.web.NoteController;
+import com.hitlist.web.WorkspaceController;
+import com.hitlist.domain.NoteService;
+import com.hitlist.domain.WorkspaceService;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -52,6 +56,7 @@ class SharedWorkspaceTest {
     private RowStore store;
     private String alice;
     private String bob;
+    private EntityRepository repository;
 
     @BeforeEach
     void setUp() {
@@ -63,11 +68,12 @@ class SharedWorkspaceTest {
         props.setDesktopToken(SECRET);
         owners = new OwnerResolver(props);
         SyncJournal journal = new SyncJournal(store, json);
-        EntityRepository repository = new EntityRepository(store, journal);
+        repository = new EntityRepository(store, journal);
         TaskService tasks = new TaskService(repository);
         SyncService sync = new SyncService(store, repository, journal, tasks, json);
         mvc = MockMvcBuilders.standaloneSetup(new TaskController(tasks, owners), new ListController(new ListService(repository), owners),
-                new SyncController(owners, sync))
+                new SyncController(owners, sync), new NoteController(new NoteService(repository), owners),
+                new WorkspaceController(new WorkspaceService(repository, json), owners))
             .setControllerAdvice(new ApiExceptionHandler())
             .addFilters(new OwnerSessionFilter(owners, sync))
             .build();
@@ -100,6 +106,75 @@ class SharedWorkspaceTest {
         String body = mvc.perform(as(get("/api/sync/outbox").param("workspaceId", WS), user)).andExpect(status().isOk())
             .andReturn().getResponse().getContentAsString();
         return (List<Map<String, Object>>) json.readValue(body, Map.class).get("ops");
+    }
+
+    @Test
+    void personalNoteAssignmentSharesOnlyTheChosenSourceAndRetryCreatesOneTask() throws Exception {
+        register(ALICE, "active");
+        send(inWorkspace(post("/api/lists"), ALICE), Map.of("name", "Bugs", "clientId", "bugs")).andExpect(status().isCreated());
+        String blocks = json.writeValueAsString(List.of(Map.of("id", "block", "type", "paragraph", "content", "Need a fix for ABC")));
+        repository.insert(StorageTables.NOTES, alice, Map.of("NoteId", "bug", "Title", "HitListBug", "BlocksJson", blocks));
+        repository.insert(StorageTables.NOTES, alice, Map.of("NoteId", "private", "Title", "Private", "BlocksJson", "[]"));
+        Map<String, Object> input = Map.of("workspaceId", WS, "sourceNoteId", "bug", "sourceBlockId", "block", "title", "Need a fix for ABC",
+            "listId", "bugs", "assigneeUserId", BOB, "clientId", "assignment", "assignedBy", "forged");
+        send(as(post("/api/sync/source-task"), BOB), input).andExpect(status().isForbidden());
+        var first = json.readTree(send(as(post("/api/sync/source-task"), ALICE), input).andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString());
+        send(as(post("/api/sync/source-task"), ALICE), input).andExpect(jsonPath("$.task.id").value(first.get("task").get("id").asText()));
+        String sharedId = first.get("source").get("id").asText();
+        register(BOB, "active");
+        mvc.perform(inWorkspace(get("/api/notes/" + sharedId), BOB)).andExpect(jsonPath("$.title").value("HitListBug"));
+        mvc.perform(inWorkspace(get("/api/notes/private"), BOB)).andExpect(status().isNotFound());
+        mvc.perform(as(get("/api/sync/assigned"), BOB)).andExpect(jsonPath("$[0].sourceNoteId").value(sharedId))
+            .andExpect(jsonPath("$[0].assignedBy").value(ALICE));
+        assertThat(repository.list(StorageTables.TASKS, WS)).hasSize(1);
+        assertThat(repository.require(StorageTables.NOTES, WS, sharedId).get("BlocksJson").toString()).contains("assignment");
+        assertThat(repository.require(StorageTables.NOTES, alice, "bug").get("BlocksJson")).isEqualTo(blocks);
+        send(inWorkspace(put("/api/notes/" + sharedId), BOB), Map.of("title", "Buddy edit")).andExpect(status().isOk());
+        send(as(post("/api/sync/share-source"), ALICE), Map.of("workspaceId", WS, "kind", "note", "id", "bug")).andExpect(status().isOk());
+        assertThat(repository.require(StorageTables.NOTES, WS, sharedId).get("Title")).isEqualTo("Buddy edit");
+        register(BOB, "removed");
+        send(inWorkspace(put("/api/notes/" + sharedId), BOB), Map.of("title", "blocked")).andExpect(status().isForbidden());
+    }
+
+    @Test
+    void fragmentsReassembleAcrossBatchesWithoutEchoAndPreserveTheWholeNote() throws Exception {
+        register(BOB, "active");
+        String content = "long note content ".repeat(500);
+        String first = content.substring(0, 3000);
+        String second = content.substring(3000, 6000);
+        String third = content.substring(6000);
+        for (int index = 0; index < 3; index++) {
+            Map<String, Object> fields = Map.of("Table", "notes", "EntityId", "shared-note", "Field", "BlocksJson", "Version", "version", "Part", index, "Parts", 3,
+                "Value", List.of(first, second, third).get(index));
+            send(as(post("/api/sync/apply"), BOB), Map.of("workspaceId", WS, "changes", List.of(Map.of("seq", index + 1,
+                "ops", List.of(Map.of("table", "fragments", "id", "fragment-" + index, "fields", fields)))))).andExpect(status().isOk());
+            if (index < 2) assertThat(repository.find(StorageTables.NOTES, WS, "shared-note")).isEmpty();
+        }
+        assertThat(repository.require(StorageTables.NOTES, WS, "shared-note").get("BlocksJson")).isEqualTo(content);
+        assertThat(repository.list(StorageTables.SYNC_FRAGMENTS, WS)).isEmpty();
+        assertThat(outbox(BOB)).isEmpty();
+    }
+
+    @Test
+    void longSharedNoteContentIsQueuedInBoundedFragmentsAndPrivateNotesStayPrivate() throws Exception {
+        register(ALICE, "active");
+        String content = "private-sized shared content ".repeat(300);
+        repository.insert(StorageTables.NOTES, alice, Map.of("NoteId", "private", "Title", "Private", "BlocksJson", content));
+        assertThat(outbox(ALICE)).isEmpty();
+        repository.insert(StorageTables.NOTES, WS, Map.of("NoteId", "shared", "Title", "HitListBug", "BlocksJson", content));
+        List<Map<String, Object>> entries = outbox(ALICE);
+        StringBuilder reconstructed = new StringBuilder();
+        for (Map<String, Object> entry : entries) {
+            Map<?, ?> op = (Map<?, ?>) entry.get("op");
+            if ("fragments".equals(op.get("table"))) {
+                Map<?, ?> fields = (Map<?, ?>) op.get("fields");
+                assertThat(String.valueOf(fields.get("Value")).length()).isLessThan(4000);
+                reconstructed.append(fields.get("Value"));
+            }
+        }
+        assertThat(reconstructed.toString()).isEqualTo(content);
+        assertThat(entries.toString()).contains("HitListBug").doesNotContain("NoteId=private");
     }
 
     @Test

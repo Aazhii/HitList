@@ -36,12 +36,22 @@ function createAuth({ userDataDir, getSession = () => session.fromPartition(PART
   const remember = (account) => fs.writeFileSync(accountFile, JSON.stringify(account), { mode: 0o600 });
 
   /** Asks the backup Function who the remembered session belongs to. null = nobody, throws = could not reach it. */
-  async function whoami() {
-    const res = await getSession().fetch(`${BACKUP_FUNCTION_URL}/whoami`);
+  async function whoami(options = {}) {
+    const res = await getSession().fetch(`${BACKUP_FUNCTION_URL}/whoami`, options);
     if (res.status === 401) return null;
     if (!res.ok) throw new Error(`whoami ${res.status}`);
     const body = await res.json();
     return /^[0-9]{5,30}$/.test(String(body.userId)) ? { userId: String(body.userId), email: body.email || null } : null;
+  }
+
+  async function fetchAs(accountIdentity, url, options = {}, isCurrent = () => true) {
+    const verified = await whoami({ signal: options.signal });
+    if (!accountIdentity || verified?.userId !== accountIdentity || !isCurrent() || options.signal?.aborted) {
+      const error = new Error('Cloud session does not match the local account');
+      error.code = 'account-mismatch';
+      throw error;
+    }
+    return getSession().fetch(url, options);
   }
 
   /** Opens the hosted login. Resolves with the account, or null if the window was closed first. */
@@ -77,7 +87,7 @@ function createAuth({ userDataDir, getSession = () => session.fromPartition(PART
     fs.rmSync(accountFile, { force: true });
   }
 
-  return { cachedAccount, whoami, signIn, signOut, getSession };
+  return { cachedAccount, whoami, fetchAs, signIn, signOut, getSession };
 }
 
 module.exports = { createAuth, ownerFor, isSignedInUrl, PARTITION };

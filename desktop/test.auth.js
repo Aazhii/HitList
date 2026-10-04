@@ -50,6 +50,46 @@ test('whoami answers null for a signed-out session and throws when it cannot be 
   await assert.rejects(createAuth({ userDataDir: dir, getSession: () => reply(502, {}) }).whoami());
 });
 
+test('private data is not sent when cloud cookies belong to another account', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hl-auth-'));
+  const urls = [];
+  const auth = createAuth({ userDataDir: dir, getSession: () => ({ fetch: async url => {
+    urls.push(url);
+    return { status: 200, ok: true, json: async () => ({ userId: '222222' }) };
+  } }) });
+  await assert.rejects(auth.fetchAs('111111', 'https://example.invalid/backup', { method: 'PUT', body: 'A private snapshot' }), { code: 'account-mismatch' });
+  assert.equal(urls.length, 1);
+  assert.ok(urls[0].endsWith('/whoami'));
+});
+
+test('a cancelled identity check never starts the subsequent upload', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hl-auth-'));
+  let release;
+  const urls = [];
+  const controller = new AbortController();
+  const auth = createAuth({ userDataDir: dir, getSession: () => ({ fetch: async url => {
+    urls.push(url);
+    await new Promise(resolve => { release = resolve; });
+    return { status: 200, ok: true, json: async () => ({ userId: '111111' }) };
+  } }) });
+  const pending = auth.fetchAs('111111', 'https://example.invalid/backup', { signal: controller.signal });
+  controller.abort();
+  release();
+  await assert.rejects(pending, { code: 'account-mismatch' });
+  assert.equal(urls.length, 1);
+});
+
+test('a matching cloud session permits the account request', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'hl-auth-'));
+  const urls = [];
+  const auth = createAuth({ userDataDir: dir, getSession: () => ({ fetch: async url => {
+    urls.push(url);
+    return { status: 200, ok: true, json: async () => ({ userId: '111111' }) };
+  } }) });
+  assert.equal((await auth.fetchAs('111111', 'https://example.invalid/backup')).status, 200);
+  assert.equal(urls.length, 2);
+});
+
 test('the sign-in first screen offers three choices, takes only https links on our own host, and loads nothing remote', () => {
   const html = fs.readFileSync(path.join(__dirname, 'signin.html'), 'utf8');
   for (const id of ['login', 'signup', 'reset']) assert.match(html, new RegExp(`id="${id}"`));
