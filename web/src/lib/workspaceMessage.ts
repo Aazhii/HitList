@@ -15,10 +15,17 @@ const REASONS: Record<string, string> = {
   offline: 'Could not reach the server. Try again when you are online.',
   'cloud-error': 'The server did not accept that. Try again in a moment.',
   'unknown-workspace': 'That workspace is not on this computer yet.',
+  not_found: 'The server does not have the shared workspaces service yet. The Catalyst function needs to be deployed with the latest version.',
+  unauthenticated: 'You are not signed in to HitList. Sign in from the Account menu and try again.',
+  invalid_account: 'Your account has no usable email address, so it cannot be used for shared workspaces.',
+  server_error: 'The server hit an error. Try again in a moment.',
+  body_too_large: 'That request was too large.',
 };
 
 export function workspaceReason(reason: string | undefined): string {
-  return (reason && REASONS[reason]) || 'That did not work. Try again in a moment.';
+  if (reason && REASONS[reason]) return REASONS[reason];
+  // An answer this screen does not know: show its code, so the cause can be found instead of guessed.
+  return reason ? `That did not work (${reason}). Try again in a moment.` : 'That did not work. Try again in a moment.';
 }
 
 /** The invite code from a pasted link (`…invite.html?t=CODE`, `hitlist://invite?t=CODE`) or the bare code. */

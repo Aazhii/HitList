@@ -23,7 +23,9 @@ describe('workspaceMessage', () => {
     expect(workspaceReason('wrong_account')).toMatch(/different email address/);
     expect(workspaceReason('invite_expired')).toMatch(/expired/);
     expect(workspaceReason('owner_cannot_leave')).toMatch(/owner cannot leave/);
-    expect(workspaceReason('something-new')).toMatch(/did not work/);
+    expect(workspaceReason('something-new')).toBe('That did not work (something-new). Try again in a moment.');
+    expect(workspaceReason('not_found')).toMatch(/needs to be deployed/);
+    expect(workspaceReason('unauthenticated')).toMatch(/not signed in/);
     expect(workspaceReason(undefined)).toMatch(/did not work/);
   });
 
