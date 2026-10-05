@@ -1288,7 +1288,8 @@ function UserScopedApp() {
         const quadrantMap = { do: 'DO', schedule: 'SCHEDULE', delegate: 'DELEGATE', eliminate: 'ELIMINATE' } as const;
         return sourceAssignment.createTask({ ...source, workspaceId: assignee.workspaceId, title, quadrant: quadrantMap[quadrant], listId, assigneeUserId: assignee.userId });
       }
-      try { await flushSourceSaves(); }
+      // A task made from a note depends on that note being saved, not on unrelated database edits.
+      try { await flushSourceSaves({ ignoreFailedWrites: !!source.sourceNoteId && !source.sourceRecordId }); }
       catch (failure) { toast.error(failure instanceof Error ? failure.message : 'Save the source before assigning'); return null; }
       const maxOrder = todosRef.current
         .filter((t) => t.listId === listId)

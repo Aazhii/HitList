@@ -50,6 +50,39 @@ describe('global source save drain', () => {
     }
   });
 
+  it('stops reporting a failed write once the same edit has been saved after all', async () => {
+    const { trackSourceWrite, flushSourceSaves, waitForSourceWrites } = await import('@/lib/sourceSaves');
+    const { prepareForSignOut } = await import('@/lib/preLogout');
+    await expect(trackSourceWrite(Promise.reject(new Error('offline')), 'PUT /field-values/r1/f1')).rejects.toThrow('offline');
+    await waitForSourceWrites();
+    await expect(flushSourceSaves()).rejects.toThrow('PUT /field-values/r1/f1');
+    await expect(prepareForSignOut()).rejects.toThrow('offline');
+    // The same edit is retried and saves: nothing is blocked any more.
+    await trackSourceWrite(Promise.resolve('ok'), 'PUT /field-values/r1/f1');
+    await waitForSourceWrites();
+    await expect(flushSourceSaves()).resolves.toBeUndefined();
+    await expect(prepareForSignOut()).resolves.toBeUndefined();
+  });
+
+  it('a different edit saving does not hide a failed one', async () => {
+    const { trackSourceWrite, flushSourceSaves, waitForSourceWrites } = await import('@/lib/sourceSaves');
+    await expect(trackSourceWrite(Promise.reject(new Error('x')), 'PUT /field-values/r1/f1')).rejects.toThrow('x');
+    await trackSourceWrite(Promise.resolve('ok'), 'PUT /field-values/r2/f1');
+    await waitForSourceWrites();
+    await expect(flushSourceSaves()).rejects.toThrow('A source edit could not be saved');
+  });
+
+  it('a task made from a note is not stopped by an unrelated failed database edit, but still saves the note first', async () => {
+    const { trackSourceWrite, flushSourceSaves, onSourceSave, waitForSourceWrites } = await import('@/lib/sourceSaves');
+    const order: string[] = [];
+    onSourceSave(async () => { order.push('note-saved'); });
+    await expect(trackSourceWrite(Promise.reject(new Error('x')), 'POST /views')).rejects.toThrow('x');
+    await waitForSourceWrites();
+    await expect(flushSourceSaves({ ignoreFailedWrites: true })).resolves.toBeUndefined();
+    expect(order).toEqual(['note-saved']);
+    await expect(flushSourceSaves()).rejects.toThrow('A source edit could not be saved');
+  });
+
   it('drains a write queued by a settling write before logout', async () => {
     const { trackSourceWrite } = await import('@/lib/sourceSaves');
     const { prepareForSignOut } = await import('@/lib/preLogout');

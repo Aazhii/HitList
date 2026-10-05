@@ -180,7 +180,7 @@ function browserTimeZone(): string {
 function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const write = performRequest<T>(path, options);
   return options.method && options.method !== 'GET' && /^\/(databases|fields|field-values|views)(\/|$)/.test(path)
-    ? trackSourceWrite(write) : write;
+    ? trackSourceWrite(write, `${options.method} ${path.split('?')[0]}`) : write;
 }
 
 async function performRequest<T>(

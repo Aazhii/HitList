@@ -40,7 +40,8 @@ export function useSourceTaskAssignment() {
         setConsent({ workspace, kind: input.sourceNoteId ? 'note' : 'database', title: input.title });
       });
       if (!confirmed || !mounted.current) return null;
-      await flushSourceSaves();
+      // Sharing a note depends on that note being saved, not on unrelated database edits.
+      await flushSourceSaves({ ignoreFailedWrites: !!input.sourceNoteId && !input.sourceRecordId });
       if (!mounted.current) return null;
       const key = JSON.stringify(input);
       let request = requests.current.get(key);
