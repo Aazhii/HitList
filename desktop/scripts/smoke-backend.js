@@ -77,8 +77,30 @@ async function smokeBackend({ java, jar, timeout = 60_000 }) {
     assert.ok((await request('100001', '/api/tasks')).some((row) => row.id === task.id), 'Task read-back failed');
     assert.equal((await request('200002', '/api/tasks')).length, 0, 'Account B can see account A tasks');
     assert.ok((await request('100001', '/api/tasks')).some((row) => row.id === task.id), 'Account A data missing after switch');
+    const alertContext = { workspaceId: null, timezone: 'UTC' };
+    await request('100001', `/api/tasks/${task.id}`, 'PUT', { dueDate: '2000-01-01', dueTime: '09:00' });
+    const reserved = await request('100001', '/api/overdue/reserve', 'POST', alertContext);
+    assert.equal(reserved.tasks.length, 1, 'Overdue schedule was not created from a task edit');
+    assert.equal(reserved.tasks[0].id, task.id);
+    assert.equal(reserved.tasks[0].dueDate, '2000-01-01');
+    assert.equal((await request('200002', '/api/overdue/reserve', 'POST', alertContext)).tasks.length, 0, 'Account B can see account A schedules');
+    const batch = { workspaceId: null, batchId: reserved.batchId };
+    const validated = await request('100001', '/api/overdue/validate', 'POST', batch);
+    assert.equal(validated.tasks.length, 1);
+    await request('100001', '/api/overdue/ack', 'POST', { ...batch, tasks: validated.tasks.map(({ id, occurrence }) => ({ id, occurrence })) });
+    assert.equal((await request('100001', '/api/overdue/reserve', 'POST', alertContext)).tasks.length, 0, 'Acknowledged occurrence sent again');
+    await request('100001', `/api/tasks/${task.id}`, 'PUT', { dueDate: '2000-01-02' });
+    const changed = await request('100001', '/api/overdue/reserve', 'POST', alertContext);
+    assert.equal(changed.tasks.length, 1, 'Rescheduled task did not create a new occurrence');
+    await request('100001', `/api/tasks/${task.id}`, 'PUT', { dueDate: '', dueTime: '' });
+    assert.equal((await request('100001', '/api/overdue/validate', 'POST', { workspaceId: null, batchId: changed.batchId })).tasks.length, 0, 'Cleared task remains eligible');
+    const cleared = await request('100001', `/api/tasks/${task.id}`);
+    assert.equal(cleared.dueDate ?? null, null); assert.equal(cleared.dueTime ?? null, null);
+    const unauthenticated = await fetch(`${origin}/api/overdue/reserve`, { method: 'POST', signal: AbortSignal.timeout(5_000),
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(alertContext) });
+    assert.equal(unauthenticated.status, 401, 'Anonymous requests can reserve schedules');
     assert.ok(fs.existsSync(path.join(dir, 'hitlist.db')), 'SQLite file was not created');
-    console.log('PASS bundled Java, backend, frontend assets, SQLite and account partition smoke');
+    console.log('PASS bundled Java, backend, frontend assets, SQLite, account partition and overdue lifecycle smoke');
   } finally {
     if (child) await stop(child);
     fs.rmSync(dir, { recursive: true, force: true });

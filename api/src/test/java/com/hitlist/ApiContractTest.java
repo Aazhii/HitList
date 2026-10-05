@@ -86,6 +86,27 @@ class ApiContractTest {
     }
 
     @Test
+    void clearingDueFieldsPersistsAcrossFreshReads() throws Exception {
+        MockCookie browser = browser();
+        mvc.perform(post("/api/tasks").cookie(browser).contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"clientId":"clear-due","title":"Clear due date","dueDate":"2030-01-02","dueTime":"09:00",
+                     "reminderEnabled":true,"reminderMinutesBefore":30,"recurrence":"DAILY"}
+                    """))
+            .andExpect(status().isCreated());
+        mvc.perform(put("/api/tasks/clear-due").cookie(browser).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"dueTime\":\"\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.dueDate").value("2030-01-02"))
+            .andExpect(jsonPath("$.dueTime").isEmpty());
+        mvc.perform(put("/api/tasks/clear-due").cookie(browser).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"dueDate\":\"\",\"dueTime\":\"\",\"recurrence\":\"\",\"reminderEnabled\":false}"))
+            .andExpect(status().isOk());
+        mvc.perform(get("/api/tasks/clear-due").cookie(browser)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.dueDate").isEmpty()).andExpect(jsonPath("$.dueTime").isEmpty())
+            .andExpect(jsonPath("$.recurrence").isEmpty()).andExpect(jsonPath("$.reminderEnabled").value(false));
+    }
+
+    @Test
     void aTasksReminderIsKeptAndNotSwitchedOffByAnUnawareUpdate() throws Exception {
         MockCookie browser = browser();
         mvc.perform(post("/api/tasks")

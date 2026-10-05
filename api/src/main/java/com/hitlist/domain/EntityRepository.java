@@ -14,6 +14,12 @@ import org.springframework.transaction.annotation.Transactional;
 public class EntityRepository {
     private final RowStore store;
     private final SyncJournal journal;
+    private com.hitlist.storage.DueScheduleStore schedules;
+
+    @org.springframework.beans.factory.annotation.Autowired
+    public void setSchedules(com.hitlist.storage.DueScheduleStore schedules) {
+        this.schedules = schedules;
+    }
 
     /** For tests and tools that build a repository by hand. */
     public EntityRepository(RowStore store) {
@@ -49,6 +55,7 @@ public class EntityRepository {
         owned.put("OwnerId", ownerId);
         Map<String, Object> saved = store.insert(table, owned);
         journal.inserted(table, ownerId, owned);
+        if (schedules != null && StorageTables.TASKS.equals(table)) schedules.upsert(ownerId, owned);
         return saved;
     }
 
@@ -60,6 +67,7 @@ public class EntityRepository {
         owned.put(StorageTables.primaryKey(table), id);
         Map<String, Object> saved = store.update(table, text(existing.get("ROWID")), owned);
         journal.replaced(table, ownerId, existing, owned);
+        if (schedules != null && StorageTables.TASKS.equals(table)) schedules.upsert(ownerId, owned);
         return saved;
     }
 
@@ -68,6 +76,7 @@ public class EntityRepository {
         Map<String, Object> existing = require(table, ownerId, id);
         store.delete(table, text(existing.get("ROWID")));
         journal.deleted(table, ownerId, existing);
+        if (schedules != null && StorageTables.TASKS.equals(table)) schedules.remove(ownerId, id);
     }
 
     @Transactional
@@ -76,6 +85,7 @@ public class EntityRepository {
             if (predicate.test(row)) {
                 store.delete(table, text(row.get("ROWID")));
                 journal.deleted(table, ownerId, row);
+                if (schedules != null && StorageTables.TASKS.equals(table)) schedules.remove(ownerId, text(row.get("TaskId")));
             }
         }
     }

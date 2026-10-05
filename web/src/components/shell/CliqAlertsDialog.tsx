@@ -12,9 +12,23 @@ import { alertStatusLine, CLIQ_EMAIL_PATTERN, testResultMessage } from '@/lib/cl
 import { useCliqAlerts } from '@/hooks/useCliqAlerts';
 import { useCliqConnection } from '@/hooks/useCliqConnection';
 import { cn } from '@/lib/utils';
+import { useWorkspaces } from '@/hooks/useWorkspaces';
+import type { SharedWorkspace } from '@/lib/workspaceStore';
 
 export function CliqAlertsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
-  const cliq = useCliqAlerts();
+  const workspaces = useWorkspaces();
+  const [selected, setSelected] = useState<string | null | undefined>(undefined);
+  const workspaceId = selected === undefined ? workspaces.active : selected;
+  return <CliqAlertsContent key={`${workspaces.me?.userId}:${workspaceId}`} open={open} onOpenChange={onOpenChange}
+    workspaceId={workspaceId} accountId={workspaces.me?.userId} workspaces={workspaces.workspaces}
+    onWorkspaceChange={setSelected} />;
+}
+
+function CliqAlertsContent({ open, onOpenChange, workspaceId, accountId, workspaces, onWorkspaceChange }: {
+  open: boolean; onOpenChange: (open: boolean) => void; workspaceId: string | null; accountId?: string;
+  workspaces: SharedWorkspace[]; onWorkspaceChange: (id: string | null) => void;
+}) {
+  const cliq = useCliqAlerts(workspaceId, accountId);
   const connection = useCliqConnection(open);
   const [copyFailed, setCopyFailed] = useState(false);
   const [expired, setExpired] = useState(false);
@@ -69,12 +83,22 @@ export function CliqAlertsDialog({ open, onOpenChange }: { open: boolean; onOpen
           <p className="text-[13px] text-a-muted">Cliq alerts are part of the HitList desktop app.</p>
         ) : (
           <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="cliq-workspace">Workspace</Label>
+              <select id="cliq-workspace" value={workspaceId ?? ''} disabled={busy}
+                onChange={(event) => onWorkspaceChange(event.target.value || null)}
+                className="h-[34px] w-full rounded-[4px] border border-a-line-strong bg-a-surface px-2 text-[13px] text-a-ink">
+                <option value="">Personal workspace</option>
+                {workspaces.filter((workspace) => workspace.state === 'active').map((workspace) =>
+                  <option key={workspace.workspaceId} value={workspace.workspaceId}>{workspace.name}</option>)}
+              </select>
+            </div>
             <div className="flex items-center justify-between gap-3">
               <Label htmlFor="cliq-enabled" className="text-[14px] text-a-ink">Send me alerts in Cliq</Label>
               <Switch
                 id="cliq-enabled"
                 checked={enabled}
-                disabled={busy || (!enabled && !emailOk)}
+                disabled={busy || !cliq.status || (!enabled && !emailOk)}
                 onCheckedChange={(on) => { void saveEmail(on); }}
                 aria-label="Send me alerts in Cliq"
               />
@@ -97,7 +121,7 @@ export function CliqAlertsDialog({ open, onOpenChange }: { open: boolean; onOpen
               <button
                 type="button"
                 onClick={() => { void sendTest(); }}
-                disabled={busy || !emailOk}
+                disabled={busy || !cliq.status || !emailOk}
                 className="h-[34px] rounded-[4px] border border-a-line-strong bg-a-surface px-4 text-[13px] font-semibold text-a-ink transition-colors duration-[120ms] hover:bg-a-bg disabled:cursor-not-allowed disabled:opacity-50"
               >
                 Send test message
@@ -105,7 +129,8 @@ export function CliqAlertsDialog({ open, onOpenChange }: { open: boolean; onOpen
               {note && <span className={cn('text-[13px]', note.ok ? 'text-a-muted' : 'text-a-attention')} role="status">{note.text}</span>}
             </div>
 
-            {cliq.status && <p className="text-[12px] text-a-faint">{alertStatusLine(cliq.status)} Switching alerts on does not announce tasks that are already overdue.</p>}
+            {cliq.status && <p className="text-[12px] text-a-faint">{alertStatusLine(cliq.status)}</p>}
+            {cliq.failed && <p role="alert" className="text-[12px] text-a-attention">Could not load alert settings. Reopen settings to retry.</p>}
           </div>
         )}
         <section className="border-t border-a-line pt-4 space-y-3" aria-label="Cliq commands">

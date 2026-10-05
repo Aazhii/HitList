@@ -81,6 +81,9 @@ function launch({ failNavigation = false, backupGate, platform = 'darwin', packa
   };
   let accounts = 0;
   let backupOptions;
+  let alertOptions;
+  const powerMonitor = new EventEmitter();
+  let wakeChecks = 0;
   const uploads = [];
   const lifecycle = [];
   const backup = (options) => { backupOptions = options; return { startSchedule: () => {}, status: () => ({}), backupNow: async () => ({ result: 'ok' }),
@@ -88,13 +91,15 @@ function launch({ failNavigation = false, backupGate, platform = 'darwin', packa
     cancel: async () => { lifecycle.push('backup-cancel'); },
   }; };
   const mocks = {
-    electron: { app, BrowserWindow, ipcMain, dialog: { showErrorBox: (_title, message) => errors.push(message) }, shell: {} },
+    electron: { app, BrowserWindow, ipcMain, powerMonitor, dialog: { showErrorBox: (_title, message) => errors.push(message) }, shell: {} },
     './auth': { createAuth: () => ({ cachedAccount: () => ({ userId: String(++accounts), email: `account-${accounts}@test.invalid` }), signOut: async () => { lifecycle.push('clear-session'); },
       fetchAs: async (identity, url, options, isCurrent) => { uploads.push({ identity, url, options, current: isCurrent() }); return { status: 201, text: async () => '{}' }; },
     }), ownerFor: (id) => id },
     './backup': { createBackup: backup },
     './restore': { createRestore: () => ({ check: async () => ({}), restore: async () => { lifecycle.push('restore'); return {}; } }) },
-    './cliqAlerts': { createCliqAlerts: () => ({ startSchedule: () => {}, status: () => ({}), setSettings: () => ({}), sendTest: async () => ({}) }) },
+    './cliqAlerts': { createCliqAlerts: (options) => { alertOptions = options; return { startSchedule: () => {}, status: () => ({}), setSettings: () => ({}), sendTest: async () => ({}),
+      cancel: () => { lifecycle.push('alerts-cancel'); }, check: async () => { wakeChecks++; },
+    }; } },
     './cliqConnection': { createCliqConnection: () => ({ stop: () => { lifecycle.push('stop'); }, beforeRestore: async () => { lifecycle.push('beforeRestore'); }, get: async () => ({}), start: async () => ({}), confirm: async () => ({}), enable: async () => ({}), fetchNow: async () => ({}), unlink: async () => ({}) }) },
     './updater': { createUpdater: () => ({ status: () => ({}), check: () => {}, download: () => {}, cancel: () => {}, install: () => {}, startSchedule: () => () => {} }) },
     './installer': { cleanupAfterUpdate: () => {}, canSwap: () => false, swapPlan: () => ({ ok: false, reason: 'dev-run' }) },
@@ -111,9 +116,10 @@ function launch({ failNavigation = false, backupGate, platform = 'darwin', packa
     require: (name) => mocks[name] || require(name),
     __dirname, process: { ...process, platform, resourcesPath: '/fake/resources', env: {} },
     console: { log: () => {}, error: () => {} },
-    Buffer, setTimeout, clearTimeout, setInterval: () => {}, fetch: () => {},
+    Buffer, AbortSignal, setTimeout, clearTimeout, setInterval: () => {}, fetch: () => {},
   }, { filename: 'main.js' });
-  return { app, windows, children, handlers, errors, lifecycle, uploads, uploadBackup: (...args) => backupOptions.upload(...args), requestHeaders: (method) => {
+  return { app, windows, children, handlers, errors, lifecycle, uploads, powerMonitor, wakeChecks: () => wakeChecks,
+    alertOptions: () => alertOptions, uploadBackup: (...args) => backupOptions.upload(...args), requestHeaders: (method) => {
     let result;
     headerHandler({ method, requestHeaders: {}, url: 'http://127.0.0.1:41000/api/notes' }, out => { result = out; });
     return result;
@@ -121,6 +127,28 @@ function launch({ failNavigation = false, backupGate, platform = 'darwin', packa
 }
 
 const settle = () => new Promise((resolve) => setImmediate(resolve));
+
+test('alerts use account-pinned bounded transport, cancel on logout and clean up resume listeners', async () => {
+  const rig = launch(); await settle();
+  const options = rig.alertOptions();
+  assert.equal(typeof options.localPost, 'function');
+  assert.equal(options.getWorkspace(), null);
+  const controller = new AbortController();
+  await options.send('/notify/overdue', { email: 'test@invalid.example', tasks: [] }, {
+    accountIdentity: '1', signal: controller.signal, isCurrent: () => true,
+  });
+  assert.equal(rig.uploads.at(-1).identity, '1');
+  assert.equal(rig.uploads.at(-1).current, true);
+  controller.abort(); assert.equal(rig.uploads.at(-1).options.signal.aborted, true);
+  rig.powerMonitor.emit('resume'); await settle(); assert.equal(rig.wakeChecks(), 1);
+  await assert.rejects(rig.handlers.get('cliq:get')(null, { accountId: 'other', workspaceId: null }), /Account changed/);
+  await rig.handlers.get('account:signOut')();
+  assert.ok(rig.lifecycle.includes('alerts-cancel'));
+  await assert.rejects(options.send('/notify/overdue', {}, {
+    accountIdentity: '1', signal: new AbortController().signal, isCurrent: () => false,
+  }), /Account changed/);
+  rig.windows[0].close(); assert.equal(rig.powerMonitor.listenerCount('resume'), 0);
+});
 
 test('backup upload forwards the trigger reason through the account-pinned cloud request', async () => {
   const { windows, uploads, uploadBackup } = launch();

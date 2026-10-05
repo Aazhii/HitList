@@ -69,7 +69,41 @@ before adding the shell-header test; the subsequent `node --test desktop/test.ma
 3.9.12 executable. This includes frontend checks, API tests, a fresh embedded jar/local Java smoke, 27 two-replica assertions
 and 16 version cases; scratch replica processes/storage were cleaned up. Native platform helper skips remain skips.
 No new distributable artifact, installed GUI/login/logout/account-switch test, native Windows/Linux run or live Catalyst
-schema/policy check was performed. No commit, cloud mutation, push or deployment was performed for this backup change.
+schema/policy check was performed during that local validation. The backup-policy source was subsequently committed as
+`62f16d1`.
+
+Authorized Development rollout (2026-10-05): read-only metadata first confirmed the cloud function was last modified
+October 4 and `Backups` lacked `BackupReason`. Added optional `BackupReason` Text column
+`75733000000021016` to table `75733000000032007`; Catalyst reported max length 10,000 instead of the requested 100.
+Existing rows were not rewritten. `node --test functions/backup/test.backupService.js functions/backup/test.backupReasons.js`:
+12 passed. `catalyst deploy --only functions:backup --org 60090109165 -p 75733000000013053 --dc in -ni`: successful.
+The CLI omitted environment replacement; post-deploy metadata confirmed all 11 expected setting names remain present and
+the environment configuration update timestamp was unchanged. The function modification timestamp advanced to October 5,
+and the public `/server/backup/health` returned HTTP 200 with `{"ok":true}`. No other function or client was deployed.
+The function-list `is_deployed: false` field remained inconsistent with the successful CLI result; downloaded artifact
+hashes and live authenticated allowance/login/logout behavior were not verified. Three incidental bulk-read jobs were
+started during a schema-tool routing failure; no export output was downloaded and no backup records were modified by them.
+Cached manual retry times on installed desktops were not cleared and can still suppress manual retries until expiry.
+No new desktop build, push or release publication was performed.
+
+### 3.1.1 Cloud inspection: no new bulk operations
+Owner restriction (2026-10-05): do not start Data Store Bulk Read or Bulk Write jobs, including through MCP, SDKs,
+REST APIs, scripts or console exports. This restriction concerns bulk database operations, not ordinary application builds.
+Do not create a bulk job to inspect schema, troubleshoot updates, check quotas or test MCP connectivity.
+
+- For schema inspection, use table/column metadata APIs such as `Get_Table_By_Id` and `List_All_Columns`.
+- For necessary record inspection, use `Get_Rows` or bounded, paginated ZCQL SELECT queries; scope to the relevant account
+  and fetch only the needed rows/columns. These consume ordinary read quota, not Bulk Read quota.
+- Check the actual tool name and argument schema before invoking it. Never substitute `Create_Bulk_Read_Job` or
+  `Create_Bulk_Write_Job` when the intended read-only tool is unavailable or fails. Stop and report the limitation instead.
+- If a tool unexpectedly starts a job, do not retry it. Record the returned job ID, timestamp, environment and operation
+  without credentials or record contents, and tell the owner. Status checks for an existing job must not create another job.
+
+Review evidence: no Bulk Read/Write API calls were found in the application source searched. The rollout record above
+documents three accidental Bulk Read jobs during agent tooling, not application update checks. The reported four dataset
+units have not been fully reconciled against job IDs and usage records; do not claim the fourth unit's origin is known.
+In-app updates query GitHub Releases, not Catalyst Data Store. The generic update-server error alone does not establish
+offline status or a Catalyst quota failure.
 
 ### 3.2 Updates (in-app, from GitHub Releases)
 `desktop/updater.js` checks `Aazhii/HitList` releases (a minute after launch, then daily; also "Account → Check for updates"). It
@@ -87,9 +121,31 @@ Unsigned apps: users get the first-open warning (`docs/INSTALL.md`). A file our 
 app opens without a prompt (proven on Mac with copies; **not yet proven with a real release-to-release update**).
 
 ### 3.3 Cliq alerts (overdue tasks → a Cliq DM)
-Desktop checks every 15 min while open (`desktop/cliqAlerts.js`): newly overdue tasks → ONE batch, max 3 a day → `POST /notify/overdue`
-on the function → Cliq bot REST (`cliq.zoho.<dc>/api/v2/bots/<bot>/message?zapikey=…`). The webhook token only lives in the
-function's environment. Details: `docs/cliq/00-INDEX.md`, `01-setup.md`.
+Desktop checks every minute while open (`desktop/cliqAlerts.js`), selecting local SQLite schedules with `due_at <= now`.
+`DueScheduleStore` maintains indexed task schedules and account/workspace delivery receipts through `EntityRepository` task
+writes, including sync and restore. Date-only tasks use 23:59:59 local time; clearing a date also clears its time and schedule.
+The worker reserves and revalidates at most 20 tasks, sends one bounded batch per minute, then acknowledges the local receipt.
+There is no daily batch cap or baseline skip: pending tasks catch up after enable, reopen or offline recovery.
+Settings are account/workspace scoped; shared workspaces default off. All enabled workspaces remain checked regardless of the
+active view. Account transitions cancel in-flight work. Detection and scheduling stay local; only messages go to
+`POST /notify/overdue` on the existing function for Cliq bot delivery. No cloud scheduler or bulk operation was added.
+Normal local deduplication does not guarantee exactly-once delivery across send/ack crashes or multiple devices.
+Details: `docs/cliq/00-INDEX.md`, `01-setup.md` (older cadence/cap descriptions are superseded by this section).
+
+Provisional commit evidence (2026-10-05, source base `62f16d1`): macOS 26.6.2 (25G83) arm64; Node 24.19.0, Java 25.0.4,
+cached Maven 3.9.12. Tested from the repository with scratch SQLite data, not the installed HitList profile.
+Passed focused checks: `node --test desktop/test.cliqAlerts.js desktop/test.main.js`;
+`node web/node_modules/vitest/vitest.mjs run --root web test/TaskDetailPanel.test.tsx test/CliqAlertsDialog.test.tsx test/cliqMessage.test.ts`;
+Maven `-B -f api/pom.xml -Dtest=DueScheduleStoreTest,ApiContractTest test`.
+Passed mandatory gates: `node scripts/ci/validate-desktop.cjs` and `sh scripts/ci/compute-version.test.sh` with Java 25
+and `HITLIST_MVN=$HOME/.m2/wrapper/dists/apache-maven-3.9.12/6068d197/bin/mvn`. The validator built fresh embedded frontend
+assets, packaged the jar, passed the real HTTP overdue lifecycle smoke and all 27 two-replica E2E assertions; its scratch
+processes/data were cleaned up. The separate browser-preview terminal was stopped; preview scratch data was not removed.
+Tested `api/target/hitlist.jar` SHA256: `4d4ea8b70d69724c03d11229411b9e2538681c43c5a45110787f1625514735a4`.
+Native macOS/Windows/Linux package checks: NOT RUN. Installed GUI/login/logout/account-switch/manual lifecycle checks and
+live HitListBot delivery: NOT RUN; native helper skips are not passes. No distributable was built or published.
+Owner explicitly approved a provisional commit despite these unavailable checks; release remains blocked until verified.
+No cloud deployment, infrastructure change, Bulk Read/Write operation or push was performed for this scheduler change.
 
 ### 3.4 Cliq inbound (commands from Cliq → tasks)
 Designed in `docs/cliq/02-bidirectional.md`: verified link between a Catalyst user and a Cliq sender, a durable inbox in Data Store

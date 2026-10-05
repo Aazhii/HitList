@@ -4,7 +4,11 @@ import { CliqAlertsDialog } from '@/components/shell/CliqAlertsDialog';
 import type { CliqStatus } from '@/lib/cliqMessage';
 import type { CliqConnectionState } from '@/hooks/useCliqConnection';
 
-const base: CliqStatus = { enabled: false, email: '', lastResult: null, lastSentAt: null, sentToday: 0, maxPerDay: 3 };
+vi.mock('@/hooks/useWorkspaces', () => ({ useWorkspaces: () => ({
+  active: null, me: { userId: 'account' }, workspaces: [{ workspaceId: 'w'.repeat(43), name: 'Team', state: 'active' }],
+}) }));
+
+const base: CliqStatus = { enabled: false, email: '', lastResult: null, lastSentAt: null };
 
 function bridge(initial: CliqStatus = base) {
   let current = { ...initial };
@@ -43,6 +47,32 @@ function commandBridge(initial = disconnected) {
 afterEach(() => { delete window.hitlistDesktop; });
 
 describe('CliqAlertsDialog', () => {
+  it('loads and saves the selected workspace without changing the active view', async () => {
+    const b = bridge();
+    render(<CliqAlertsDialog open onOpenChange={vi.fn()} />);
+    await waitFor(() => expect(b.getCliq).toHaveBeenCalledWith({ workspaceId: null, accountId: 'account' }));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Workspace' }), { target: { value: 'w'.repeat(43) } });
+    await waitFor(() => expect(b.getCliq).toHaveBeenCalledWith({ workspaceId: 'w'.repeat(43), accountId: 'account' }));
+    fireEvent.change(screen.getByLabelText('Your Cliq email'), { target: { value: 'team@zohocorp.com' } });
+    const toggle = screen.getByRole('switch', { name: 'Send me alerts in Cliq' });
+    await waitFor(() => expect(toggle).not.toBeDisabled());
+    fireEvent.click(toggle);
+    await waitFor(() => expect(b.setCliq).toHaveBeenCalledWith({ enabled: true, email: 'team@zohocorp.com', workspaceId: 'w'.repeat(43), accountId: 'account' }));
+  });
+
+  it('ignores delayed settings from the previous workspace', async () => {
+    const b = bridge();
+    let release!: (status: CliqStatus) => void;
+    const pending = new Promise<CliqStatus>((resolve) => { release = resolve; });
+    b.getCliq.mockImplementation((...args: unknown[]) => (args[0] as { workspaceId: string | null }).workspaceId ? Promise.resolve(base) : pending);
+    render(<CliqAlertsDialog open onOpenChange={vi.fn()} />);
+    fireEvent.change(screen.getByRole('combobox', { name: 'Workspace' }), { target: { value: 'w'.repeat(43) } });
+    await waitFor(() => expect(b.getCliq).toHaveBeenCalledWith({ workspaceId: 'w'.repeat(43), accountId: 'account' }));
+    release({ ...base, enabled: true, email: 'previous@zohocorp.com' });
+    await waitFor(() => expect(screen.getByRole('switch', { name: 'Send me alerts in Cliq' })).not.toBeChecked());
+    expect(screen.getByLabelText('Your Cliq email')).toHaveValue('');
+  });
+
   it('says it belongs to the desktop app when opened in a browser', () => {
     render(<CliqAlertsDialog open onOpenChange={vi.fn()} />);
     expect(screen.getByText(/part of the HitList desktop app/)).toBeInTheDocument();
@@ -58,7 +88,7 @@ describe('CliqAlertsDialog', () => {
     fireEvent.change(screen.getByLabelText('Your Cliq email'), { target: { value: 'me@zohocorp.com' } });
     await waitFor(() => expect(toggle).not.toBeDisabled());
     fireEvent.click(toggle);
-    await waitFor(() => expect(b.setCliq).toHaveBeenCalledWith({ enabled: true, email: 'me@zohocorp.com' }));
+    await waitFor(() => expect(b.setCliq).toHaveBeenCalledWith(expect.objectContaining({ enabled: true, email: 'me@zohocorp.com', workspaceId: null })));
     await waitFor(() => expect(screen.getByText(/Alerts are on/)).toBeInTheDocument());
   });
 

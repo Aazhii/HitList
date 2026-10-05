@@ -10,7 +10,7 @@ contextBridge.exposeInMainWorld('hitlistDesktop', {
   backupNow: () => ipcRenderer.invoke('backup:now'),
   checkRestore: (opts) => ipcRenderer.invoke('restore:check', opts),
   restoreNow: () => ipcRenderer.invoke('restore:run'),
-  getCliq: () => ipcRenderer.invoke('cliq:get'),
+  getCliq: (context) => ipcRenderer.invoke('cliq:get', context),
   setCliq: (settings) => ipcRenderer.invoke('cliq:set', settings),
   getCliqConnection: () => ipcRenderer.invoke('cliq:connection:get'),
   startCliqLink: (timeZone) => ipcRenderer.invoke('cliq:connection:start', timeZone),
@@ -33,7 +33,7 @@ contextBridge.exposeInMainWorld('hitlistDesktop', {
     ipcRenderer.on('update:progress', handler);
     return () => ipcRenderer.removeListener('update:progress', handler);
   },
-  testCliq: () => ipcRenderer.invoke('cliq:test'),
+  testCliq: (context) => ipcRenderer.invoke('cliq:test', context),
   // Shared workspaces. Everything goes through the shell, which holds the cloud session.
   workspaces: {
     status: () => ipcRenderer.invoke('ws:status'),

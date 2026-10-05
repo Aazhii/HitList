@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bell, Download, Keyboard, LogIn, LogOut, MessageSquare, RefreshCw, Upload } from 'lucide-react';
+import { Bell, Download, Info, Keyboard, LogIn, LogOut, MessageSquare, RefreshCw, Upload } from 'lucide-react';
 import { CliqAlertsDialog } from '@/components/shell/CliqAlertsDialog';
 import { UpdateDialog } from '@/components/shell/UpdateDialog';
 import { useAppUpdate } from '@/hooks/useAppUpdate';
@@ -174,6 +174,12 @@ export function UserMenu({ onOpenReminders, dailyLine }: {
                     <span className="text-[12px] text-a-faint">Version {appUpdate.status.latest.version} is available</span>
                   )}
                 </span>
+              </DropdownMenuItem>
+            )}
+            {desktop.available && desktop.account && (
+              <DropdownMenuItem onSelect={() => setCliqOpen(true)} className="gap-2.5 px-2.5 py-2 text-[14px] text-a-muted">
+                <Info className="size-[15px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
+                About / notification settings
               </DropdownMenuItem>
             )}
             {desktop.available && desktop.account && (

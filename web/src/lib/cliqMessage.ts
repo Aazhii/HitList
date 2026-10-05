@@ -4,8 +4,8 @@ export interface CliqStatus {
   email: string;
   lastResult: string | null;
   lastSentAt: number | null;
-  sentToday: number;
-  maxPerDay: number;
+  accountId?: string | null;
+  workspaceId?: string | null;
 }
 
 export const CLIQ_EMAIL_PATTERN = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]{2,}$/;
@@ -24,14 +24,15 @@ export function testResultMessage(result: string): { text: string; ok: boolean }
 }
 
 /** One line under the switch about how alerts are going. */
-export function alertStatusLine(s: CliqStatus, now = Date.now()): string {
+export function alertStatusLine(s: CliqStatus): string {
   if (!s.enabled) return 'Alerts are off.';
   switch (s.lastResult) {
     case 'sent': return s.lastSentAt ? `Last alert sent ${new Date(s.lastSentAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}.` : 'Alerts are on.';
-    case 'daily-limit': return `Today's limit of ${s.maxPerDay} alerts is reached. More will be sent tomorrow.`;
     case 'sign-in-needed': return 'Your sign-in expired. Sign out and sign in again.';
     case 'bad-recipient': return 'The server did not accept that email. Use your work email.';
-    case 'error': return 'The last alert could not be sent. It will try again within the hour.';
-    default: return `Alerts are on (${s.sentToday} of ${s.maxPerDay} sent today).`;
+    case 'error':
+    case 'offline': return 'The last alert could not be sent. It will try again.';
+    case 'ack-error': return 'The alert was sent, but its local receipt could not be saved.';
+    default: return 'Alerts are on.';
   }
 }

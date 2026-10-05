@@ -133,8 +133,8 @@ export function TaskDetailPanel({
     const changes: Partial<Todo> = {
       text: text.trim(),
       note: note.trim() || undefined,
-      dueDate: dueDate || undefined,
-      dueTime: dueTime || undefined,
+      dueDate,
+      dueTime: dueDate ? dueTime : '',
       category: category || undefined,
       // Only sent in a shared workspace, and only when it changed: '' means "no one".
       ...(members.length > 0 && assignee !== (todo.assigneeUserId ?? '')

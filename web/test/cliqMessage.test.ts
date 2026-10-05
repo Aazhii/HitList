@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { alertStatusLine, CLIQ_EMAIL_PATTERN, testResultMessage, type CliqStatus } from '@/lib/cliqMessage';
 
-const status = (over: Partial<CliqStatus> = {}): CliqStatus => ({ enabled: true, email: 'me@zohocorp.com', lastResult: null, lastSentAt: null, sentToday: 1, maxPerDay: 3, ...over });
+const status = (over: Partial<CliqStatus> = {}): CliqStatus => ({ enabled: true, email: 'me@zohocorp.com', lastResult: null, lastSentAt: null, ...over });
 
 describe('cliqMessage', () => {
   it('accepts one plain email and nothing else', () => {
@@ -20,9 +20,9 @@ describe('cliqMessage', () => {
 
   it('gives one status line for every state the alerts can be in', () => {
     expect(alertStatusLine(status({ enabled: false }))).toBe('Alerts are off.');
-    expect(alertStatusLine(status())).toBe('Alerts are on (1 of 3 sent today).');
+    expect(alertStatusLine(status())).toBe('Alerts are on.');
     expect(alertStatusLine(status({ lastResult: 'sent', lastSentAt: Date.UTC(2026, 9, 2, 6, 30) }))).toMatch(/^Last alert sent /);
-    expect(alertStatusLine(status({ lastResult: 'daily-limit' }))).toMatch(/limit of 3/);
+    expect(alertStatusLine(status({ lastResult: 'ack-error' }))).toMatch(/receipt/);
     expect(alertStatusLine(status({ lastResult: 'sign-in-needed' }))).toMatch(/sign in again/);
     expect(alertStatusLine(status({ lastResult: 'bad-recipient' }))).toMatch(/work email/);
     expect(alertStatusLine(status({ lastResult: 'error' }))).toMatch(/try again/);

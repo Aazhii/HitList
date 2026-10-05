@@ -8,7 +8,7 @@
  * background process, no OS-level scheduling, no LaunchAgent: the backend
  * lives exactly as long as this app's own process does.
  */
-const { app, BrowserWindow, dialog, ipcMain, shell, Notification } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, shell, Notification, powerMonitor } = require('electron');
 const { createAuth, ownerFor } = require('./auth');
 const { createBackup } = require('./backup');
 const { createRestore } = require('./restore');
@@ -357,16 +357,23 @@ async function openWindow() {
   // Cliq alerts: one message when tasks become overdue, sent through the Catalyst Function (which holds the Cliq token).
   const cliqAlerts = createCliqAlerts({
     stateDir: userDataDir,
-    getAccount: () => account,
-    localGet,
-    send: async (urlPath, payload) => {
-      const res = await auth.getSession().fetch(`${BACKUP_FUNCTION_URL}${urlPath}`, {
+    getAccount: () => accountTransition ? null : account,
+    getWorkspace: () => activeWorkspace,
+    localPost,
+    send: async (urlPath, payload, { accountIdentity, signal, isCurrent }) => {
+      if (!isCurrent() || accountTransition) throw new Error('Account changed');
+      const bounded = AbortSignal.any([signal, AbortSignal.timeout(10_000)]);
+      const res = await auth.fetchAs(accountIdentity, `${BACKUP_FUNCTION_URL}${urlPath}`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
-      });
+        signal: bounded,
+      }, () => !accountTransition && isCurrent());
       return { status: res.status };
     },
   });
   stopAlertsSchedule = cliqAlerts.startSchedule();
+  const resumeAlerts = () => { void cliqAlerts.check().catch(() => {}); };
+  powerMonitor?.on('resume', resumeAlerts);
+  win.on('closed', () => powerMonitor?.removeListener('resume', resumeAlerts));
 
   // App updates: look at the project's GitHub Releases, download the new version with progress, then replace the installed app
   // and start it again (installer.js). Where the app cannot be replaced in place, the installer file is opened instead.
@@ -426,6 +433,7 @@ async function openWindow() {
   ipcMain.handle('account:signIn', async () => {
     if (accountTransition || account) return publicAccount();
     accountTransition = true;
+    cliqAlerts.cancel?.();
     try {
       await backup.cancel();
       const signedIn = await auth.signIn(win);
@@ -452,9 +460,27 @@ async function openWindow() {
   ipcMain.handle('cliq:connection:enable', (_e, enabled) => connection.enable(enabled));
   ipcMain.handle('cliq:connection:fetch', () => connection.fetchNow());
   ipcMain.handle('cliq:connection:unlink', () => connection.unlink());
-  ipcMain.handle('cliq:get', () => cliqAlerts.status());
-  ipcMain.handle('cliq:set', (_e, settings) => ({ ...cliqAlerts.setSettings(settings || {}), status: cliqAlerts.status() }));
-  ipcMain.handle('cliq:test', () => cliqAlerts.sendTest());
+  const alertWorkspace = async (context) => {
+    if (accountTransition || !account || (context?.accountId && context.accountId !== account.userId)) throw new Error('Account changed');
+    const workspaceId = context?.workspaceId === undefined ? activeWorkspace : context.workspaceId;
+    if (workspaceId === null) return null;
+    if (typeof workspaceId !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(workspaceId)) throw new Error('Unknown workspace');
+    const identity = account.userId;
+    const known = JSON.parse((await localGet('/api/sync/workspaces', { accountIdentity: identity })).toString('utf8'));
+    if (accountTransition || account?.userId !== identity || !known.some((workspace) => workspace.workspaceId === workspaceId)) throw new Error('Unknown workspace');
+    return workspaceId;
+  };
+  ipcMain.handle('cliq:get', async (_e, context) => cliqAlerts.status(await alertWorkspace(context)));
+  ipcMain.handle('cliq:set', async (_e, settings) => {
+    const identity = account?.userId;
+    const workspaceId = await alertWorkspace(settings);
+    const out = cliqAlerts.setSettings({ ...settings, workspaceId, accountId: identity });
+    return { ...out, status: cliqAlerts.status(workspaceId) };
+  });
+  ipcMain.handle('cliq:test', async (_e, context) => {
+    const identity = account?.userId;
+    return cliqAlerts.sendTest(await alertWorkspace(context), identity);
+  });
   ipcMain.handle('update:status', () => updater.status());
   ipcMain.handle('update:check', () => updater.check());
   ipcMain.handle('update:download', () => updater.download());
@@ -474,6 +500,7 @@ async function openWindow() {
   ipcMain.handle('account:signOut', async () => {
     if (accountTransition) throw new Error('Account change already in progress');
     accountTransition = true;
+    cliqAlerts.cancel?.();
     let timeout;
     try {
       connection.stop();
