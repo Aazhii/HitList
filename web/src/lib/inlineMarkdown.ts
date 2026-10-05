@@ -17,6 +17,43 @@
  * textarea's keyboard behaviour is untouched by any of this.
  */
 
+import { Lexer, type Token } from 'marked';
+
+export interface InlineLink {
+  start: number;
+  end: number;
+  contentStart: number;
+  text: string;
+  href: string;
+}
+
+export function findInlineLinks(text: string): InlineLink[] {
+  const links: InlineLink[] = [];
+  const visit = (tokens: Token[], offset: number) => {
+    for (const token of tokens) {
+      if (token.type === 'link' && token.raw.startsWith('[')) {
+        let url: URL | null;
+        try {
+          url = new URL(token.href);
+        } catch { url = null; }
+        if (url && ['https:', 'http:', 'mailto:', 'tel:'].includes(url.protocol)) {
+          links.push({ start: offset, end: offset + token.raw.length, contentStart: offset + 1, text: token.text, href: url.href });
+        }
+      } else {
+        const children = (token as { tokens?: Token[] }).tokens;
+        if (children?.length) {
+          const content = children.map((child) => child.raw).join('');
+          const start = token.raw.indexOf(content);
+          if (start >= 0) visit(children, offset + start);
+        }
+      }
+      offset += token.raw.length;
+    }
+  };
+  visit(Lexer.lexInline(text), 0);
+  return links;
+}
+
 export type Mark = 'bold' | 'italic' | 'underline' | 'strike';
 
 export const MARKS: readonly Mark[] = ['bold', 'italic', 'underline', 'strike'];
@@ -31,6 +68,7 @@ export const MARK_DELIMITER: Record<Mark, string> = {
 /** A run of rendered text that carries one set of marks. */
 export interface InlineRun {
   text: string;
+  href?: string;
   /** In MARKS order, so rendering nests consistently. */
   marks: Mark[];
   /** src[i] is the index in the source string of text[i]. */
@@ -57,7 +95,7 @@ interface Delim {
 }
 
 type Piece =
-  | { kind: 'char'; ch: string; src: number }
+  | { kind: 'char'; ch: string; src: number; href?: string }
   | { kind: 'delim'; d: Delim; role: 'open' | 'close' | null };
 
 const ESCAPABLE = new Set(['*', '~', '+', '\\']);
@@ -75,6 +113,7 @@ function isSpace(c: string | undefined): boolean {
  */
 function lex(text: string): Piece[] {
   const pieces: Piece[] = [];
+  const links = new Map(findInlineLinks(text).map((link) => [link.start, link]));
   let i = 0;
 
   const pushDelim = (mark: Mark, start: number, len: number, prev: string | undefined, next: string | undefined) => {
@@ -86,6 +125,16 @@ function lex(text: string): Piece[] {
   };
 
   while (i < text.length) {
+    const link = links.get(i);
+    if (link) {
+      for (const piece of lex(link.text)) {
+        pieces.push(piece.kind === 'char'
+          ? { ...piece, src: piece.src + link.contentStart, href: link.href }
+          : { ...piece, d: { ...piece.d, start: piece.d.start + link.contentStart } });
+      }
+      i = link.end;
+      continue;
+    }
     const c = text[i];
 
     if (c === '\\' && ESCAPABLE.has(text[i + 1])) {
@@ -188,20 +237,20 @@ export function parseInline(text: string): InlineRun[] {
 
   const currentMarks = (): Mark[] => MARKS.filter((m) => (active.get(m) ?? 0) > 0);
 
-  const pushChar = (ch: string, src: number) => {
+  const pushChar = (ch: string, src: number, href?: string) => {
     const marks = currentMarks();
     const last = runs[runs.length - 1];
-    if (last && last.marks.length === marks.length && last.marks.every((m, i) => m === marks[i])) {
+    if (last && last.href === href && last.marks.length === marks.length && last.marks.every((m, i) => m === marks[i])) {
       last.text += ch;
       last.src.push(src);
     } else {
-      runs.push({ text: ch, marks, src: [src] });
+      runs.push({ text: ch, marks, src: [src], ...(href ? { href } : {}) });
     }
   };
 
   for (const piece of pieces) {
     if (piece.kind === 'char') {
-      pushChar(piece.ch, piece.src);
+      pushChar(piece.ch, piece.src, piece.href);
     } else if (piece.role === 'open') {
       active.set(piece.d.mark, (active.get(piece.d.mark) ?? 0) + 1);
     } else if (piece.role === 'close') {
@@ -222,7 +271,7 @@ export function stripInline(text: string): string {
 
 /** True when `text` contains at least one matched delimiter pair. */
 export function hasInlineMarks(text: string): boolean {
-  return findPairs(text).length > 0;
+  return findPairs(text).length > 0 || findInlineLinks(text).length > 0;
 }
 
 /**

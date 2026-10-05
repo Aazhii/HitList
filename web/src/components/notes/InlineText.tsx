@@ -12,10 +12,12 @@
  */
 import { forwardRef, useImperativeHandle, useRef, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
+import { TextLink } from '@/components/LinkedText';
 import {
   parseInline,
   sourceOffsetFromRendered,
   stripInline,
+  findInlineLinks,
   type InlineRun,
   type Mark,
 } from '@/lib/inlineMarkdown';
@@ -51,6 +53,7 @@ function RunView({ run }: { run: InlineRun }) {
   if (run.marks.includes('underline')) node = <u className="decoration-[1.5px] underline-offset-[3px]">{node}</u>;
   if (run.marks.includes('italic')) node = <em>{node}</em>;
   if (run.marks.includes('bold')) node = <strong className="font-bold">{node}</strong>;
+  if (run.href) node = <TextLink href={run.href}>{node}</TextLink>;
   return <>{node}</>;
 }
 
@@ -103,7 +106,7 @@ export const InlineText = forwardRef<InlineTextHandle, InlineTextProps>(function
     <div
       ref={rootRef}
       // Presentational: the textarea underneath is the real, focusable control.
-      aria-hidden
+      aria-hidden={findInlineLinks(text).length ? undefined : true}
       className={cn('whitespace-pre-wrap [overflow-wrap:anywhere] cursor-text', className)}
       onMouseDown={(e) => {
         // Keep the browser from starting a text selection on the rendered copy.

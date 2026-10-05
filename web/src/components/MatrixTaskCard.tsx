@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { LinkedText } from '@/components/LinkedText';
 import { AssigneeChip } from '@/components/tasks/AssigneeChip';
 import { FileText, Trash2 } from 'lucide-react';
 import { RepeatMark } from '@/components/RepeatMark';
@@ -101,7 +102,7 @@ export function MatrixTaskCard({
         aria-label={`Open task: ${todo.text}`}
       >
         <div className={cn('text-[13px] font-medium leading-[1.4]', isDone ? 'text-a-faint line-through' : 'text-a-ink')}>
-          {todo.text}
+          <LinkedText text={todo.text} />
         </div>
         <div className="flex flex-wrap items-center gap-2 text-[12px]">
           <span className={cn('size-2 flex-shrink-0 rounded-full', getQuadrantConfig(todo.quadrant).dotClass)} aria-hidden />
@@ -175,7 +176,7 @@ export function MatrixTaskCard({
             isDone ? 'text-a-faint line-through decoration-[1.5px]' : 'text-a-ink',
           )}
         >
-          {todo.text}
+          <LinkedText text={todo.text} />
         </p>
 
         {isNext && !isDone && (

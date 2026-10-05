@@ -12,6 +12,8 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
+import { LinkedText } from '@/components/LinkedText';
+import { findInlineLinks } from '@/lib/inlineMarkdown';
 import { getCaretCoordinates } from '@/lib/caretCoordinates';
 import {
   detectMentionTrigger, removeMentionTrigger, taskTitleFromText, type MentionTrigger,
@@ -33,6 +35,8 @@ interface TextFieldCellProps {
 
 export function TextFieldCell({ recordId, fieldId, value, ariaLabel, onChange, linking, className }: TextFieldCellProps) {
   const [draft, setDraft] = useState(value ?? '');
+  const [editing, setEditing] = useState(false);
+  const preview = !editing && findInlineLinks(draft).length > 0;
   useEffect(() => { setDraft(value ?? ''); }, [value]);
 
   const inputRef = useRef<HTMLInputElement>(null);
@@ -130,11 +134,15 @@ export function TextFieldCell({ recordId, fieldId, value, ariaLabel, onChange, l
 
   return (
     <div className="flex min-h-6 flex-wrap items-center gap-1.5">
+      <div className="relative min-w-[80px] flex-1">
+      {preview && <div className={cn(className, 'min-h-6 cursor-text [overflow-wrap:anywhere]')}
+        onClick={() => inputRef.current?.focus()}><LinkedText text={draft} /></div>}
       <input
         ref={inputRef}
         type="text"
         value={draft}
         maxLength={2000}
+        onFocus={() => setEditing(true)}
         onChange={(e) => {
           setDraft(e.target.value);
           checkMention(e.target);
@@ -146,14 +154,16 @@ export function TextFieldCell({ recordId, fieldId, value, ariaLabel, onChange, l
           }
         }}
         onBlur={(event) => {
+          setEditing(false);
           commit(draft);
           if (!(event.relatedTarget instanceof Element && event.relatedTarget.closest('[data-mention-menu]'))) setMention(null);
         }}
         onKeyDown={handleKeyDown}
         placeholder=""
         aria-label={ariaLabel}
-        className={cn(className, 'min-w-[80px] flex-1 placeholder:text-a-faint/60')}
+        className={cn(className, 'w-full min-w-[80px] placeholder:text-a-faint/60', preview && 'absolute inset-0 opacity-0 pointer-events-none')}
       />
+      </div>
       {(linkedTask || pending) && linking && (
         <LinkedTaskChip
           task={linkedTask}
