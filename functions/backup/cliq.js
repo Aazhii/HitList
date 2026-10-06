@@ -53,6 +53,15 @@ function buildOverdueMessage(tasks, total) {
 	return [head, ...lines, ...(more > 0 ? [`…and ${more} more`] : [])].join('\n');
 }
 
+const MAX_MESSAGE = 2000;
+
+/** Text for a message an automation rule wrote: a string, tidied (no control characters, single blank lines), at most 2,000 characters. */
+function cleanMessage(input) {
+	if (typeof input !== 'string') return '';
+	const text = input.replace(/\r\n?/g, '\n').replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, '').replace(/\n{3,}/g, '\n\n').trim();
+	return text.length > MAX_MESSAGE ? `${text.slice(0, MAX_MESSAGE - 1)}…` : text;
+}
+
 const TEST_MESSAGE = 'HitList is connected. You will get a message like this when a task becomes overdue (while HitList is open).';
 
 /** Sends one message through the bot. Resolves { ok, status }; the token is never in what comes back. */
@@ -73,4 +82,4 @@ async function postToBot({ fetch, bot, token, dc = 'in', email, text, timeoutMs 
 	}
 }
 
-module.exports = { parseDomains, validateRecipient, cleanTasks, dueLabel, buildOverdueMessage, postToBot, TEST_MESSAGE, MAX_TASKS };
+module.exports = { parseDomains, validateRecipient, cleanTasks, cleanMessage, dueLabel, buildOverdueMessage, postToBot, TEST_MESSAGE, MAX_TASKS, MAX_MESSAGE };

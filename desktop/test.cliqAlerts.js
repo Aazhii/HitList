@@ -11,19 +11,22 @@ function rig(t, overrides = {}) {
   let clock = 100_000;
   let account = { userId: '75733000000033001' };
   let workspace = null;
-  const requests = [], sent = [];
+  const requests = [], sent = [], outbox = [];
+  // The automation outbox is a separate conversation with the local server; the overdue tests below only look at /api/overdue.
+  const outboxHandler = overrides.outbox || (async () => ({ status: 200, json: { batchId: 'b', items: [] } }));
   const due = [{ id: 'task', occurrence: 'occurrence', title: 'Overdue', dueDate: '2026-01-01', dueTime: '10:00' }];
   let tasks = due;
   const alerts = createCliqAlerts({
     stateDir: dir, getAccount: () => account, getWorkspace: () => workspace, now: () => clock,
     localPost: async (url, body, options) => {
+      if (url.startsWith('/api/automations/outbox/')) { outbox.push({ url, body }); return outboxHandler(url, body); }
       requests.push({ url, body, options });
       return { status: 200, json: { batchId: 'batch', tasks: url.endsWith('/ack') ? (tasks = []) : tasks } };
     },
     send: async (url, body, options) => { sent.push({ url, body, options }); return { status: 200 }; },
-    ...overrides,
+    ...Object.fromEntries(Object.entries(overrides).filter(([k]) => k !== 'outbox')),
   });
-  return { alerts, sent, requests, dir, due, advance: () => { clock += 60_000; },
+  return { alerts, sent, requests, outbox, dir, due, advance: () => { clock += 60_000; },
     setAccount: (value) => { account = value; }, setWorkspace: (value) => { workspace = value; }, setTasks: (value) => { tasks = value; } };
 }
 const turnOn = (alerts) => alerts.setSettings({ enabled: true, email: 'me@zohocorp.com' });
@@ -108,4 +111,80 @@ test('single flight and legacy unscoped settings are not adopted', async (t) => 
   assert.equal(r.alerts.status().enabled, false); turnOn(r.alerts);
   const first = r.alerts.check(); assert.equal(first, r.alerts.check()); await first;
   assert.equal(r.sent.length, 1);
+});
+
+// ── automation outbox: messages rules queued for the Cliq bot ──────────────────────────────────────────────────────────────
+
+function outboxRig(t, items, extra = {}) {
+  const calls = [];
+  const state = { items };
+  const r = rig(t, {
+    outbox: async (url, body) => {
+      calls.push({ url, body });
+      if (url.endsWith('/reserve')) return { status: 200, json: { batchId: 'b-1', items: state.items } };
+      if (url.endsWith('/validate')) return { status: 200, json: { items: (extra.live || state.items) } };
+      return { status: 200, json: { ok: true } };
+    },
+    ...extra.overrides,
+  });
+  return { ...r, calls };
+}
+const item = (id, text) => ({ id, ruleId: 'rule', payload: JSON.stringify({ text }) });
+
+test('queued automation messages go to the saved Cliq address and are acknowledged', async (t) => {
+  const r = outboxRig(t, [item('1', 'Hello one'), item('2', 'Hello two')]);
+  r.alerts.setSettings({ enabled: false, email: 'me@zohocorp.com' }); // overdue alerts off: the saved address is still used
+  const out = await r.alerts.runOutbox();
+  assert.deepEqual(out, { result: 'sent', count: 2 });
+  assert.deepEqual(r.sent.map((m) => [m.url, m.body]), [
+    ['/notify/message', { email: 'me@zohocorp.com', text: 'Hello one' }],
+    ['/notify/message', { email: 'me@zohocorp.com', text: 'Hello two' }],
+  ]);
+  assert.deepEqual(r.calls.map((c) => c.url), ['/api/automations/outbox/reserve', '/api/automations/outbox/validate', '/api/automations/outbox/ack']);
+  assert.deepEqual(r.calls[2].body, { batchId: 'b-1', ids: ['1', '2'] });
+});
+
+test('without a saved Cliq address nothing is reserved, so nothing is lost', async (t) => {
+  const r = outboxRig(t, [item('1', 'x')]);
+  assert.deepEqual(await r.alerts.runOutbox(), { result: 'no-email' });
+  assert.equal(r.calls.length, 0);
+  r.setAccount(null);
+  assert.deepEqual(await r.alerts.runOutbox(), { result: 'signed-out' });
+});
+
+test('a failed send is handed back to be retried, and one refusal stops the rest of the batch', async (t) => {
+  const r = outboxRig(t, [item('1', 'a'), item('2', 'b'), item('3', 'c')], { overrides: { send: async () => ({ status: 502 }) } });
+  r.alerts.setSettings({ enabled: false, email: 'me@zohocorp.com' });
+  const out = await r.alerts.runOutbox();
+  assert.equal(out.result, 'error');
+  assert.ok(!r.calls.some((c) => c.url.endsWith('/ack')));
+  assert.deepEqual(r.calls.find((c) => c.url.endsWith('/retry')).body.ids.sort(), ['1', '2', '3']);
+
+  let attempts = 0;
+  const r2 = outboxRig(t, [item('1', 'a'), item('2', 'b')], { overrides: { send: async () => { attempts += 1; return { status: 401 }; } } });
+  r2.alerts.setSettings({ enabled: false, email: 'me@zohocorp.com' });
+  await r2.alerts.runOutbox();
+  assert.equal(attempts, 1, 'a sign-in problem is not tried again for each message');
+  assert.deepEqual(r2.calls.find((c) => c.url.endsWith('/retry')).body.ids.sort(), ['1', '2']);
+});
+
+test('a message whose rule was paused or deleted meanwhile is dropped, not sent', async (t) => {
+  const r = outboxRig(t, [item('1', 'wanted'), item('2', 'dropped')], { live: [item('1', 'wanted')] });
+  r.alerts.setSettings({ enabled: false, email: 'me@zohocorp.com' });
+  const out = await r.alerts.runOutbox();
+  assert.deepEqual(out, { result: 'sent', count: 1 });
+  assert.deepEqual(r.sent.map((m) => m.body.text), ['wanted']);
+  assert.deepEqual(r.calls.find((c) => c.url.endsWith('/ack')).body.ids.sort(), ['1', '2']);
+});
+
+test('the regular check also delivers the outbox, and an empty outbox does nothing', async (t) => {
+  const r = outboxRig(t, [item('1', 'from a rule')]);
+  r.setTasks([]);
+  r.alerts.setSettings({ enabled: true, email: 'me@zohocorp.com' });
+  await r.alerts.check();
+  assert.deepEqual(r.sent.map((m) => m.body.text), ['from a rule']);
+  const empty = outboxRig(t, []);
+  empty.alerts.setSettings({ enabled: false, email: 'me@zohocorp.com' });
+  assert.deepEqual(await empty.alerts.runOutbox(), { result: 'none' });
+  assert.equal(empty.sent.length, 0);
 });

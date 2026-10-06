@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { parseDomains, validateRecipient, cleanTasks, dueLabel, buildOverdueMessage, postToBot } = require('./cliq');
+const { cleanMessage, parseDomains, validateRecipient, cleanTasks, dueLabel, buildOverdueMessage, postToBot } = require('./cliq');
 
 test('only allowed domains are accepted, and with none allowed nobody is', () => {
 	const domains = parseDomains(' ZohoCorp.com , example.org ');
@@ -81,4 +81,13 @@ test('maps refusals and network failures without ever echoing the token', async 
 	assert.equal((await postToBot({ ...base, bot: 'Bad Name!', fetch: fakeFetch(200) })).reason, 'bot_not_configured');
 	assert.equal((await postToBot({ ...base, token: '', fetch: fakeFetch(200) })).reason, 'token_not_configured');
 	assert.equal((await postToBot({ ...base, dc: 'evil.example/', fetch: fakeFetch(200) })).reason, 'bad_region');
+});
+
+test('an automation message is tidied and bounded before it reaches the bot', () => {
+	assert.equal(cleanMessage('  hello\u0000 there  '), 'hello there');
+	assert.equal(cleanMessage('a\r\n\n\n\n\nb'), 'a\n\nb');
+	assert.equal(cleanMessage(42), '');
+	assert.equal(cleanMessage('   '), '');
+	assert.equal(cleanMessage('x'.repeat(5000)).length, 2000);
+	assert.match(cleanMessage('x'.repeat(5000)), /…$/);
 });

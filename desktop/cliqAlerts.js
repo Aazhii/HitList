@@ -103,7 +103,65 @@ function createCliqAlerts({ stateDir, localPost, send, getAccount, getWorkspace 
     return { result: localError ? 'local-error' : 'none' };
   }
 
-  const check = () => (running ||= run().finally(() => { running = null; controller = null; }));
+  /**
+   * Delivers the messages automation rules queued for the Cliq bot (the local server's outbox). It needs only the Cliq address
+   * saved in Account → Cliq alerts, not the overdue-alerts switch. At most one batch of ten per call. A message whose rule was
+   * paused or deleted since is dropped, never sent.
+   */
+  async function runOutbox() {
+    const accountId = getAccount()?.userId;
+    if (!accountId) return { result: 'signed-out' };
+    const entries = Object.values(read()[accountId] || {});
+    const email = [read()[accountId]?.personal, ...entries].map((e) => e && e.email).find((e) => typeof e === 'string' && EMAIL.test(e));
+    if (!email) return { result: 'no-email' };
+    const epoch = generation;
+    const outboxController = new AbortController();
+    const signal = outboxController.signal;
+    const current = () => generation === epoch && !signal.aborted && getAccount()?.userId === accountId;
+    const options = { accountIdentity: accountId, signal, isCurrent: current };
+    const post = async (operation, body) => {
+      const reply = await localPost(`/api/automations/outbox/${operation}`, body, options);
+      if (reply.status !== 200) throw new Error(`local ${reply.status}`);
+      return reply.json;
+    };
+    let batch;
+    let live;
+    try {
+      batch = await post('reserve', {});
+      if (!Array.isArray(batch.items) || !batch.items.length) return { result: 'none' };
+      live = (await post('validate', { batchId: batch.batchId })).items;
+    } catch { return { result: 'local-error' }; }
+    if (!current()) return { result: 'cancelled' };
+    const liveIds = new Set((Array.isArray(live) ? live : []).map((item) => item.id));
+    const sent = batch.items.filter((item) => !liveIds.has(item.id)).map((item) => item.id); // no longer wanted: dropped
+    const failed = [];
+    let delivered = 0;
+    for (const item of batch.items.filter((entry) => liveIds.has(entry.id))) {
+      let text = '';
+      try { text = String(JSON.parse(item.payload).text || ''); } catch { /* unreadable: dropped below */ }
+      if (!text) { sent.push(item.id); continue; }
+      let status = 0;
+      try { status = (await send('/notify/message', { email, text }, options)).status; } catch { status = 0; }
+      if (!current()) return { result: 'cancelled' };
+      if (status === 200) { sent.push(item.id); delivered++; } else failed.push(item.id);
+      if (status === 401 || status === 400 || status === 0) {
+        // A refusal or no connection will fail the rest the same way: hand them all back and stop.
+        failed.push(...batch.items.filter((entry) => liveIds.has(entry.id) && !sent.includes(entry.id) && !failed.includes(entry.id)).map((entry) => entry.id));
+        break;
+      }
+    }
+    try {
+      if (sent.length) await post('ack', { batchId: batch.batchId, ids: sent });
+      if (failed.length) await post('retry', { batchId: batch.batchId, ids: failed });
+    } catch { return { result: 'ack-error', count: delivered }; }
+    return { result: failed.length ? 'error' : 'sent', count: delivered };
+  }
+
+  const check = () => (running ||= (async () => {
+    const overdue = await run();
+    try { await runOutbox(); } catch { /* retried on the next tick */ }
+    return overdue;
+  })().finally(() => { running = null; controller = null; }));
 
   async function sendTest(workspaceId = getWorkspace(), expectedAccount = getAccount()?.userId) {
     const accountId = getAccount()?.userId;
@@ -126,7 +184,7 @@ function createCliqAlerts({ stateDir, localPost, send, getAccount, getWorkspace 
     return () => { clearTimeout(first); clearInterval(timer); cancel(); };
   }
 
-  return { getSettings, setSettings, status, check, sendTest, startSchedule, cancel };
+  return { getSettings, setSettings, status, check, runOutbox, sendTest, startSchedule, cancel };
 }
 
 module.exports = { createCliqAlerts };

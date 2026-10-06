@@ -8,6 +8,8 @@ const { createCatalystStorage } = require('./catalystStorage');
 const cliq = require('./cliq');
 const { createCliqRoutes } = require('./cliqRoutes');
 const handleCliqRoute = createCliqRoutes();
+const { createRateLimit } = require('./rateLimit');
+const botLimit = createRateLimit({ limit: 60, windowMs: 60_000 });
 const { createWorkspaceRoutes } = require('./workspaceRoutes');
 const handleWorkspaceRoute = createWorkspaceRoutes();
 
@@ -104,6 +106,11 @@ module.exports = async (req, res) => {
 			});
 		}
 		if (path === '/notify/test' && req.method === 'POST') return await notifyCliq(req, res, () => cliq.TEST_MESSAGE);
+		if (path === '/notify/message' && req.method === 'POST') {
+			// A message an automation rule wrote. Same recipient checks as the others, plus a per-person speed limit.
+			if (!botLimit.allow(caller.userId)) return send(res, 429, { error: 'too_many_messages' });
+			return await notifyCliq(req, res, (body) => cliq.cleanMessage(body.text));
+		}
 		const backups = createBackupService(await createCatalystStorage(req));
 		if (path === '/backup' && (req.method === 'PUT' || req.method === 'POST')) {
 			const { stored, entry } = await backups.save(caller.userId, await readBody(req), String(req.headers['x-content-hash'] || ''),

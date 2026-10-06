@@ -8,6 +8,6 @@
 		"zcatalyst-sdk-node": "^3.4.0"
 	},
 	"scripts": {
-		"test": "node --test test.backupService.js test.backupReasons.js test.cliq.js test.cliqCommands.js test.cliqInboxService.js test.cliqRoutes.js test.cliqDelivery.js test.cliqWebhook.js test.workspaces.js test.workspaceRoutes.js test.workspaceDelivery.js"
+		"test": "node --test test.backupService.js test.backupReasons.js test.cliq.js test.cliqCommands.js test.cliqInboxService.js test.cliqRoutes.js test.cliqDelivery.js test.cliqWebhook.js test.workspaces.js test.workspaceRoutes.js test.workspaceDelivery.js test.rateLimit.js"
 	}
 }
