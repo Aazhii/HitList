@@ -35,4 +35,6 @@ case "$VERSION" in *-alpha*|*-beta*) PRE=true;; *) PRE=false;; esac
 echo "version=${VERSION}"
 echo "name=${NAME}"
 echo "tag=${TAG}"
+# The name as one word, for file and download names: spaces and underscores become dashes.
+echo "slug=$(printf '%s' "$NAME" | tr ' _' '--')"
 echo "prerelease=${PRE}"

@@ -8,6 +8,12 @@
 # its own number. The commit id is in the artifact names and in SHA256SUMS.txt. Nothing is signed (no certificates); see docs/building.
 name: Build desktop apps
 
+# What the run is called in the Actions list: the name and version you typed (or the tag that was pushed).
+run-name: >-
+  ${{ github.event_name == 'workflow_dispatch'
+  && format('{0} {1}.{2}.{3}{4}', inputs.release_name, inputs.major, inputs.minor, inputs.patch || github.run_number, inputs.stage != 'none' && format('-{0}{1}', inputs.stage, inputs.stage_number || '1') || '')
+  || github.ref_name }}
+
 on:
   # The form, kept short on purpose: Name _ Major . Minor . Patch - Stage + Stage no.   e.g. HitList_1.2.5-beta2
   #   Patch empty = the run number (always new). Stage none/alpha/beta; Stage no. only with alpha/beta (empty = 1).
@@ -60,6 +66,7 @@ jobs:
       version: ${{ steps.v.outputs.version }}
       name: ${{ steps.v.outputs.name }}
       tag: ${{ steps.v.outputs.tag }}
+      slug: ${{ steps.v.outputs.slug }}
       prerelease: ${{ steps.v.outputs.prerelease }}
       sha: ${{ steps.v.outputs.sha }}
     steps:
@@ -184,7 +191,7 @@ jobs:
           shasum -a 256 -c SHA256SUMS-mac.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: HitList-${{ needs.version.outputs.version }}-${{ needs.version.outputs.sha }}-mac
+          name: ${{ needs.version.outputs.slug }}-${{ needs.version.outputs.version }}-${{ needs.version.outputs.sha }}-mac
           path: |
             desktop/dist/*.dmg
             desktop/dist/*.zip
@@ -220,7 +227,7 @@ jobs:
           sha256sum -c SHA256SUMS-windows.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: HitList-${{ needs.version.outputs.version }}-${{ needs.version.outputs.sha }}-windows
+          name: ${{ needs.version.outputs.slug }}-${{ needs.version.outputs.version }}-${{ needs.version.outputs.sha }}-windows
           path: |
             desktop/dist/*.exe
             desktop/dist/SHA256SUMS-windows.txt
@@ -252,7 +259,7 @@ jobs:
           sha256sum -c SHA256SUMS-linux.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: HitList-${{ needs.version.outputs.version }}-${{ needs.version.outputs.sha }}-linux
+          name: ${{ needs.version.outputs.slug }}-${{ needs.version.outputs.version }}-${{ needs.version.outputs.sha }}-linux
           path: |
             desktop/dist/*.AppImage
             desktop/dist/*.deb
@@ -269,7 +276,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: HitList-*
+          pattern: '*-{mac,windows,linux}'
           merge-multiple: true
           path: release
       - name: One checksum file, then publish
