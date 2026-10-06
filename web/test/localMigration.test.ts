@@ -188,4 +188,51 @@ describe('local server migration', () => {
 
     expect(updates).toEqual([expect.objectContaining({ title: 'Edited while offline' })]);
   });
+
+  describe('never makes a second copy of a task', () => {
+    const apisWith = (serverTasks: ApiTask[], created: TaskCreateRequest[]) => ({
+      lists: { list: async () => [list('old-list')], get: async () => list('old-list'), create: async () => list('old-list') },
+      tasks: {
+        list: async () => serverTasks,
+        get: async (id: string) => task(id, 'old-list'),
+        create: async (request: TaskCreateRequest) => { created.push(request); return task(request.clientId!, 'old-list'); },
+      },
+    });
+
+    it('skips a card that was only shown while its save was in flight', async () => {
+      const local = state();
+      local.todos.push({ ...local.todos[0], id: 'temp-1b2c', text: 'Saving right now' });
+      const created: TaskCreateRequest[] = [];
+      await migrateLocalState(local, 'user-a', apisWith([], created));
+      expect(created.map((r) => r.clientId)).toEqual(['old-task']);
+    });
+
+    it('treats a local task that says the same as a server task under another id as that task', async () => {
+      const local = state();
+      local.todos[0] = { ...local.todos[0], text: 'Table audit', dueDate: '2026-10-04', quadrant: 'schedule' };
+      const onServer: ApiTask = { ...task('server-id-9', 'old-list'), title: 'table audit', dueDate: '2026-10-04', quadrant: 'SCHEDULE' };
+      const created: TaskCreateRequest[] = [];
+      await migrateLocalState(local, 'user-a', apisWith([onServer], created));
+      expect(created).toEqual([]);
+      expect(JSON.parse(localStorage.getItem(migrationStorageKey('user-a'))!).tasks['old-task']).toBe('server-id-9');
+    });
+
+    it('still brings in a second task with the same words when the server only has one', async () => {
+      const local = state();
+      local.todos.push({ ...local.todos[0], id: 'twin-task' });
+      const onServer: ApiTask = { ...task('server-id-9', 'old-list'), title: 'Local task', quadrant: 'DO' };
+      const created: TaskCreateRequest[] = [];
+      await migrateLocalState(local, 'user-a', apisWith([onServer], created));
+      expect(created).toHaveLength(1);
+    });
+
+    it('does not bring back a task that was moved before and has since been deleted on the server', async () => {
+      const created: TaskCreateRequest[] = [];
+      await migrateLocalState(state(), 'user-a', apisWith([], created));
+      expect(created).toHaveLength(1);
+      created.length = 0;
+      await migrateLocalState(state(), 'user-a', apisWith([], created));
+      expect(created).toEqual([]);
+    });
+  });
 });

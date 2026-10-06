@@ -1,4 +1,6 @@
 import React, { useState } from 'react';
+import { LinkedText } from '@/components/LinkedText';
+import { AssigneeChip } from '@/components/tasks/AssigneeChip';
 import { FileText, Trash2 } from 'lucide-react';
 import { RepeatMark } from '@/components/RepeatMark';
 import { cn } from '@/lib/utils';
@@ -72,7 +74,7 @@ export function MatrixTaskCard({
   const fromNote = !!todo.sourceNoteId && !!onOpenNote;
   const hasFieldChips = !!fieldDefs && !!fieldValues
     && fieldDefs.some((f) => f.showOnCard && fieldValues[f.id] !== undefined);
-  const hasMeta = !!categoryConfig || !!dueInfo || !!todo.note || fromNote || hasFieldChips;
+  const hasMeta = !!categoryConfig || !!dueInfo || !!todo.note || fromNote || hasFieldChips || !!todo.assigneeName;
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -100,7 +102,7 @@ export function MatrixTaskCard({
         aria-label={`Open task: ${todo.text}`}
       >
         <div className={cn('text-[13px] font-medium leading-[1.4]', isDone ? 'text-a-faint line-through' : 'text-a-ink')}>
-          {todo.text}
+          <LinkedText text={todo.text} />
         </div>
         <div className="flex flex-wrap items-center gap-2 text-[12px]">
           <span className={cn('size-2 flex-shrink-0 rounded-full', getQuadrantConfig(todo.quadrant).dotClass)} aria-hidden />
@@ -112,6 +114,7 @@ export function MatrixTaskCard({
             </span>
           )}
           {fieldDefs && <FieldChips fields={fieldDefs} values={fieldValues} chipClass={CHIP} />}
+          <AssigneeChip userId={todo.assigneeUserId} name={todo.assigneeName} />
           {fromNote && (
             <button
               type="button"
@@ -173,7 +176,7 @@ export function MatrixTaskCard({
             isDone ? 'text-a-faint line-through decoration-[1.5px]' : 'text-a-ink',
           )}
         >
-          {todo.text}
+          <LinkedText text={todo.text} />
         </p>
 
         {isNext && !isDone && (
@@ -206,6 +209,8 @@ export function MatrixTaskCard({
           )}
 
           {fieldDefs && <FieldChips fields={fieldDefs} values={fieldValues} chipClass={CHIP} />}
+
+          <AssigneeChip userId={todo.assigneeUserId} name={todo.assigneeName} />
 
           {fromNote && (
             <button

@@ -86,6 +86,27 @@ class ApiContractTest {
     }
 
     @Test
+    void clearingDueFieldsPersistsAcrossFreshReads() throws Exception {
+        MockCookie browser = browser();
+        mvc.perform(post("/api/tasks").cookie(browser).contentType(MediaType.APPLICATION_JSON)
+                .content("""
+                    {"clientId":"clear-due","title":"Clear due date","dueDate":"2030-01-02","dueTime":"09:00",
+                     "reminderEnabled":true,"reminderMinutesBefore":30,"recurrence":"DAILY"}
+                    """))
+            .andExpect(status().isCreated());
+        mvc.perform(put("/api/tasks/clear-due").cookie(browser).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"dueTime\":\"\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.dueDate").value("2030-01-02"))
+            .andExpect(jsonPath("$.dueTime").isEmpty());
+        mvc.perform(put("/api/tasks/clear-due").cookie(browser).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"dueDate\":\"\",\"dueTime\":\"\",\"recurrence\":\"\",\"reminderEnabled\":false}"))
+            .andExpect(status().isOk());
+        mvc.perform(get("/api/tasks/clear-due").cookie(browser)).andExpect(status().isOk())
+            .andExpect(jsonPath("$.dueDate").isEmpty()).andExpect(jsonPath("$.dueTime").isEmpty())
+            .andExpect(jsonPath("$.recurrence").isEmpty()).andExpect(jsonPath("$.reminderEnabled").value(false));
+    }
+
+    @Test
     void aTasksReminderIsKeptAndNotSwitchedOffByAnUnawareUpdate() throws Exception {
         MockCookie browser = browser();
         mvc.perform(post("/api/tasks")
@@ -203,7 +224,25 @@ class ApiContractTest {
     }
 
     @Test
-    void catalystSignInOwnsTheWorkspaceAndClaimsAnOldCookieOnce() throws Exception {
+    void importNeverAddsATaskThatAlreadyExistsUnderAnotherId() throws Exception {
+        MockCookie owner = browser();
+        mvc.perform(post("/api/tasks").cookie(owner).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"clientId\":\"here-1\",\"title\":\"Table audit\",\"dueDate\":\"2030-10-04\",\"quadrant\":\"SCHEDULE\"}"))
+            .andExpect(status().isCreated());
+        String file = "{\"schema\":\"hitlist.backup.v1\",\"tables\":{\"KaizenTasks\":["
+            + "{\"TaskId\":\"other-1\",\"Title\":\"table audit\",\"DueDate\":\"2030-10-04\",\"Quadrant\":\"SCHEDULE\"},"
+            + "{\"TaskId\":\"other-2\",\"Title\":\"Table audit\",\"DueDate\":\"2030-10-04\",\"Quadrant\":\"SCHEDULE\"},"
+            + "{\"TaskId\":\"other-3\",\"Title\":\"Table audit\",\"DueDate\":\"2030-10-11\",\"Quadrant\":\"SCHEDULE\"}]}}";
+        // One of the first two is the task already here; the other is genuinely a second one; the third is another day.
+        mvc.perform(post("/api/backup").cookie(owner).contentType(MediaType.APPLICATION_JSON).content(file))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.imported.KaizenTasks").value(2))
+            .andExpect(jsonPath("$.skipped.KaizenTasks").value(1));
+        mvc.perform(get("/api/tasks").cookie(owner)).andExpect(jsonPath("$.length()").value(3));
+    }
+
+    @Test
+    void catalystSignInNeverClaimsAnUnownedCookieWorkspace() throws Exception {
         RowStore store = new TestRowStore();
         HitListProperties cookieProps = properties();
         HitListProperties catalystProps = properties();
@@ -228,26 +267,29 @@ class ApiContractTest {
             .andExpect(jsonPath("$.loginUrl").value("/__catalyst/auth/login"));
         catalystMvc.perform(get("/api/health")).andExpect(status().isOk()); // the service check stays open
 
-        // Signed in: a private workspace that the old cookie does not open, until it is claimed.
         catalystMvc.perform(get("/api/tasks").header("x-zc-user-id", "757330000000099001").header("x-zc-projectid", "757330000000013053"))
             .andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
         catalystMvc.perform(get("/api/session").cookie(old).header("x-zc-user-id", "757330000000099001").header("x-zc-projectid", "757330000000013053"))
             .andExpect(jsonPath("$.authenticated").value(true))
-            .andExpect(jsonPath("$.claimed.KaizenTasks").value(1));
+            .andExpect(jsonPath("$.userId").value("757330000000099001"))
+            .andExpect(jsonPath("$.claimed").doesNotExist());
         catalystMvc.perform(get("/api/tasks/before-signin").header("x-zc-user-id", "757330000000099001").header("x-zc-projectid", "757330000000013053"))
-            .andExpect(status().isOk()).andExpect(jsonPath("$.title").value("From before"));
+            .andExpect(status().isNotFound());
 
-        // Claimed once: asking again moves nothing, and a different person never sees it.
         catalystMvc.perform(get("/api/session").cookie(old).header("x-zc-user-id", "757330000000099001").header("x-zc-projectid", "757330000000013053"))
             .andExpect(jsonPath("$.claimed").doesNotExist());
         catalystMvc.perform(get("/api/tasks/before-signin").header("x-zc-user-id", "757330000000099002").header("x-zc-projectid", "757330000000013053"))
             .andExpect(status().isNotFound());
-        // The cookie no longer finds it either.
-        cookieMvc.perform(get("/api/tasks/before-signin").cookie(old)).andExpect(status().isNotFound());
+        cookieMvc.perform(get("/api/tasks/before-signin").cookie(old)).andExpect(status().isOk());
+        catalystMvc.perform(post("/api/tasks").header("x-zc-user-id", "757330000000099001")
+                .contentType(MediaType.APPLICATION_JSON).content("{\"clientId\":\"account-a-private\",\"title\":\"Only A\"}"))
+            .andExpect(status().isCreated());
+        catalystMvc.perform(get("/api/tasks/account-a-private").cookie(old).header("x-zc-user-id", "757330000000099002"))
+            .andExpect(status().isNotFound());
     }
 
     @Test
-    void desktopAccountsAreNamedByTheShellOnlyWithItsSecretAndKeepTheOldWorkspaceOnce() throws Exception {
+    void desktopAccountsNeverClaimUnownedDataAndRequireTheShellSecret() throws Exception {
         String secret = "desktop-launch-secret-0123456789abcdef";
         String alice = "A".repeat(43);
         String bob = "B".repeat(43);
@@ -279,20 +321,24 @@ class ApiContractTest {
         desktopMvc.perform(get("/api/session").cookie(old).header("X-Hitlist-Desktop-Owner", alice))
             .andExpect(jsonPath("$.authenticated").value(false));
 
-        // The right secret names the account; it starts empty, and the old workspace is brought across once.
         desktopMvc.perform(get("/api/tasks").header("X-Hitlist-Desktop-Owner", alice).header("X-Hitlist-Desktop-Token", secret))
             .andExpect(status().isOk()).andExpect(jsonPath("$").isEmpty());
         desktopMvc.perform(get("/api/session").cookie(old).header("X-Hitlist-Desktop-Owner", alice).header("X-Hitlist-Desktop-Token", secret))
-            .andExpect(jsonPath("$.authenticated").value(true)).andExpect(jsonPath("$.claimed.KaizenTasks").value(1));
+            .andExpect(jsonPath("$.authenticated").value(true)).andExpect(jsonPath("$.userId").value(alice))
+            .andExpect(jsonPath("$.claimed").doesNotExist());
         desktopMvc.perform(get("/api/tasks/local-first").header("X-Hitlist-Desktop-Owner", alice).header("X-Hitlist-Desktop-Token", secret))
-            .andExpect(status().isOk());
+            .andExpect(status().isNotFound());
         desktopMvc.perform(get("/api/session").cookie(old).header("X-Hitlist-Desktop-Owner", alice).header("X-Hitlist-Desktop-Token", secret))
             .andExpect(jsonPath("$.claimed").doesNotExist());
 
-        // Another account on the same machine sees none of it, and the cookie no longer holds it.
         desktopMvc.perform(get("/api/tasks/local-first").header("X-Hitlist-Desktop-Owner", bob).header("X-Hitlist-Desktop-Token", secret))
             .andExpect(status().isNotFound());
-        desktopMvc.perform(get("/api/tasks/local-first").cookie(old)).andExpect(status().isNotFound());
+        desktopMvc.perform(get("/api/tasks/local-first").cookie(old)).andExpect(status().isOk());
+        desktopMvc.perform(post("/api/tasks").header("X-Hitlist-Desktop-Owner", alice).header("X-Hitlist-Desktop-Token", secret)
+                .contentType(MediaType.APPLICATION_JSON).content("{\"clientId\":\"account-a-private\",\"title\":\"Only A\"}"))
+            .andExpect(status().isCreated());
+        desktopMvc.perform(get("/api/tasks/account-a-private").cookie(old).header("X-Hitlist-Desktop-Owner", bob).header("X-Hitlist-Desktop-Token", secret))
+            .andExpect(status().isNotFound());
 
         // Without a real secret configured the mode is plain cookie mode: a named account is ignored.
         HitListProperties noSecret = properties();
@@ -497,7 +543,7 @@ class ApiContractTest {
                 new WorkspaceController(new WorkspaceService(repository, objectMapper), owners),
                 new PageMarksController(new PageMarksService(repository), owners),
                 new com.hitlist.web.BackupController(new com.hitlist.domain.WorkspaceBackupService(repository), owners),
-                new com.hitlist.web.SessionController(owners, new com.hitlist.domain.WorkspaceClaimService(repository, store))
+                new com.hitlist.web.SessionController(owners)
             )
             .setControllerAdvice(new ApiExceptionHandler())
             .setMessageConverters(converter)

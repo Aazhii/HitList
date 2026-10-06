@@ -1,0 +1,13 @@
+{
+	"name": "cliq-webhook",
+	"version": "1.0.0",
+	"main": "index.js",
+	"author": "arikaran.rajamanickam.ai@gmail.com",
+	"dependencies": {
+		"zcatalyst-sdk-node": "^3.4.0"
+	},
+	"scripts": {
+		"prepare": "node prepare.js",
+		"test": "node prepare.js && node --test test.entry.js"
+	}
+}

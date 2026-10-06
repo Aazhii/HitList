@@ -37,13 +37,26 @@ describe('TodayPage', () => {
     expect(p.onOpenTask).toHaveBeenCalledWith(t);
   });
 
-  it('counts overdue tasks and lists them on one click', () => {
+  it('lists overdue tasks immediately and allows collapsing them', () => {
     const late = task({ text: 'Pay invoice', dueDate: '2020-01-01' });
     render(<TodayPage todos={[late, task({})]} {...props()} />);
     const chip = screen.getByRole('button', { name: /1 overdue/ });
-    expect(screen.queryByRole('list', { name: 'Overdue tasks' })).not.toBeInTheDocument();
-    fireEvent.click(chip);
     expect(screen.getByRole('list', { name: 'Overdue tasks' })).toHaveTextContent('Pay invoice');
+    expect(chip).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(chip);
+    expect(screen.queryByRole('list', { name: 'Overdue tasks' })).not.toBeInTheDocument();
+    expect(chip).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  it('shows a newly added past-date task even outside the first three ranked tasks', () => {
+    const tasks = Array.from({ length: 3 }, () => task({ dueDate: '2019-01-01' }));
+    const p = props();
+    const { rerender } = render(<TodayPage todos={tasks} {...p} />);
+    const added = task({ text: 'New overdue task', dueDate: '2020-01-01' });
+    rerender(<TodayPage todos={[...tasks, added]} {...p} />);
+    expect(screen.getByRole('list', { name: 'Overdue tasks' })).toHaveTextContent(added.text);
+    fireEvent.click(screen.getByRole('button', { name: /New overdue task/ }));
+    expect(p.onOpenTask).toHaveBeenCalledWith(added);
   });
 
   it('says so when nothing is open', () => {

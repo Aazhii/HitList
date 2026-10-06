@@ -36,6 +36,10 @@ public class ApiException extends RuntimeException {
         return new ApiException(HttpStatus.SERVICE_UNAVAILABLE, "storage_unavailable", message);
     }
 
+    public static ApiException forbidden() {
+        return new ApiException(HttpStatus.FORBIDDEN, "forbidden", "You do not have access to this workspace");
+    }
+
     public static ApiException conflict(String message) {
         return new ApiException(HttpStatus.CONFLICT, "conflict", message);
     }

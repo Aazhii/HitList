@@ -71,6 +71,7 @@ public class TaskService {
         task.put("SourceBlockId", optionalId(body, "sourceBlockId", ""));
         task.put("SourceRecordId", optionalId(body, "sourceRecordId", ""));
         task.put("SourceFieldId", optionalId(body, "sourceFieldId", ""));
+        applyAssignee(body, task, now);
         repository.insert(StorageTables.TASKS, owner, task);
         return api(task);
     }
@@ -84,7 +85,7 @@ public class TaskService {
         if (!listId.isBlank() && repository.find(StorageTables.LISTS, owner, listId).isEmpty()) {
             throw ApiException.notFound();
         }
-        updated.put("UpdatedAt", System.currentTimeMillis());
+        updated.put("UpdatedAt", Math.max(System.currentTimeMillis(), Values.number(existing.get("UpdatedAt"), 0) + 1));
         if (becameDone(existing, updated)) spawnNext(owner, updated);
         else if ("DONE".equals(text(existing, "Status")) && !"DONE".equals(text(updated, "Status"))) retractNext(owner, updated);
         repository.replace(StorageTables.TASKS, owner, id, updated);
@@ -101,7 +102,7 @@ public class TaskService {
         Map<String, Object> updated = new LinkedHashMap<>(existing);
         updated.put("Status", "DONE");
         updated.put("CompletedAt", System.currentTimeMillis());
-        updated.put("UpdatedAt", System.currentTimeMillis());
+        updated.put("UpdatedAt", Math.max(System.currentTimeMillis(), Values.number(existing.get("UpdatedAt"), 0) + 1));
         if (becameDone(existing, updated)) spawnNext(owner, updated);
         repository.replace(StorageTables.TASKS, owner, id, updated);
         return api(updated);
@@ -181,6 +182,34 @@ public class TaskService {
         if (body.containsKey("sourceBlockId")) task.put("SourceBlockId", optionalId(body, "sourceBlockId", text(task, "SourceBlockId")));
         if (body.containsKey("sourceRecordId")) task.put("SourceRecordId", optionalId(body, "sourceRecordId", text(task, "SourceRecordId")));
         if (body.containsKey("sourceFieldId")) task.put("SourceFieldId", optionalId(body, "sourceFieldId", text(task, "SourceFieldId")));
+        applyAssignee(body, task, System.currentTimeMillis());
+    }
+
+    /**
+     * Who the task is for, in a shared workspace: a member's Catalyst user id and the name shown for them ("" = nobody).
+     * AssignedBy is filled by the controller from the signed-in account, never from the request body.
+     */
+    private void applyAssignee(Map<String, Object> body, Map<String, Object> task, long now) {
+        if (!body.containsKey("assigneeUserId")) return;
+        Object raw = body.get("assigneeUserId");
+        String assignee = raw == null ? "" : String.valueOf(raw).trim();
+        if (!assignee.isEmpty() && !assignee.matches("[0-9]{5,30}")) throw ApiException.invalid("assigneeUserId must be a member's user id");
+        if (assignee.equals(text(task, "AssigneeUserId")) && body.get("assigneeName") == null) return;
+        task.put("AssigneeUserId", assignee);
+        task.put("AssigneeName", assignee.isEmpty() ? "" : Values.optional(body, "assigneeName", 80, text(task, "AssigneeName")));
+        String by = body.get("assignedBy") instanceof String value && value.matches("[0-9]{5,30}") ? value : "";
+        task.put("AssignedBy", assignee.isEmpty() ? "" : by);
+        task.put("AssignedAt", assignee.isEmpty() ? 0L : now);
+    }
+
+    /** Tasks in this partition assigned to this user (in a list that still exists), newest assignment first. */
+    public List<Map<String, Object>> assignedTo(String owner, String userId) {
+        return repository.list(StorageTables.TASKS, owner).stream()
+            .filter(task -> userId.equals(text(task, "AssigneeUserId")))
+            .filter(task -> activeList(owner, text(task, "ListId")))
+            .sorted(Comparator.comparingLong((Map<String, Object> task) -> -Values.number(task.get("AssignedAt"), 0)))
+            .map(this::api)
+            .toList();
     }
 
     /** DAILY, WEEKDAYS, WEEKLY, MONTHLY, or "" for a task that does not repeat. Null or "" clears it. */
@@ -393,6 +422,11 @@ public class TaskService {
         output.put("sourceBlockId", nullable(task, "SourceBlockId"));
         output.put("sourceRecordId", nullable(task, "SourceRecordId"));
         output.put("sourceFieldId", nullable(task, "SourceFieldId"));
+        output.put("assigneeUserId", nullable(task, "AssigneeUserId"));
+        output.put("assigneeName", nullable(task, "AssigneeName"));
+        output.put("assignedBy", nullable(task, "AssignedBy"));
+        long assignedAt = Values.number(task.get("AssignedAt"), 0);
+        output.put("assignedAt", assignedAt > 0 ? Values.iso(assignedAt) : null);
         return output;
     }
 

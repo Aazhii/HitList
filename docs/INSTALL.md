@@ -33,6 +33,9 @@ xattr -dr com.apple.quarantine /Applications/HitList.app
 ## Using it
 
 - No account is needed. Your tasks, notes and databases are stored on your Mac.
+- **Signing in:** *Sign in to back up* opens a small window with three choices. *Sign in* is for an existing account and password.
+  *Create an account* is for new people (you choose your password). *Set or reset my password* is for anyone who was added by someone
+  else or forgot theirs; it emails a link. Zoho and Google buttons are on the sign-in page.
 - **Sign in to back up:** account menu (top right) → *Sign in to back up*. Your workspace is then backed up to your account
   about every three days (only when something has changed), and once more when you sign out. *Back up now* is in the same menu.
   If the app cannot reach the internet when you sign out, it tells you; your data stays on the computer.
@@ -41,7 +44,23 @@ xattr -dr com.apple.quarantine /Applications/HitList.app
 
 ## Updating
 
-Download the new version and drag it onto **Applications**, replacing the old one. Your data is kept, because it lives in
+**From inside the app.** *Account → Check for updates* looks at the project's GitHub Releases (the app also checks by itself a minute
+after it opens, then once a day, and says so once if a newer version exists). If there is one you see its notes. **Download** shows
+a progress bar (and a Cancel button), then checks the file against the release's `SHA256SUMS.txt` (a file that does not match is
+deleted). **Restart and update** then closes HitList, replaces the installed app, and opens the new version by itself: nothing to
+drag. Choose **Later** to keep the download for next time. Your tasks are kept, because they live in the data folder and not in
+the app, and a backup is attempted first when you are signed in. If the swap fails, the old app is put back.
+
+The one-click replace works on all three systems: on **Mac** it replaces the app in place, including when your account cannot change the
+Applications folder itself (it then swaps what is inside the app, which you own); on **Windows** it runs the installer silently
+and starts the new version; on **Linux** it replaces the AppImage file. It cannot work (and the last step opens the installer
+instead, saying why) when HitList is run straight from the disk image or from the temporary place macOS uses for a freshly
+downloaded app (move it to Applications first), when it sits on another disk than the update files, or when it was installed from a
+`.deb` package (a package cannot replace itself). A build made before this feature only offers the installer, so install one
+newer build by hand once; after that it updates itself. Stable installs are only offered stable releases; an alpha or
+beta install is offered newer alpha, beta and stable ones. Only releases made with *publish* ticked count, and the repository must stay public.
+
+**By hand.** Download the new version and drag it onto **Applications**, replacing the old one. Your data is kept, because it lives in
 `~/Library/Application Support/HitList` and not inside the app. Moving the app to the Trash does not delete it either.
 Before an update (or any time) you can copy your data with *Account → Export workspace*.
 
@@ -103,3 +122,15 @@ You can also start HitList from a terminal with `hitlist-desktop`.
 - Your data is kept in `~/.config/HitList`. Updating means downloading the new file (and running the new `.deb`, or
   replacing the AppImage); the data folder is not touched.
 - **Linux has not been tested by the developer yet**, so please report anything odd, with your distribution and version.
+
+## Installing a specific version, or from a file you already have
+
+Open **Updates** in the app. Below the normal check there are two more ways:
+
+- **Install a version** – type a tag such as `HitList 1.1.27` or `1.1.27` and press Find. HitList looks for that release on GitHub,
+  and downloads and checks it like any update. Going to an *older* version asks you to tick a confirmation first. "Back to the
+  latest version" returns to the normal flow. A version you picked is not replaced by the daily check.
+- **Install from a downloaded file…** – choose the installer you already downloaded (`.dmg` or `.zip` on Mac, `-Setup-…-x64.exe`
+  on Windows, `.AppImage` on Linux). HitList checks the name, the processor type (Mac), and, on Mac, that the app inside really is
+  HitList, then replaces itself and restarts. If a `SHA256SUMS.txt` is next to the file it is verified; otherwise the dialog says it
+  could not be checked. Your file is never modified or deleted. Your tasks are kept either way.

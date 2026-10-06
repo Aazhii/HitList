@@ -12,6 +12,9 @@
 
 import { API_BASE_URL } from '@/lib/api';
 import { simpleRequest } from '@/lib/simpleRequest';
+import { getActiveTaskStorageId } from '@/lib/storage';
+import { onSourceSave } from '@/lib/sourceSaves';
+import { onPreLogout } from '@/lib/preLogout';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -85,9 +88,44 @@ class NotesSyncService {
   private flushTimer: ReturnType<typeof setTimeout> | null = null;
   private healthTimer: ReturnType<typeof setInterval> | null = null;
   private isFlushing = false;
+  private activeFlush: Promise<void> | null = null;
   private serverReachable = true;
+  private inFlight = new Map<string, QueuedOp>();
+  private scope: string | null = null;
+  private pendingRestored = false;
+  private versions = new Map<string, number>();
+
+  private pendingKey(): string { return `hitlist-note-writes:${this.scope ?? 'anonymous'}`; }
+
+  private persistQueue(): void {
+    const pending = new Map([...this.inFlight, ...this.queue]);
+    try { localStorage.setItem(this.pendingKey(), JSON.stringify([...pending.values()])); } catch { /* storage unavailable */ }
+  }
+
+  restorePending(): void {
+    const scope = getActiveTaskStorageId();
+    if (scope !== this.scope) {
+      if (this.queue.size || this.isFlushing) throw new Error('Pending notes belong to another workspace');
+      this.scope = scope;
+      this.pendingRestored = false;
+      this.versions.clear();
+    }
+    if (this.pendingRestored) return;
+    this.pendingRestored = true;
+    try {
+      const saved = JSON.parse(localStorage.getItem(this.pendingKey()) ?? '[]') as QueuedOp[];
+      for (const op of saved) if (!this.queue.has(op.noteId)) this.queue.set(op.noteId, op);
+    } catch { /* unreadable pending queue */ }
+    if (this.queue.size) this.scheduleFlush();
+  }
+
+  hasPending(noteId: string): boolean { return this.queue.has(noteId) || this.inFlight.has(noteId); }
+  pendingIds(): Set<string> { return new Set([...this.queue.keys(), ...this.inFlight.keys()]); }
+  editVersions(): Map<string, number> { return new Map(this.versions); }
 
   constructor() {
+    onSourceSave(() => this.flushForSignOut());
+    onPreLogout(() => this.flushForSignOut());
     // Restore server-reachable flag from last session
     const stored = localStorage.getItem('kaizen-notes-server-ok');
     this.serverReachable = stored !== 'false';
@@ -111,22 +149,28 @@ class NotesSyncService {
 
   /** Queue an upsert (create or update). Call after localStorage is already written. */
   queueUpsert(payload: NotePayload): void {
+    this.restorePending();
+    this.versions.set(payload.id, (this.versions.get(payload.id) ?? 0) + 1);
     this.queue.set(payload.id, {
       kind: 'upsert',
       noteId: payload.id,
       payload,
       updatedAt: payload.updatedAt,
     });
+    this.persistQueue();
     this.scheduleFlush();
   }
 
   /** Queue a delete. Call after localStorage is already updated. */
   queueDelete(noteId: string): void {
+    this.restorePending();
+    this.versions.set(noteId, (this.versions.get(noteId) ?? 0) + 1);
     this.queue.set(noteId, {
       kind: 'delete',
       noteId,
       updatedAt: Date.now(),
     });
+    this.persistQueue();
     this.scheduleFlush();
   }
 
@@ -144,12 +188,17 @@ class NotesSyncService {
   }
 
   /** Force an immediate flush attempt (e.g. on beforeunload). */
-  flushNow(): void {
+  flushNow(): Promise<void> {
     if (this.flushTimer) {
       clearTimeout(this.flushTimer);
       this.flushTimer = null;
     }
-    void this.flush();
+    return this.flush();
+  }
+
+  async flushForSignOut(): Promise<void> {
+    do { await this.flushNow(); } while (this.queue.size > 0 && this.serverReachable && this.status !== 'error');
+    if (this.queue.size > 0 || this.status === 'error') throw new Error('Notes have not been saved to the local server');
   }
 
   // ── Internal ────────────────────────────────────────────────────────────────
@@ -170,7 +219,13 @@ class NotesSyncService {
     this.flushTimer = setTimeout(() => void this.flush(), FLUSH_DEBOUNCE_MS);
   }
 
-  private async flush(): Promise<void> {
+  private flush(): Promise<void> {
+    if (this.activeFlush) return this.activeFlush;
+    this.activeFlush = this.performFlush().finally(() => { this.activeFlush = null; });
+    return this.activeFlush;
+  }
+
+  private async performFlush(): Promise<void> {
     if (this.isFlushing || this.queue.size === 0) return;
     if (!this.serverReachable) {
       this.setStatus('offline');
@@ -183,6 +238,7 @@ class NotesSyncService {
     // Snapshot the queue and clear it — new ops during flush go into a fresh queue
     const ops = [...this.queue.values()];
     this.queue.clear();
+    this.inFlight = new Map(ops.map((op) => [op.noteId, op]));
 
     let anyError = false;
     let anyRejected = false;
@@ -199,6 +255,7 @@ class NotesSyncService {
           // The server is up and refused this note. Keep it locally and stop
           // retrying it; a later edit is queued again as usual.
           anyRejected = true;
+          if (!this.queue.has(op.noteId)) this.queue.set(op.noteId, op);
           console.warn(`[notes] server rejected note ${op.noteId}: ${e.message}`);
           continue;
         }
@@ -211,11 +268,15 @@ class NotesSyncService {
     }
 
     this.isFlushing = false;
+    this.inFlight.clear();
+    this.persistQueue();
 
     if (anyError) {
       this.serverReachable = false;
       localStorage.setItem('kaizen-notes-server-ok', 'false');
       this.setStatus(navigator.onLine ? 'error' : 'offline');
+    } else if (anyRejected) {
+      this.setStatus('error');
     } else if (this.queue.size > 0) {
       // More ops arrived during flush — schedule another round
       this.scheduleFlush();

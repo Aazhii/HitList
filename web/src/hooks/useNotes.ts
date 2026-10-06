@@ -7,29 +7,25 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import type { Note, NoteBlock, BlockType } from '@/types/notes';
 import { createNewNote, createEmptyBlock } from '@/types/notes';
-import { getActiveUserId } from '@/lib/storage';
-import { claimLegacyNotes, notesStorageKey } from '@/lib/notesStorage';
+import { getActiveTaskStorageId } from '@/lib/storage';
+import { API_BASE_URL } from '@/lib/api';
+import { onSourceSave } from '@/lib/sourceSaves';
+import { indentBlock, levelForNewBlockAfter, moveBlockWithChildren, normalizeIndents, outdentBlock } from '@/lib/noteBlocks';
+import { loadAccountNotes, notesStorageKey } from '@/lib/notesStorage';
 import { notesSyncService } from '@/services/notesSyncService';
 import type { NotePayload } from '@/services/notesSyncService';
+import { onPreLogout } from '@/lib/preLogout';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function persistLocal(notes: Note[]) {
   try {
-    localStorage.setItem(notesStorageKey(getActiveUserId()), JSON.stringify(notes));
+    localStorage.setItem(notesStorageKey(getActiveTaskStorageId()), JSON.stringify(notes));
   } catch { /* quota exceeded — ignore */ }
 }
 
 function loadLocalNotes(): Note[] {
-  try {
-    // One-time move from the old key every account shared; see lib/notesStorage.
-    claimLegacyNotes(localStorage, getActiveUserId());
-    const raw = localStorage.getItem(notesStorageKey(getActiveUserId()));
-    if (!raw) return [];
-    return JSON.parse(raw) as Note[];
-  } catch {
-    return [];
-  }
+  return loadAccountNotes(localStorage, getActiveTaskStorageId());
 }
 
 function noteToPayload(note: Note): NotePayload {
@@ -63,19 +59,72 @@ export function useNotes() {
   // Debounce timer for save-status indicator
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const flushNote = useCallback(async (id: string) => {
+    const note = notesRef.current.find((item) => item.id === id);
+    if (!note) throw new Error('Source note is no longer available');
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    notesSyncService.queueUpsert(noteToPayload(note));
+    await notesSyncService.flushForSignOut();
+  }, []);
+
+  useEffect(() => onSourceSave(async () => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    await notesSyncService.flushForSignOut();
+  }), []);
+
+  useEffect(() => onPreLogout(async () => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    persistLocal(notesRef.current);
+    await notesSyncService.flushForSignOut();
+  }), []);
+
   // ── Initial load ────────────────────────────────────────────────────────────
   useEffect(() => {
     const local = loadLocalNotes();
+    notesSyncService.restorePending();
+    notesRef.current = local;
     setNotes(local);
     setActiveNoteId(local[0]?.id ?? null);
-    setIsLoading(false);
+    const shared = getActiveTaskStorageId()?.includes(':workspace:');
+    if (!shared) setIsLoading(false);
 
     // Background: push any local notes the server doesn't know about yet.
     // We do this by queuing every local note as an upsert — the server's
     // last-write-wins logic will ignore notes that are already up to date.
-    for (const note of local) {
+    for (const note of shared ? [] : local) {
       notesSyncService.queueUpsert(noteToPayload(note));
     }
+    let cancelled = false;
+    let generation = 0;
+    const refresh = async () => {
+      const request = ++generation;
+      const protectedIds = notesSyncService.pendingIds();
+      const versions = notesSyncService.editVersions();
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/notes`, { credentials: 'include' });
+        if (!response.ok) throw new Error('Notes unavailable');
+        const payloads = await response.json() as NotePayload[];
+        const remote = payloads.map((payload) => ({ ...payload, blocks: JSON.parse(payload.blocksJson), createdAt: payload.createdAt ?? payload.updatedAt })) as Note[];
+        if (cancelled || request !== generation) return;
+        setNotes((current) => {
+          const latestVersions = notesSyncService.editVersions();
+          const keep = (id: string) => protectedIds.has(id) || notesSyncService.hasPending(id) || versions.get(id) !== latestVersions.get(id);
+          const merged = [...remote.filter((note) => !keep(note.id)), ...current.filter((note) => keep(note.id))];
+          persistLocal(merged);
+          notesRef.current = merged;
+          return merged;
+        });
+        setActiveNoteId((current) => current ?? remote[0]?.id ?? null);
+      } catch { /* retain the workspace-scoped offline cache */ }
+      finally { if (!cancelled && request === generation) setIsLoading(false); }
+    };
+    void refresh();
+    window.addEventListener('hitlist:workspace-data-changed', refresh);
+    return () => {
+      cancelled = true;
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      window.removeEventListener('hitlist:workspace-data-changed', refresh);
+    };
   }, []);
 
   // ── beforeunload: flush pending sync queue ──────────────────────────────────
@@ -91,11 +140,11 @@ export function useNotes() {
   // ── scheduleSave: update save-status indicator + queue server sync ──────────
   const scheduleSave = useCallback((note: Note) => {
     setSaveStatus('saving');
+    notesSyncService.queueUpsert(noteToPayload(note));
 
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       // Queue the sync — SyncService handles debouncing and dedup
-      notesSyncService.queueUpsert(noteToPayload(note));
       setSaveStatus('saved');
       setTimeout(() => setSaveStatus((s) => (s === 'saved' ? 'idle' : s)), 2500);
     }, 600);
@@ -197,7 +246,9 @@ export function useNotes() {
           if (n.id !== noteId) return n;
           const idx = n.blocks.findIndex((b) => b.id === afterBlockId);
           const blocks = [...n.blocks];
-          blocks.splice(idx + 1, 0, newBlock);
+          // A new line sits level with the one before it (or first among its children), as in an outline.
+          const level = levelForNewBlockAfter(blocks, idx);
+          blocks.splice(idx + 1, 0, level > 0 ? { ...newBlock, indent: level } : newBlock);
           return { ...n, blocks, updatedAt: Date.now() };
         });
         persistLocal(next);
@@ -219,7 +270,7 @@ export function useNotes() {
           scheduleSave(cleared);
           return cleared;
         }
-        const updated = { ...n, updatedAt: Date.now(), blocks: n.blocks.filter((b) => b.id !== blockId) };
+        const updated = { ...n, updatedAt: Date.now(), blocks: normalizeIndents(n.blocks.filter((b) => b.id !== blockId)) };
         scheduleSave(updated);
         return updated;
       });
@@ -259,12 +310,8 @@ export function useNotes() {
     setNotes((prev) => {
       const next = prev.map((n) => {
         if (n.id !== noteId) return n;
-        const idx = n.blocks.findIndex((b) => b.id === blockId);
-        if (idx === -1) return n;
-        const newIdx = direction === 'up' ? idx - 1 : idx + 1;
-        if (newIdx < 0 || newIdx >= n.blocks.length) return n;
-        const blocks = [...n.blocks];
-        [blocks[idx], blocks[newIdx]] = [blocks[newIdx], blocks[idx]];
+        const blocks = moveBlockWithChildren(n.blocks, blockId, direction);
+        if (blocks === n.blocks) return n;
         return { ...n, blocks, updatedAt: Date.now() };
       });
       persistLocal(next);
@@ -274,7 +321,27 @@ export function useNotes() {
     });
   }, [scheduleSave]);
 
+  /** Tab / Shift+Tab: push a line in or bring it back out one level, its children with it. */
+  const setBlockIndent = useCallback((noteId: string, blockId: string, direction: 'in' | 'out') => {
+    setNotes((prev) => {
+      let changed = false;
+      const next = prev.map((n) => {
+        if (n.id !== noteId) return n;
+        const blocks = direction === 'in' ? indentBlock(n.blocks, blockId) : outdentBlock(n.blocks, blockId);
+        if (blocks === n.blocks) return n;
+        changed = true;
+        return { ...n, blocks, updatedAt: Date.now() };
+      });
+      if (!changed) return prev;
+      persistLocal(next);
+      const updated = next.find((n) => n.id === noteId);
+      if (updated) scheduleSave(updated);
+      return next;
+    });
+  }, [scheduleSave]);
+
   return {
+    flushNote,
     notes: sortedNotes,
     activeNote,
     activeNoteId,
@@ -291,5 +358,6 @@ export function useNotes() {
     deleteBlock,
     changeBlockType,
     moveBlock,
+    setBlockIndent,
   };
 }

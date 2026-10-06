@@ -30,6 +30,7 @@ import {
 import { TopBar, topBarPrimary } from '@/components/shell/TopBar';
 import { anchorRectOf } from '@/components/fields/FieldsManager';
 import { DatabaseWorkspace } from '@/components/databases/DatabaseWorkspace';
+import { ShareSourceControl } from '@/components/shell/ShareSourceControl';
 import { EmptyState, ILL, type IllustrationName } from '@/components/EmptyState';
 import { useDatabases } from '@/hooks/useDatabases';
 import type { ApiDatabase } from '@/lib/api';
@@ -47,6 +48,7 @@ export type { RecordValues } from '@/components/databases/DatabaseWorkspace';
 export interface DatabasesPageProps {
   /** A database the calendar asked to open. */
   openDatabaseId?: string | null;
+  openRecordId?: string | null;
   onOpenHandled?: () => void;
   /** Reports which database is on screen, so Back/refresh can return to it. */
   onOpenChange?: (databaseId: string | null) => void;
@@ -64,7 +66,7 @@ export interface DatabasesPageProps {
   onCreateHandled?: () => void;
 }
 
-export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, linking, onSidebarContentChange, onOpenSidebar, onCountChange, createOnOpen, onCreateHandled }: DatabasesPageProps = {}) {
+export function DatabasesPage({ openDatabaseId, openRecordId, onOpenHandled, onOpenChange, linking, onSidebarContentChange, onOpenSidebar, onCountChange, createOnOpen, onCreateHandled }: DatabasesPageProps = {}) {
   const notify = useCallback((message: string) => toast.error(message, { duration: 3000 }), []);
   const [openId, setOpenId] = useState<string | null>(null);
   const {
@@ -140,11 +142,14 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
               database={open}
               store={store}
               linking={linking}
+              openRecordId={openRecordId}
               header={({ rowCount, fieldCount, openNewColumn }) => (
                 <TopBar
                   title={`${open.icon ? `${open.icon} ` : ''}${open.name}`}
                   subtitle={`${rowCount} record${rowCount === 1 ? '' : 's'} · ${fieldCount} column${fieldCount === 1 ? '' : 's'}`}
                   actions={(
+                    <>
+                    <ShareSourceControl kind="database" id={open.id} title={open.name} />
                     <button
                       type="button"
                       onClick={(e) => openNewColumn(anchorRectOf(e.currentTarget))}
@@ -154,6 +159,7 @@ export function DatabasesPage({ openDatabaseId, onOpenHandled, onOpenChange, lin
                       <Plus className="size-[15px]" strokeWidth={1.75} aria-hidden />
                       <span className="hidden sm:inline">New column</span>
                     </button>
+                    </>
                   )}
                 />
               )}

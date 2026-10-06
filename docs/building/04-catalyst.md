@@ -24,16 +24,24 @@ Google sign-in needs the redirect URIs from the Catalyst Google popup added in G
 
 ## The backup service
 
-Routes (all need a signed-in app user): `PUT /backup` (gzip body + `x-content-hash`), `GET /backup/list`, `GET /backup/latest`,
+Routes (all need a signed-in app user): `PUT /backup` (gzip body + `x-content-hash` + `x-backup-reason`), `GET /backup/list`, `GET /backup/latest`,
 `GET /whoami`, and an open `GET /health`. The caller is decided only by the Catalyst SDK (user scope) plus an admin lookup that the
-gateway's id is an App User. Rules: gzip only, at most 25 MB, at most **3 stored backups per person per rolling 24 hours**
-(`MAX_PER_DAY` in `backupService.js`), identical content is not stored twice, and old backups are removed in batches once a person
-has 14, keeping 7.
+gateway's id is an App User. Rules: gzip only, at most 25 MB, at most **10 stored manual backups per person per rolling 24 hours**
+(`MAX_PER_DAY` in `backupService.js`). Reasons `signed-in`, `sign-out`, `scheduled` and `update` are exempt and consume no
+manual slots; missing reasons default to `manual`, unknown reasons return 400. Labels are client-reported, not proof of
+login/logout. Identical content is not stored twice. Old backups are removed in batches once a person has 14, keeping the
+newest 7 plus manual entries from the last 24 hours for allowance accounting. Quota checking and insertion are not atomic
+across concurrent requests; the desktop serializes its own operations, not requests from other devices.
 
 Storage: files in File Store folder `backups` (created by the Function); an index in the Data Store table **`Backups`**, which
 you create once in the console (tables cannot be made from the CLI): `UserId` text, `BackedUpAt` bigint, `Hash` text,
 `SizeBytes` bigint, `FileId` text; all mandatory, PII flagged, unique and search index off. Ids are 17 digits, past JavaScript's
 exact numbers, so they are text.
+
+Before deploying the manual-only policy, add **`BackupReason` Text**, optional, with unique/search index off. Existing rows
+without that field are conservatively counted as manual; new rows persist their trigger. This additive schema change has not
+been performed. Deploy only with authorization, then rebuild/distribute the desktop that sends the reason header. Older
+desktops omit it and count every upload as manual; an older function can still reject automatic backups under its shared cap.
 
 SDK note: use `@zcatalyst/auth` only to identify the caller and `zcatalyst-sdk-node` for Data Store and File Store. Mixing the
 newer split `@zcatalyst/*` packages fails with "Unable to get the app credentials".
@@ -41,4 +49,5 @@ newer split `@zcatalyst/*` packages fails with "Unable to get the app credential
 ## Free tier
 
 See [../desktop-first/01-BUDGET.md](../desktop-first/01-BUDGET.md). In short: File Store uploads (2,000 per 30 days) are the first limit,
-about 33 active people at two backups a day; the daily cap keeps 20 people at 1,800 at worst.
+about 33 active people at two backups a day. Ten manual uploads per rolling day can exceed the free tier; automatic uploads
+are additional and uncapped by this rule, so the manual allowance does not bound total usage.

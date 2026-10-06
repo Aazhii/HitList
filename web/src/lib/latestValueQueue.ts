@@ -4,6 +4,11 @@
  * slow earlier request cannot become the last value stored by the server.
  */
 export class LatestValueQueue<T> {
+  has(key: string): boolean { return this.cells.has(key); }
+
+  async flush(): Promise<void> {
+    while (this.cells.size) await Promise.all([...this.cells.values()].map((cell) => cell.tail));
+  }
   private readonly cells = new Map<string, {
     version: number;
     confirmed: T;

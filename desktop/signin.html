@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:" />
+  <title>Sign in to HitList</title>
+  <style>
+    :root { --ink: #37352f; --muted: #5f5e5b; --faint: #787774; --line: #e9e9e7; --bg: #ffffff; --soft: #f7f6f3; --accent: #006eb9; --accent-hover: #005c9c; }
+    @media (prefers-color-scheme: dark) {
+      :root { --ink: #e8e6e1; --muted: #b5b3ad; --faint: #8f8d88; --line: #3a3a38; --bg: #191919; --soft: #232322; --accent: #4aa3e0; --accent-hover: #6bb5ea; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--soft); color: var(--ink);
+      font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
+    main { width: min(420px, 92vw); background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 32px 28px 24px; }
+    .mark { width: 36px; height: 36px; border-radius: 8px; background: var(--accent); margin-bottom: 18px; }
+    h1 { font-size: 24px; line-height: 1.25; letter-spacing: -0.01em; margin: 0 0 6px; }
+    p { margin: 0 0 18px; color: var(--muted); }
+    a.choice { display: block; text-decoration: none; color: inherit; border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin-bottom: 10px; transition: background-color 120ms, border-color 120ms; }
+    a.choice:hover, a.choice:focus-visible { background: var(--soft); border-color: var(--accent); outline: none; }
+    a.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+    a.primary:hover, a.primary:focus-visible { background: var(--accent-hover); border-color: var(--accent-hover); }
+    .title { font-weight: 600; font-size: 14px; }
+    .help { font-size: 12px; margin-top: 2px; color: var(--faint); }
+    a.primary .help { color: rgba(255, 255, 255, 0.85); }
+    .foot { margin: 16px 0 0; font-size: 12px; color: var(--faint); }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="mark" aria-hidden="true"></div>
+    <h1>Sign in to HitList</h1>
+    <p>Your account keeps a backup of your workspace, so you can restore it on a new computer. HitList works without one.</p>
+
+    <a class="choice primary" id="login" href="#">
+      <div class="title">Sign in</div>
+      <div class="help">I already have an account and a password.</div>
+    </a>
+    <a class="choice" id="signup" href="#">
+      <div class="title">Create an account</div>
+      <div class="help">I am new here. You will choose your own password.</div>
+    </a>
+    <a class="choice" id="reset" href="#">
+      <div class="title">Set or reset my password</div>
+      <div class="help">I was added to HitList, or I forgot my password. We will email you a link.</div>
+    </a>
+
+    <p class="foot">Signed up with Zoho or Google? Choose “Sign in”, then use the Zoho or Google button on the next page.</p>
+  </main>
+  <script>
+    // The three destinations are handed over by the app in the address (?login=…&signup=…&reset=…). Only https links on
+    // the project's own domain are used, so nothing else can be put behind these buttons.
+    const q = new URLSearchParams(location.search);
+    const host = q.get('host') || '';
+    for (const id of ['login', 'signup', 'reset']) {
+      const link = document.getElementById(id);
+      try {
+        const u = new URL(q.get(id) || '');
+        if (u.protocol === 'https:' && u.host === host) link.href = u.href; else link.removeAttribute('href');
+      } catch { link.removeAttribute('href'); }
+    }
+  </script>
+</body>
+</html>

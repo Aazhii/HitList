@@ -1,11 +1,14 @@
-import { useRef, useState } from 'react';
-import { Bell, Download, Keyboard, LogIn, LogOut, Upload } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Bell, Download, Info, Keyboard, LogIn, LogOut, MessageSquare, RefreshCw, Upload } from 'lucide-react';
+import { CliqAlertsDialog } from '@/components/shell/CliqAlertsDialog';
+import { UpdateDialog } from '@/components/shell/UpdateDialog';
+import { useAppUpdate } from '@/hooks/useAppUpdate';
 import { useDesktopAccount } from '@/hooks/useDesktopAccount';
 import { toast } from 'sonner';
 import { backupApi } from '@/lib/api';
 import { currentSession, signOut } from '@/lib/session';
 import { agoLabel } from '@/lib/pages';
-import { backupMessage, signOutBackupFailed, signOutBackupMessage } from '@/lib/backupMessage';
+import { backupMessage, signOutBackupFailed, signOutBackupMessage, takeSignOutBackup } from '@/lib/backupMessage';
 import { noOfferMessage } from '@/lib/restoreMessage';
 import { offerRestore } from '@/components/shell/RestoreOffer';
 import { backupFileName, importSummary, parseBackupText } from '@/lib/backupFile';
@@ -34,9 +37,24 @@ export function UserMenu({ onOpenReminders, dailyLine }: {
   dailyLine?: { enabled: boolean; onChange: (enabled: boolean) => void };
 }) {
   const [shortcuts, setShortcuts] = useState(false);
+  const [cliqOpen, setCliqOpen] = useState(false);
+  const [updateOpen, setUpdateOpen] = useState(false);
+  const appUpdate = useAppUpdate();
+  // Once per launch, when the daily check finds a newer version, say so; the menu item and the update screen do the rest.
+  const announced = useRef(false);
+  const foundVersion = appUpdate.status?.phase === 'available' ? appUpdate.status.latest?.version : undefined;
+  useEffect(() => {
+    if (!foundVersion || announced.current) return;
+    announced.current = true;
+    toast(`HitList ${foundVersion} is available`, { description: 'Account menu, Check for updates.', duration: 6000 });
+  }, [foundVersion]);
   const [density, setDensity] = useDensity();
   const fileInput = useRef<HTMLInputElement>(null);
   const desktop = useDesktopAccount();
+  useEffect(() => {
+    const result = takeSignOutBackup();
+    if (signOutBackupFailed(result)) toast.warning(signOutBackupMessage, { duration: 8000 });
+  }, []);
 
   /** Everything in the workspace, as one JSON file the person keeps. */
   const exportBackup = async () => {
@@ -147,6 +165,29 @@ export function UserMenu({ onOpenReminders, dailyLine }: {
                 </span>
               </DropdownMenuItem>
             )}
+            {appUpdate.visible && (
+              <DropdownMenuItem onSelect={() => setUpdateOpen(true)} className="gap-2.5 px-2.5 py-2 text-[14px] text-a-muted">
+                <RefreshCw className="size-[15px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
+                <span className="flex min-w-0 flex-1 flex-col">
+                  <span>Check for updates</span>
+                  {appUpdate.status?.phase === 'available' && appUpdate.status.latest && (
+                    <span className="text-[12px] text-a-faint">Version {appUpdate.status.latest.version} is available</span>
+                  )}
+                </span>
+              </DropdownMenuItem>
+            )}
+            {desktop.available && desktop.account && (
+              <DropdownMenuItem onSelect={() => setCliqOpen(true)} className="gap-2.5 px-2.5 py-2 text-[14px] text-a-muted">
+                <Info className="size-[15px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
+                About / notification settings
+              </DropdownMenuItem>
+            )}
+            {desktop.available && desktop.account && (
+              <DropdownMenuItem onSelect={() => setCliqOpen(true)} className="gap-2.5 px-2.5 py-2 text-[14px] text-a-muted">
+                <MessageSquare className="size-[15px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
+                Cliq alerts
+              </DropdownMenuItem>
+            )}
             {desktop.available && desktop.account && (
               <DropdownMenuItem
                 onSelect={() => {
@@ -164,7 +205,8 @@ export function UserMenu({ onOpenReminders, dailyLine }: {
               <DropdownMenuItem
                 disabled={desktop.busy}
                 onSelect={() => {
-                  void desktop.signOut().then((backup) => { if (signOutBackupFailed(backup)) toast.warning(signOutBackupMessage, { duration: 8000 }); });
+                  void desktop.signOut().then((backup) => { if (signOutBackupFailed(backup)) toast.warning(signOutBackupMessage, { duration: 8000 }); })
+                    .catch(() => toast.error('Sign-out cancelled: pending changes could not be saved.', { duration: 8000 }));
                 }}
                 className="gap-2.5 px-2.5 py-2 text-[14px] text-a-muted"
               >
@@ -210,6 +252,8 @@ export function UserMenu({ onOpenReminders, dailyLine }: {
         onChange={(e) => { void importBackup(e.target.files?.[0]); e.target.value = ''; }}
       />
       <ShortcutsDialog open={shortcuts} onOpenChange={setShortcuts} />
+      <CliqAlertsDialog open={cliqOpen} onOpenChange={setCliqOpen} />
+      <UpdateDialog open={updateOpen} onOpenChange={setUpdateOpen} />
     </>
   );
 }

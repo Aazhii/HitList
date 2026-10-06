@@ -8,6 +8,7 @@ import type { Note } from '@/types/notes';
 import { NOTE_EMOJIS, NOTE_SYNC_LIMIT, NOTE_SYNC_WARN, formatNoteEdited, getNotePreview } from '@/types/notes';
 import type { BlockType } from '@/types/notes';
 import { useNotes } from '@/hooks/useNotes';
+import { ShareSourceControl } from '@/components/shell/ShareSourceControl';
 import type { SaveStatus } from '@/hooks/useNotes';
 import { useSyncStatus } from '@/hooks/useSyncStatus';
 import type { SyncStatus } from '@/hooks/useSyncStatus';
@@ -135,15 +136,24 @@ function SelectNotePrompt({ onCreate }: { onCreate: () => void }) {
 
 // ── Emoji picker ───────────────────────────────────────────────────────────────
 function EmojiPicker({ emoji, onSelect }: { emoji: string; onSelect: (emoji: string) => void }) {
+  const [open, setOpen] = useState(false);
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          // Showcase 312: a 56px white tile, 12px radius, 1px border. The prototype's emoji is 30px,
-          // between the scale's 24 and 32.
-          className="mb-4 grid size-14 cursor-pointer place-items-center rounded-[12px] border border-a-line bg-a-surface text-[32px] leading-none transition-colors duration-[120ms] hover:bg-a-line-soft"
+          className="grid size-10 shrink-0 cursor-pointer place-items-center rounded-[6px] text-[32px] leading-none transition-colors duration-[120ms] hover:bg-a-line-soft"
           aria-label="Change note emoji"
+          title="Change note emoji"
+          onKeyDown={(event) => {
+            if (emoji && (event.key === 'Backspace' || event.key === 'Delete')
+              && !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
+              && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              onSelect('');
+              setOpen(false);
+            }
+          }}
         >
           {emoji}
         </button>
@@ -154,7 +164,7 @@ function EmojiPicker({ emoji, onSelect }: { emoji: string; onSelect: (emoji: str
             <button
               key={e}
               type="button"
-              onClick={() => onSelect(e)}
+              onClick={() => { onSelect(e); setOpen(false); }}
               className="rounded-lg p-1.5 text-center text-xl transition-colors duration-[120ms] hover:bg-accent"
             >
               {e}
@@ -167,7 +177,7 @@ function EmojiPicker({ emoji, onSelect }: { emoji: string; onSelect: (emoji: str
 }
 
 // ── Note detail view ───────────────────────────────────────────────────────────
-function NoteDetail({
+export function NoteDetail({
   note,
   onUpdateTitle,
   onUpdateEmoji,
@@ -176,6 +186,7 @@ function NoteDetail({
   onDeleteBlock,
   onChangeBlockType,
   onMoveBlock,
+  onSetIndent,
   linking,
 }: {
   note: Note;
@@ -187,6 +198,7 @@ function NoteDetail({
   onDeleteBlock: (noteId: string, blockId: string) => void;
   onChangeBlockType: (noteId: string, blockId: string, type: BlockType) => void;
   onMoveBlock: (noteId: string, blockId: string, direction: 'up' | 'down') => void;
+  onSetIndent: (noteId: string, blockId: string, direction: 'in' | 'out') => void;
 }) {
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const firstBlockRef = useRef<string | null>(null);
@@ -215,16 +227,22 @@ function NoteDetail({
     // The one scroller for the note pane. The header lives inside it, so the
     // title scrolls away with the content rather than pinning above it.
     <ScrollArea className="h-full">
-      <div className="animate-fade-in px-4 pb-24 pt-8 md:px-8">
+      <div data-note-page className="animate-fade-in px-4 pb-24 pt-8 md:px-8">
         {/* One reading column: a 720px measure plus the 44px margin that block
             controls hang into. The padding is applied once, here, so the title,
             metadata, every block, tables and panels share one left edge. */}
         <div className="mx-auto w-full max-w-[calc(var(--a-measure)+var(--a-gutter))] md:pl-[var(--a-gutter)]">
           <div>
-            <EmojiPicker
-              emoji={note.emoji ?? '📝'}
-              onSelect={(e) => onUpdateEmoji(note.id, e)}
-            />
+            <div className="flex min-w-0 items-start gap-3">
+              {note.emoji !== '' && (
+                <EmojiPicker
+                  emoji={note.emoji ?? '📝'}
+                  onSelect={(emoji) => {
+                    onUpdateEmoji(note.id, emoji);
+                    if (emoji === '') titleRef.current?.focus();
+                  }}
+                />
+              )}
 
             <textarea
               ref={titleRef}
@@ -233,13 +251,20 @@ function NoteDetail({
               placeholder="Untitled"
               rows={1}
               className={cn(
-                'w-full resize-none border-none bg-transparent p-0 outline-none field-sizing-content',
-                // Showcase 313: 34px/1.15, 700, -0.02em; 32 here, the top of the type scale.
-                'block text-[34px] leading-[1.22] font-bold tracking-[-0.02em] text-a-ink',
+                'min-w-0 flex-1 resize-none border-none bg-transparent p-0 outline-none field-sizing-content [overflow-wrap:anywhere]',
+                'block text-[34px] leading-[1.22] font-bold tracking-normal text-a-ink',
                 'placeholder:text-a-line-strong',
               )}
               aria-label="Note title"
               onKeyDown={(e) => {
+                if (e.key === 'Backspace' && note.emoji !== ''
+                  && e.currentTarget.selectionStart === 0 && e.currentTarget.selectionEnd === 0
+                  && !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey
+                  && !e.nativeEvent.isComposing) {
+                  e.preventDefault();
+                  onUpdateEmoji(note.id, '');
+                  return;
+                }
                 if (e.key === 'Enter') {
                   e.preventDefault();
                   // Focus first block
@@ -252,6 +277,7 @@ function NoteDetail({
                 }
               }}
             />
+            </div>
 
             <p className="mt-[10px] mb-7 flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-a-faint">
               <span>Edited {formatNoteEdited(note.updatedAt)}</span>
@@ -286,6 +312,7 @@ function NoteDetail({
             onDeleteBlock={(blockId) => onDeleteBlock(note.id, blockId)}
             onChangeBlockType={(blockId, type) => onChangeBlockType(note.id, blockId, type)}
             onMoveBlock={(blockId, direction) => onMoveBlock(note.id, blockId, direction)}
+            onSetIndent={(blockId, direction) => onSetIndent(note.id, blockId, direction)}
             noteId={note.id}
             linking={linking}
           />
@@ -421,6 +448,8 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
     deleteBlock,
     changeBlockType,
     moveBlock,
+    setBlockIndent,
+    flushNote,
   } = useNotes();
 
   const [search, setSearch] = useState('');
@@ -434,8 +463,8 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
       setActiveNoteId(openNoteId);
       setSearch('');
     } else {
-      toast.error("That note isn't on this device", {
-        description: 'Notes are kept on the device they were written on.',
+      toast.error('That note is not available in this workspace', {
+        description: 'Sync the workspace and try again.',
         duration: 3500,
       });
     }
@@ -549,6 +578,7 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
       actions={
         <>
           {(activeNote || notes.length > 0) && <SyncIndicatorWrapper saveStatus={saveStatus} />}
+          {activeNote && <ShareSourceControl kind="note" id={activeNote.id} title={activeNote.title || 'Untitled'} flush={() => flushNote(activeNote.id)} />}
 
           {/* Pin and delete for the open note, in the one quiet pill. */}
           {activeNote && (
@@ -603,6 +633,7 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
             onDeleteBlock={deleteBlock}
             onChangeBlockType={changeBlockType}
             onMoveBlock={moveBlock}
+            onSetIndent={setBlockIndent}
             linking={linking}
           />
         ) : notes.length === 0 ? (

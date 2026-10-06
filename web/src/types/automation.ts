@@ -10,7 +10,8 @@ export type TriggerType =
   | 'overdue'       // legacy; read as a single firing at the due instant
   | 'recurring'     // fire on a recurring schedule
   | 'status-change' // fire when task status changes
-  | 'daily-digest'; // fire once per day as a summary
+  | 'daily-digest'  // fire once per day as a summary
+  | 'custom';      // built with the rule builder: see `spec`
 
 export type RecurrenceFrequency = 'daily' | 'weekdays' | 'weekly' | 'monthly';
 
@@ -30,6 +31,8 @@ export interface RecurrenceSchedule {
   dayOfMonth?: number; // 1–31 (for monthly)
 }
 
+import type { RuleSpec } from '@/lib/automationSpec';
+
 export interface AutomationRule {
   id: string;
   name: string;
@@ -46,31 +49,16 @@ export interface AutomationRule {
   notifyInApp: boolean;
   notifyBrowser: boolean;
   notifyEmail?: boolean;
+  /** The zone the rule's times are read in (saved with the rule). */
+  timezone?: string;
   createdAt: number;
   updatedAt: number;
   lastTriggeredAt?: number;
   nextTriggerAt?: number;
-}
-
-// ── Form shape (subset used in create/edit form) ──────────────────────────────
-
-export interface AutomationRuleFormValues {
-  name: string;
-  description: string;
-  taskId: string;           // '' = no task linked
-  triggerType: TriggerType;
-  status: AutomationStatus;
-  urgency: UrgencyLevel;
-  /** The escalation steps, as signed minutes. Edited as rows; see ReminderStepList. */
-  offsetMinutes: number[];
-  // recurrence
-  recurrenceFrequency: RecurrenceFrequency;
-  recurrenceTime: string;
-  recurrenceDayOfWeek: string;
-  recurrenceDayOfMonth: string;
-  notifyInApp: boolean;
-  notifyBrowser: boolean;
-  notifyEmail: boolean;
+  /** What the rule watches, checks and does. The server returns one for every rule, including older ones. */
+  spec?: RuleSpec;
+  /** Why the rule stopped working, when it did (it is shown on the rule until it is saved or run again). */
+  error?: string;
 }
 
 export const TRIGGER_TYPE_LABELS: Record<TriggerType, string> = {
@@ -79,6 +67,7 @@ export const TRIGGER_TYPE_LABELS: Record<TriggerType, string> = {
   'recurring':    'Recurring schedule',
   'status-change':'On status change',
   'daily-digest': 'Daily digest',
+  'custom':       'Custom rule',
 };
 
 export const URGENCY_LABELS: Record<UrgencyLevel, string> = {

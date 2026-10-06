@@ -45,12 +45,12 @@ public class TaskController {
 
     @PostMapping
     public ResponseEntity<Map<String, Object>> create(@RequestBody Map<String, Object> body, HttpServletRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(tasks.create(owners.owner(request), body));
+        return ResponseEntity.status(HttpStatus.CREATED).body(tasks.create(owners.owner(request), withActor(body, request)));
     }
 
     @PutMapping("/{id}")
     public Map<String, Object> update(@PathVariable String id, @RequestBody Map<String, Object> body, HttpServletRequest request) {
-        return tasks.update(owners.owner(request), id, body);
+        return tasks.update(owners.owner(request), id, withActor(body, request));
     }
 
     @PatchMapping("/{id}/status")
@@ -70,6 +70,15 @@ public class TaskController {
         Object quadrant = body.get("quadrant");
         if (!(quadrant instanceof String value)) throw ApiException.invalid("quadrant is required");
         return tasks.quadrant(owners.owner(request), id, value);
+    }
+
+    /** Who assigned a task is the signed-in account, never something the request claims. */
+    private Map<String, Object> withActor(Map<String, Object> body, HttpServletRequest request) {
+        Map<String, Object> out = new java.util.LinkedHashMap<>(body);
+        out.remove("assignedBy");
+        String actor = owners.actor(request);
+        if (out.containsKey("assigneeUserId") && actor != null) out.put("assignedBy", actor);
+        return out;
     }
 
     @DeleteMapping("/{id}")

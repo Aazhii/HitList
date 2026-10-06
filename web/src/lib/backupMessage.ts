@@ -4,6 +4,20 @@ export const signOutBackupFailed = (result: string | null): boolean =>
 
 export const signOutBackupMessage = 'Could not back up before signing out. Your data is still on this computer; sign in again later to back it up.';
 
+const SIGN_OUT_BACKUP_KEY = 'hitlist-signout-backup';
+
+export function rememberSignOutBackup(result: string | null): void {
+  try { if (result) sessionStorage.setItem(SIGN_OUT_BACKUP_KEY, result); } catch { return; }
+}
+
+export function takeSignOutBackup(): string | null {
+  try {
+    const result = sessionStorage.getItem(SIGN_OUT_BACKUP_KEY);
+    sessionStorage.removeItem(SIGN_OUT_BACKUP_KEY);
+    return result;
+  } catch { return null; }
+}
+
 /** What a backup attempt says to the person, in a sentence. The shell reports a short code; this turns it into words. */
 export function backupMessage(result: string): string {
   switch (result) {

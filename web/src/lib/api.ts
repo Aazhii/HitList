@@ -8,6 +8,8 @@
  */
 
 import { simpleRequest } from './simpleRequest';
+import type { RuleSpec } from './automationSpec';
+import { trackSourceWrite } from './sourceSaves';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -40,6 +42,11 @@ export interface ApiTask {
   /** Set when the task was added from a database's text column via the @ menu. */
   sourceRecordId?: string | null;
   sourceFieldId?: string | null;
+  /** Shared workspaces: who the task is for. Absent from older servers and personal tasks. */
+  assigneeUserId?: string | null;
+  assigneeName?: string | null;
+  assignedBy?: string | null;
+  assignedAt?: string | null;
 }
 
 export interface ApiList {
@@ -82,6 +89,9 @@ export interface TaskCreateRequest {
   /** The database record + field this task was added from; '' clears on update. */
   sourceRecordId?: string;
   sourceFieldId?: string;
+  /** Who the task is for (a member's user id); '' clears on update. */
+  assigneeUserId?: string;
+  assigneeName?: string;
   /** Stable local id used only by the one-time offline migration. */
   clientId?: string;
 }
@@ -168,7 +178,13 @@ function browserTimeZone(): string {
   }
 }
 
-async function request<T>(
+function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const write = performRequest<T>(path, options);
+  return options.method && options.method !== 'GET' && /^\/(databases|fields|field-values|views)(\/|$)/.test(path)
+    ? trackSourceWrite(write, `${options.method} ${path.split('?')[0]}`) : write;
+}
+
+async function performRequest<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
@@ -437,7 +453,7 @@ export interface ApiAutomationRule {
   name: string;
   description?: string;
   taskId?: string;
-  triggerType: 'due-date' | 'overdue' | 'recurring' | 'status-change' | 'daily-digest';
+  triggerType: 'due-date' | 'overdue' | 'recurring' | 'status-change' | 'daily-digest' | 'custom';
   status: 'active' | 'paused' | 'draft';
   urgency: 'low' | 'medium' | 'high' | 'critical';
   /**
@@ -460,10 +476,14 @@ export interface ApiAutomationRule {
   lastTriggeredAt?: number;
   /** When the rule next fires. Absent for the event-driven triggers. */
   nextTriggerAt?: number;
+  /** What the rule watches, checks and does. Every rule the server returns has one; sent back, it replaces the rule's meaning. */
+  spec?: RuleSpec;
+  /** Set when the rule stopped working (for example after repeated failed runs). */
+  error?: string;
 }
 
 export type AutomationRuleInput = Omit<
-  ApiAutomationRule, 'id' | 'createdAt' | 'updatedAt' | 'lastTriggeredAt' | 'nextTriggerAt'
+  ApiAutomationRule, 'id' | 'createdAt' | 'updatedAt' | 'lastTriggeredAt' | 'nextTriggerAt' | 'error'
 >;
 
 export interface ApiAutomationRun {

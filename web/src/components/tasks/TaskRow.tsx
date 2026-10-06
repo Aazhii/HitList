@@ -6,6 +6,7 @@
  * button that opens the detail panel, so the row never nests one interactive
  * element inside another.
  */
+import { AssigneeChip } from '@/components/tasks/AssigneeChip';
 import { useState } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -142,6 +143,8 @@ export function TaskRow({
           Next up
         </span>
       )}
+
+      <AssigneeChip userId={todo.assigneeUserId} name={todo.assigneeName} className="flex-shrink-0" />
 
       {todo.sourceNoteId && onOpenNote && (
         <button

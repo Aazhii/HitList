@@ -27,7 +27,10 @@ import { DatabasePicker } from '@/components/notes/DatabasePicker';
 import { createInlineDatabase } from '@/lib/inlineDatabase';
 import { toast } from 'sonner';
 import { TableBlock } from '@/components/notes/TableBlock';
-import { computeNumberedOrdinals } from '@/lib/noteBlocks';
+import { computeNumberedOrdinals, levelOf } from '@/lib/noteBlocks';
+
+/** How far each level of Tab pushes a line in, in px. */
+const INDENT_STEP = 24;
 import { InlineText, supportedMarks } from '@/components/notes/InlineText';
 import { activeMarks, hasInlineMarks, toggleMark, type Mark } from '@/lib/inlineMarkdown';
 import { getCaretCoordinates } from '@/lib/caretCoordinates';
@@ -335,6 +338,8 @@ function BlockRow({
 
   // `pr-1.5` rather than a margin: the 6px between the grip and the text is part
   // of the controls' box, so crossing it doesn't count as leaving the row.
+  // A database block can start left of the reading column; its controls follow it.
+  const [shift, setShift] = useState(0);
   const gutter = (
     <div
       className={cn(
@@ -342,7 +347,7 @@ function BlockRow({
         // Also kept visible while a control has keyboard focus or its menu is open.
         showControls ? 'opacity-100' : 'opacity-0 focus-within:opacity-100 has-[[data-state=open]]:opacity-100',
       )}
-      style={{ top: controlsTop(block.type) }}
+      style={{ top: controlsTop(block.type), ...(shift ? { transform: `translateX(${shift}px)` } : {}) }}
     >
       <BlockControls
         block={block} index={index} total={total}
@@ -361,6 +366,8 @@ function BlockRow({
       ROW_SPACING[block.type],
       joinPrev && '-mt-[6px]',
     ),
+    // Pushed in with Tab: the whole row (marker, text and its hover controls) moves, as in an outline.
+    ...(levelOf(block) > 0 ? { style: { marginLeft: levelOf(block) * INDENT_STEP } } : {}),
     onMouseEnter: () => setHovered(true),
     onMouseLeave: () => setHovered(false),
   };
@@ -391,7 +398,7 @@ function BlockRow({
         {gutter}
         <div className="min-w-0 flex-1">
           {block.databaseId
-            ? <DatabaseBlock databaseId={block.databaseId} layout={block.dbLayout} onOpenDatabase={onOpenDatabase} />
+            ? <DatabaseBlock databaseId={block.databaseId} layout={block.dbLayout} onOpenDatabase={onOpenDatabase} onShift={setShift} />
             : <div className="rounded-[8px] border border-dashed border-a-line-strong px-4 py-3 text-[13px] text-a-faint">Choosing a database…</div>}
         </div>
       </div>
@@ -595,6 +602,8 @@ interface NoteEditorProps {
   onDeleteBlock: (blockId: string) => void;
   onChangeBlockType: (blockId: string, type: BlockType) => void;
   onMoveBlock: (blockId: string, direction: 'up' | 'down') => void;
+  /** Tab / Shift+Tab: push a line in or bring it back out one level (its children go with it). */
+  onSetIndent?: (blockId: string, direction: 'in' | 'out') => void;
   /** The note these blocks belong to; needed to link a block to a task. */
   noteId?: string;
   linking?: NoteTaskLinking;
@@ -607,6 +616,7 @@ export function NoteEditor({
   onDeleteBlock,
   onChangeBlockType,
   onMoveBlock,
+  onSetIndent,
   noteId,
   linking,
 }: NoteEditorProps) {
@@ -767,7 +777,7 @@ export function NoteEditor({
     });
   }, [blocks, linking, noteId, pendingLinks]);
 
-  const handleMentionSelect = useCallback(async (listId: string, quadrant: Quadrant) => {
+  const handleMentionSelect = useCallback(async (listId: string, quadrant: Quadrant, assignee?: import('@/types/todo').TaskAssignee) => {
     if (!mention || !linking || !noteId) return;
     const { blockId, trigger } = mention;
     const block = blocks.find((b) => b.id === blockId);
@@ -786,7 +796,7 @@ export function NoteEditor({
     onUpdateBlock(blockId, { content });
     pendingSelection.current = { id: blockId, start: caret, end: caret };
 
-    const task = await linking.createTask({ listId, quadrant, title, noteId, blockId });
+    const task = await linking.createTask({ listId, quadrant, title, noteId, blockId, ...(assignee ? { assignee } : {}) });
 
     setPendingLinks((prev) => {
       const next = new Set(prev);
@@ -805,7 +815,9 @@ export function NoteEditor({
   }, [mention, linking, noteId, blocks, onUpdateBlock]);
 
   const handleSlashOpen = useCallback((blockId: string, pos: { top: number; left: number }) => {
-    setSlashState({ blockId, query: '', position: pos, selectedIndex: 0 });
+    setSlashState((current) => current?.blockId === blockId
+      ? { ...current, position: pos }
+      : { blockId, query: '', position: pos, selectedIndex: 0 });
   }, []);
 
   /** Where the linked-database picker hangs, and which block it is for. */
@@ -938,7 +950,7 @@ export function NoteEditor({
         setSlashState((s) => s ? { ...s, selectedIndex: Math.max(s.selectedIndex - 1, 0) } : null);
         return;
       }
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' || e.key === 'Tab') {
         e.preventDefault();
         const cmd = filtered[slashState.selectedIndex];
         if (cmd) handleSlashSelect(cmd);
@@ -951,14 +963,25 @@ export function NoteEditor({
       }
     }
 
+    const isListItem = block.type === 'bullet' || block.type === 'numbered' || block.type === 'todo';
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      const nextType: BlockType =
-        block.type === 'bullet' || block.type === 'numbered' || block.type === 'todo'
-          ? block.type
-          : 'paragraph';
+      if (isListItem && block.content === '') {
+        // An empty list item ends the list: one level back out when it is nested, otherwise plain text.
+        if (levelOf(block) > 0 && onSetIndent) onSetIndent(blockId, 'out');
+        else onChangeBlockType(blockId, 'paragraph');
+        pendingFocusId.current = blockId;
+        return;
+      }
+      const nextType: BlockType = isListItem ? block.type : 'paragraph';
       const newId = onAddBlock(blockId, nextType);
       pendingFocusId.current = newId;
+    } else if (e.key === 'Backspace' && cursorAtStart && levelOf(block) > 0 && onSetIndent) {
+      // Backspace at the start of a pushed-in line first brings it back out; only a top-level empty line is deleted.
+      e.preventDefault();
+      onSetIndent(blockId, 'out');
+      pendingFocusId.current = blockId;
     } else if (e.key === 'Backspace' && cursorAtStart && block.content === '') {
       e.preventDefault();
       if (blocks.length > 1) {
@@ -972,13 +995,17 @@ export function NoteEditor({
     } else if (e.key === 'ArrowDown' && cursorAtEnd) {
       const next = blocks[idx + 1];
       if (next) { e.preventDefault(); pendingFocusId.current = next.id; }
-    } else if (e.key === 'Tab') {
+    } else if (e.key === 'Tab' && !e.nativeEvent.isComposing) {
       e.preventDefault();
       if (block.type === 'code') {
-        onUpdateBlock(blockId, { content: block.content + '  ' });
+        // Code keeps real spacing: Tab adds two spaces, Shift+Tab takes up to two from the start of the line.
+        onUpdateBlock(blockId, { content: e.shiftKey ? block.content.replace(/^ {1,2}/, '') : block.content + '  ' });
+      } else if (onSetIndent) {
+        onSetIndent(blockId, e.shiftKey ? 'out' : 'in');
+        pendingFocusId.current = blockId;
       }
     }
-  }, [blocks, slashState, mention, onAddBlock, onDeleteBlock, onUpdateBlock, handleSlashSelect, handleToggleMark]);
+  }, [blocks, slashState, mention, onAddBlock, onDeleteBlock, onUpdateBlock, onSetIndent, onChangeBlockType, handleSlashSelect, handleToggleMark]);
 
   const handleAddAfter = useCallback((blockId: string) => {
     const newId = onAddBlock(blockId, 'paragraph');
@@ -1041,7 +1068,7 @@ export function NoteEditor({
           pending={false}
           message={mention.message}
           contextLabel="Note block"
-          onSelect={(listId, quadrant) => { void handleMentionSelect(listId, quadrant); }}
+          onSelect={(listId, quadrant, assignee) => { void handleMentionSelect(listId, quadrant, assignee); }}
           onClose={() => setMention(null)}
         />
       )}

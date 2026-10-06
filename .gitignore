@@ -38,3 +38,10 @@ release/
 .claude/
 
 functions/*/node_modules/
+
+# local settings with secrets (the Cliq webhook token)
+functions/backup/.env.cliq
+functions/backup/catalyst-config.json.orig
+
+# Local one-off Mac build outputs
+desktop/dist-*/

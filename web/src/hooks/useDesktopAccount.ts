@@ -4,8 +4,12 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import type { RestoreCheck, RestoreResult } from '@/lib/restoreMessage';
+import { prepareForSignOut } from '@/lib/preLogout';
+import { rememberSignOutBackup } from '@/lib/backupMessage';
 
-export interface DesktopAccount { email: string | null }
+export const desktopPageControls = { reload: () => window.location.reload() };
+
+export interface DesktopAccount { email: string | null; userId?: string }
 
 export interface BackupStatus { lastSuccessAt: number | null; lastResult: string | null }
 export interface BackupOutcome { result: string; stored?: boolean }
@@ -49,11 +53,16 @@ export function useDesktopAccount() {
   const signOut = useCallback(async (): Promise<string | null> => {
     if (!bridge) return null;
     setBusy(true);
+    const root = document.getElementById('root');
+    if (root) root.inert = true;
     try {
+      await prepareForSignOut();
       const outcome = await bridge.signOut();
       setAccount(null);
+      rememberSignOutBackup(outcome?.backup ?? null);
+      desktopPageControls.reload();
       return outcome?.backup ?? null;
-    } finally { setBusy(false); }
+    } finally { if (root) root.inert = false; setBusy(false); }
     return null;
   }, [bridge]);
 

@@ -36,6 +36,27 @@ beforeEach(() => {
 });
 
 describe('TaskDetailPanel', () => {
+  it.each(['Save', 'Close', 'Escape'])('clears the due date and time through %s', (action) => {
+    const onUpdate = vi.fn();
+    const todo = makeTodo({ dueDate: '2030-06-15', dueTime: '12:01', reminderEnabled: true, recurrence: 'daily' });
+    render(<TaskDetailPanel {...defaultProps} todo={todo} onUpdate={onUpdate} />);
+    fireEvent.change(screen.getByDisplayValue('2030-06-15'), { target: { value: '' } });
+    if (action === 'Escape') fireEvent.keyDown(screen.getByRole('dialog'), { key: 'Escape' });
+    else fireEvent.click(screen.getByRole('button', { name: action === 'Close' ? /close/i : 'Save' }));
+    expect(onUpdate).toHaveBeenCalledWith(todo.id, expect.objectContaining({
+      dueDate: '', dueTime: '', recurrence: '', reminderEnabled: false,
+    }));
+  });
+
+  it('clears the time without clearing the date', () => {
+    const onUpdate = vi.fn();
+    const todo = makeTodo({ dueDate: '2030-06-15', dueTime: '12:01' });
+    render(<TaskDetailPanel {...defaultProps} todo={todo} onUpdate={onUpdate} />);
+    fireEvent.change(screen.getByDisplayValue('12:01'), { target: { value: '' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(onUpdate).toHaveBeenCalledWith(todo.id, expect.objectContaining({ dueDate: '2030-06-15', dueTime: '' }));
+  });
+
   it('renders the task text in the title input', () => {
     const todo = makeTodo({ text: 'Write unit tests' });
     render(<TaskDetailPanel {...defaultProps} todo={todo} />);

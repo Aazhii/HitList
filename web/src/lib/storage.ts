@@ -6,9 +6,19 @@ const CURRENT_VERSION = 3;
 // ── Per-user storage key ──────────────────────────────────────────────────────
 
 let _activeUserId: string | null = null;
+let activeTaskWorkspace: string | null = null;
 
 export function setActiveUserId(userId: string | null): void {
   _activeUserId = userId;
+  activeTaskWorkspace = null;
+}
+
+export function setActiveTaskWorkspace(workspaceId: string | null): void {
+  activeTaskWorkspace = workspaceId;
+}
+
+export function getActiveTaskStorageId(): string | null {
+  return activeTaskWorkspace ? `${_activeUserId}:workspace:${activeTaskWorkspace}` : _activeUserId;
 }
 
 /** The signed-in user App set, for other per-user storage such as notes. */
@@ -17,7 +27,8 @@ export function getActiveUserId(): string | null {
 }
 
 function getStorageKey(): string {
-  return _activeUserId ? `${BASE_STORAGE_KEY}-${_activeUserId}` : BASE_STORAGE_KEY;
+  const identity = getActiveTaskStorageId();
+  return identity ? `${BASE_STORAGE_KEY}-${identity}` : BASE_STORAGE_KEY;
 }
 
 // Legacy key for migration (pre-auth data)

@@ -105,6 +105,64 @@ test('a local server error is reported and nothing is uploaded', async () => {
   assert.equal(calls.uploads.length, 0);
 });
 
+test('a delayed account A snapshot is never uploaded after switching to B', async () => {
+  let user = '111111';
+  let release;
+  let captured;
+  const { svc, calls } = rig({
+    getAccount: () => ({ userId: user }),
+    localGet: (_url, options) => { captured = options.accountIdentity; return new Promise(resolve => { release = resolve; }); },
+  });
+  const pending = svc.backupNow();
+  user = '222222';
+  release(Buffer.from(JSON.stringify(snap([{ TaskId: 'private-a' }]))));
+  assert.equal((await pending).result, 'cancelled');
+  assert.equal(captured, '111111');
+  assert.equal(calls.uploads.length, 0);
+  assert.equal(svc.status().lastSuccessAt, null);
+});
+
+test('cancelling a stalled snapshot settles the backup and prevents a late upload', async () => {
+  let release;
+  const { svc, calls } = rig({ localGet: () => new Promise(resolve => { release = resolve; }) });
+  const pending = svc.backupNow();
+  await svc.cancel();
+  assert.equal((await pending).result, 'cancelled');
+  release(Buffer.from(JSON.stringify(snap([{ TaskId: 'private-a' }]))));
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(calls.uploads.length, 0);
+});
+
+test('cancelling while pre-logout waits for an older backup does not start a new upload', async () => {
+  const { svc, calls } = rig({ localGet: () => new Promise(() => {}) });
+  const old = svc.backupNow();
+  const logout = svc.beforeSignOut();
+  await svc.cancel();
+  assert.equal((await old).result, 'cancelled');
+  assert.equal((await logout).result, 'cancelled');
+  assert.equal(calls.uploads.length, 0);
+});
+
+test('pre-logout takes a fresh snapshot after a running backup completes', async () => {
+  let release;
+  let first = true;
+  const hashes = [];
+  const { svc, set } = rig({ upload: async (_bytes, hash) => {
+    hashes.push(hash);
+    if (first) { first = false; await new Promise(resolve => { release = resolve; }); }
+    return { status: 201 };
+  } });
+  const pending = svc.backupNow();
+  await new Promise(resolve => setImmediate(resolve));
+  set(snap([{ TaskId: 'a', Title: 'last edit before logout' }]));
+  const logout = svc.beforeSignOut();
+  release();
+  await pending;
+  assert.equal((await logout).result, 'backed-up');
+  assert.equal(hashes.length, 2);
+  assert.notEqual(hashes[0], hashes[1]);
+});
+
 test('at the daily limit it stops asking until the server said it would allow another', async () => {
   const replies = [() => ({ status: 429, body: JSON.stringify({ retryAt: 1_000_000 + 5 * 60 * 60 * 1000 }) }), () => ({ status: 201 })];
   const { svc, calls, advance, set } = rig({ upload: async () => replies.shift()() });
@@ -112,9 +170,68 @@ test('at the daily limit it stops asking until the server said it would allow an
   set(snap([{ TaskId: 'a', Title: 'changed again' }]));
   assert.equal((await svc.backupNow()).result, 'daily-limit');
   assert.equal(calls.local, 1);
-  assert.equal(svc.due(), false);
+  assert.equal(svc.due(), true);
   advance(5 * 60 * 60 * 1000 + 1000);
   assert.equal((await svc.backupNow()).result, 'backed-up');
+});
+
+test('manual limit does not block logout, login, scheduled or update backups and automatic success preserves it', async () => {
+  const triggers = [];
+  const retryAt = 1_000_000 + 24 * 60 * 60 * 1000;
+  const { svc, set } = rig({ upload: async (_bytes, _hash, options) => {
+    triggers.push(options.reason);
+    return options.reason === 'manual' ? { status: 429, body: { retryAt } } : { status: 201 };
+  } });
+  assert.equal((await svc.backupNow()).result, 'daily-limit');
+  assert.equal(svc.due(), true);
+  for (const reason of ['sign-out', 'signed-in', 'scheduled', 'update']) {
+    set(snap([{ TaskId: 'a', Title: reason }]));
+    const result = reason === 'sign-out' ? await svc.beforeSignOut() : await svc.backupNow(reason);
+    assert.equal(result.result, 'backed-up');
+    assert.deepEqual(await svc.backupNow('manual'), { result: 'daily-limit', retryAt });
+  }
+  assert.deepEqual(triggers, ['manual', 'sign-out', 'signed-in', 'scheduled', 'update']);
+});
+
+test('legacy cached daily limit applies only to manual backups and survives an automatic success', async () => {
+  const { svc, dir, set, calls } = rig();
+  const retryAt = 1_000_000 + 24 * 60 * 60 * 1000;
+  fs.writeFileSync(path.join(dir, 'backup-state.json'), JSON.stringify({ userId: '75733000000033001', blockedUntil: retryAt }));
+  assert.equal((await svc.backupNow()).result, 'daily-limit');
+  assert.equal((await svc.beforeSignOut()).result, 'backed-up');
+  set(snap([{ TaskId: 'a', Title: 'new manual edit' }]));
+  assert.deepEqual(await svc.backupNow(), { result: 'daily-limit', retryAt });
+  assert.equal(calls.uploads.length, 1);
+});
+
+test('login racing a manual limit response runs under its own exempt trigger', async () => {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  const reasons = [];
+  const { svc } = rig({ upload: async (_bytes, _hash, options) => {
+    reasons.push(options.reason);
+    if (options.reason === 'manual') {
+      await gate;
+      return { status: 429, body: { retryAt: 2_000_000 } };
+    }
+    return { status: 201 };
+  } });
+  const manual = svc.backupNow();
+  const login = svc.backupNow('signed-in');
+  release();
+  assert.equal((await manual).result, 'daily-limit');
+  assert.equal((await login).result, 'backed-up');
+  assert.deepEqual(reasons, ['manual', 'signed-in']);
+});
+
+test('cancelling a running backup also cancels the queued automatic trigger', async () => {
+  const { svc, calls } = rig({ localGet: () => new Promise(() => {}) });
+  const manual = svc.backupNow();
+  const login = svc.backupNow('signed-in');
+  await svc.cancel();
+  assert.equal((await manual).result, 'cancelled');
+  assert.equal((await login).result, 'cancelled');
+  assert.equal(calls.uploads.length, 0);
 });
 
 test('after a server error the scheduled backup waits an hour before trying again', async () => {

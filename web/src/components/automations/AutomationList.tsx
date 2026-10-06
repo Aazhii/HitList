@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { summarise } from '@/lib/reminderSteps';
+import { describeSpec } from '@/lib/automationSpec';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import type { AutomationRule, TriggerType, UrgencyLevel, AutomationStatus } from '@/types/automation';
@@ -34,6 +35,7 @@ const TRIGGER_ICONS: Record<TriggerType, React.ElementType> = {
   'recurring':     Repeat,
   'status-change': Zap,
   'daily-digest':  BookOpen,
+  'custom':        Zap,
 };
 
 // ── Tones ─────────────────────────────────────────────────────────────────────
@@ -228,10 +230,12 @@ const RuleCard = memo(function RuleCard({
   const TriggerIcon = TRIGGER_ICONS[rule.triggerType];
   const isActive = rule.status === 'active';
   const badge = STATUS_BADGE[rule.status];
+  // "A task's due date: 1 hour before it is due · Only if Category is "Work" · Then: Message me on Cliq", task first when linked.
+  const parts = rule.spec ? describeSpec(rule.spec) : null;
   const channels = [rule.notifyInApp && 'In-app', rule.notifyBrowser && 'Browser'].filter(Boolean).join(', ') || 'No notifications';
-  // "1 hour before due, then when it falls due · In-app · High urgency", with the task first when linked.
-  const description = [rule.taskTitle, rule.description ?? formatOffset(rule), channels, `${URGENCY_LABELS[rule.urgency]} urgency`]
-    .filter(Boolean).join(' · ');
+  const description = parts
+    ? [rule.taskTitle, parts.when, parts.only.length ? `Only if ${parts.only.join(' and ')}` : '', `Then: ${parts.then.join(', ')}`].filter(Boolean).join(' · ')
+    : [rule.taskTitle, rule.description ?? formatOffset(rule), channels, `${URGENCY_LABELS[rule.urgency]} urgency`].filter(Boolean).join(' · ');
   const next = rule.status === 'paused' ? 'Paused'
     : rule.status === 'draft' ? 'Not scheduled'
     : rule.nextTriggerAt ? `Next: ${formatNextTrigger(rule.nextTriggerAt)}` : 'Waiting for its moment';
@@ -252,6 +256,11 @@ const RuleCard = memo(function RuleCard({
           </span>
         </div>
         <p className="mt-1 line-clamp-2 text-[13px] leading-normal text-a-faint">{description}</p>
+        {rule.error && (
+          <p role="alert" className="mt-0.5 flex items-center gap-1 text-[12px] text-a-attention">
+            <AlertTriangle className="size-3 flex-shrink-0" strokeWidth={1.75} aria-hidden /> {rule.error}
+          </p>
+        )}
         {rule.lastTriggeredAt && (
           <p className="mt-0.5 text-[12px] text-a-faint">Last triggered {formatRelativeTime(rule.lastTriggeredAt)}</p>
         )}

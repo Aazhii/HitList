@@ -10,9 +10,10 @@ import type { ServerSyncState } from './useServerSync';
 import type { ApiTask, ApiList, ApiMomentumStats, TaskCreateRequest, TaskUpdateRequest, Quadrant, TaskStatus } from '../lib/api';
 import { taskApi, listApi, statsApi, checkServerHealth, isNetworkError } from '../lib/api';
 import { mockTaskApi, mockListApi, mockStatsApi } from '../lib/mockApi';
-import { getActiveUserId, loadAppState } from '../lib/storage';
+import { getActiveTaskStorageId, loadAppState } from '../lib/storage';
 import { migrateLocalState } from '../lib/localMigration';
 import { loadTaskWorkspace } from '../lib/taskWorkspace';
+import { onPreLogout, trackPendingSave } from '../lib/preLogout';
 
 export { ServerSyncState };
 
@@ -47,6 +48,12 @@ export function useAppSync(activeListId?: string): ServerSyncState {
   const onlineRef = useRef(false);
   const workspaceLoad = useRef<ReturnType<typeof loadTaskWorkspace> | null>(null);
 
+  useEffect(() => onPreLogout(async () => {
+    if (onlineRef.current) return;
+    if (!await checkServerHealth()) throw new Error('The local server is unavailable');
+    await migrateLocalState(loadAppState(), getActiveTaskStorageId(), { lists: listApi, tasks: taskApi });
+  }), []);
+
   const setOnline = useCallback((online: boolean) => {
     if (onlineRef.current === online) return;
     onlineRef.current = online;
@@ -76,7 +83,7 @@ export function useAppSync(activeListId?: string): ServerSyncState {
     if (migrationRunning.current) return;
     migrationRunning.current = true;
     try {
-      await migrateLocalState(loadAppState(), getActiveUserId(), {
+      await migrateLocalState(loadAppState(), getActiveTaskStorageId(), {
         lists: listApi,
         tasks: taskApi,
       });
@@ -108,7 +115,7 @@ export function useAppSync(activeListId?: string): ServerSyncState {
     savingCount.current += 1;
     setSaving(true);
     try {
-      return await fn();
+      return await trackPendingSave(fn);
     } finally {
       savingCount.current -= 1;
       if (savingCount.current === 0) setSaving(false);
@@ -189,6 +196,15 @@ export function useAppSync(activeListId?: string): ServerSyncState {
     const reconnect = () => { void refresh(); };
     window.addEventListener('online', reconnect);
     return () => window.removeEventListener('online', reconnect);
+  }, [refresh]);
+
+  // Tasks arrived from outside the page (another member's change in a shared workspace, or a command from Cliq): read them again.
+  useEffect(() => {
+    const changed = () => { void refresh(); };
+    window.addEventListener('hitlist:workspace-data-changed', changed);
+    const bridge = (window as unknown as { hitlistDesktop?: { onCliqCommandsApplied?: (l: () => void) => () => void } }).hitlistDesktop;
+    const stopCliq = bridge?.onCliqCommandsApplied?.(changed);
+    return () => { window.removeEventListener('hitlist:workspace-data-changed', changed); stopCliq?.(); };
   }, [refresh]);
 
   const createTask = useCallback(async (req: TaskCreateRequest): Promise<ApiTask | null> => {

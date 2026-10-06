@@ -4,6 +4,7 @@ import com.hitlist.storage.StorageTables;
 import com.hitlist.web.ApiException;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -18,7 +19,8 @@ import org.springframework.transaction.annotation.Transactional;
  * The file is the stored rows themselves, so nothing is lost on the way out: recurrence, reminders, custom
  * fields, inline databases, automation rules and favourites all travel. Import only ever adds. A row whose
  * id already exists in the workspace is left exactly as it is, so importing a file never overwrites or deletes
- * anything — importing the same file twice adds nothing the second time.
+ * anything — importing the same file twice adds nothing the second time. A task that says the same as one already here
+ * (title, list, due day, quadrant) is not added again under a different id.
  *
  * Deliberately left out of the file: Zoho Calendar connections (they hold credentials), notifications and their
  * queue (history, not content), and automation run records (they are what stops a rule from firing twice).
@@ -131,9 +133,21 @@ public class WorkspaceBackupService {
             String key = StorageTables.primaryKey(table);
             Set<String> existing = new HashSet<>();
             repository.list(table, owner).forEach(row -> existing.add(EntityRepository.text(row.get(key))));
+            // A task that says the same thing as one already here (same words, list, day and quadrant) is that task under
+            // another id, which is what a reinstall or a backup taken from a second copy produces. Matching is by count,
+            // so a backup with three identical tasks next to one existing adds two.
+            Map<String, Integer> alreadyHere = new HashMap<>();
+            if (StorageTables.TASKS.equals(table)) {
+                repository.list(table, owner).forEach(row -> alreadyHere.merge(sameTask(row), 1, Integer::sum));
+            }
             int added = 0;
             for (Map<String, Object> row : rows) {
                 if (existing.contains(EntityRepository.text(row.get(key)))) continue;
+                if (StorageTables.TASKS.equals(table)) {
+                    String same = sameTask(row);
+                    Integer left = alreadyHere.get(same);
+                    if (left != null && left > 0) { alreadyHere.put(same, left - 1); continue; }
+                }
                 repository.insert(table, owner, row);
                 added++;
             }
@@ -141,5 +155,13 @@ public class WorkspaceBackupService {
             skipped.put(table, rows.size() - added);
         }
         return Map.of("ok", true, "imported", imported, "skipped", skipped);
+    }
+
+    private static String sameTask(Map<String, Object> task) {
+        return String.join("\u0001",
+            EntityRepository.text(task.get("Title")).trim().toLowerCase(java.util.Locale.ROOT),
+            EntityRepository.text(task.get("ListId")),
+            EntityRepository.text(task.get("DueDate")),
+            EntityRepository.text(task.get("Quadrant")));
     }
 }

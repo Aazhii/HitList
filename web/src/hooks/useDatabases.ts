@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   databaseApi, type ApiDatabase, type ApiDatabaseRow, type DatabaseInput, type DatabaseRowInput,
 } from '@/lib/api';
+import { flushSourceSaves, sourceWritesPending, sourceWriteVersion, waitForSourceWrites } from '@/lib/sourceSaves';
 
 function errorMessage(e: unknown, fallback: string): string {
   const o = e as { message?: unknown; fields?: Record<string, string> } | null;
@@ -43,30 +44,70 @@ export function useDatabases(openDatabaseId: string | null, onError: (message: s
   const [online, setOnline] = useState(false);
   const [loading, setLoading] = useState(true);
   const [rowsLoading, setRowsLoading] = useState(false);
+  const [revision, setRevision] = useState(0);
+  const mutation = useRef(0);
+  const pendingMutations = useRef(new Set<Promise<unknown>>());
+  const mutate = useCallback(async <Result,>(operation: () => Promise<Result>): Promise<Result> => {
+    mutation.current++;
+    const write = operation();
+    pendingMutations.current.add(write);
+    try { return await write; }
+    finally { pendingMutations.current.delete(write); }
+  }, []);
+  const waitForWrites = useCallback(async () => {
+    do {
+      await Promise.allSettled([...pendingMutations.current]);
+      await waitForSourceWrites();
+    } while (pendingMutations.current.size || sourceWritesPending());
+  }, []);
+  useEffect(() => {
+    let live = true;
+    const refresh = async () => {
+      try { await flushSourceSaves(); if (live) setRevision((value) => value + 1); } catch { /* keep pending edits visible */ }
+    };
+    window.addEventListener('hitlist:workspace-data-changed', refresh);
+    return () => { live = false; window.removeEventListener('hitlist:workspace-data-changed', refresh); };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
+    const version = mutation.current;
+    const sourceVersion = sourceWriteVersion();
+    const startedDuringWrite = sourceWritesPending() || pendingMutations.current.size > 0;
     databaseApi.list()
-      .then((list) => {
+      .then(async (list) => {
         if (cancelled) return;
+        if (startedDuringWrite || version !== mutation.current || sourceVersion !== sourceWriteVersion() || sourceWritesPending()) {
+          await waitForWrites();
+          if (!cancelled) setRevision(value => value + 1);
+          return;
+        }
         setDatabases([...list].sort(byOrder));
         setOnline(true);
       })
       .catch(() => { if (!cancelled) setOnline(false); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, []);
+  }, [revision, waitForWrites]);
 
   // The records of the database that is open, refetched when it changes.
   const requestRef = useRef(0);
   useEffect(() => {
-    if (!openDatabaseId) { setRows([]); return; }
     const request = ++requestRef.current;
+    if (!openDatabaseId) { setRows([]); setRowsLoading(false); return; }
+    const version = mutation.current;
+    const sourceVersion = sourceWriteVersion();
+    const startedDuringWrite = sourceWritesPending() || pendingMutations.current.size > 0;
     setRowsLoading(true);
     databaseApi.listRows(openDatabaseId)
-      .then((list) => {
+      .then(async (list) => {
         // A slower answer for a database that is no longer open must not land.
         if (request !== requestRef.current) return;
+        if (startedDuringWrite || version !== mutation.current || sourceVersion !== sourceWriteVersion() || sourceWritesPending()) {
+          await waitForWrites();
+          if (request === requestRef.current) setRevision(value => value + 1);
+          return;
+        }
         setRows([...list].sort(rowsByOrder));
       })
       .catch((e) => {
@@ -74,33 +115,34 @@ export function useDatabases(openDatabaseId: string | null, onError: (message: s
         onError(errorMessage(e, "Couldn't load the records"));
       })
       .finally(() => { if (request === requestRef.current) setRowsLoading(false); });
-  }, [openDatabaseId, onError]);
+    return () => { requestRef.current++; };
+  }, [openDatabaseId, onError, revision, waitForWrites]);
 
   const createDatabase = useCallback(async (input: DatabaseInput) => {
     try {
-      const created = await databaseApi.create(input);
+      const created = await mutate(() => databaseApi.create(input));
       setDatabases((prev) => [...prev, created].sort(byOrder));
       return created;
     } catch (e) {
       onError(errorMessage(e, "Couldn't create the database"));
       return null;
     }
-  }, [onError]);
+  }, [onError, mutate]);
 
   const updateDatabase = useCallback(async (id: string, input: DatabaseInput) => {
     try {
-      const saved = await databaseApi.update(id, input);
+      const saved = await mutate(() => databaseApi.update(id, input));
       setDatabases((prev) => prev.map((d) => (d.id === id ? saved : d)).sort(byOrder));
       return saved;
     } catch (e) {
       onError(errorMessage(e, "Couldn't save the database"));
       return null;
     }
-  }, [onError]);
+  }, [onError, mutate]);
 
   const deleteDatabase = useCallback(async (id: string) => {
     try {
-      const { recordsRemoved } = await databaseApi.remove(id);
+      const { recordsRemoved } = await mutate(() => databaseApi.remove(id));
       setDatabases((prev) => prev.filter((d) => d.id !== id));
       if (id === openDatabaseId) setRows([]);
       return recordsRemoved;
@@ -108,41 +150,41 @@ export function useDatabases(openDatabaseId: string | null, onError: (message: s
       onError(errorMessage(e, "Couldn't delete the database"));
       return null;
     }
-  }, [onError, openDatabaseId]);
+  }, [onError, openDatabaseId, mutate]);
 
   const createRow = useCallback(async (input: DatabaseRowInput) => {
     if (!openDatabaseId) return null;
     try {
-      const created = await databaseApi.createRow(openDatabaseId, input);
+      const created = await mutate(() => databaseApi.createRow(openDatabaseId, input));
       setRows((prev) => [...prev, created].sort(rowsByOrder));
       return created;
     } catch (e) {
       onError(errorMessage(e, "Couldn't add the record"));
       return null;
     }
-  }, [openDatabaseId, onError]);
+  }, [openDatabaseId, onError, mutate]);
 
   const updateRow = useCallback(async (recordId: string, input: DatabaseRowInput) => {
     try {
-      const saved = await databaseApi.updateRow(recordId, input);
+      const saved = await mutate(() => databaseApi.updateRow(recordId, input));
       setRows((prev) => prev.map((r) => (r.id === recordId ? saved : r)).sort(rowsByOrder));
       return saved;
     } catch (e) {
       onError(errorMessage(e, "Couldn't save the record"));
       return null;
     }
-  }, [onError]);
+  }, [onError, mutate]);
 
   const deleteRow = useCallback(async (recordId: string) => {
     try {
-      await databaseApi.deleteRow(recordId);
+      await mutate(() => databaseApi.deleteRow(recordId));
       setRows((prev) => prev.filter((r) => r.id !== recordId));
       return true;
     } catch (e) {
       onError(errorMessage(e, "Couldn't delete the record"));
       return false;
     }
-  }, [onError]);
+  }, [onError, mutate]);
 
   return {
     databases, rows, online, loading, rowsLoading,

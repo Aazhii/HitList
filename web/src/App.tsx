@@ -34,6 +34,15 @@ import { ColumnsMenu } from '@/components/tasks/ColumnsMenu';
 import { sortByColumnOrder } from '@/components/tasks/TaskTableView';
 import { TaskDetailPanel } from '@/components/TaskDetailPanel';
 import { AppShell } from '@/components/shell/AppShell';
+import { WorkspaceSwitcher } from '@/components/shell/WorkspaceSwitcher';
+import { AssignedPage } from '@/pages/AssignedPage';
+import { useWorkspaces } from '@/hooks/useWorkspaces';
+import { useSourceTaskAssignment } from '@/hooks/useSourceTaskAssignment';
+import { SourceTaskConfirmation } from '@/components/notes/SourceTaskConfirmation';
+import { openWorkspace } from '@/lib/workspaceStore';
+import { assignedSourceLocation, findRecordDatabase, listSourceNotes, readSourceLocation } from '@/lib/sharedSource';
+import { notesSyncService } from '@/services/notesSyncService';
+import { flushSourceSaves } from '@/lib/sourceSaves';
 import { Sidebar, type AppView } from '@/components/shell/Sidebar';
 import { AppHeader } from '@/components/shell/AppHeader';
 import { ViewLayoutContext } from '@/components/shell/ViewLayout';
@@ -62,7 +71,7 @@ import type { PaletteItem } from '@/lib/paletteSearch';
 import { notesStorageKey } from '@/lib/notesStorage';
 import { databaseApi } from '@/lib/api';
 import { useInAppNotifications } from '@/hooks/useInAppNotifications';
-import { loadAppState, saveAppState, setActiveUserId, getActiveUserId } from '@/lib/storage';
+import { loadAppState, saveAppState, getActiveUserId, getActiveTaskStorageId } from '@/lib/storage';
 import {
   applyTaskFilters, compareAcrossQuadrants, compareForFilters, countNarrowingFilters, describeActiveFilters, FIELD_EMPTY,
   groupFieldFor, isGroupableField, normaliseFilters, sameFilters,
@@ -127,19 +136,20 @@ interface AddTaskDialogProps {
   /** A due date to start with — set when adding from a calendar day. */
   defaultDueDate?: string;
   onOpenChange: (v: boolean) => void;
-  onAdd: (text: string, quadrant: Quadrant, category?: string, dueDate?: string, dueTime?: string) => void;
+  onAdd: (text: string, quadrant: Quadrant, category?: string, dueDate?: string, dueTime?: string) => Promise<Todo | null>;
 }
 
 // DS field label (--font-label): 13px / 500, ink, sentence case.
 const FIELD_LABEL = 'text-[13px] font-medium leading-[1.35] text-a-ink';
 
-function AddTaskDialog({ open, defaultQuadrant, defaultDueDate, onOpenChange, onAdd }: AddTaskDialogProps) {
+export function AddTaskDialog({ open, defaultQuadrant, defaultDueDate, onOpenChange, onAdd }: AddTaskDialogProps) {
   const [text, setText] = useState('');
   const [quadrant, setQuadrant] = useState<Quadrant>(defaultQuadrant);
   const [category, setCategory] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [dueTime, setDueTime] = useState('');
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -150,12 +160,25 @@ function AddTaskDialog({ open, defaultQuadrant, defaultDueDate, onOpenChange, on
     return () => clearTimeout(t);
   }, [open, defaultQuadrant, defaultDueDate]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (saving) return;
     if (!text.trim()) { setError('Task description is required.'); return; }
-    onAdd(text.trim(), quadrant, category || undefined, dueDate || undefined, dueTime || undefined);
-    setText(''); setCategory(''); setDueDate(''); setDueTime(''); setError('');
-    onOpenChange(false);
+    setSaving(true);
+    setError('');
+    try {
+      const created = await onAdd(text.trim(), quadrant, category || undefined, dueDate || undefined, dueTime || undefined);
+      if (!created) {
+        setError('Task was not saved. Your draft is still here; please try again.');
+        return;
+      }
+      setText(''); setCategory(''); setDueDate(''); setDueTime(''); setError('');
+      onOpenChange(false);
+    } catch {
+      setError('Task was not saved. Your draft is still here; please try again.');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -220,8 +243,8 @@ function AddTaskDialog({ open, defaultQuadrant, defaultDueDate, onOpenChange, on
             <button type="button" className={cn(topBarPill, BTN_MD)} onClick={() => onOpenChange(false)}>
               Cancel
             </button>
-            <button type="submit" className={cn(topBarPrimary, BTN_MD)}>
-              Add task
+            <button type="submit" disabled={saving} className={cn(topBarPrimary, BTN_MD)}>
+              {saving ? 'Saving...' : 'Add task'}
             </button>
           </DialogFooter>
         </form>
@@ -384,8 +407,7 @@ function ErrorBanner({ message, onRetry, onDismiss }: { message: string; onRetry
 // ── App ────────────────────────────────────────────────────────────────────
 
 function App() {
-  setActiveUserId(null);
-  return <UserScopedApp key="local" />;
+  return <UserScopedApp key={getActiveTaskStorageId() ?? 'local'} />;
 }
 
 function UserScopedApp() {
@@ -476,6 +498,8 @@ function UserScopedApp() {
   // Remembered across reloads, same as tasksMode — a refresh must not always
   // dump you back on Tasks.
   const [activeView, setActiveView] = useLocalStorage<AppView>('hitlist-active-view', 'today');
+  const workspaceSnapshot = useWorkspaces();
+  const sourceAssignment = useSourceTaskAssignment();
   // P5.1: a fresh open lands on Today. A refresh or Back carries a history entry (`initialScreen`) and
   // keeps the screen it was on.
   useEffect(() => {
@@ -527,6 +551,25 @@ function UserScopedApp() {
   /** The database DatabasesPage currently has open — unlike pendingDatabaseId, this
    * doesn't clear itself once acted on; it's what Back/refresh should return to. */
   const [activeDatabaseId, setActiveDatabaseId] = useState<string | null>(() => initialScreen?.databaseId ?? null);
+  const [pendingRecordId, setPendingRecordId] = useState<string | null>(null);
+  const [sourceTarget] = useState(() => readSourceLocation());
+  useEffect(() => {
+    if (!sourceTarget || !workspaceSnapshot.loaded || sourceTarget.workspaceId !== workspaceSnapshot.active) return;
+    let live = true;
+    if (sourceTarget.kind === 'note') {
+      setPendingNoteId(sourceTarget.id); setActiveView('notes');
+    } else if (sourceTarget.kind === 'database') {
+      setPendingDatabaseId(sourceTarget.id); setPendingRecordId(sourceTarget.recordId); setActiveView('databases');
+    } else {
+      void findRecordDatabase(sourceTarget.id).then((databaseId) => {
+        if (!live) return;
+        if (!databaseId) { toast.error('That source record is not available. Sync the workspace and try again.'); return; }
+        setPendingDatabaseId(databaseId); setPendingRecordId(sourceTarget.id); setActiveView('databases');
+      }).catch(() => { if (live) toast.error('The source record could not be loaded'); });
+    }
+    window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search);
+    return () => { live = false; };
+  }, [sourceTarget, workspaceSnapshot.loaded, workspaceSnapshot.active, setActiveView]);
 
   // ── Derived ──────────────────────────────────────────────────────────────
 
@@ -691,7 +734,7 @@ function UserScopedApp() {
   );
 
   useEffect(() => {
-    if (activeView === 'today' || activeView === 'tasks' || activeView === 'notes' || activeView === 'databases' || activeView === 'calendar' || activeView === 'automations' || activeView === 'library') {
+    if (activeView === 'today' || activeView === 'tasks' || activeView === 'notes' || activeView === 'databases' || activeView === 'calendar' || activeView === 'automations' || activeView === 'library' || activeView === 'assigned') {
       return;
     }
     setActiveView('tasks');
@@ -836,7 +879,6 @@ function UserScopedApp() {
         quadrant,
       };
       setTodos((prev) => [optimisticTodo, ...prev]);
-      toast.success('Task added', { description: text, duration: 2000 });
 
       // Always route through server hook — it uses mockApi when offline
       const quadrantMap: Record<Quadrant, import('@/lib/api').Quadrant> = {
@@ -857,6 +899,7 @@ function UserScopedApp() {
         // Replace temp with persisted task (has real id from mock/server)
         const saved = apiTaskToTodo(created);
         setTodos((prev) => prev.map((t) => t.id === tempId ? saved : t));
+        toast.success('Task added', { description: text, duration: 2000 });
         // Returned so a caller can act on the real id — the board's "+ Add"
         // sets the column's field value on the task it just created.
         return saved;
@@ -1040,6 +1083,8 @@ function UserScopedApp() {
       if (changes.quadrant !== undefined) req.quadrant = quadrantMap[changes.quadrant];
       if (changes.status !== undefined)   req.status   = statusMap[changes.status];
       if (changes.recurrence !== undefined) req.recurrence = toApiRecurrence(changes.recurrence);
+      if (changes.assigneeUserId !== undefined)    req.assigneeUserId = changes.assigneeUserId;
+      if (changes.assigneeName !== undefined)      req.assigneeName = changes.assigneeName;
       if (changes.reminderEnabled !== undefined)       req.reminderEnabled = changes.reminderEnabled;
       if (changes.reminderMinutesBefore !== undefined) req.reminderMinutesBefore = changes.reminderMinutesBefore;
 
@@ -1236,9 +1281,16 @@ function UserScopedApp() {
    */
   const createLinkedTask = useCallback(
     async (
-      { listId, quadrant, title }: { listId: string; quadrant: Quadrant; title: string },
+      { listId, quadrant, title, assignee }: { listId: string; quadrant: Quadrant; title: string; assignee?: import('@/types/todo').TaskAssignee },
       source: { sourceNoteId?: string; sourceBlockId?: string; sourceRecordId?: string; sourceFieldId?: string },
     ) => {
+      if (!workspaceSnapshot.active && assignee?.workspaceId) {
+        const quadrantMap = { do: 'DO', schedule: 'SCHEDULE', delegate: 'DELEGATE', eliminate: 'ELIMINATE' } as const;
+        return sourceAssignment.createTask({ ...source, workspaceId: assignee.workspaceId, title, quadrant: quadrantMap[quadrant], listId, assigneeUserId: assignee.userId });
+      }
+      // A task made from a note depends on that note being saved, not on unrelated database edits.
+      try { await flushSourceSaves({ ignoreFailedWrites: !!source.sourceNoteId && !source.sourceRecordId }); }
+      catch (failure) { toast.error(failure instanceof Error ? failure.message : 'Save the source before assigning'); return null; }
       const maxOrder = todosRef.current
         .filter((t) => t.listId === listId)
         .reduce((m, t) => Math.max(m, t.order), -1);
@@ -1259,6 +1311,7 @@ function UserScopedApp() {
         sourceBlockId: source.sourceBlockId && safeId(source.sourceBlockId),
         sourceRecordId: source.sourceRecordId && safeId(source.sourceRecordId),
         sourceFieldId: source.sourceFieldId && safeId(source.sourceFieldId),
+        ...(assignee ? { assigneeUserId: assignee.userId, assigneeName: assignee.name } : {}),
       });
       if (!created) {
         toast.error("Couldn't add it to the quadrant", { description: 'Nothing here changed.', duration: 3000 });
@@ -1268,23 +1321,23 @@ function UserScopedApp() {
       setTodos((prev) => (prev.some((t) => t.id === todo.id) ? prev : [todo, ...prev]));
       const listName = lists.find((l) => l.id === listId)?.name;
       toast.success(`Added to ${getQuadrantConfig(quadrant).label}${listName ? ` · ${listName}` : ''}`, {
-        description: title,
+        description: assignee ? `${title} · for ${assignee.name}` : title,
         duration: 2500,
       });
       return todo;
     },
-    [lists, server, setTodos],
+    [lists, server, setTodos, workspaceSnapshot.active, sourceAssignment],
   );
 
   const handleCreateLinkedTask = useCallback<NoteTaskLinking['createTask']>(
-    ({ listId, quadrant, title, noteId, blockId }) =>
-      createLinkedTask({ listId, quadrant, title }, { sourceNoteId: noteId, sourceBlockId: blockId }),
+    ({ listId, quadrant, title, assignee, noteId, blockId }) =>
+      createLinkedTask({ listId, quadrant, title, assignee }, { sourceNoteId: noteId, sourceBlockId: blockId }),
     [createLinkedTask],
   );
 
   const handleCreateLinkedTaskFromRecord = useCallback<DatabaseTaskLinking['createTask']>(
-    ({ listId, quadrant, title, recordId, fieldId }) =>
-      createLinkedTask({ listId, quadrant, title }, { sourceRecordId: recordId, sourceFieldId: fieldId }),
+    ({ listId, quadrant, title, assignee, recordId, fieldId }) =>
+      createLinkedTask({ listId, quadrant, title, assignee }, { sourceRecordId: recordId, sourceFieldId: fieldId }),
     [createLinkedTask],
   );
 
@@ -1370,7 +1423,9 @@ function UserScopedApp() {
   const getPaletteItems = useCallback(async (): Promise<PaletteItem[]> => {
     const listName = new Map(lists.map((l) => [l.id, l.name]));
     let notes: Array<{ id: string; title: string; emoji?: string }> = [];
-    try { notes = JSON.parse(localStorage.getItem(notesStorageKey(getActiveUserId())) ?? '[]'); } catch { /* unreadable: no notes */ }
+    try { notes = JSON.parse(localStorage.getItem(notesStorageKey(getActiveTaskStorageId())) ?? '[]'); } catch { /* unreadable: no notes */ }
+    const cached = notes;
+    notes = await listSourceNotes().then((remote) => [...remote.filter((note) => !notesSyncService.hasPending(note.id)), ...cached.filter((note) => notesSyncService.hasPending(note.id))]).catch(() => cached);
     const databases = await databaseApi.list().catch(() => []);
     return [
       ...lists.map((l) => ({ kind: 'list' as const, id: l.id, title: l.name })),
@@ -1391,7 +1446,9 @@ function UserScopedApp() {
     let live = true;
     (async () => {
       let notes: Array<{ id: string; title: string; emoji?: string; updatedAt?: number }> = [];
-      try { notes = JSON.parse(localStorage.getItem(notesStorageKey(getActiveUserId())) ?? '[]'); } catch { /* unreadable: no notes */ }
+      try { notes = JSON.parse(localStorage.getItem(notesStorageKey(getActiveTaskStorageId())) ?? '[]'); } catch { /* unreadable: no notes */ }
+      const cached = notes;
+      notes = await listSourceNotes().then((remote) => [...remote.filter((note) => !notesSyncService.hasPending(note.id)), ...cached.filter((note) => notesSyncService.hasPending(note.id))]).catch(() => cached);
       const databases = await databaseApi.list().catch(() => []);
       if (!live) return;
       setPageDirectory([
@@ -1557,8 +1614,8 @@ function UserScopedApp() {
     />
   );
 
-  const shellView = activeView === 'today' || activeView === 'notes' || activeView === 'databases' || activeView === 'calendar' || activeView === 'automations' || activeView === 'library' ? activeView : 'tasks';
-  const crumb1 = shellView === 'today' ? 'Today' : shellView === 'notes' ? 'Notes' : shellView === 'databases' ? 'Databases' : shellView === 'calendar' ? 'Calendar' : shellView === 'automations' ? 'Automations' : shellView === 'library' ? 'Home' : 'Tasks';
+  const shellView = activeView === 'today' || activeView === 'assigned' || activeView === 'notes' || activeView === 'databases' || activeView === 'calendar' || activeView === 'automations' || activeView === 'library' ? activeView : 'tasks';
+  const crumb1 = shellView === 'today' ? 'Today' : shellView === 'assigned' ? 'Assigned to me' : shellView === 'notes' ? 'Notes' : shellView === 'databases' ? 'Databases' : shellView === 'calendar' ? 'Calendar' : shellView === 'automations' ? 'Automations' : shellView === 'library' ? 'Home' : 'Tasks';
   const openPageName = (kind: 'note' | 'database', id: string | null) =>
     id ? pageDirectory.find((p) => p.kind === kind && p.id === id)?.name : undefined;
   const crumb2 = shellView === 'notes' ? openPageName('note', activeNoteId)
@@ -1609,6 +1666,7 @@ function UserScopedApp() {
             activeView={shellView}
             onViewChange={setActiveView}
             onSearch={() => setPaletteOpen(true)}
+            workspace={<WorkspaceSwitcher />}
             pages={
               <PageSections
                 favorites={favoritePages}
@@ -1702,6 +1760,21 @@ function UserScopedApp() {
             onOpenSidebar={() => setSidebarOpen(true)}
             dailyLine={{ enabled: dailyLineOn, seenDay: dailyLineSeen, onSeen: setDailyLineSeen, onTurnOff: () => setDailyLineOn(false) }}
           />
+        ) : activeView === 'assigned' ? (
+          <AssignedPage
+            onOpenSource={(task) => {
+              const location = assignedSourceLocation(task);
+              if (location) void openWorkspace(task.workspaceId, location).catch((failure) => toast.error(failure instanceof Error ? failure.message : 'Could not open the source'));
+            }}
+            onOpen={(task) => {
+              setActiveView('tasks');
+              if (task.workspaceId === workspaceSnapshot.active) return;
+              // Saved now, because the page reloads to show the other workspace.
+              try { window.localStorage.setItem('hitlist-active-view', JSON.stringify('tasks')); } catch { /* the view resets to Today */ }
+              void openWorkspace(task.workspaceId);
+            }}
+            onOpenSidebar={() => setSidebarOpen(true)}
+          />
         ) : activeView === 'library' ? (
           <LibraryPage
             directory={pageDirectory}
@@ -1729,6 +1802,7 @@ function UserScopedApp() {
         ) : activeView === 'databases' ? (
           <DatabasesPage
             openDatabaseId={pendingDatabaseId}
+            openRecordId={pendingRecordId}
             onOpenHandled={() => setPendingDatabaseId(null)}
             createOnOpen={createDatabaseOnOpen}
             onCreateHandled={() => setCreateDatabaseOnOpen(false)}
@@ -2024,6 +2098,7 @@ function UserScopedApp() {
       />
 
       {/* Weekly progress — reached from the momentum foot. */}
+      <SourceTaskConfirmation consent={sourceAssignment.consent} onDecision={sourceAssignment.decide} />
       <Dialog open={showStreak} onOpenChange={setShowStreak}>
         <DialogContent className="sm:max-w-[720px]">
           <DialogHeader>

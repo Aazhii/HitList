@@ -1,8 +1,34 @@
 import { createRef } from 'react';
-import { describe, expect, it, vi } from 'vitest';
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MentionMenu, type MentionMenuHandle } from '@/components/notes/MentionMenu';
 import type { KaizenList } from '@/types/todo';
+import type { ApiList } from '@/lib/api';
+import { useWorkspaces } from '@/hooks/useWorkspaces';
+import { listSourceLists } from '@/lib/sharedSource';
+
+vi.mock('@/hooks/useWorkspaces', () => ({ useWorkspaces: vi.fn() }));
+vi.mock('@/lib/sharedSource', () => ({ listSourceLists: vi.fn() }));
+
+const team = { workspaceId: 'team', name: 'Team', role: 'owner' as const, state: 'active' as const, cursor: 0, members: [
+  { userId: 'buddy', name: 'Buddy', email: 'buddy@team.com', role: 'member' as const },
+] };
+const remoteList = { id: 'team-list', name: 'Team tasks', color: 'blue', listOrder: 0, createdAt: '2026-10-04', updatedAt: '2026-10-04' };
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(useWorkspaces).mockReturnValue({ available: false, loaded: true, active: null, me: null, workspaces: [], current: null });
+  vi.mocked(listSourceLists).mockResolvedValue([remoteList]);
+});
+
+function enableTeams() {
+  vi.mocked(useWorkspaces).mockReturnValue({ available: true, loaded: true, active: null, me: null, workspaces: [team, { ...team, workspaceId: 'other', name: 'Other' }, { ...team, workspaceId: 'removed', name: 'Removed', state: 'removed' }], current: null });
+}
+
+async function chooseWorkspace(name: string) {
+  await userEvent.click(screen.getByRole('combobox', { name: 'Workspace' }));
+  await userEvent.click(screen.getByRole('option', { name }));
+}
 
 const lists: KaizenList[] = [
   { id: 'growth', name: 'Daily Growth', color: 'emerald', createdAt: 1 },
@@ -36,6 +62,57 @@ function setup(props: Partial<React.ComponentProps<typeof MentionMenu>> = {}) {
 }
 
 describe('MentionMenu', () => {
+  it('selects target members and lists for a personal @buddy assignment', async () => {
+    enableTeams();
+    const { onSelect, key } = setup({ preferredListId: 'work', query: 'buddy' });
+    expect(listSourceLists).not.toHaveBeenCalled();
+    await chooseWorkspace('Team');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add task for Buddy' })).toBeEnabled());
+    key('Enter');
+    expect(onSelect).toHaveBeenCalledWith('team-list', 'schedule', { userId: 'buddy', name: 'Buddy', workspaceId: 'team' });
+    expect(listSourceLists).toHaveBeenCalledWith('team');
+    expect(screen.getByText(/entire source will be shared/)).toBeInTheDocument();
+  });
+
+  it('blocks creation while lists load, handles failure, and can retry', async () => {
+    enableTeams();
+    vi.mocked(listSourceLists).mockRejectedValueOnce(new Error('Unavailable'));
+    const { onSelect } = setup({ query: 'buddy' });
+    await chooseWorkspace('Team');
+    expect(await screen.findByRole('alert')).toHaveTextContent('Unavailable');
+    expect(screen.getByRole('button', { name: 'Add task for Buddy' })).toBeDisabled();
+    expect(onSelect).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add task for Buddy' })).toBeEnabled());
+    expect(listSourceLists).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores late target lists and returns to personal creation without an assignee', async () => {
+    enableTeams();
+    let finish: (lists: ApiList[]) => void = () => {};
+    vi.mocked(listSourceLists).mockReturnValueOnce(new Promise((resolve) => { finish = resolve; }));
+    const { key, onSelect } = setup({ preferredListId: 'work', query: 'buddy' });
+    await chooseWorkspace('Team');
+    expect(screen.getByRole('button', { name: 'Add task for Buddy' })).toBeDisabled();
+    await chooseWorkspace('Other');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Add task for Buddy' })).toBeEnabled());
+    await act(async () => finish([{ ...remoteList, id: 'stale', name: 'Stale' }]));
+    key('Enter');
+    expect(onSelect).toHaveBeenLastCalledWith('team-list', 'schedule', { userId: 'buddy', name: 'Buddy', workspaceId: 'other' });
+    await chooseWorkspace('Personal');
+    key('Enter');
+    expect(onSelect).toHaveBeenLastCalledWith('work', 'schedule');
+  });
+
+  it('keeps already-shared assignment on the current list API path', () => {
+    vi.mocked(useWorkspaces).mockReturnValue({ available: true, loaded: true, active: 'team', me: null, workspaces: [team], current: team });
+    const { key, onSelect } = setup({ query: 'buddy' });
+    key('Enter');
+    expect(onSelect).toHaveBeenCalledWith('growth', 'schedule', { userId: 'buddy', name: 'Buddy' });
+    expect(listSourceLists).not.toHaveBeenCalled();
+    expect(screen.queryByRole('combobox', { name: 'Workspace' })).toBeNull();
+  });
+
   it('adds with the defaults on ↵: Schedule, in the preferred list', () => {
     const { key, onSelect } = setup({ preferredListId: 'work' });
     expect(screen.getByText('Add this line to a quadrant')).toBeTruthy();

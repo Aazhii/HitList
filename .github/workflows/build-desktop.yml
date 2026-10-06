@@ -3,19 +3,47 @@
 # Run it by hand: GitHub -> Actions -> "Build desktop apps" -> Run workflow.
 # Or push a tag such as v1.2.0 and it runs by itself and publishes a release.
 #
-# Every run is unique: the version is <BASE_VERSION>.<run number> (1.1.57, 1.1.58, ...), the number only ever goes up, and
-# the commit id is in the artifact names and in SHA256SUMS.txt. Nothing is signed (no certificates); see docs/building.
+# The version comes from the form when you run it by hand: main.second.third (for example 1.2.5). Leave the third field empty
+# and it becomes the run number (1.1.57, 1.1.58, ...), which only ever goes up, so it can never repeat. A pushed tag v1.2.3 uses
+# its own number. The commit id is in the artifact names and in SHA256SUMS.txt. Nothing is signed (no certificates); see docs/building.
 name: Build desktop apps
 
 on:
+  # The form, kept short on purpose: Name _ Major . Minor . Patch - Stage + Stage no.   e.g. HitList_1.2.5-beta2
+  #   Patch empty = the run number (always new). Stage none/alpha/beta; Stage no. only with alpha/beta (empty = 1).
   workflow_dispatch:
     inputs:
+      release_name:
+        description: Name
+        type: string
+        default: HitList
+      major:
+        description: Major
+        type: string
+        default: '1'
+      minor:
+        description: Minor
+        type: string
+        default: '1'
+      patch:
+        description: Patch
+        type: string
+        default: ''
+      stage:
+        description: Stage
+        type: choice
+        options: [none, alpha, beta]
+        default: none
+      stage_number:
+        description: Stage no.
+        type: string
+        default: ''
       publish:
-        description: Also publish a GitHub Release with the files
+        description: Publish release
         type: boolean
         default: false
   push:
-    tags: ['v*']
+    tags: ['v*', '*_[0-9]*']
 
 concurrency:
   group: build-desktop-${{ github.ref }}
@@ -24,23 +52,34 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  BASE_VERSION: '1.1'
-
 jobs:
   # ---- Which version and commit this run is --------------------------------------------------------------------------
   version:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.v.outputs.version }}
+      name: ${{ steps.v.outputs.name }}
+      tag: ${{ steps.v.outputs.tag }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
       sha: ${{ steps.v.outputs.sha }}
     steps:
+      - uses: actions/checkout@v4
       - id: v
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          RUN_NUMBER: ${{ github.run_number }}
+          IN_NAME: ${{ inputs.release_name }}
+          IN_MAJOR: ${{ inputs.major }}
+          IN_MINOR: ${{ inputs.minor }}
+          IN_PATCH: ${{ inputs.patch }}
+          IN_STAGE: ${{ inputs.stage }}
+          IN_STAGE_NUM: ${{ inputs.stage_number }}
         run: |
-          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then VERSION="${GITHUB_REF_NAME#v}"; else VERSION="${BASE_VERSION}.${GITHUB_RUN_NUMBER}"; fi
-          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          sh scripts/ci/compute-version.sh >> "$GITHUB_OUTPUT"
           echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-          echo "Building version ${VERSION} from ${GITHUB_SHA::7}" >> "$GITHUB_STEP_SUMMARY"
+          VERSION=$(grep '^version=' "$GITHUB_OUTPUT" | cut -d= -f2)
+          echo "Building ${VERSION} from ${GITHUB_SHA::7}" >> "$GITHUB_STEP_SUMMARY"
 
   # ---- Every test, before anything is built ---------------------------------------------------------------------------
   verify:
@@ -70,9 +109,20 @@ jobs:
         run: |
           pnpm install --frozen-lockfile
           pnpm test
+      - name: Desktop - validation contract and script syntax
+        run: |
+          node scripts/ci/validate-desktop.cjs --check
+          sh scripts/ci/compute-version.test.sh
       - name: Backup function - tests
         working-directory: functions/backup
-        run: node --test test.backupService.js
+        run: |
+          npm ci
+          npm test
+      - name: Cliq webhook - tests
+        working-directory: functions/cliq-webhook
+        run: |
+          npm ci
+          npm test
 
   # ---- The one backend that goes into all three apps (the web app is inside the jar) ------------------------------------
   backend:
@@ -98,6 +148,8 @@ jobs:
           cp -R web/dist/. api/src/main/resources/static/
           mvn -B -f api/pom.xml -DskipTests package
           cp api/target/hitlist.jar hitlist.jar
+      - name: Shared workspace replicas - real backend smoke
+        run: node desktop/e2e/workspaces.e2e.js
       - uses: actions/upload-artifact@v4
         with:
           name: hitlist-jar
@@ -118,20 +170,24 @@ jobs:
         with: { distribution: temurin, java-version: '25' }
       - uses: actions/download-artifact@v4
         with: { name: hitlist-jar, path: desktop/resources }
-      - name: Build the .dmg
+      - name: Build the .dmg and the update .zip
         working-directory: desktop
         run: |
           pnpm install --frozen-lockfile
+          node --test test.main.js test.updater.js test.auth.js test.backup.js test.restore.js test.nativeInstaller.js test.buildSmoke.js
           sh scripts/prepare-jre.sh
           pnpm exec electron-builder --mac --arm64 --publish never -c.extraMetadata.version=${{ needs.version.outputs.version }}
       - name: Checksum
         working-directory: desktop/dist
-        run: shasum -a 256 *.dmg > SHA256SUMS-mac.txt
+        run: |
+          shasum -a 256 *.dmg *.zip > SHA256SUMS-mac.txt
+          shasum -a 256 -c SHA256SUMS-mac.txt
       - uses: actions/upload-artifact@v4
         with:
           name: HitList-${{ needs.version.outputs.version }}-${{ needs.version.outputs.sha }}-mac
           path: |
             desktop/dist/*.dmg
+            desktop/dist/*.zip
             desktop/dist/SHA256SUMS-mac.txt
           retention-days: 3
 
@@ -154,11 +210,14 @@ jobs:
         working-directory: desktop
         run: |
           pnpm install --frozen-lockfile
+          node --test test.main.js test.updater.js test.auth.js test.backup.js test.restore.js test.nativeInstaller.js test.buildSmoke.js
           bash scripts/prepare-jre-win.sh
           pnpm exec electron-builder --win --x64 --publish never -c.extraMetadata.version=${{ needs.version.outputs.version }}
       - name: Checksum
         working-directory: desktop/dist
-        run: sha256sum *.exe > SHA256SUMS-windows.txt
+        run: |
+          sha256sum *.exe > SHA256SUMS-windows.txt
+          sha256sum -c SHA256SUMS-windows.txt
       - uses: actions/upload-artifact@v4
         with:
           name: HitList-${{ needs.version.outputs.version }}-${{ needs.version.outputs.sha }}-windows
@@ -183,11 +242,14 @@ jobs:
         working-directory: desktop
         run: |
           pnpm install --frozen-lockfile
+          node --test test.main.js test.updater.js test.auth.js test.backup.js test.restore.js test.nativeInstaller.js test.buildSmoke.js
           sh scripts/prepare-jre-linux.sh
           pnpm exec electron-builder --linux --x64 --publish never -c.extraMetadata.version=${{ needs.version.outputs.version }}
       - name: Checksum
         working-directory: desktop/dist
-        run: sha256sum *.AppImage *.deb > SHA256SUMS-linux.txt
+        run: |
+          sha256sum *.AppImage *.deb > SHA256SUMS-linux.txt
+          sha256sum -c SHA256SUMS-linux.txt
       - uses: actions/upload-artifact@v4
         with:
           name: HitList-${{ needs.version.outputs.version }}-${{ needs.version.outputs.sha }}-linux
@@ -215,11 +277,21 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.version.outputs.version }}
+          NAME: ${{ needs.version.outputs.name }}
+          TAG: ${{ needs.version.outputs.tag }}
+          PRERELEASE: ${{ needs.version.outputs.prerelease }}
           SHA: ${{ needs.version.outputs.sha }}
         run: |
+          if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            echo "A release called ${TAG} already exists. Run again with a different version (or leave the third field empty for an automatic number)." >&2
+            exit 1
+          fi
           cat SHA256SUMS-*.txt > SHA256SUMS.txt
+          sha256sum -c SHA256SUMS.txt
           rm SHA256SUMS-*.txt
-          gh release create "v${VERSION}" --repo "${GITHUB_REPOSITORY}" --target "${GITHUB_SHA}" \
-            --title "HitList ${VERSION}" \
+          FLAGS=""
+          if [ "${PRERELEASE}" = "true" ]; then FLAGS="--prerelease"; fi
+          gh release create "${TAG}" --repo "${GITHUB_REPOSITORY}" --target "${GITHUB_SHA}" ${FLAGS} \
+            --title "${NAME} ${VERSION}" \
             --notes "Built from commit ${SHA}. Mac (.dmg), Windows (.exe), Linux (.AppImage and .deb). The apps are not signed; see docs/INSTALL.md for the first-open steps. SHA256SUMS.txt lists the checksums." \
             ./*

@@ -52,6 +52,20 @@ function setup(over: Partial<TaskTableViewProps> = {}) {
 }
 
 describe('TaskTableView', () => {
+  it('keeps column sizing stable before and during long-title editing', () => {
+    const title = 'Need to talk with mentor regarding the delete case validation and field properties';
+    const { container } = setup({ todos: [task({ text: title })], fieldDefs: [] });
+    const table = screen.getByRole('table');
+    expect(table).toHaveClass('table-fixed');
+    expect(table).not.toHaveClass('min-w-max');
+    expect(container.querySelectorAll('col')[1]).toHaveStyle({ width: '40%' });
+    expect(screen.getByText(title)).toHaveClass('[overflow-wrap:anywhere]');
+    expect(screen.getByText(title)).not.toHaveClass('line-clamp-3');
+    fireEvent.click(screen.getByRole('button', { name: `Edit title of ${title}` }));
+    expect(container.querySelectorAll('col')[1]).toHaveStyle({ width: '40%' });
+    expect(screen.getByRole('textbox', { name: 'Title' })).toHaveClass('[overflow-wrap:anywhere]');
+  });
+
   it('shows a row per open task and a column per field', () => {
     setup();
     expect(screen.getByRole('columnheader', { name: /Effort/ })).toBeInTheDocument();

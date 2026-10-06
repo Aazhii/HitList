@@ -85,7 +85,12 @@ public class AutomationDelivery {
         List<Map<String, Object>> runs = new ArrayList<>(repository.list(StorageTables.RUNS, owner));
         if (runs.size() <= MAX_RUNS) return;
         runs.sort((a, b) -> Long.compare(Values.number(b.get("TriggeredAt"), 0), Values.number(a.get("TriggeredAt"), 0)));
+        long keepKeysAfter = System.currentTimeMillis() - 2 * AutomationEngine.GRACE_MS;
         for (Map<String, Object> stale : runs.subList(MAX_RUNS, runs.size())) {
+            // A run still inside the window that decides whether a moment may fire again is what stops that moment firing twice.
+            boolean guardsAFiring = !EntityRepository.text(stale.get("FireKey")).isBlank()
+                && Values.number(stale.get("TriggeredAt"), 0) >= keepKeysAfter;
+            if (guardsAFiring) continue;
             repository.delete(StorageTables.RUNS, owner, EntityRepository.text(stale.get("RunId")));
         }
     }

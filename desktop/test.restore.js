@@ -23,6 +23,28 @@ const rig = (over = {}) => {
 };
 const T = [{ TaskId: 'a', Title: 'one' }];
 
+test('a backup downloaded for A is never imported into B after account switching', async () => {
+  let user = '111111';
+  let release;
+  const { svc, calls } = rig({ getAccount: () => ({ userId: user }), cloudLatest: () => new Promise(resolve => { release = resolve; }) });
+  const pending = svc.restore();
+  user = '222222';
+  release(zlib.gzipSync(Buffer.from(JSON.stringify(snap(T)))));
+  assert.equal((await pending).result, 'signed-out');
+  assert.equal(calls.posted.length, 0);
+});
+
+test('the restore import explicitly carries the starting account identity', async () => {
+  let identity;
+  const { svc, setCloud } = rig({ localPost: async (_url, _body, options) => {
+    identity = options.accountIdentity;
+    return { status: 200, json: {} };
+  } });
+  setCloud([], zlib.gzipSync(Buffer.from(JSON.stringify(snap(T)))));
+  assert.equal((await svc.restore()).result, 'restored');
+  assert.equal(identity, '75733000000033001');
+});
+
 test('default lists alone do not make a workspace non-empty', () => {
   assert.equal(isEmptyWorkspace(snap()), true);
   assert.equal(isEmptyWorkspace(snap(T)), false);

@@ -4,8 +4,9 @@
  * browser to Catalyst's hosted login page. In every other build the answer is "yes" and nothing changes.
  */
 export interface SessionInfo {
-  mode: 'cookie' | 'catalyst';
+  mode: 'cookie' | 'catalyst' | 'desktop';
   authenticated: boolean;
+  userId?: string;
   loginUrl?: string;
   /** Rows brought in from this browser's old cookie workspace on this sign-in, by table. */
   claimed?: Record<string, number>;
@@ -26,6 +27,7 @@ export type SessionOutcome = { kind: 'ready'; session: SessionInfo | null } | { 
  * wall must never be what a flaky network turns into a blank page.
  */
 export async function resolveSession(fetchJson: () => Promise<SessionInfo>): Promise<SessionOutcome> {
+  current = null;
   let session: SessionInfo;
   try {
     session = await fetchJson();
@@ -37,6 +39,30 @@ export async function resolveSession(fetchJson: () => Promise<SessionInfo>): Pro
     return { kind: 'login', url: session.loginUrl || '/__catalyst/auth/login' };
   }
   return { kind: 'ready', session };
+}
+
+export async function resolveStorageIdentity(session: SessionInfo | null): Promise<string | null> {
+  const desktop = (window as unknown as { hitlistDesktop?: { getAccount: () => Promise<{ userId?: string } | null> } }).hitlistDesktop;
+  if (desktop) {
+    const account = await desktop.getAccount();
+    return account?.userId ?? 'desktop-local-v1';
+  }
+  if (session?.authenticated && session.mode !== 'cookie') {
+    if (!session.userId) throw new Error('Authenticated session has no storage identity');
+    return session.userId;
+  }
+  if (!session) throw new Error('Cannot establish workspace identity');
+  return null;
+}
+
+export async function resolveStorageWorkspace(): Promise<string | null> {
+  const desktop = (window as unknown as { hitlistDesktop?: { workspaces?: { active?: () => Promise<{ workspaceId: string | null }> } } }).hitlistDesktop;
+  return (await desktop?.workspaces?.active?.())?.workspaceId ?? null;
+}
+
+export async function confirmStorageIdentity(identity: string | null): Promise<void> {
+  const desktop = (window as unknown as { hitlistDesktop?: { readyForAccount?: (identity: string | null) => Promise<void> } }).hitlistDesktop;
+  await desktop?.readyForAccount?.(identity);
 }
 
 export async function fetchSessionFromServer(): Promise<SessionInfo> {

@@ -74,6 +74,16 @@ function isSeedTask(todo: Todo): boolean {
   return todo.id.startsWith('seed-');
 }
 
+/** A card shown while its save is still in flight. If it was stored before the real id arrived, the server already has it. */
+function isPendingTask(todo: Todo): boolean {
+  return todo.id.startsWith('temp-');
+}
+
+/** What makes two tasks the same one when their ids differ: the same words, in the same list, due the same day. */
+function sameTaskKey(title: string, listId: string | null | undefined, dueDate: string | null | undefined, quadrant: string | null | undefined): string {
+  return JSON.stringify([title.trim().toLowerCase(), listId ?? '', dueDate ?? '', quadrant ?? '']);
+}
+
 /** Fixed sample-list ids are shared by every browser, unlike generated local ids. */
 function migrationListId(list: KaizenList, userId: string | null): string {
   if (!isSeedList(list)) return list.id;
@@ -142,7 +152,7 @@ export async function migrateLocalState(
 ): Promise<void> {
   const journal = readJournal(storage, userId);
 
-  const todos = localState.todos.filter((todo) => !isSeedTask(todo));
+  const todos = localState.todos.filter((todo) => !isSeedTask(todo) && !isPendingTask(todo));
   const neededListIds = new Set(todos.map((todo) => todo.listId).filter(Boolean));
   const lists = localState.lists.filter((list) => !isSeedList(list) || neededListIds.has(list.id));
 
@@ -188,6 +198,19 @@ export async function migrateLocalState(
   }
 
   const serverTasks = new Map((await apis.tasks.list()).map((task) => [task.id, task]));
+  // Server tasks no local task points at by id, by what they say. A local task with an unknown id that says the same
+  // thing as one of these is that task (stored under another id, for example after a reinstall), never a second one.
+  const claimedIds = new Set<string>();
+  for (const todo of todos) {
+    const hit = serverTasks.get(journal.tasks[todo.id] ?? '') ?? serverTasks.get(todo.id);
+    if (hit) claimedIds.add(hit.id);
+  }
+  const unclaimed = new Map<string, ApiTask[]>();
+  for (const task of serverTasks.values()) {
+    if (claimedIds.has(task.id)) continue;
+    const key = sameTaskKey(task.title, task.listId, task.dueDate, task.quadrant);
+    unclaimed.set(key, [...(unclaimed.get(key) ?? []), task]);
+  }
   for (const todo of todos) {
     const mappedId = journal.tasks[todo.id];
     const listId = todo.listId ? journal.lists[todo.listId] : undefined;
@@ -196,6 +219,18 @@ export async function migrateLocalState(
     }
 
     let created = (mappedId ? serverTasks.get(mappedId) : undefined) ?? serverTasks.get(todo.id);
+    // Moved before and gone from the server now: it was deleted there on purpose, so it is not brought back.
+    if (!created && mappedId) continue;
+    if (!created) {
+      const twins = unclaimed.get(sameTaskKey(todo.text, listId, todo.dueDate, quadrantOf(todo)));
+      created = twins?.shift();
+      if (created) {
+        journal.tasks[todo.id] = created.id;
+        journal.taskSnapshots[todo.id] = taskSnapshot(todo, listId);
+        saveJournal(storage, userId, journal);
+        continue;
+      }
+    }
     if (!created) {
       const request: TaskCreateRequest = {
         title: todo.text,

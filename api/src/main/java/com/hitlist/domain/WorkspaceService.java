@@ -18,9 +18,19 @@ public class WorkspaceService {
     private final EntityRepository repository;
     private final ObjectMapper objectMapper;
 
+    private com.hitlist.storage.AutomationQueue automationQueue;
+    private AutomationRunner automationRunner;
+
     public WorkspaceService(EntityRepository repository, ObjectMapper objectMapper) {
         this.repository = repository;
         this.objectMapper = objectMapper;
+    }
+
+    /** Set by Spring. Absent in tests that build the service by hand, where rules run through the older engine only. */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    public void setAutomationEngine(com.hitlist.storage.AutomationQueue queue, @org.springframework.context.annotation.Lazy AutomationRunner runner) {
+        this.automationQueue = queue;
+        this.automationRunner = runner;
     }
 
     public List<Map<String, Object>> views(String owner) {
@@ -245,15 +255,23 @@ public class WorkspaceService {
         row.put("RuleId", UUID.randomUUID().toString());
         row.put("CreatedAt", now);
         row.put("UpdatedAt", now);
+        // Moments before this never fire (unless the rule asks to catch up), so a new rule does not announce old history.
+        row.put("ActiveSince", now);
         repository.insert(StorageTables.RULES, owner, row);
         return ruleApi(row);
     }
 
     public Map<String, Object> updateRule(String owner, String id, Map<String, Object> body) {
         Values.id(id);
-        Map<String, Object> row = ruleRow(body, repository.require(StorageTables.RULES, owner, id));
+        Map<String, Object> existing = repository.require(StorageTables.RULES, owner, id);
+        Map<String, Object> row = ruleRow(body, existing);
         row.put("RuleId", id);
         row.put("UpdatedAt", System.currentTimeMillis());
+        // A rule that was not running and now is starts from now; one that keeps running keeps its start.
+        boolean wasActive = "active".equals(EntityRepository.text(existing.get("RuleStatus")));
+        boolean isActive = "active".equals(EntityRepository.text(row.get("RuleStatus")));
+        if (isActive && !wasActive) row.put("ActiveSince", System.currentTimeMillis());
+        if (!isActive || !wasActive) row.put("LastError", "");
         repository.replace(StorageTables.RULES, owner, id, row);
         return ruleApi(row);
     }
@@ -261,6 +279,7 @@ public class WorkspaceService {
     public void deleteRule(String owner, String id) {
         Values.id(id);
         repository.delete(StorageTables.RULES, owner, id);
+        if (automationQueue != null) automationQueue.deleteRule(owner, id);
     }
 
     public List<Map<String, Object>> runs(String owner, String ruleId, int limit) {
@@ -280,6 +299,9 @@ public class WorkspaceService {
         String title = EntityRepository.text(rule.get("Name"));
         if (!taskId.isBlank()) {
             title = repository.find(StorageTables.TASKS, owner, taskId).map(task -> EntityRepository.text(task.get("Title"))).orElse(title);
+        }
+        if (automationRunner != null && automationQueue != null && automationQueue.enabled()) {
+            return runApi(automationRunner.runNow(owner, ruleId, System.currentTimeMillis()));
         }
         Map<String, Object> run = new AutomationDelivery(repository, objectMapper)
             .deliver(owner, rule, taskId, title, "Run by hand · " + EntityRepository.text(rule.get("Name")), "manual", "", System.currentTimeMillis(), Map.of());
@@ -459,7 +481,7 @@ public class WorkspaceService {
         row.put("Name", body.containsKey("name") ? Values.required(body, "name", 255) : EntityRepository.text(row.get("Name")));
         row.put("Description", body.containsKey("description") ? Values.optional(body, "description", 2000, "") : EntityRepository.text(row.getOrDefault("Description", "")));
         row.put("TaskId", body.containsKey("taskId") ? Values.optional(body, "taskId", 64, "") : EntityRepository.text(row.getOrDefault("TaskId", "")));
-        row.put("TriggerType", body.containsKey("triggerType") ? lowerEnum(body, "triggerType", List.of("due-date", "overdue", "recurring", "status-change", "daily-digest"), "due-date") : EntityRepository.text(row.getOrDefault("TriggerType", "due-date")));
+        row.put("TriggerType", body.containsKey("triggerType") ? lowerEnum(body, "triggerType", List.of("due-date", "overdue", "recurring", "status-change", "daily-digest", "custom"), "due-date") : EntityRepository.text(row.getOrDefault("TriggerType", "due-date")));
         row.put("RuleStatus", body.containsKey("status") ? lowerEnum(body, "status", List.of("active", "paused", "draft"), "draft") : EntityRepository.text(row.getOrDefault("RuleStatus", "draft")));
         row.put("Urgency", body.containsKey("urgency") ? lowerEnum(body, "urgency", List.of("low", "medium", "high", "critical"), "medium") : EntityRepository.text(row.getOrDefault("Urgency", "medium")));
         if (body.containsKey("offsetMinutes")) validateOffsets(body.get("offsetMinutes"));
@@ -473,6 +495,15 @@ public class WorkspaceService {
         row.put("NotifyBrowser", body.containsKey("notifyBrowser") ? Values.optionalBoolean(body, "notifyBrowser", false) : Values.bool(row.get("NotifyBrowser")));
         row.put("Timezone", body.containsKey("timezone") ? Values.optional(body, "timezone", 64, "") : EntityRepository.text(row.getOrDefault("Timezone", "")));
         row.put("NotifyEmail", body.containsKey("notifyEmail") ? Values.optionalBoolean(body, "notifyEmail", false) : Values.bool(row.get("NotifyEmail")));
+        if (body.containsKey("spec")) {
+            Map<String, Object> spec = AutomationSpecs.normalize(body.get("spec"));
+            row.put("Spec", json(spec));
+            row.put("TriggerType", "custom");
+            // The old columns keep describing what the rule does in the old terms, so an older client still shows something true.
+            java.util.List<?> actions = (java.util.List<?>) spec.get("actions");
+            row.put("NotifyInApp", actions.stream().anyMatch(a -> "notify-in-app".equals(((Map<?, ?>) a).get("kind"))));
+            row.put("NotifyBrowser", actions.stream().anyMatch(a -> "notify-browser".equals(((Map<?, ?>) a).get("kind"))));
+        }
         return row;
     }
 
@@ -550,6 +581,11 @@ public class WorkspaceService {
         output.put("notifyInApp", Values.bool(row.get("NotifyInApp")));
         output.put("notifyBrowser", Values.bool(row.get("NotifyBrowser")));
         output.put("notifyEmail", Values.bool(row.get("NotifyEmail")));
+        output.put("spec", AutomationSpecs.specOf(row, objectMapper));
+        String lastError = EntityRepository.text(row.get("LastError"));
+        if (!lastError.isBlank()) output.put("error", lastError);
+        String zone = EntityRepository.text(row.get("Timezone"));
+        if (!zone.isBlank()) output.put("timezone", zone);
         output.put("createdAt", Values.number(row.get("CreatedAt"), 0));
         output.put("updatedAt", Values.number(row.get("UpdatedAt"), 0));
         if (Values.number(row.get("LastTriggeredAt"), 0) > 0) output.put("lastTriggeredAt", Values.number(row.get("LastTriggeredAt"), 0));
