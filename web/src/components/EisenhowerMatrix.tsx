@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { RepeatMark } from '@/components/RepeatMark';
 import { StatusIcon } from '@/components/ui/status-icon';
@@ -51,18 +51,25 @@ export function EisenhowerMatrix({
   fieldDefs,
   fieldValues,
 }: EisenhowerMatrixProps) {
-  const todosByQuadrant = useMemo(
-    () => bucketByQuadrant(todos, showDone, compare),
-    [todos, showDone, compare],
-  );
+  const openByQuadrant = useMemo(() => bucketByQuadrant(todos, false, compare), [todos, compare]);
+  const withDoneByQuadrant = useMemo(() => bucketByQuadrant(todos, true, compare), [todos, compare]);
+  // Quadrants whose finished tasks were revealed with the "N completed" line (the Show completed switch reveals every quadrant).
+  const [revealed, setRevealed] = useState<ReadonlySet<Quadrant>>(() => new Set());
+  const toggleRevealed = (id: Quadrant) => setRevealed((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
 
   return (
     <div className="mx-auto grid max-w-[1200px] grid-cols-1 gap-4 md:grid-cols-2 animate-fade-in">
       {QUADRANTS.map((q) => {
         const all = todos.filter((t) => t.quadrant === q.id);
-        const quadrantTodos = todosByQuadrant.get(q.id) ?? [];
         const doneCount = all.length - all.filter((t) => t.status !== 'done').length;
-        const doneNote = doneCount && !showDone ? `${doneCount} completed · hidden` : '';
+        const shown = showDone || revealed.has(q.id);
+        const quadrantTodos = (shown ? withDoneByQuadrant : openByQuadrant).get(q.id) ?? [];
+        // With the switch off, the count is a button: it reveals (and hides again) this quadrant's finished tasks.
+        const canToggleDone = doneCount > 0 && !showDone;
         const headingId = `matrix-quadrant-${q.id}`;
 
         return (
@@ -120,9 +127,17 @@ export function EisenhowerMatrix({
                 ))
               )}
 
-              {doneNote && (
-                <div className="mt-auto border-t border-a-line-soft px-4 py-2 text-[12px] text-a-faint">
-                  {doneNote}
+              {canToggleDone && (
+                <div className="mt-auto border-t border-a-line-soft">
+                  <button
+                    type="button"
+                    onClick={() => toggleRevealed(q.id)}
+                    aria-expanded={shown}
+                    className="flex w-full items-center gap-1.5 px-4 py-2 text-left text-[12px] text-a-faint transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
+                  >
+                    <span>{doneCount} completed · {shown ? 'shown' : 'hidden'}</span>
+                    <span className="font-semibold">{shown ? 'Hide' : 'Show'}</span>
+                  </button>
                 </div>
               )}
             </div>

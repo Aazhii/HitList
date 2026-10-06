@@ -76,6 +76,26 @@ describe('EisenhowerMatrix', () => {
     expect(screen.queryByText('Done task')).not.toBeInTheDocument();
   });
 
+  it('turns the "N completed" line into a button that reveals that quadrant\'s finished tasks, struck through, and hides them again', () => {
+    render(<EisenhowerMatrix {...defaultProps} showDone={false} todos={[
+      makeTodo({ id: 'a', text: 'Open one' }),
+      makeTodo({ id: 'b', text: 'Finished one', status: 'done', completedAt: 1 }),
+      makeTodo({ id: 'c', text: 'Finished elsewhere', status: 'done', quadrant: 'schedule', completedAt: 1 }),
+    ]} />);
+    expect(screen.queryByText('Finished one')).toBeNull();
+    const reveal = screen.getAllByRole('button', { name: /1 completed · hidden/ })[0];
+    expect(reveal).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(reveal);
+    const done = screen.getByText('Finished one');
+    expect(done.className).toMatch(/line-through/);
+    expect(screen.queryByText('Finished elsewhere')).toBeNull();
+    expect(screen.getByText('Open one')).toBeInTheDocument();
+    const hide = screen.getByRole('button', { name: /1 completed · shown/ });
+    expect(hide).toHaveAttribute('aria-expanded', 'true');
+    fireEvent.click(hide);
+    expect(screen.queryByText('Finished one')).toBeNull();
+  });
+
   it('shows done tasks when showDone is true', () => {
     const todos = [
       makeTodo({ id: '1', text: 'Done task', quadrant: 'do', status: 'done' }),
