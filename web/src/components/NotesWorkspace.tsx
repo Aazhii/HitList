@@ -227,7 +227,7 @@ export function NoteDetail({
     // The one scroller for the note pane. The header lives inside it, so the
     // title scrolls away with the content rather than pinning above it.
     <ScrollArea className="h-full">
-      <div className="animate-fade-in px-4 pb-24 pt-8 md:px-8">
+      <div data-note-page className="animate-fade-in px-4 pb-24 pt-8 md:px-8">
         {/* One reading column: a 720px measure plus the 44px margin that block
             controls hang into. The padding is applied once, here, so the title,
             metadata, every block, tables and panels share one left edge. */}

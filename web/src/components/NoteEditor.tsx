@@ -338,6 +338,8 @@ function BlockRow({
 
   // `pr-1.5` rather than a margin: the 6px between the grip and the text is part
   // of the controls' box, so crossing it doesn't count as leaving the row.
+  // A database block can start left of the reading column; its controls follow it.
+  const [shift, setShift] = useState(0);
   const gutter = (
     <div
       className={cn(
@@ -345,7 +347,7 @@ function BlockRow({
         // Also kept visible while a control has keyboard focus or its menu is open.
         showControls ? 'opacity-100' : 'opacity-0 focus-within:opacity-100 has-[[data-state=open]]:opacity-100',
       )}
-      style={{ top: controlsTop(block.type) }}
+      style={{ top: controlsTop(block.type), ...(shift ? { transform: `translateX(${shift}px)` } : {}) }}
     >
       <BlockControls
         block={block} index={index} total={total}
@@ -396,7 +398,7 @@ function BlockRow({
         {gutter}
         <div className="min-w-0 flex-1">
           {block.databaseId
-            ? <DatabaseBlock databaseId={block.databaseId} layout={block.dbLayout} onOpenDatabase={onOpenDatabase} />
+            ? <DatabaseBlock databaseId={block.databaseId} layout={block.dbLayout} onOpenDatabase={onOpenDatabase} onShift={setShift} />
             : <div className="rounded-[8px] border border-dashed border-a-line-strong px-4 py-3 text-[13px] text-a-faint">Choosing a database…</div>}
         </div>
       </div>
