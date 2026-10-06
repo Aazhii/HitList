@@ -188,3 +188,16 @@ test('the regular check also delivers the outbox, and an empty outbox does nothi
   assert.deepEqual(await empty.alerts.runOutbox(), { result: 'none' });
   assert.equal(empty.sent.length, 0);
 });
+
+test('a test message with the rule\'s own text goes to the saved address, and says why it cannot', async (t) => {
+  const r = rig(t);
+  assert.deepEqual(await r.alerts.sendMessage('hi'), { result: 'bad-email' });
+  r.alerts.setSettings({ enabled: false, email: 'me@zohocorp.com' });
+  assert.equal(r.alerts.addressFor(), 'me@zohocorp.com');
+  assert.deepEqual(await r.alerts.sendMessage('  Hello from a rule  '), { result: 'sent' });
+  assert.deepEqual(r.sent[0].body, { email: 'me@zohocorp.com', text: 'Hello from a rule' });
+  assert.equal(r.sent[0].url, '/notify/message');
+  assert.deepEqual(await r.alerts.sendMessage('   '), { result: 'error' });
+  r.setAccount({ userId: 'other' });
+  assert.deepEqual(await r.alerts.sendMessage('x', '75733000000033001'), { result: 'signed-out' });
+});

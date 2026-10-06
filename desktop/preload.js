@@ -34,6 +34,8 @@ contextBridge.exposeInMainWorld('hitlistDesktop', {
     return () => ipcRenderer.removeListener('update:progress', handler);
   },
   testCliq: (context) => ipcRenderer.invoke('cliq:test', context),
+  getCliqAddress: () => ipcRenderer.invoke('cliq:address'),
+  sendCliqMessage: (text) => ipcRenderer.invoke('cliq:message', text),
   // Shared workspaces. Everything goes through the shell, which holds the cloud session.
   workspaces: {
     status: () => ipcRenderer.invoke('ws:status'),

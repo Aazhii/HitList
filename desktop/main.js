@@ -401,7 +401,7 @@ async function openWindow() {
   const publicAccount = () => (account ? { email: account.email, userId: account.userId } : null);
   for (const channel of [
     'account:get', 'account:ready', 'account:signIn', 'account:signOut', 'restore:check', 'restore:run',
-    'cliq:get', 'cliq:set', 'cliq:test', 'update:status', 'update:check',
+    'cliq:get', 'cliq:set', 'cliq:test', 'cliq:address', 'cliq:message', 'update:status', 'update:check',
     'update:download', 'update:cancel', 'update:install', 'backup:status', 'backup:now',
     'cliq:connection:get', 'cliq:connection:start', 'cliq:connection:confirm',
     'cliq:connection:enable', 'cliq:connection:fetch', 'cliq:connection:unlink',
@@ -481,6 +481,9 @@ async function openWindow() {
     const identity = account?.userId;
     return cliqAlerts.sendTest(await alertWorkspace(context), identity);
   });
+  // Automation rules message the Cliq address saved in Account → Cliq alerts: its address, and a test with the rule's own text.
+  ipcMain.handle('cliq:address', () => ({ email: cliqAlerts.addressFor(account?.userId) }));
+  ipcMain.handle('cliq:message', (_e, text) => cliqAlerts.sendMessage(typeof text === 'string' ? text : '', account?.userId));
   ipcMain.handle('update:status', () => updater.status());
   ipcMain.handle('update:check', () => updater.check());
   ipcMain.handle('update:download', () => updater.download());

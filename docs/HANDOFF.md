@@ -194,6 +194,13 @@ cloud: ordered change log in Data Store ─> Ably doorbell {seq} ─> other comp
   approved backup deployment. Verify Ably server permissions include Publish/Subscribe on `hitlist:ws:*`; an inbox-only key is
   insufficient. Live two-account recovery has not been verified by the assistant.
 
+### 3.5b Automations (rebuilt 2026-10-06)
+Full guide: `docs/automations/00-INDEX.md`. One engine: rules plan their moments into `hitlist_automation_queue` (execute-at), a 60-second
+worker claims rows where `now >= execute_at`, runs conditions and actions in one transaction, and Cliq messages go through an outbox the
+desktop delivers (`/notify/message`). Rule model v2 (`spec`), template gallery and builder in the UI. Verified: Java engine tests on SQLite
+(`AutomationRunnerTest`), desktop outbox tests, web builder tests, and a real run (a task due in 90 s fired within a minute of its due
+time). **Not yet tried:** a real Cliq delivery end to end (needs the deployed function), and database records as a source.
+
 ### 3.6 Notes: Tab / Shift+Tab indent
 `NoteBlock.indent` (optional, 0-6). Pure helpers in `web/src/lib/noteBlocks.ts` (`indentBlock`, `outdentBlock`, `normalizeIndents`,
 `moveBlockWithChildren`, indent-aware numbering). Editor rules in `NoteEditor.tsx` (Enter on an empty nested item outdents, Backspace

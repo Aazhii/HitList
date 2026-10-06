@@ -20,7 +20,12 @@ import {
   countRulesByStatus,
   type FilterStatus,
 } from '@/components/automations/AutomationList';
-import { AutomationRuleForm } from '@/components/automations/AutomationRuleForm';
+import { RuleBuilder } from '@/components/automations/RuleBuilder';
+import { RuleTemplates } from '@/components/automations/RuleTemplates';
+import { useCliqBot } from '@/hooks/useCliqBot';
+import { useWorkspaces } from '@/hooks/useWorkspaces';
+import { emptySpec, type RuleSpec, type RuleTemplate } from '@/lib/automationSpec';
+import type { AutomationRuleInput } from '@/lib/api';
 import { ViewLayoutContext } from '@/components/shell/ViewLayout';
 import { EmptyState, ILL } from '@/components/EmptyState';
 import { TopBar, topBarPrimary } from '@/components/shell/TopBar';
@@ -34,7 +39,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import type { AutomationRule, AutomationRuleFormValues } from '@/types/automation';
+import type { AutomationRule } from '@/types/automation';
 import type { Todo } from '@/types/todo';
 import type { ApiAutomationRun } from '@/api/automationRunsApi';
 
@@ -52,7 +57,8 @@ interface AutomationsPageProps {
 
 /** Rules that hang off a task's due date, which is what "escalation" means here. */
 function isTaskDriven(rule: AutomationRule): boolean {
-  return rule.triggerType === 'due-date' || rule.triggerType === 'overdue';
+  return rule.triggerType === 'due-date' || rule.triggerType === 'overdue'
+    || !!rule.spec?.triggers.some((t) => t.kind === 'date-reached');
 }
 
 // ── Run status helpers ────────────────────────────────────────────────────────
@@ -188,8 +194,10 @@ export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationH
     [todos]
   );
 
-  const { rules, loading: rulesLoading, online: rulesOnline, error: rulesError, addRule, updateRule, toggleStatus, deleteRule } =
+  const { rules, loading: rulesLoading, online: rulesOnline, error: rulesError, createRule, saveRule, toggleStatus, deleteRule } =
     useAutomations(todoStubs, userId);
+  const cliq = useCliqBot();
+  const workspaces = useWorkspaces();
 
   const { runs, lastChecked, isLoading: runsLoading, error: runsError, triggerRule, refresh: refreshRuns } =
     useAutomationRuns();
@@ -208,20 +216,31 @@ export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationH
     }
   }, [rules, triggerRule]);
 
-  // Form state
-  const [formOpen, setFormOpen] = useState(false);
+  // The template picker, then the builder
+  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [builderOpen, setBuilderOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<AutomationRule | null>(null);
-  /** A task whose rule form should open, handed over from the task panel. */
-  const [prefillTaskId, setPrefillTaskId] = useState<string | null>(null);
+  const [start, setStart] = useState<{ name: string; spec: RuleSpec } | null>(null);
+
+  const openBuilder = (rule: AutomationRule | null, from: { name: string; spec: RuleSpec } | null) => {
+    setEditingRule(rule);
+    setStart(from);
+    setBuilderOpen(true);
+  };
 
   useEffect(() => {
     if (!escalationTaskId) return;
-    // Its existing rule if it has one, so "Add escalation" edits rather than
-    // silently creating a second rule beside the first.
-    const existing = rules.find((r) => r.taskId === escalationTaskId && isTaskDriven(r));
-    setEditingRule(existing ?? null);
-    setPrefillTaskId(existing ? null : escalationTaskId);
-    setFormOpen(true);
+    // Its existing reminder if it has one, so "Add escalation" edits rather than silently creating a second rule beside it.
+    const existing = rules.find((r) => (r.taskId === escalationTaskId || r.spec?.subjectId === escalationTaskId) && isTaskDriven(r));
+    if (existing) {
+      openBuilder(existing, null);
+    } else {
+      const title = todoStubs.find((t) => t.id === escalationTaskId)?.text;
+      const spec = emptySpec();
+      spec.subjectId = escalationTaskId;
+      spec.triggers = [{ kind: 'date-reached', field: 'dueDate', offsets: [-60, -5] }];
+      openBuilder(null, { name: title ? `Remind me: ${title}` : 'Task reminder', spec });
+    }
     onEscalationHandled?.();
   }, [escalationTaskId, rules, onEscalationHandled]);
 
@@ -258,36 +277,30 @@ export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationH
 
   // ── Handlers ───────────────────────────────────────────────────────────────
 
-  const handleNew = () => {
-    setEditingRule(null);
-    setFormOpen(true);
+  const handleNew = () => setTemplatesOpen(true);
+
+  const handleTemplate = (template: RuleTemplate) => {
+    setTemplatesOpen(false);
+    openBuilder(null, template.build());
   };
 
-  const handleEdit = (rule: AutomationRule) => {
-    setEditingRule(rule);
-    setFormOpen(true);
-  };
+  const handleEdit = (rule: AutomationRule) => openBuilder(rule, null);
 
-  const handleFormSubmit = async (values: AutomationRuleFormValues) => {
-    // Await before reporting. These calls used to be fire-and-forget with an
-    // unconditional success toast, which told the user their rule was saved
-    // whether or not it was.
+  const handleSave = async (input: AutomationRuleInput): Promise<boolean> => {
+    // Await before reporting: a success toast for a rule that was not saved is how this page once misled people.
     if (editingRule) {
-      await updateRule(editingRule.id, values);
-      toast.success('Rule updated', { duration: 2000 });
-    } else {
-      const created = await addRule(values);
-      if (!created) {
-        toast.error('Could not save the rule', { duration: 3000 });
-        return;
-      }
-      toast.success('Automation rule created', {
-        // A rule saved offline is a draft: firing happens server-side, and
-        // saying otherwise repeats the promise this page used to make.
-        description: rulesOnline ? values.name : `${values.name} — saved offline, will not fire yet`,
-        duration: 2500,
-      });
+      const ok = await saveRule(editingRule.id, input);
+      if (ok) toast.success('Rule updated', { duration: 2000 });
+      return ok;
     }
+    const created = await createRule(input);
+    if (!created) return false;
+    toast.success('Automation rule created', {
+      // A rule saved offline is a draft: firing happens on the desktop engine, and saying otherwise repeats an old promise.
+      description: rulesOnline ? input.name : `${input.name} \u2014 saved offline, will not fire yet`,
+      duration: 2500,
+    });
+    return true;
   };
 
   const handleToggle = async (id: string) => {
@@ -362,8 +375,8 @@ export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationH
           <div role="status" className="flex gap-3 rounded-[8px] border border-a-amber-line bg-a-amber-tint px-4 py-3 text-a-amber-ink">
             <TriangleAlert className="mt-0.5 size-[18px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
             <span className="leading-normal">
-              <strong>Rules run while HitList is open.</strong> Nothing fires while the app is closed, and email is not set up,
-              so a rule that asks for it is recorded as skipped.
+              <strong>Rules run while HitList is open</strong>, checked once a minute. Nothing fires while the app is closed.
+              Messages to the Cliq bot are delivered by the desktop app and need you to be signed in. Email is not set up.
             </span>
           </div>
 
@@ -396,14 +409,22 @@ export function AutomationsPage({ todos, userId, escalationTaskId, onEscalationH
         </div>
       </ViewLayoutContext.Provider>
 
-      {/* Create / edit form */}
-      <AutomationRuleForm
-        open={formOpen}
-        editingRule={editingRule}
-        prefillTaskId={prefillTaskId}
-        todos={todoStubs}
-        onOpenChange={(open) => { setFormOpen(open); if (!open) setPrefillTaskId(null); }}
-        onSubmit={handleFormSubmit}
+      <RuleTemplates open={templatesOpen} onOpenChange={setTemplatesOpen} cliqAvailable={cliq.available} onPick={handleTemplate} />
+
+      <RuleBuilder
+        open={builderOpen}
+        onOpenChange={setBuilderOpen}
+        rule={editingRule}
+        start={start}
+        workspaces={workspaces.workspaces.filter((w) => w.state === 'active').map((w) => ({ id: w.workspaceId, name: w.name }))}
+        cliqEmail={cliq.email}
+        cliqAvailable={cliq.available}
+        subjectTitle={(() => {
+          const id = editingRule?.spec?.subjectId || start?.spec.subjectId;
+          return id ? todoStubs.find((t) => t.id === id)?.text : undefined;
+        })()}
+        onSave={handleSave}
+        onSendTest={cliq.available ? cliq.sendMessage : undefined}
       />
 
       {/* Delete confirmation */}

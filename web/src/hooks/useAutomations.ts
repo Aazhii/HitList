@@ -15,10 +15,9 @@
  */
 import { useState, useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import type {
-  AutomationRule, AutomationRuleFormValues, AutomationStatus,
+  AutomationRule, AutomationStatus,
 } from '@/types/automation';
 import { automationApi, isNetworkError, type ApiAutomationRule, type AutomationRuleInput } from '@/lib/api';
-import { normaliseSteps } from '@/lib/reminderSteps';
 import { getActiveUserId } from '@/lib/storage';
 
 const STORAGE_KEY = 'kaizen-automations-v1';
@@ -72,36 +71,8 @@ function fromApi(rule: ApiAutomationRule, todos: { id: string; text: string }[])
     updatedAt: rule.updatedAt,
     lastTriggeredAt: rule.lastTriggeredAt,
     nextTriggerAt: rule.nextTriggerAt,
-  };
-}
-
-/** The form's strings, parsed into what the API expects. */
-function formValuesToInput(values: AutomationRuleFormValues): AutomationRuleInput {
-  const scheduled = values.triggerType === 'recurring' || values.triggerType === 'daily-digest';
-  const taskDriven = values.triggerType === 'due-date' || values.triggerType === 'overdue';
-
-  return {
-    name: values.name.trim(),
-    description: values.description.trim() || undefined,
-    taskId: values.taskId || undefined,
-    triggerType: values.triggerType,
-    status: values.status,
-    urgency: values.urgency,
-    offsetMinutes: taskDriven ? normaliseSteps(values.offsetMinutes) : undefined,
-    recurrence: scheduled
-      ? {
-          frequency: values.recurrenceFrequency,
-          // The server rejects a scheduled rule with no time, so default here
-          // rather than letting the form produce a rule that cannot be saved.
-          time: values.recurrenceTime || '09:00',
-          dayOfWeek: parseInt(values.recurrenceDayOfWeek, 10) || 0,
-          dayOfMonth: parseInt(values.recurrenceDayOfMonth, 10) || 1,
-        }
-      : undefined,
-    notifyInApp: values.notifyInApp,
-    notifyBrowser: values.notifyBrowser,
-    notifyEmail: values.notifyEmail,
-    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    spec: rule.spec,
+    error: rule.error,
   };
 }
 
@@ -133,8 +104,10 @@ export interface UseAutomationsReturn {
   /** False while working from localStorage; rules cannot fire in that state. */
   online: boolean;
   error: string | null;
-  addRule: (values: AutomationRuleFormValues) => Promise<AutomationRule | null>;
-  updateRule: (id: string, values: AutomationRuleFormValues) => Promise<void>;
+  /** Saves a new rule; resolves it, or null when it could not be saved. */
+  createRule: (input: AutomationRuleInput) => Promise<AutomationRule | null>;
+  /** Saves changes to a rule; resolves whether it was saved. */
+  saveRule: (id: string, input: AutomationRuleInput) => Promise<boolean>;
   toggleStatus: (id: string) => Promise<void>;
   deleteRule: (id: string) => Promise<void>;
   refresh: () => Promise<void>;
@@ -189,9 +162,8 @@ export function useAutomations(
     saveToStorage(next, userId);
   }, [userId]);
 
-  const addRule = useCallback(async (values: AutomationRuleFormValues) => {
-    const input = formValuesToInput(values);
-    const taskTitle = todosRef.current.find((t) => t.id === values.taskId)?.text;
+  const createRule = useCallback(async (input: AutomationRuleInput) => {
+    const taskTitle = todosRef.current.find((t) => t.id === input.taskId)?.text;
 
     if (!online) {
       const local = inputToLocalRule(input, undefined, taskTitle);
@@ -211,16 +183,14 @@ export function useAutomations(
     }
   }, [online, rules, persistLocally]);
 
-  const updateRule = useCallback(async (id: string, values: AutomationRuleFormValues) => {
+  const saveRule = useCallback(async (id: string, input: AutomationRuleInput) => {
     const existing = rules.find((r) => r.id === id);
-    if (!existing) return;
-
-    const input = formValuesToInput(values);
-    const taskTitle = todosRef.current.find((t) => t.id === values.taskId)?.text;
+    if (!existing) return false;
+    const taskTitle = todosRef.current.find((t) => t.id === input.taskId)?.text;
 
     if (!online) {
       persistLocally(rules.map((r) => (r.id === id ? inputToLocalRule(input, existing, taskTitle) : r)));
-      return;
+      return true;
     }
 
     try {
@@ -228,8 +198,10 @@ export function useAutomations(
       const rule = fromApi(saved, todosRef.current);
       setRules((prev) => prev.map((r) => (r.id === id ? rule : r)));
       setError(null);
+      return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save the rule');
+      return false;
     }
   }, [online, rules, persistLocally]);
 
@@ -264,6 +236,7 @@ export function useAutomations(
         notifyBrowser: existing.notifyBrowser,
         notifyEmail: existing.notifyEmail ?? false,
         timezone: existing.timezone,
+        ...(existing.spec ? { spec: existing.spec } : {}),
       });
       setRules((prev) => prev.map((r) => (r.id === id ? fromApi(saved, todosRef.current) : r)));
       setError(null);
@@ -293,6 +266,6 @@ export function useAutomations(
   // the previous user's offline draft rules while the effect loads the new key.
   return {
     rules: rulesUserId === userId ? rules : [],
-    loading, online, error, addRule, updateRule, toggleStatus, deleteRule, refresh,
+    loading, online, error, createRule, saveRule, toggleStatus, deleteRule, refresh,
   };
 }

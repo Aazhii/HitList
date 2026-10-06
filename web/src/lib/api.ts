@@ -8,6 +8,7 @@
  */
 
 import { simpleRequest } from './simpleRequest';
+import type { RuleSpec } from './automationSpec';
 import { trackSourceWrite } from './sourceSaves';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -452,7 +453,7 @@ export interface ApiAutomationRule {
   name: string;
   description?: string;
   taskId?: string;
-  triggerType: 'due-date' | 'overdue' | 'recurring' | 'status-change' | 'daily-digest';
+  triggerType: 'due-date' | 'overdue' | 'recurring' | 'status-change' | 'daily-digest' | 'custom';
   status: 'active' | 'paused' | 'draft';
   urgency: 'low' | 'medium' | 'high' | 'critical';
   /**
@@ -475,10 +476,14 @@ export interface ApiAutomationRule {
   lastTriggeredAt?: number;
   /** When the rule next fires. Absent for the event-driven triggers. */
   nextTriggerAt?: number;
+  /** What the rule watches, checks and does. Every rule the server returns has one; sent back, it replaces the rule's meaning. */
+  spec?: RuleSpec;
+  /** Set when the rule stopped working (for example after repeated failed runs). */
+  error?: string;
 }
 
 export type AutomationRuleInput = Omit<
-  ApiAutomationRule, 'id' | 'createdAt' | 'updatedAt' | 'lastTriggeredAt' | 'nextTriggerAt'
+  ApiAutomationRule, 'id' | 'createdAt' | 'updatedAt' | 'lastTriggeredAt' | 'nextTriggerAt' | 'error'
 >;
 
 export interface ApiAutomationRun {

@@ -103,6 +103,29 @@ function createCliqAlerts({ stateDir, localPost, send, getAccount, getWorkspace 
     return { result: localError ? 'local-error' : 'none' };
   }
 
+  /** The Cliq address saved for this account (the personal one first, else any), or null. Automation rules message this address. */
+  function addressFor(accountId = getAccount()?.userId) {
+    const all = read()[accountId] || {};
+    return [all.personal, ...Object.values(all)].map((e) => e && e.email).find((e) => typeof e === 'string' && EMAIL.test(e)) || null;
+  }
+
+  /** Sends one message with the given text to the saved address (the rule builder's "send a test with this message"). */
+  async function sendMessage(text, expectedAccount = getAccount()?.userId) {
+    const accountId = getAccount()?.userId;
+    if (!accountId || accountId !== expectedAccount) return { result: 'signed-out' };
+    const email = addressFor(accountId);
+    if (!email) return { result: 'bad-email' };
+    const clean = String(text || '').trim().slice(0, 1900);
+    if (!clean) return { result: 'error' };
+    const epoch = generation;
+    const isCurrent = () => generation === epoch && getAccount()?.userId === accountId;
+    try {
+      const reply = await send('/notify/message', { email, text: clean }, { accountIdentity: accountId, isCurrent, signal: AbortSignal.timeout(10_000) });
+      if (!isCurrent()) return { result: 'cancelled' };
+      return { result: reply.status === 200 ? 'sent' : reply.status === 401 ? 'sign-in-needed' : reply.status === 400 ? 'bad-recipient' : reply.status === 429 ? 'error' : reply.status === 503 ? 'not-configured' : 'error' };
+    } catch { return { result: isCurrent() ? 'offline' : 'cancelled' }; }
+  }
+
   /**
    * Delivers the messages automation rules queued for the Cliq bot (the local server's outbox). It needs only the Cliq address
    * saved in Account → Cliq alerts, not the overdue-alerts switch. At most one batch of ten per call. A message whose rule was
@@ -111,8 +134,7 @@ function createCliqAlerts({ stateDir, localPost, send, getAccount, getWorkspace 
   async function runOutbox() {
     const accountId = getAccount()?.userId;
     if (!accountId) return { result: 'signed-out' };
-    const entries = Object.values(read()[accountId] || {});
-    const email = [read()[accountId]?.personal, ...entries].map((e) => e && e.email).find((e) => typeof e === 'string' && EMAIL.test(e));
+    const email = addressFor(accountId);
     if (!email) return { result: 'no-email' };
     const epoch = generation;
     const outboxController = new AbortController();
@@ -184,7 +206,7 @@ function createCliqAlerts({ stateDir, localPost, send, getAccount, getWorkspace 
     return () => { clearTimeout(first); clearInterval(timer); cancel(); };
   }
 
-  return { getSettings, setSettings, status, check, runOutbox, sendTest, startSchedule, cancel };
+  return { getSettings, setSettings, status, check, runOutbox, addressFor, sendMessage, sendTest, startSchedule, cancel };
 }
 
 module.exports = { createCliqAlerts };
