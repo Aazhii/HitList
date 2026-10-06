@@ -4,7 +4,9 @@ import type { UpdateStatus } from '@/lib/updateMessage';
 
 interface UpdateBridge {
   getUpdate?: () => Promise<UpdateStatus>;
-  checkUpdate?: () => Promise<UpdateStatus>;
+  checkUpdate?: (options?: { force?: boolean }) => Promise<UpdateStatus>;
+  findUpdateVersion?: (text: string) => Promise<UpdateStatus>;
+  chooseUpdateFile?: () => Promise<UpdateStatus>;
   downloadUpdate?: () => Promise<UpdateStatus>;
   cancelUpdate?: () => Promise<UpdateStatus>;
   installUpdate?: () => Promise<UpdateStatus & { restart?: boolean }>;
@@ -26,9 +28,12 @@ export function useAppUpdate() {
   // The shell reports progress as it happens; these replace the status without asking.
   useEffect(() => bridge?.onUpdateProgress?.((next) => setStatus(next)), [bridge]);
 
-  const check = useCallback(() => run(bridge?.checkUpdate), [bridge, run]);
+  const check = useCallback((options?: { force?: boolean }) => run(bridge?.checkUpdate ? () => bridge.checkUpdate!(options) : undefined), [bridge, run]);
+  const findVersion = useCallback((text: string) => run(bridge?.findUpdateVersion ? () => bridge.findUpdateVersion!(text) : undefined), [bridge, run]);
+  const chooseFile = useCallback(() => run(bridge?.chooseUpdateFile), [bridge, run]);
+  const canChoose = !!bridge?.findUpdateVersion && !!bridge?.chooseUpdateFile;
   const download = useCallback(() => run(bridge?.downloadUpdate), [bridge, run]);
   const cancel = useCallback(() => run(bridge?.cancelUpdate), [bridge, run]);
   const install = useCallback(() => run(bridge?.installUpdate), [bridge, run]);
-  return { visible, available, status, check, download, cancel, install };
+  return { visible, available, status, check, findVersion, chooseFile, canChoose, download, cancel, install };
 }

@@ -8,7 +8,7 @@ const latest = { version: '1.2.0', name: 'HitList 1.2.0', notes: 'Faster Today p
 const base: UpdateStatus = { current: '1.1.0', phase: 'current', checkedAt: 1, error: null, file: null, progress: null, mode: null, latest: null };
 const available: UpdateStatus = { ...base, phase: 'available', mode: 'swap', latest };
 
-function bridge(afterCheck: UpdateStatus, extra: Record<string, unknown> = {}) {
+function bridge(afterCheck: UpdateStatus, extra: Record<string, ReturnType<typeof vi.fn>> = {}) {
   let push: ((s: UpdateStatus) => void) | null = null;
   const b = {
     getUpdate: vi.fn(async () => base),
@@ -20,12 +20,46 @@ function bridge(afterCheck: UpdateStatus, extra: Record<string, unknown> = {}) {
     ...extra,
   };
   window.hitlistDesktop = b as unknown as typeof window.hitlistDesktop;
-  return { ...b, push: (s: UpdateStatus) => act(() => { push?.(s); }) };
+  return { ...b, ...(extra as { findUpdateVersion: ReturnType<typeof vi.fn>; chooseUpdateFile: ReturnType<typeof vi.fn> }), push: (s: UpdateStatus) => act(() => { push?.(s); }) };
 }
 
 afterEach(() => { delete window.hitlistDesktop; });
 
 describe('UpdateDialog', () => {
+  it('finds a typed version and makes going back to an older one wait for a confirmation', async () => {
+    const older: UpdateStatus = { ...available, requested: true, direction: 'older', latest: { ...latest, version: '1.0.5', name: 'HitList 1.0.5' } };
+    const b = bridge(base, { findUpdateVersion: vi.fn(async () => older), chooseUpdateFile: vi.fn(async () => base) });
+    render(<UpdateDialog open onOpenChange={vi.fn()} />);
+    await screen.findByText('HitList is up to date.');
+    fireEvent.change(screen.getByLabelText('Version to install'), { target: { value: 'HitList 1.0.5' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Find' }));
+    await waitFor(() => expect(b.findUpdateVersion).toHaveBeenCalledWith('HitList 1.0.5'));
+    expect(await screen.findByText('Version 1.0.5 is older than the one you have.')).toBeInTheDocument();
+    const download = screen.getByRole('button', { name: 'Download' });
+    expect(download).toBeDisabled();
+    fireEvent.click(screen.getByRole('checkbox'));
+    expect(download).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Back to the latest version' }));
+    await waitFor(() => expect(b.checkUpdate).toHaveBeenLastCalledWith({ force: true }));
+  });
+
+  it('installs from a chosen file and says when it could not be checked', async () => {
+    const fromFile: UpdateStatus = { ...available, phase: 'ready', requested: true, fromFile: true, verified: false, direction: 'newer', file: '/d/HitList.dmg' };
+    const b = bridge(base, { findUpdateVersion: vi.fn(async () => base), chooseUpdateFile: vi.fn(async () => fromFile) });
+    render(<UpdateDialog open onOpenChange={vi.fn()} />);
+    await screen.findByText('HitList is up to date.');
+    fireEvent.click(screen.getByRole('button', { name: 'Install from a downloaded file…' }));
+    await waitFor(() => expect(b.chooseUpdateFile).toHaveBeenCalled());
+    expect(await screen.findByText('Ready to install version 1.2.0 from your file.')).toBeInTheDocument();
+    expect(screen.getByText(/could not be checked/)).toBeInTheDocument();
+  });
+
+  it('explains version and file errors', () => {
+    for (const code of ['bad-version', 'version-not-found', 'no-installer', 'file-missing', 'not-a-hitlist-file', 'wrong-architecture']) {
+      expect(updateErrorMessage(code)).not.toMatch(/update server/);
+    }
+  });
+
   it('says it belongs to the desktop app in a browser', () => {
     render(<UpdateDialog open onOpenChange={vi.fn()} />);
     expect(screen.getByText(/part of the HitList desktop app/)).toBeInTheDocument();

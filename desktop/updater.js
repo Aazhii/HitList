@@ -66,6 +66,20 @@ function hashFor(sumsText, fileName) {
   return null;
 }
 
+/** The version written in free text: "HitList 1.1.27", "HitList_1.1.27", "v1.2.0-beta1", "HitList-1.1.27-arm64.dmg". Null if none. */
+function versionIn(text) {
+  const m = /(\d+\.\d+\.\d+(?:-(?:alpha|beta)\d+)?)/.exec(String(text || ''));
+  return m ? parseVersion(m[1]) : null;
+}
+const versionText = (v) => `${v.nums.join('.')}${v.stage ? `-${v.stage}${v.stageNo}` : ''}`;
+
+/** What kind of file a person may hand in, per computer: the installer this platform's release builds. */
+const FILE_PATTERNS = {
+  darwin: /^HitList-\d+\.\d+\.\d+(?:-(?:alpha|beta)\d+)?-(arm64|x64)\.(dmg|zip)$/i,
+  win32: /^HitList-Setup-\d+\.\d+\.\d+(?:-(?:alpha|beta)\d+)?-x64\.exe$/i,
+  linux: /^HitList-\d+\.\d+\.\d+(?:-(?:alpha|beta)\d+)?-x64\.AppImage$/i,
+};
+
 function createUpdater({
   repo, currentVersion, platform, arch, fetch, downloadDir, canSwap = false, swapBlock = null, installFile, openFile, onChange = () => {}, now = () => Date.now(),
 }) {
@@ -82,6 +96,13 @@ function createUpdater({
 
   const headers = { Accept: 'application/vnd.github+json', 'User-Agent': 'HitList-desktop' };
 
+  const directionOf = (version) => {
+    const v = parseVersion(version) || versionIn(version);
+    if (!v || !current) return null;
+    const c = compareVersions(v, current);
+    return c > 0 ? 'newer' : c < 0 ? 'older' : 'same';
+  };
+
   const status = () => ({
     current: currentVersion,
     phase: state.phase,
@@ -90,6 +111,13 @@ function createUpdater({
     file: state.file,
     progress: state.progress,
     mode: latest ? latest.mode : null,
+    /** A version the person asked for by name, or a file they handed in, rather than the newest release. */
+    requested: !!(latest && (latest.requested || latest.fromFile)),
+    fromFile: !!(latest && latest.fromFile),
+    /** Whether the chosen version is newer, older (a downgrade) or the same as the one installed. */
+    direction: latest ? directionOf(latest.version) : null,
+    /** For a file: true when its checksum matched a SHA256SUMS.txt beside it, false when there was none to check against. */
+    verified: latest && latest.fromFile ? latest.verified : null,
     // Why the app cannot replace itself here (and the installer is opened instead), when that is the case.
     swapBlock: latest && latest.mode === 'open' ? (latest.swapBlock || swapBlock) : null,
     latest: latest ? { version: latest.version, name: latest.name, notes: latest.notes, size: latest.asset.size } : null,
@@ -98,8 +126,12 @@ function createUpdater({
   const set = (patch) => { state = { ...state, ...patch }; lastPush = now(); onChange(status()); };
 
   /** Looks for a newer release. Quiet on failure (offline is normal): the phase becomes 'error' and the next check retries. */
-  async function check() {
+  async function check({ force = false } = {}) {
     if (['checking', 'downloading', 'verifying', 'installing'].includes(state.phase)) return status();
+    // A version the person picked, or a file they chose, is not swapped for the newest release behind their back.
+    // Only an explicit "check again" (force) goes back to looking for the latest.
+    if (latest && (latest.requested || latest.fromFile) && !force) return status();
+    if (force && latest && (latest.requested || latest.fromFile)) { latest = null; state = { ...state, phase: 'idle', file: null, progress: null, error: null }; }
     if (!current) { set({ phase: 'error', error: 'dev-build' }); return status(); }
     // An update that is downloaded and waiting stays on screen while we look: only a NEWER release replaces it.
     const staged = state.phase === 'ready' && latest ? latest : null;
@@ -219,6 +251,98 @@ function createUpdater({
     return status();
   }
 
+  /**
+   * A specific version, by name: "1.1.27", "HitList 1.1.27", "HitList_1.1.27", "v1.2.0-beta1". Looks through the project's releases
+   * for it (newer, older or the same as the installed one) and offers its installer for this computer; Download and Restart then
+   * work as for any update. Nothing is changed until the person installs it.
+   */
+  async function checkVersion(text) {
+    if (['checking', 'downloading', 'verifying', 'installing'].includes(state.phase)) return status();
+    const wanted = versionIn(text);
+    if (!wanted) { set({ phase: 'error', error: 'bad-version' }); return status(); }
+    const before = state;
+    set({ phase: 'checking', error: null });
+    try {
+      let found = null;
+      for (let page = 1; page <= 5 && !found; page += 1) {
+        const res = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=100&page=${page}`, { headers });
+        if (!res.ok) throw new Error(`releases ${res.status}`);
+        const releases = await res.json();
+        if (!releases.length) break;
+        found = releases.find((r) => !r.draft && (() => { const v = versionIn(r.tag_name); return v && compareVersions(v, wanted) === 0; })()) || null;
+      }
+      if (!found) { set({ phase: 'error', error: 'version-not-found', checkedAt: now() }); return status(); }
+      const asset = pickAsset(found.assets || [], platform, arch, canSwap);
+      if (!asset) { set({ phase: 'error', error: 'no-installer', checkedAt: now() }); return status(); }
+      if (before.phase === 'ready' && before.file && !(latest && latest.fromFile)) fs.rmSync(before.file, { force: true });
+      latest = {
+        version: versionText(wanted),
+        name: found.name || found.tag_name,
+        notes: String(found.body || '').slice(0, 2000),
+        asset,
+        sums: (found.assets || []).find((a) => a.name === 'SHA256SUMS.txt') || null,
+        mode: canSwap && isSwapAsset(asset, platform) ? 'swap' : 'open',
+        requested: true,
+      };
+      set({ phase: 'available', checkedAt: now(), file: null, progress: null, error: null });
+    } catch (e) {
+      set({ phase: 'error', checkedAt: now(), error: e && e.message ? e.message : 'failed' });
+    }
+    return status();
+  }
+
+  /**
+   * A file the person already downloaded (the .dmg on a Mac, the installer .exe, the .AppImage): checks its name, that it is for
+   * this kind of computer, and its checksum when a SHA256SUMS.txt sits beside it, then readies it like a download. Their file is
+   * only read, never moved or deleted.
+   */
+  async function useFile(filePath) {
+    if (['checking', 'downloading', 'verifying', 'installing'].includes(state.phase)) return status();
+    const pattern = FILE_PATTERNS[platform];
+    const name = path.basename(String(filePath || ''));
+    let stat = null;
+    try { stat = fs.statSync(filePath); } catch { /* reported below */ }
+    if (!pattern || !stat || !stat.isFile()) { set({ phase: 'error', error: 'file-missing' }); return status(); }
+    const m = pattern.exec(name);
+    const version = versionIn(name);
+    if (!m || !version) { set({ phase: 'error', error: 'not-a-hitlist-file' }); return status(); }
+    if (platform === 'darwin' && m[1].toLowerCase() !== arch) { set({ phase: 'error', error: 'wrong-architecture' }); return status(); }
+    set({ phase: 'verifying', error: null, progress: { received: 0, total: stat.size } });
+    let verified = false;
+    try {
+      const sumsPath = path.join(path.dirname(filePath), 'SHA256SUMS.txt');
+      const expected = fs.existsSync(sumsPath) ? hashFor(fs.readFileSync(sumsPath, 'utf8'), name) : null;
+      if (expected) {
+        const hash = crypto.createHash('sha256');
+        const fd = fs.openSync(filePath, 'r');
+        try {
+          const buf = Buffer.allocUnsafe(1024 * 1024);
+          let read;
+          while ((read = fs.readSync(fd, buf, 0, buf.length, null)) > 0) hash.update(buf.subarray(0, read));
+        } finally { fs.closeSync(fd); }
+        if (hash.digest('hex') !== expected) { set({ phase: 'error', error: 'checksum-mismatch', progress: null }); return status(); }
+        verified = true;
+      }
+    } catch {
+      set({ phase: 'error', error: 'file-missing', progress: null });
+      return status();
+    }
+    const asset = { name, size: stat.size };
+    const swappable = platform === 'darwin' ? /\.(dmg|zip)$/i.test(name) : true;
+    latest = {
+      version: versionText(version),
+      name: `HitList ${versionText(version)} (from a file)`,
+      notes: '',
+      asset,
+      sums: null,
+      mode: canSwap && swappable ? 'swap' : 'open',
+      fromFile: true,
+      verified,
+    };
+    set({ phase: 'ready', file: filePath, progress: { received: stat.size, total: stat.size }, error: null });
+    return status();
+  }
+
   /** Stops a download in progress; the half file is deleted and the update stays available. */
   function cancel() {
     if (controller) controller.abort();
@@ -252,7 +376,7 @@ function createUpdater({
     return () => { clearTimeout(first); clearInterval(timer); };
   }
 
-  return { check, download, cancel, install, status, startSchedule };
+  return { check, checkVersion, useFile, download, cancel, install, status, startSchedule };
 }
 
-module.exports = { createUpdater, parseVersion, compareVersions, pickAsset, isSwapAsset, hashFor, CHECK_INTERVAL };
+module.exports = { createUpdater, parseVersion, versionIn, compareVersions, pickAsset, isSwapAsset, hashFor, CHECK_INTERVAL };

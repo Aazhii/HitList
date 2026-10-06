@@ -24,7 +24,9 @@ contextBridge.exposeInMainWorld('hitlistDesktop', {
     return () => ipcRenderer.removeListener('cliq:commands-applied', handler);
   },
   getUpdate: () => ipcRenderer.invoke('update:status'),
-  checkUpdate: () => ipcRenderer.invoke('update:check'),
+  checkUpdate: (options) => ipcRenderer.invoke('update:check', options),
+  findUpdateVersion: (text) => ipcRenderer.invoke('update:version', text),
+  chooseUpdateFile: () => ipcRenderer.invoke('update:file'),
   downloadUpdate: () => ipcRenderer.invoke('update:download'),
   cancelUpdate: () => ipcRenderer.invoke('update:cancel'),
   installUpdate: () => ipcRenderer.invoke('update:install'),

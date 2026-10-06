@@ -130,7 +130,7 @@ test('install on Mac unpacks beside the app, checks the signature, and starts th
     },
   });
   assert.deepStrictEqual(out, { ok: true });
-  assert.deepStrictEqual(ran, ['ditto', 'codesign']);
+  assert.deepStrictEqual(ran, ['ditto', 'plutil', 'codesign']);
   assert.ok(fs.existsSync(path.join(dir, '.HitList.app.new')));
   assert.deepStrictEqual(fs.readdirSync(dir).filter((n) => n.startsWith('.HitList-update-')), []);
   assert.strictEqual(started[0], '/bin/sh');
@@ -228,4 +228,33 @@ test('install on a Mac whose Applications folder is not ours prepares the new co
   assert.ok(fs.readdirSync(helper).some((n) => n.startsWith('stage-')), 'unpacked under our own folder');
   assert.deepStrictEqual(fs.readdirSync(dir).filter((n) => n.startsWith('.HitList')), [], 'nothing was made beside the app');
   assert.strictEqual(marker(bundle), 'old', 'the running app is untouched until the helper runs');
+});
+
+test('a disk image is mounted out of sight, the app copied out, the image let go, and only a HitList app is accepted', async () => {
+  const dir = tmp();
+  const bundle = fakeApp(dir, 'HitList.app', 'old');
+  const exe = path.join(bundle, 'Contents/MacOS/HitList');
+  const ran = [];
+  let started = null;
+  const plutil = (id) => (cmd) => (cmd === 'plutil' ? Buffer.from(`${id}\n`) : undefined);
+  const make = (id) => ({
+    plan: { ok: true, mode: 'contents' },
+    run: (cmd, args) => {
+      ran.push(cmd);
+      if (cmd === 'hdiutil' && args[0] === 'attach') fakeApp(args[args.indexOf('-mountpoint') + 1], 'HitList.app', 'new');
+      if (cmd === 'ditto') fakeApp(args[1].replace(/\/[^/]+$/, '').replace(/\/HitList.app$/, ''), 'HitList.app', 'new');
+      return plutil(id)(cmd);
+    },
+    spawnDetached: (cmd, args) => { started = [cmd, ...args]; },
+  });
+  const ok = await install({ platform: 'darwin', file: '/dl/HitList-1.1.27-arm64.dmg', exePath: exe, pid: 7, helperDir: path.join(dir, 'helper'), deps: make('com.hitlist.desktop') });
+  assert.deepStrictEqual(ok, { ok: true });
+  assert.deepStrictEqual(ran.filter((c) => c === 'hdiutil'), ['hdiutil', 'hdiutil'], 'attached, then detached');
+  assert.ok(ran.indexOf('ditto') > ran.indexOf('hdiutil') && ran.includes('plutil') && ran.includes('codesign'));
+  assert.ok(started[1].endsWith('swap-contents.sh'));
+  assert.deepStrictEqual(fs.readdirSync(path.join(dir, 'helper')).filter((n) => n.startsWith('mount-')), [], 'the mount point is gone');
+
+  const other = await install({ platform: 'darwin', file: '/dl/HitList-1.1.27-arm64.dmg', exePath: exe, pid: 7, helperDir: path.join(dir, 'helper2'), deps: make('com.someone.else') });
+  assert.deepStrictEqual(other, { ok: false, reason: 'bad-package' });
+  assert.strictEqual(marker(bundle), 'old');
 });

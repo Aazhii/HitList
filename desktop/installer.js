@@ -13,6 +13,7 @@ const path = require('node:path');
 const { execFileSync, spawn } = require('node:child_process');
 
 const WAIT_SECONDS = 60;
+const APP_ID = 'com.hitlist.desktop';
 const quote = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`; // for sh
 
 /** The .app folder the running Mac app lives in, or null (a dev run, or not inside a bundle). */
@@ -199,9 +200,26 @@ async function install({ platform, file, exePath, appImage, pid, helperDir, deps
         ? fs.mkdtempSync(path.join(path.dirname(bundle), '.HitList-update-'))
         : fs.mkdtempSync(path.join(helperDir, 'stage-'));
       try {
-        run('ditto', ['-x', '-k', file, stageParent]);
+        if (/\.dmg$/i.test(file)) {
+          // A disk image the person downloaded: mount it read-only out of sight, copy the app out, and let go of the image.
+          const mount = fs.mkdtempSync(path.join(helperDir, 'mount-'));
+          try {
+            run('hdiutil', ['attach', '-nobrowse', '-readonly', '-noautoopen', '-mountpoint', mount, file]);
+            const inside = fs.readdirSync(mount).find((n) => n.endsWith('.app'));
+            if (!inside) throw new Error('no-app-in-zip');
+            run('ditto', [path.join(mount, inside), path.join(stageParent, inside)]);
+          } finally {
+            try { run('hdiutil', ['detach', mount, '-force']); } catch { /* it may never have attached */ }
+            rm(mount);
+          }
+        } else {
+          run('ditto', ['-x', '-k', file, stageParent]);
+        }
         const app = fs.readdirSync(stageParent).find((n) => n.endsWith('.app'));
         if (!app) throw new Error('no-app-in-zip');
+        // Only a HitList app is installed over HitList, whatever file was handed in.
+        const id = String(run('plutil', ['-extract', 'CFBundleIdentifier', 'raw', '-o', '-', path.join(stageParent, app, 'Contents', 'Info.plist')]) || '').trim();
+        if (id && id !== APP_ID) throw new Error('no-app-in-zip');
         run('codesign', ['--verify', '--deep', '--strict', path.join(stageParent, app)]);
         if (plan.mode === 'contents') {
           const script = path.join(helperDir, 'swap-contents.sh');
@@ -254,7 +272,7 @@ function cleanupAfterUpdate({ platform, exePath, helperDir, rm = (p) => fs.rmSyn
   remove(`${bundle}.old`);
   if (helperDir) {
     remove(path.join(helperDir, 'Contents.old'));
-    try { for (const name of list(helperDir)) if (name.startsWith('stage-')) remove(path.join(helperDir, name)); } catch { /* no folder yet */ }
+    try { for (const name of list(helperDir)) if (name.startsWith('stage-') || name.startsWith('mount-')) remove(path.join(helperDir, name)); } catch { /* no folder yet */ }
   }
   const dir = path.dirname(bundle);
   try {

@@ -401,7 +401,7 @@ async function openWindow() {
   const publicAccount = () => (account ? { email: account.email, userId: account.userId } : null);
   for (const channel of [
     'account:get', 'account:ready', 'account:signIn', 'account:signOut', 'restore:check', 'restore:run',
-    'cliq:get', 'cliq:set', 'cliq:test', 'cliq:address', 'cliq:message', 'update:status', 'update:check',
+    'cliq:get', 'cliq:set', 'cliq:test', 'cliq:address', 'cliq:message', 'update:status', 'update:check', 'update:version', 'update:file',
     'update:download', 'update:cancel', 'update:install', 'backup:status', 'backup:now',
     'cliq:connection:get', 'cliq:connection:start', 'cliq:connection:confirm',
     'cliq:connection:enable', 'cliq:connection:fetch', 'cliq:connection:unlink',
@@ -485,7 +485,15 @@ async function openWindow() {
   ipcMain.handle('cliq:address', () => ({ email: cliqAlerts.addressFor(account?.userId) }));
   ipcMain.handle('cliq:message', (_e, text) => cliqAlerts.sendMessage(typeof text === 'string' ? text : '', account?.userId));
   ipcMain.handle('update:status', () => updater.status());
-  ipcMain.handle('update:check', () => updater.check());
+  ipcMain.handle('update:check', (_e, options) => updater.check({ force: !!(options && options.force) }));
+  // A specific version by name, or an installer the person already downloaded (chosen in the system's file dialog).
+  ipcMain.handle('update:version', (_e, text) => updater.checkVersion(typeof text === 'string' ? text.slice(0, 80) : ''));
+  ipcMain.handle('update:file', async () => {
+    const extensions = process.platform === 'darwin' ? ['dmg', 'zip'] : process.platform === 'win32' ? ['exe'] : ['AppImage'];
+    const picked = await dialog.showOpenDialog(win, { title: 'Choose a HitList installer', properties: ['openFile'], filters: [{ name: 'HitList installer', extensions }] });
+    if (picked.canceled || !picked.filePaths[0]) return updater.status();
+    return updater.useFile(picked.filePaths[0]);
+  });
   ipcMain.handle('update:download', () => updater.download());
   ipcMain.handle('update:cancel', () => updater.cancel());
   ipcMain.handle('update:install', async () => {

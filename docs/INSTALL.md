@@ -122,3 +122,15 @@ You can also start HitList from a terminal with `hitlist-desktop`.
 - Your data is kept in `~/.config/HitList`. Updating means downloading the new file (and running the new `.deb`, or
   replacing the AppImage); the data folder is not touched.
 - **Linux has not been tested by the developer yet**, so please report anything odd, with your distribution and version.
+
+## Installing a specific version, or from a file you already have
+
+Open **Updates** in the app. Below the normal check there are two more ways:
+
+- **Install a version** – type a tag such as `HitList 1.1.27` or `1.1.27` and press Find. HitList looks for that release on GitHub,
+  and downloads and checks it like any update. Going to an *older* version asks you to tick a confirmation first. "Back to the
+  latest version" returns to the normal flow. A version you picked is not replaced by the daily check.
+- **Install from a downloaded file…** – choose the installer you already downloaded (`.dmg` or `.zip` on Mac, `-Setup-…-x64.exe`
+  on Windows, `.AppImage` on Linux). HitList checks the name, the processor type (Mac), and, on Mac, that the app inside really is
+  HitList, then replaces itself and restarts. If a `SHA256SUMS.txt` is next to the file it is verified; otherwise the dialog says it
+  could not be checked. Your file is never modified or deleted. Your tasks are kept either way.

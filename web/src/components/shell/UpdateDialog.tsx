@@ -2,7 +2,7 @@
  * Update screen (desktop only): the newer version, a download with visible progress, the checks, and the restart.
  * Where HitList cannot replace itself, the last step opens the installer instead and says what to do with it.
  */
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Check, Circle, Loader2, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { installHint, percentOf, progressLabel, sizeLabel, swapBlockMessage, updateHeadline, updateSteps } from '@/lib/updateMessage';
@@ -64,6 +64,8 @@ function Bar({ s }: { s: UpdateStatus }) {
 export function UpdateDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const update = useAppUpdate();
   const { check } = update;
+  const [versionText, setVersionText] = useState('');
+  const [confirmOlder, setConfirmOlder] = useState(false);
 
   useEffect(() => { if (open && update.available) void check(); }, [open, update.available, check]);
 
@@ -114,12 +116,22 @@ export function UpdateDialog({ open, onOpenChange }: { open: boolean; onOpenChan
               <p className="text-[13px] text-a-muted">Your tasks are kept. HitList closes for a moment and opens again on the new version.</p>
             )}
 
+            {s.requested && s.direction === 'older' && ['available', 'ready'].includes(s.phase) && (
+              <label className="flex items-start gap-2 text-[13px] text-a-attention">
+                <input type="checkbox" className="mt-0.5" checked={confirmOlder} onChange={(e) => setConfirmOlder(e.target.checked)} />
+                <span>I understand this goes back to an older version. My tasks stay, but the older version may not understand newer data.</span>
+              </label>
+            )}
+            {s.fromFile && s.verified === false && ['available', 'ready'].includes(s.phase) && (
+              <p className="text-[13px] text-a-muted">No checksum was found next to this file, so it could not be checked. Install only a file you got from the HitList releases.</p>
+            )}
+
             <div className="flex items-center gap-3">
-              {s.phase === 'available' && <button type="button" className={primary} onClick={() => { void update.download(); }}>Download</button>}
+              {s.phase === 'available' && <button type="button" className={primary} disabled={s.direction === 'same' || (s.direction === 'older' && !confirmOlder)} onClick={() => { void update.download(); }}>Download</button>}
               {s.phase === 'downloading' && <button type="button" className={secondary} onClick={() => { void update.cancel(); }}>Cancel</button>}
               {s.phase === 'ready' && (
                 <>
-                  <button type="button" className={primary} onClick={() => { void update.install(); }}>
+                  <button type="button" className={primary} disabled={s.direction === 'older' && !confirmOlder} onClick={() => { void update.install(); }}>
                     {s.mode === 'swap' ? 'Restart and update' : 'Open installer'}
                   </button>
                   <button type="button" className={secondary} onClick={() => onOpenChange(false)}>Later</button>
@@ -127,9 +139,25 @@ export function UpdateDialog({ open, onOpenChange }: { open: boolean; onOpenChan
               )}
               {s.phase === 'error' && s.latest && <button type="button" className={primary} onClick={() => { void update.download(); }}>Try again</button>}
               {!working && s.phase !== 'ready' && s.phase !== 'downloading' && (
-                <button type="button" className={secondary} onClick={() => { void update.check(); }}>Check again</button>
+                <button type="button" className={secondary} onClick={() => { setConfirmOlder(false); void update.check({ force: true }); }}>{s.requested ? 'Back to the latest version' : 'Check again'}</button>
               )}
             </div>
+
+            {update.canChoose && !working && s.phase !== 'downloading' && (
+              <div className="flex flex-col gap-2 border-t border-a-line pt-3">
+                <form className="flex items-center gap-2" onSubmit={(e) => { e.preventDefault(); setConfirmOlder(false); void update.findVersion(versionText); }}>
+                  <input
+                    className="h-[34px] min-w-0 flex-1 rounded-[4px] border border-a-line-strong bg-a-surface px-2.5 text-[13px] text-a-ink"
+                    placeholder="Install a version, e.g. HitList 1.1.27"
+                    aria-label="Version to install"
+                    value={versionText}
+                    onChange={(e) => setVersionText(e.target.value)}
+                  />
+                  <button type="submit" className={secondary} disabled={!versionText.trim()}>Find</button>
+                </form>
+                <button type="button" className={cn(secondary, 'self-start')} onClick={() => { setConfirmOlder(false); void update.chooseFile(); }}>Install from a downloaded file…</button>
+              </div>
+            )}
           </div>
         )}
       </DialogContent>

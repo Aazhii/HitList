@@ -11,6 +11,13 @@ export interface UpdateStatus {
   /** Why HitList could not replace itself here, when the last step opens the installer instead. */
   swapBlock?: string | null;
   latest: { version: string; name: string; notes: string; size: number } | null;
+  /** True when the version was asked for by name or came from a file, not found by the daily check. */
+  requested?: boolean;
+  fromFile?: boolean;
+  /** Against the running version. An older one needs the person's confirmation. */
+  direction?: 'newer' | 'older' | 'same' | null;
+  /** For a chosen file: whether its checksum was confirmed (null when not from a file). */
+  verified?: boolean | null;
 }
 
 export function sizeLabel(bytes: number): string {
@@ -53,10 +60,12 @@ export function updateSteps(s: UpdateStatus): { download: StepState; verify: Ste
 export function updateHeadline(s: UpdateStatus): string {
   switch (s.phase) {
     case 'checking': return 'Checking for updates…';
-    case 'available': return `Version ${s.latest?.version ?? ''} is available.`;
+    case 'available': return s.requested && s.direction === 'older' ? `Version ${s.latest?.version ?? ''} is older than the one you have.`
+      : s.requested && s.direction === 'same' ? `Version ${s.latest?.version ?? ''} is the one you already have.`
+      : `Version ${s.latest?.version ?? ''} is available.`;
     case 'downloading': return `Downloading version ${s.latest?.version ?? ''}…`;
     case 'verifying': return 'Checking the download…';
-    case 'ready': return s.error ? updateErrorMessage(s.error) : s.mode === 'swap' ? 'Ready to install. HitList will restart.' : 'Downloaded. Open it to install.';
+    case 'ready': return s.error ? updateErrorMessage(s.error) : s.fromFile ? `Ready to install version ${s.latest?.version ?? ''} from your file.` : s.mode === 'swap' ? 'Ready to install. HitList will restart.' : 'Downloaded. Open it to install.';
     case 'installing': return 'Installing. HitList is restarting…';
     case 'current': return 'HitList is up to date.';
     case 'error': return updateErrorMessage(s.error);
@@ -69,6 +78,12 @@ export function updateErrorMessage(code: string | null): string {
     case 'checksum-mismatch':
     case 'checksum-missing':
     case 'size-mismatch': return 'The download did not match its checksum, so it was thrown away. Try again.';
+    case 'bad-version': return 'Type a version such as 1.1.27 or HitList 1.1.27.';
+    case 'version-not-found': return 'No published release has that version.';
+    case 'no-installer': return 'That release has no installer for this computer.';
+    case 'file-missing': return 'That file could not be read.';
+    case 'not-a-hitlist-file': return 'That is not a HitList installer for this computer.';
+    case 'wrong-architecture': return 'That installer is for a different kind of processor (Apple silicon vs Intel).';
     case 'dev-build': return 'This is a development run; updates apply to installed apps.';
     case 'unpack-failed':
     case 'bad-package':

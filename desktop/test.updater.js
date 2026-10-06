@@ -261,3 +261,133 @@ test('old installers of other versions are removed when a new one is downloaded'
   // Offline while the download waits: it is still there to install.
   a.cloudDown = true;
 });
+
+// ── a specific version, and a file the person already has ───────────────────────────────────────────────────────────────────
+
+const many = (versions) => versions.map((v) => release(`HitList_${v}`));
+
+test('a version asked for by name is found among the releases, whether newer, older or the same', async () => {
+  const a = makeUpdater({ releases: many(['1.3.0', '1.2.0', '1.1.0', '1.0.0']), current: '1.2.0' });
+  for (const text of ['1.0.0', 'HitList 1.0.0', 'HitList_1.0.0', 'v1.0.0', '  hitlist 1.0.0  ']) {
+    const s = await a.u.checkVersion(text);
+    assert.equal(s.phase, 'available', text);
+    assert.equal(s.latest.version, '1.0.0');
+    assert.equal(s.direction, 'older');
+    assert.equal(s.requested, true);
+  }
+  assert.equal((await a.u.checkVersion('1.3.0')).direction, 'newer');
+  assert.equal((await a.u.checkVersion('1.2.0')).direction, 'same');
+});
+
+test('a version that does not exist, or is not a version, says so and changes nothing', async () => {
+  const a = makeUpdater({ releases: many(['1.2.0']) });
+  assert.equal((await a.u.checkVersion('9.9.9')).error, 'version-not-found');
+  assert.equal((await a.u.checkVersion('latest please')).error, 'bad-version');
+  assert.equal((await a.u.checkVersion('')).error, 'bad-version');
+  const none = makeUpdater({ releases: [{ ...release('HitList_1.2.0'), assets: [] }] });
+  assert.equal((await none.u.checkVersion('1.2.0')).error, 'no-installer');
+});
+
+test('a beta can be asked for by name, drafts never can, and the chosen version is not replaced by the daily check', async () => {
+  const a = makeUpdater({ releases: [release('HitList_1.4.0-beta2'), release('HitList_1.3.0', { draft: true }), release('HitList_1.2.0')] });
+  assert.equal((await a.u.checkVersion('1.4.0-beta2')).latest.version, '1.4.0-beta2');
+  assert.equal((await a.u.checkVersion('1.3.0')).error, 'version-not-found');
+  await a.u.checkVersion('1.4.0-beta2');
+  const afterAuto = await a.u.check();
+  assert.equal(afterAuto.latest.version, '1.4.0-beta2', 'the picked version stays');
+  const back = await a.u.check({ force: true });
+  assert.notEqual(back.requested, true);
+});
+
+test('a version asked for is downloaded and installed like any update', async () => {
+  const body = 'hello';
+  const name = 'HitList-1.0.0-arm64.dmg';
+  const a = makeUpdater({
+    releases: many(['1.2.0', '1.0.0']), current: '1.2.0',
+    files: { 'u/dmg': body, 'u/sums': sumsFor(body, name) },
+  });
+  await a.u.checkVersion('1.0.0');
+  const s = await a.u.download();
+  assert.equal(s.phase, 'ready');
+  assert.equal(s.direction, 'older');
+  assert.equal(fs.readFileSync(path.join(a.dir, name), 'utf8'), body);
+});
+
+function filesIn(dir, files) {
+  for (const [name, body] of Object.entries(files)) fs.writeFileSync(path.join(dir, name), body);
+  return dir;
+}
+const fromFileUpdater = (extra = {}) => {
+  const downloads = fs.mkdtempSync(path.join(os.tmpdir(), 'dl-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'upd-'));
+  const u = createUpdater({
+    repo: 'o/r', currentVersion: '1.2.0', platform: 'darwin', arch: 'arm64', fetch: async () => { throw new Error('no network needed'); },
+    downloadDir: dir, canSwap: true, installFile: async () => ({ ok: true }), openFile: async () => {}, ...extra,
+  });
+  return { u, downloads, dir };
+};
+
+test('a downloaded installer chosen from the computer is checked and readied without any network', async () => {
+  const { u, downloads } = fromFileUpdater();
+  const file = path.join(downloads, 'HitList-1.1.27-arm64.dmg');
+  filesIn(downloads, { 'HitList-1.1.27-arm64.dmg': 'dmg bytes', 'SHA256SUMS.txt': sumsFor('dmg bytes', 'HitList-1.1.27-arm64.dmg') });
+  const s = await u.useFile(file);
+  assert.equal(s.phase, 'ready');
+  assert.equal(s.fromFile, true);
+  assert.equal(s.latest.version, '1.1.27');
+  assert.equal(s.direction, 'older');
+  assert.equal(s.verified, true, 'the checksum beside it matched');
+  assert.equal(s.mode, 'swap');
+  assert.equal(s.file, file);
+});
+
+test('without a checksum file the installer is still usable but says it was not verified; a wrong checksum is refused', async () => {
+  const a = fromFileUpdater();
+  const file = path.join(a.downloads, 'HitList-1.3.0-arm64.dmg');
+  filesIn(a.downloads, { 'HitList-1.3.0-arm64.dmg': 'bytes' });
+  const s = await a.u.useFile(file);
+  assert.equal(s.phase, 'ready');
+  assert.equal(s.verified, false);
+  assert.equal(s.direction, 'newer');
+
+  const b = fromFileUpdater();
+  const bad = path.join(b.downloads, 'HitList-1.3.0-arm64.dmg');
+  filesIn(b.downloads, { 'HitList-1.3.0-arm64.dmg': 'bytes', 'SHA256SUMS.txt': `${'0'.repeat(64)}  HitList-1.3.0-arm64.dmg\n` });
+  assert.equal((await b.u.useFile(bad)).error, 'checksum-mismatch');
+});
+
+test('only a HitList installer for this computer is accepted, and the person\'s file is never touched', async () => {
+  const { u, downloads } = fromFileUpdater();
+  filesIn(downloads, { 'notes.dmg': 'x', 'HitList-1.3.0-x64.dmg': 'x', 'HitList-1.3.0-arm64.exe': 'x', 'HitList-1.3.0-arm64.dmg': 'keep me' });
+  assert.equal((await u.useFile(path.join(downloads, 'notes.dmg'))).error, 'not-a-hitlist-file');
+  assert.equal((await u.useFile(path.join(downloads, 'HitList-1.3.0-x64.dmg'))).error, 'wrong-architecture');
+  assert.equal((await u.useFile(path.join(downloads, 'HitList-1.3.0-arm64.exe'))).error, 'not-a-hitlist-file');
+  assert.equal((await u.useFile(path.join(downloads, 'missing.dmg'))).error, 'file-missing');
+  assert.equal((await u.useFile(downloads)).error, 'file-missing');
+  await u.useFile(path.join(downloads, 'HitList-1.3.0-arm64.dmg'));
+  await u.check();
+  await u.cancel();
+  assert.equal(fs.readFileSync(path.join(downloads, 'HitList-1.3.0-arm64.dmg'), 'utf8'), 'keep me');
+});
+
+test('a chosen file is installed through the same step as a download, and the daily check does not replace it', async () => {
+  let given = null;
+  const { u, downloads } = fromFileUpdater({ installFile: async (x) => { given = x; return { ok: true }; } });
+  const file = path.join(downloads, 'HitList-1.1.27-arm64.dmg');
+  filesIn(downloads, { 'HitList-1.1.27-arm64.dmg': 'bytes' });
+  await u.useFile(file);
+  assert.equal((await u.check()).latest.version, '1.1.27');
+  const out = await u.install();
+  assert.equal(out.restart, true);
+  assert.equal(given.file, file);
+  assert.equal(fs.readFileSync(file, 'utf8'), 'bytes');
+});
+
+test('on Windows and Linux the matching installer names are accepted, and nothing else', async () => {
+  for (const [platform, good, bad] of [['win32', 'HitList-Setup-1.1.27-x64.exe', 'HitList-1.1.27-arm64.dmg'], ['linux', 'HitList-1.1.27-x64.AppImage', 'HitList_1.1.27_amd64.deb']]) {
+    const { u, downloads } = fromFileUpdater({ platform, arch: 'x64' });
+    filesIn(downloads, { [good]: 'x', [bad]: 'x' });
+    assert.equal((await u.useFile(path.join(downloads, good))).phase, 'ready', good);
+    assert.equal((await u.useFile(path.join(downloads, bad))).error, 'not-a-hitlist-file', bad);
+  }
+});

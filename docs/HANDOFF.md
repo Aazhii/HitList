@@ -206,6 +206,13 @@ time). **Not yet tried:** a real Cliq delivery end to end (needs the deployed fu
 `moveBlockWithChildren`, indent-aware numbering). Editor rules in `NoteEditor.tsx` (Enter on an empty nested item outdents, Backspace
 at the start outdents, code blocks keep real Tab). Stored inside the note's `blocksJson` (server limit 10,000 characters).
 
+### Update to a chosen version or from a file
+`desktop/updater.js`: `checkVersion(text)` finds a release by tag (`1.1.27` or `HitList 1.1.27`) and stages it like a normal update
+(`requested`, `direction` newer/older/same; the daily check does not replace it, `check({force:true})` does). `useFile(path)`
+validates the file name per platform, Mac architecture, SHA256SUMS if present (`verified`), and never touches the user's file.
+`installer.js` also installs a `.dmg` (hdiutil attach, bundle id must be HitList, ditto, detach). UI: `UpdateDialog.tsx`
+(older version needs a confirmation). Not verified on real Windows/Linux machines.
+
 ## 4. Catalyst resources (names only)
 - Project "HitList" (org id in `.catalystrc`). Functions: `backup`, `cliq-webhook` (both Advanced I/O, Node 20). Web client at
   `https://hitlist-60090109165.development.catalystserverless.in/app/` (trailing slash needed). Function URL
