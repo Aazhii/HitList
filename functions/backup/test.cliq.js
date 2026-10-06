@@ -46,6 +46,18 @@ test('the message lists up to ten tasks and says how many more', () => {
 	assert.match(text, /…and 5 more$/);
 });
 
+test('a task note goes under its task, and gets shorter before the message gets too long', () => {
+	const one = buildOverdueMessage([{ title: 'follow up @indumathi reg table audi', due: '2026-10-06 15:00', note: "asked to @mandy this isn't not added" }], 1);
+	assert.equal(one, "*1 task is overdue*\n• follow up @indumathi reg table audi — due Oct 6, 3:00 PM\n   ↳ asked to @mandy this isn't not added");
+	assert.equal(buildOverdueMessage([{ title: 'No note', due: '', note: '' }], 1), '*1 task is overdue*\n• No note');
+	const long = Array.from({ length: 10 }, (_, i) => ({ title: `Task ${i + 1}`, due: '', note: 'n'.repeat(300) }));
+	const text = buildOverdueMessage(long, 10);
+	assert.ok(text.length <= 2000, `too long: ${text.length}`);
+	assert.equal(text.split('\n').filter((l) => l.startsWith('•')).length, 10);
+	assert.ok(text.includes('↳'));
+	assert.deepEqual(cleanTasks([{ title: 'A', note: '  two\n\nlines  ' }]), [{ title: 'A', due: '', note: 'two lines' }]);
+});
+
 const fakeFetch = (status, seen = []) => async (url, init) => { seen.push({ url, init }); return { status }; };
 
 test('aborts a stalled bot request without exposing credentials', async () => {

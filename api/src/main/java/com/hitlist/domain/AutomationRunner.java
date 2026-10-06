@@ -391,7 +391,10 @@ public class AutomationRunner {
         } else {
             for (Item item : items) {
                 String t = template.isBlank() ? "🔔 {{title}} — {{when}}" : template;
-                messages.add(render(t, rule, item, zone, scopeOwner));
+                String text = render(t, rule, item, zone, scopeOwner);
+                // The default wording shows the task's note under it; a template that wrote its own says where, with {{note}}.
+                if (template.isBlank() && !noteText(item.task()).isEmpty()) text += "\n   ↳ " + noteText(item.task());
+                messages.add(text);
             }
         }
         long notBefore = quietUntil(action, zone, now);
@@ -445,7 +448,16 @@ public class AutomationRunner {
         if (item.task() == null) return String.valueOf(item.payload().getOrDefault("kind", "item"));
         String title = EntityRepository.text(item.task().get("Title"));
         String due = dueText(item.task());
-        return due.isEmpty() ? title : title + " · " + due;
+        String head = due.isEmpty() ? title : title + " · " + due;
+        String note = noteText(item.task());
+        return note.isEmpty() ? head : head + "\n   ↳ " + note;
+    }
+
+    /** The task's note on one line, at most 300 characters. */
+    private static String noteText(Map<String, Object> task) {
+        if (task == null) return "";
+        String note = EntityRepository.text(task.get("Note")).replaceAll("\\s+", " ").trim();
+        return note.length() > 300 ? note.substring(0, 299) + "…" : note;
     }
 
     private String render(String template, Map<String, Object> rule, Item item, ZoneId zone, String scopeOwner) {
@@ -465,6 +477,7 @@ public class AutomationRunner {
             .replace("{{due}}", dueText(t))
             .replace("{{status}}", label(EntityRepository.text(t.get("Status"))))
             .replace("{{list}}", list)
+            .replace("{{note}}", noteText(t))
             .replace("{{assignee}}", EntityRepository.text(t.get("AssigneeName")))
             .replace("{{when}}", when)
             .replace("{{rule}}", EntityRepository.text(rule.get("Name")))

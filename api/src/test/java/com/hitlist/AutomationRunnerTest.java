@@ -233,6 +233,21 @@ class AutomationRunnerTest {
     }
 
     @Test
+    void aTaskNoteTravelsInTheDefaultMessageAndTheNoteToken() {
+        task("t1", "2030-01-02", "09:00", "TODO", "");
+        Map<String, Object> noted = new LinkedHashMap<>(repository.require(StorageTables.TASKS, OWNER, "t1"));
+        noted.put("Note", "asked to @mandy\n  this isn't added");
+        repository.replace(StorageTables.TASKS, OWNER, "t1", noted);
+        String plain = rule(spec(dueOffsets(0L), List.of(Map.of("kind", "notify-cliq")), List.of()));
+        String custom = rule(spec(dueOffsets(0L), List.of(Map.of("kind", "notify-cliq", "template", "{{title}} | {{note}}")), List.of()));
+        runner.tick(utc("2030-01-02T08:59:00"));
+        runner.tick(utc("2030-01-02T09:00:30"));
+        assertThat(String.valueOf(queue.outboxFor(OWNER, plain).get(0).get("payload"))).contains("Task t1").contains("↳ asked to @mandy this isn't added");
+        String own = String.valueOf(queue.outboxFor(OWNER, custom).get(0).get("payload"));
+        assertThat(own).contains("Task t1 | asked to @mandy this isn't added").doesNotContain("↳");
+    }
+
+    @Test
     void aSingleItemUsesTheTemplateAndQuietHoursHoldTheMessageUntilTheyEnd() {
         task("t1", "2030-01-02", "23:30", "TODO", "");
         Map<String, Object> cliq = new LinkedHashMap<>();

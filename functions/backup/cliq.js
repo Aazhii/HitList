@@ -28,11 +28,16 @@ function cleanTasks(input) {
 	for (const t of input.slice(0, MAX_TASKS)) {
 		if (!t || typeof t.title !== 'string' || !t.title.trim()) continue;
 		const due = typeof t.due === 'string' && /^\d{4}-\d{2}-\d{2}( \d{2}:\d{2})?$/.test(t.due) ? t.due : '';
-		out.push({ title: t.title.replace(/\s+/g, ' ').trim().slice(0, MAX_TITLE), due });
+		const note = typeof t.note === 'string' ? t.note.replace(/\s+/g, ' ').trim().slice(0, MAX_NOTE_IN) : '';
+		out.push({ title: t.title.replace(/\s+/g, ' ').trim().slice(0, MAX_TITLE), due, note });
 	}
 	return out;
 }
 
+/** A task's note: kept up to this long when read, and shown up to NOTE_ROOM characters, fewer when the message gets long. */
+const MAX_NOTE_IN = 1000;
+const NOTE_ROOM = 300;
+const NOTE_BUDGET = 1800;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** "2026-09-29" -> "Sep 29"; "2026-09-29 16:00" -> "Sep 29, 4:00 PM". */
 function dueLabel(due) {
@@ -48,9 +53,20 @@ function dueLabel(due) {
 function buildOverdueMessage(tasks, total) {
 	const count = Math.max(total || 0, tasks.length);
 	const head = count === 1 ? '*1 task is overdue*' : `*${count} tasks are overdue*`;
-	const lines = tasks.slice(0, LISTED).map((t) => `• ${t.title}${t.due ? ` — due ${dueLabel(t.due)}` : ''}`);
-	const more = count - lines.length;
-	return [head, ...lines, ...(more > 0 ? [`…and ${more} more`] : [])].join('\n');
+	const listed = tasks.slice(0, LISTED);
+	const more = count - listed.length;
+	// A task's note goes under it. When the whole message would be too long, the notes get shorter (then go) before anything else.
+	let text = '';
+	for (const room of [NOTE_ROOM, 150, 60, 0]) {
+		const lines = listed.flatMap((t) => {
+			const line = `• ${t.title}${t.due ? ` — due ${dueLabel(t.due)}` : ''}`;
+			const note = room && t.note ? (t.note.length > room ? `${t.note.slice(0, room - 1)}…` : t.note) : '';
+			return note ? [line, `   ↳ ${note}`] : [line];
+		});
+		text = [head, ...lines, ...(more > 0 ? [`…and ${more} more`] : [])].join('\n');
+		if (text.length <= NOTE_BUDGET) break;
+	}
+	return text;
 }
 
 const MAX_MESSAGE = 2000;

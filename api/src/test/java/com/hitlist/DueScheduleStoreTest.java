@@ -55,6 +55,28 @@ class DueScheduleStoreTest {
     }
 
     @Test
+    void anOverdueTaskCarriesItsCurrentNoteAndAnEditAfterReservingIsSeenWhenValidating() {
+        var source = new DriverManagerDataSource("jdbc:sqlite:" + temp.resolve("note.db"));
+        var rows = new JdbcRowStore(source, new ObjectMapper(), "sqlite");
+        var repository = new EntityRepository(rows);
+        var schedule = new DueScheduleStore(source, rows);
+        repository.setSchedules(schedule);
+        Map<String, Object> task = new java.util.LinkedHashMap<>(Map.of("TaskId", "task", "Title", "Follow up", "Status", "TODO", "DueDate", "2030-01-01", "DueTime", "10:00", "Note", "asked @mandy"));
+        repository.insert(StorageTables.TASKS, "workspace", task);
+        repository.insert(StorageTables.TASKS, "other-workspace", new java.util.LinkedHashMap<>(Map.of("TaskId", "task", "Title", "Other", "Status", "TODO", "DueDate", "2030-01-01", "DueTime", "10:00", "Note", "not yours")));
+        var zone = ZoneId.of("Asia/Kolkata");
+        long due = DueScheduleStore.dueAt("2030-01-01", "10:00", zone);
+        var batch = schedule.reserve("account", "workspace", zone, due);
+        assertThat(tasks(batch).get(0).get("note")).isEqualTo("asked @mandy");
+        task.put("Note", "asked @mandy, still not added");
+        repository.replace(StorageTables.TASKS, "workspace", "task", task);
+        assertThat(schedule.validate("account", "workspace", batch.get("batchId").toString(), due).get(0).get("note")).isEqualTo("asked @mandy, still not added");
+        task.remove("Note");
+        repository.replace(StorageTables.TASKS, "workspace", "task", task);
+        assertThat(schedule.validate("account", "workspace", batch.get("batchId").toString(), due).get(0).get("note")).isNull();
+    }
+
+    @Test
     void boundedBatchesCompletionReschedulingTimezoneAndRollback() {
         var source = new DriverManagerDataSource("jdbc:sqlite:" + temp.resolve("bounded.db"));
         var rows = new JdbcRowStore(source, new ObjectMapper(), "sqlite");

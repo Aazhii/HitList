@@ -55,7 +55,8 @@ describe('automation rule shape', () => {
   });
 
   it('shows a sample of the message with the words filled in', () => {
-    expect(previewTemplate('', 'Nudge')).toBe('🔔 Send the quarterly report — Due in 30 minutes');
+    expect(previewTemplate('', 'Nudge')).toBe('🔔 Send the quarterly report — Due in 30 minutes\n   ↳ asked @mandy, still open');
+    expect(previewTemplate('{{title}}: {{note}}', 'Nudge')).toBe('Send the quarterly report: asked @mandy, still open');
     expect(previewTemplate('{{rule}}: {{title}} ({{list}}, {{status}}) {{count}}', 'Nudge')).toBe('Nudge: Send the quarterly report (Work, To do) 3');
   });
 });

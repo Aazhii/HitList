@@ -92,7 +92,8 @@ public class DueScheduleStore {
         rezone(zone);
         String batch = UUID.randomUUID().toString();
         List<Map<String, Object>> tasks = jdbc.queryForList("""
-            SELECT s.task_id AS id,s.occurrence,s.title,s.due_date AS dueDate,s.due_time AS dueTime,s.due_at AS dueAt
+            SELECT s.task_id AS id,s.occurrence,s.title,s.due_date AS dueDate,s.due_time AS dueTime,s.due_at AS dueAt,
+              (SELECT json_extract(r.data,'$.Note') FROM hitlist_storage_rows r WHERE r.table_name='KaizenTasks' AND r.owner_id=s.owner_id AND r.entity_key=s.task_id) AS note
             FROM hitlist_due_schedule s LEFT JOIN hitlist_due_delivery d
               ON d.account_id=? AND d.owner_id=s.owner_id AND d.task_id=s.task_id AND d.occurrence=s.occurrence
             WHERE s.owner_id=? AND s.due_at<=? AND (d.sent IS NULL OR (d.sent=0 AND d.retry_at<=?))
@@ -110,7 +111,8 @@ public class DueScheduleStore {
 
     public List<Map<String, Object>> validate(String account, String owner, String batch, long now) {
         return jdbc.queryForList("""
-            SELECT s.task_id AS id,s.occurrence,s.title,s.due_date AS dueDate,s.due_time AS dueTime
+            SELECT s.task_id AS id,s.occurrence,s.title,s.due_date AS dueDate,s.due_time AS dueTime,
+              (SELECT json_extract(r.data,'$.Note') FROM hitlist_storage_rows r WHERE r.table_name='KaizenTasks' AND r.owner_id=s.owner_id AND r.entity_key=s.task_id) AS note
             FROM hitlist_due_schedule s JOIN hitlist_due_delivery d
               ON d.owner_id=s.owner_id AND d.task_id=s.task_id AND d.occurrence=s.occurrence
             WHERE d.account_id=? AND d.owner_id=? AND d.batch_id=? AND d.sent=0 AND d.retry_at>? AND s.due_at<=?

@@ -79,6 +79,7 @@ export const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday'
 export const TEMPLATE_TOKENS: ReadonlyArray<{ token: string; hint: string }> = [
   { token: '{{title}}', hint: 'the task’s title' },
   { token: '{{due}}', hint: 'its due date and time' },
+  { token: '{{note}}', hint: 'the note written on the task' },
   { token: '{{when}}', hint: 'for example "Due in 30 minutes"' },
   { token: '{{status}}', hint: 'To do, In progress or Done' },
   { token: '{{list}}', hint: 'the list it is in' },
@@ -199,10 +200,11 @@ export function validateSpec(spec: RuleSpec): string[] {
 
 /** A sample of the message, with each token replaced by an example, for the preview under the message box. */
 export function previewTemplate(template: string, ruleName: string): string {
-  const text = template.trim() === '' ? '🔔 {{title}} — {{when}}' : template;
+  const text = template.trim() === '' ? '🔔 {{title}} — {{when}}\n   ↳ {{note}}' : template;
   return text
     .replace(/\{\{title\}\}/g, 'Send the quarterly report')
     .replace(/\{\{due\}\}/g, '2026-10-06 17:00')
+    .replace(/\{\{note\}\}/g, 'asked @mandy, still open')
     .replace(/\{\{when\}\}/g, 'Due in 30 minutes')
     .replace(/\{\{status\}\}/g, 'To do')
     .replace(/\{\{list\}\}/g, 'Work')

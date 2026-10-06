@@ -15,6 +15,7 @@ function rig(t, overrides = {}) {
   // The automation outbox is a separate conversation with the local server; the overdue tests below only look at /api/overdue.
   const outboxHandler = overrides.outbox || (async () => ({ status: 200, json: { batchId: 'b', items: [] } }));
   const due = [{ id: 'task', occurrence: 'occurrence', title: 'Overdue', dueDate: '2026-01-01', dueTime: '10:00' }];
+  // A note on the task goes along with it; this rig has none, so an empty one is sent.
   let tasks = due;
   const alerts = createCliqAlerts({
     stateDir: dir, getAccount: () => account, getWorkspace: () => workspace, now: () => clock,
@@ -48,7 +49,7 @@ test('enabling catches up overdue tasks and acknowledges only included occurrenc
   const r = rig(t); turnOn(r.alerts);
   assert.deepEqual(await r.alerts.check(), { result: 'sent', count: 1 });
   assert.deepEqual(r.requests.map(({ url }) => url), ['/api/overdue/reserve', '/api/overdue/validate', '/api/overdue/ack']);
-  assert.deepEqual(r.sent[0].body, { email: 'me@zohocorp.com', tasks: [{ title: 'Overdue', due: '2026-01-01 10:00' }], total: 1 });
+  assert.deepEqual(r.sent[0].body, { email: 'me@zohocorp.com', tasks: [{ title: 'Overdue', due: '2026-01-01 10:00', note: '' }], total: 1 });
   assert.deepEqual(r.requests[2].body.tasks, [{ id: 'task', occurrence: 'occurrence' }]);
   assert.equal(r.sent[0].options.accountIdentity, '75733000000033001');
   assert.equal((await r.alerts.check()).result, 'throttled');

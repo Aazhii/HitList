@@ -218,6 +218,9 @@ See `docs/weekly-update.md`. New table `KaizenWorkLog`, `/api/worklog`, page `We
 No LLM is called; the app only builds a prompt for the owner to paste.
 Evidence (2026-10-06, macOS arm64, Java 25.0.4, Maven 3.9.12, scratch data): `node scripts/ci/validate-desktop.cjs` and `sh scripts/ci/compute-version.test.sh` exit 0 on the final source; web 716 tests, API 73. Not run: native Windows/Linux/macOS package checks, real Monday firing, a real LLM paste.
 
+### Task notes in Cliq messages
+An overdue message shows the task's note under it (`   ↳ note`, at most 300 characters, shorter when the message nears 1,800). The note is read live from the task at reserve and validate time (`DueScheduleStore`), sent by the desktop, cleaned in `functions/backup/cliq.js`. Automation Cliq messages do the same, and `{{note}}` works in templates. **The backup function must be redeployed** for the overdue path to show notes (owner's step).
+
 ## 4. Catalyst resources (names only)
 - Project "HitList" (org id in `.catalystrc`). Functions: `backup`, `cliq-webhook` (both Advanced I/O, Node 20). Web client at
   `https://hitlist-60090109165.development.catalystserverless.in/app/` (trailing slash needed). Function URL

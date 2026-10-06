@@ -88,7 +88,7 @@ function createCliqAlerts({ stateDir, localPost, send, getAccount, getWorkspace 
       try {
         const reply = await send('/notify/overdue', {
           email,
-          tasks: batch.tasks.map((task) => ({ title: String(task.title).slice(0, 120), due: task.dueTime ? `${task.dueDate} ${task.dueTime}` : task.dueDate })),
+          tasks: batch.tasks.map((task) => ({ title: String(task.title).slice(0, 120), due: task.dueTime ? `${task.dueDate} ${task.dueTime}` : task.dueDate, note: typeof task.note === 'string' ? task.note.slice(0, 1000) : '' })),
           total: batch.tasks.length,
         }, options);
         result = reply.status === 200 ? 'sent' : reply.status === 401 ? 'sign-in-needed' : reply.status === 400 ? 'bad-recipient' : 'error';
