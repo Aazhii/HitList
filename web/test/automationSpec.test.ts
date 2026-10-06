@@ -15,6 +15,13 @@ describe('automation rule shape', () => {
     expect(RULE_TEMPLATES.filter((t) => t.usesCliq).every((t) => t.build().spec.actions.some((a) => a.kind === 'notify-cliq'))).toBe(true);
   });
 
+  it('the weekly update reminder is every Monday morning and catches up a late start', () => {
+    const { spec } = RULE_TEMPLATES.find((t) => t.id === 'weekly-update')!.build();
+    expect(describeTrigger(spec.triggers[0])).toBe('Every Monday at 09:30');
+    expect(spec.options.catchUp).toBe(true);
+    expect(spec.actions.every((a) => a.kind !== 'notify-cliq')).toBe(true);
+  });
+
   it('says what a rule does in plain words', () => {
     const spec: RuleSpec = {
       ...emptySpec(),

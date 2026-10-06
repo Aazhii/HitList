@@ -57,11 +57,13 @@ import type { BulkChange } from '@/components/tasks/BulkBar';
 import { takeClaimedMessage } from '@/lib/session';
 import { RestoreOffer } from '@/components/shell/RestoreOffer';
 import { QuickCapture } from '@/components/QuickCapture';
+import { LogProgressDialog } from '@/components/worklog/LogProgressDialog';
 import { isTypingTarget } from '@/lib/taskKeyboard';
 import { PageSections } from '@/components/shell/PageSections';
 import { TodayPage } from '@/pages/TodayPage';
 import { LibraryPage } from '@/pages/LibraryPage';
 import { AutomationsPage } from '@/pages/AutomationsPage';
+import { WeeklyUpdatePage } from '@/pages/WeeklyUpdatePage';
 import { usePageMarks } from '@/hooks/usePageMarks';
 import { pageKey, resolvePages, type PageInfo, type PageRef } from '@/lib/pages';
 import { RemindersSettingsPanel } from '@/components/RemindersSettingsPanel';
@@ -734,7 +736,7 @@ function UserScopedApp() {
   );
 
   useEffect(() => {
-    if (activeView === 'today' || activeView === 'tasks' || activeView === 'notes' || activeView === 'databases' || activeView === 'calendar' || activeView === 'automations' || activeView === 'library' || activeView === 'assigned') {
+    if (activeView === 'today' || activeView === 'tasks' || activeView === 'notes' || activeView === 'databases' || activeView === 'calendar' || activeView === 'automations' || activeView === 'library' || activeView === 'assigned' || activeView === 'weekly') {
       return;
     }
     setActiveView('tasks');
@@ -1419,6 +1421,23 @@ function UserScopedApp() {
     return () => document.removeEventListener('keydown', onKey);
   }, []);
 
+  // ── Log progress: `l` or ⌘L, anywhere nothing is being typed into ──
+  const [logOpen, setLogOpen] = useState(false);
+  const [logTask, setLogTask] = useState<{ id: string; title: string } | null>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const chord = (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'l';
+      const bare = e.key === 'l' && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey
+        && !isTypingTarget(document.activeElement) && !isTypingTarget(e.target as Element | null);
+      if (e.defaultPrevented || !(chord || bare)) return;
+      e.preventDefault();
+      setLogTask(null);
+      setLogOpen(true);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
+
   /** Everything the palette can open, read fresh each time it opens. */
   const getPaletteItems = useCallback(async (): Promise<PaletteItem[]> => {
     const listName = new Map(lists.map((l) => [l.id, l.name]));
@@ -1614,8 +1633,8 @@ function UserScopedApp() {
     />
   );
 
-  const shellView = activeView === 'today' || activeView === 'assigned' || activeView === 'notes' || activeView === 'databases' || activeView === 'calendar' || activeView === 'automations' || activeView === 'library' ? activeView : 'tasks';
-  const crumb1 = shellView === 'today' ? 'Today' : shellView === 'assigned' ? 'Assigned to me' : shellView === 'notes' ? 'Notes' : shellView === 'databases' ? 'Databases' : shellView === 'calendar' ? 'Calendar' : shellView === 'automations' ? 'Automations' : shellView === 'library' ? 'Home' : 'Tasks';
+  const shellView = activeView === 'today' || activeView === 'assigned' || activeView === 'notes' || activeView === 'databases' || activeView === 'calendar' || activeView === 'automations' || activeView === 'library' || activeView === 'weekly' ? activeView : 'tasks';
+  const crumb1 = shellView === 'today' ? 'Today' : shellView === 'assigned' ? 'Assigned to me' : shellView === 'notes' ? 'Notes' : shellView === 'databases' ? 'Databases' : shellView === 'calendar' ? 'Calendar' : shellView === 'automations' ? 'Automations' : shellView === 'weekly' ? 'Weekly update' : shellView === 'library' ? 'Home' : 'Tasks';
   const openPageName = (kind: 'note' | 'database', id: string | null) =>
     id ? pageDirectory.find((p) => p.kind === kind && p.id === id)?.name : undefined;
   const crumb2 = shellView === 'notes' ? openPageName('note', activeNoteId)
@@ -1817,6 +1836,15 @@ function UserScopedApp() {
             todos={todos}
             userId={getActiveUserId()}
             onSidebarContentChange={setAutoSidebarContext}
+            onOpenSidebar={() => setSidebarOpen(true)}
+          />
+        ) : activeView === 'weekly' ? (
+          <WeeklyUpdatePage
+            todos={todos}
+            lists={lists}
+            directory={pageDirectory}
+            logOpen={logOpen}
+            onLogProgress={() => { setLogTask(null); setLogOpen(true); }}
             onOpenSidebar={() => setSidebarOpen(true)}
           />
         ) : activeView === 'calendar' ? (
@@ -2071,6 +2099,8 @@ function UserScopedApp() {
         onAdd={(t) => { void handleAddTask(t.title, t.quadrant ?? 'do', undefined, t.dueDate, t.dueTime, t.recurrence); }}
       />
 
+      <LogProgressDialog open={logOpen} onOpenChange={setLogOpen} task={logTask} />
+
       {/* Add task dialog */}
       <CreateTaskListDialog
         open={listRequiredOpen}
@@ -2115,6 +2145,7 @@ function UserScopedApp() {
         open={detailOpen}
         onClose={() => setDetailOpen(false)}
         onOpenNote={handleOpenSourceNote}
+        onLogProgress={(task) => { setLogTask(task); setLogOpen(true); }}
         listName={activeList?.name}
         fields={taskPanelFields}
         onUpdate={handleUpdate}

@@ -112,6 +112,8 @@ export interface Todo {
   text: string;
   status: TodoStatus;
   createdAt: number;
+  /** When the task was last saved, from the server. Absent for tasks that only exist in local storage. */
+  updatedAt?: number;
   completedAt?: number;
   note?: string;
   dueDate?: string;      // ISO date string YYYY-MM-DD

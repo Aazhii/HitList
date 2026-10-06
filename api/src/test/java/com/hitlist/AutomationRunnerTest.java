@@ -182,6 +182,23 @@ class AutomationRunnerTest {
     }
 
     @Test
+    void aWeeklyMondayReminderFiresOncePerWeekWithItsOwnWords() {
+        // 2030-01-07 is a Monday.
+        rule(spec(Map.of("kind", "every", "frequency", "weekly", "time", "09:30", "dayOfWeek", 1),
+            List.of(Map.of("kind", "notify-in-app", "template", "Time for the weekly update.")), List.of()));
+        runner.tick(utc("2030-01-07T09:00:00"));
+        assertThat(notifications()).isZero();
+        runner.tick(utc("2030-01-07T09:30:30"));
+        runner.tick(utc("2030-01-07T09:45:00"));
+        assertThat(notifications()).isEqualTo(1);
+        assertThat(String.valueOf(repository.list(StorageTables.NOTIFICATIONS, OWNER).get(0).get("Body"))).isEqualTo("Time for the weekly update.");
+        runner.tick(utc("2030-01-08T09:30:30"));
+        assertThat(notifications()).as("not on Tuesday").isEqualTo(1);
+        runner.tick(utc("2030-01-14T09:30:30"));
+        assertThat(notifications()).isEqualTo(2);
+    }
+
+    @Test
     void anAddedItemAndAStatusBecomingDoneAreFoundByComparisonAndTheFirstLookOnlyRecords() {
         task("old", "", "", "TODO", "");
         rule(spec(Map.of("kind", "status-becomes", "status", "DONE"), IN_APP, List.of()));

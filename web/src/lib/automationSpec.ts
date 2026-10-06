@@ -274,6 +274,23 @@ export const RULE_TEMPLATES: ReadonlyArray<RuleTemplate> = [
     }),
   },
   {
+    id: 'weekly-update', usesCliq: false,
+    name: 'Monday reminder for the weekly update',
+    description: 'Every Monday at 09:30, a notice to open Weekly update and copy the prompt.',
+    build: () => ({
+      name: 'Weekly update',
+      spec: withSpec({
+        triggers: [{ kind: 'every', frequency: 'weekly', time: '09:30', dayOfWeek: 1, dayOfMonth: 1 }],
+        actions: [
+          { kind: 'notify-in-app', template: 'Time for the weekly update. Open Weekly update and copy the prompt.' },
+          { kind: 'notify-browser', template: 'Time for the weekly update' },
+        ],
+        // A Monday the app opened late still gets its reminder.
+        options: { catchUpMinutes: 1440, catchUp: true },
+      }),
+    }),
+  },
+  {
     id: 'done-notice', usesCliq: false,
     name: 'When a task is done',
     description: 'A short notice each time a task is marked done.',

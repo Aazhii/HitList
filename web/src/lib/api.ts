@@ -740,6 +740,24 @@ export const pageMarksApi = {
   removeRecent: (kind: PageKind, id: string) => del<void>(`/recents/${kind}/${id}`),
 };
 
+// ── Progress log (the Monday update) ─────────────────────────────────────────
+
+export type ProgressState = 'moved' | 'blocked' | 'discussed' | 'done';
+export interface ApiProgressEntry {
+  id: string; text: string; state: ProgressState; at: number; section: string;
+  taskId: string; noteId: string; recordId: string; createdAt: number; updatedAt: number;
+}
+export interface ProgressEntryInput {
+  clientId?: string; text: string; state?: ProgressState; at?: number; section?: string; taskId?: string;
+}
+
+export const progressApi = {
+  list: (from = 0, to?: number) => get<ApiProgressEntry[]>(`/worklog?from=${from}${to === undefined ? '' : `&to=${to}`}`),
+  create: (input: ProgressEntryInput) => post<ApiProgressEntry>('/worklog', input),
+  update: (id: string, input: Partial<ProgressEntryInput>) => put<ApiProgressEntry>(`/worklog/${id}`, input),
+  remove: (id: string) => del<void>(`/worklog/${id}`),
+};
+
 // ── Trial features ───────────────────────────────────────────────────────────
 
 /** App-wide switches returned by the backend. */

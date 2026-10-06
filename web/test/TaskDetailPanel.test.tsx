@@ -36,6 +36,16 @@ beforeEach(() => {
 });
 
 describe('TaskDetailPanel', () => {
+  it('logs progress about this task when asked to, and has no button when not', () => {
+    const onLogProgress = vi.fn();
+    const { rerender } = render(<TaskDetailPanel {...defaultProps} todo={makeTodo()} onLogProgress={onLogProgress} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Log progress' }));
+    expect(onLogProgress).toHaveBeenCalledWith({ id: 'todo-1', title: 'Write unit tests' });
+    rerender(<TaskDetailPanel {...defaultProps} todo={makeTodo()} />);
+    expect(screen.queryByRole('button', { name: 'Log progress' })).toBeNull();
+  });
+
+
   it.each(['Save', 'Close', 'Escape'])('clears the due date and time through %s', (action) => {
     const onUpdate = vi.fn();
     const todo = makeTodo({ dueDate: '2030-06-15', dueTime: '12:01', reminderEnabled: true, recurrence: 'daily' });

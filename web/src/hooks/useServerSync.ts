@@ -420,6 +420,7 @@ export function apiTaskToTodo(t: ApiTask) {
     dueTime:               t.dueTime ?? undefined,
     completedAt:           t.completedAt ? new Date(t.completedAt).getTime() : undefined,
     createdAt:             new Date(t.createdAt).getTime(),
+    updatedAt:             t.updatedAt ? new Date(t.updatedAt).getTime() : undefined,
     category:              t.category ?? undefined,
     listId:                t.listId ?? '',
     order:                 t.taskOrder,

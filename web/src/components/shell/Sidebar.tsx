@@ -1,11 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { CalendarDays, Leaf, Sun, ListChecks, Search, StickyNote, Table2, UserCheck, Zap } from 'lucide-react';
+import { CalendarCheck, CalendarDays, Leaf, Sun, ListChecks, Search, StickyNote, Table2, UserCheck, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { useIsDesktop } from '@/components/shell/ViewLayout';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 
-export type AppView = 'tasks' | 'notes' | 'databases' | 'calendar' | 'automations' | 'library' | 'today' | 'assigned';
+export type AppView = 'tasks' | 'notes' | 'databases' | 'calendar' | 'automations' | 'library' | 'today' | 'assigned' | 'weekly';
 
 const VIEWS: ReadonlyArray<{ id: AppView; label: string; icon: typeof ListChecks }> = [
   // The front door: the one task to do next.
@@ -18,6 +18,8 @@ const VIEWS: ReadonlyArray<{ id: AppView; label: string; icon: typeof ListChecks
   // One calendar for everything that has a date: tasks and database records.
   { id: 'calendar', label: 'Calendar', icon: CalendarDays },
   { id: 'automations', label: 'Automations', icon: Zap },
+  // What moved this week, and the prompt that turns it into the Monday update.
+  { id: 'weekly', label: 'Weekly update', icon: CalendarCheck },
 ];
 
 export interface SidebarProps {

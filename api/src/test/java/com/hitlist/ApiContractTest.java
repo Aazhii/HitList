@@ -349,6 +349,41 @@ class ApiContractTest {
     }
 
     @Test
+    void progressLogKeepsLinesPerOwnerByWeekAndRetriesAreOneLine() throws Exception {
+        MockCookie browser = browser();
+        MockCookie other = browser();
+        String body = "{\"clientId\":\"log-1\",\"text\":\"Discussed with @naga, still open\",\"state\":\"discussed\",\"at\":1000,\"taskId\":\"t1\"}";
+        mvc.perform(post("/api/worklog").cookie(browser).contentType(MediaType.APPLICATION_JSON).content(body))
+            .andExpect(status().isCreated())
+            .andExpect(jsonPath("$.id").value("log-1"))
+            .andExpect(jsonPath("$.state").value("discussed"))
+            .andExpect(jsonPath("$.taskId").value("t1"));
+        // The same save sent again (a retry) is still one line.
+        mvc.perform(post("/api/worklog").cookie(browser).contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isCreated());
+        mvc.perform(post("/api/worklog").cookie(browser).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"text\":\"Fixed the duplicate name error\",\"state\":\"done\",\"at\":5000}"))
+            .andExpect(status().isCreated());
+
+        mvc.perform(get("/api/worklog").cookie(browser)).andExpect(jsonPath("$.length()").value(2)).andExpect(jsonPath("$[0].id").value("log-1"));
+        mvc.perform(get("/api/worklog?from=2000&to=9000").cookie(browser)).andExpect(jsonPath("$.length()").value(1)).andExpect(jsonPath("$[0].state").value("done"));
+        mvc.perform(get("/api/worklog").cookie(other)).andExpect(jsonPath("$.length()").value(0));
+
+        mvc.perform(post("/api/worklog").cookie(browser).contentType(MediaType.APPLICATION_JSON).content("{\"text\":\"x\",\"state\":\"finished\"}"))
+            .andExpect(status().isBadRequest());
+        mvc.perform(post("/api/worklog").cookie(browser).contentType(MediaType.APPLICATION_JSON).content("{\"text\":\"" + "a".repeat(501) + "\"}"))
+            .andExpect(status().isBadRequest());
+        mvc.perform(post("/api/worklog").cookie(browser).contentType(MediaType.APPLICATION_JSON).content("{\"text\":\"  \"}"))
+            .andExpect(status().isBadRequest());
+
+        mvc.perform(put("/api/worklog/log-1").cookie(browser).contentType(MediaType.APPLICATION_JSON).content("{\"state\":\"blocked\",\"text\":\"Waiting on @naga\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.state").value("blocked")).andExpect(jsonPath("$.text").value("Waiting on @naga"));
+        mvc.perform(put("/api/worklog/log-1").cookie(other).contentType(MediaType.APPLICATION_JSON).content("{\"text\":\"mine now\"}"))
+            .andExpect(status().isNotFound());
+        mvc.perform(delete("/api/worklog/log-1").cookie(browser)).andExpect(status().isNoContent());
+        mvc.perform(get("/api/worklog").cookie(browser)).andExpect(jsonPath("$.length()").value(1));
+    }
+
+    @Test
     void favoritesAndRecentsAreKeptPerOwnerAndTrimmed() throws Exception {
         MockCookie browser = browser();
         MockCookie other = browser();
@@ -542,6 +577,7 @@ class ApiContractTest {
                 new NoteController(new NoteService(repository), owners),
                 new WorkspaceController(new WorkspaceService(repository, objectMapper), owners),
                 new PageMarksController(new PageMarksService(repository), owners),
+                new com.hitlist.web.WorkLogController(new com.hitlist.domain.WorkLogService(repository), owners),
                 new com.hitlist.web.BackupController(new com.hitlist.domain.WorkspaceBackupService(repository), owners),
                 new com.hitlist.web.SessionController(owners)
             )

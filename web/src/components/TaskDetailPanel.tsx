@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { CircleAlert, Clock, FileText, Trash2, X } from 'lucide-react';
+import { CircleAlert, Clock, FileText, NotebookPen, Trash2, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { RECURRENCE_OPTIONS, type Recurrence } from '@/lib/recurrence';
 import { getDefaultReminderMinutes, REMINDER_OPTIONS } from '@/lib/notifications';
@@ -39,6 +39,8 @@ interface TaskDetailPanelProps {
   onStatusChange: (id: string, status: TodoStatus) => void;
   /** Opens the note a task was added from. */
   onOpenNote?: (noteId: string) => void;
+  /** Logs a line of progress about this task, for the weekly update. The button is left out when this is not given. */
+  onLogProgress?: (task: { id: string; title: string }) => void;
   /** The list the task is in, for the delete confirmation's wording. */
   listName?: string;
   /** Custom fields. The section is left out when this is not given. */
@@ -88,6 +90,7 @@ export function TaskDetailPanel({
   onDelete,
   onStatusChange,
   onOpenNote,
+  onLogProgress,
   listName,
   fields,
 }: TaskDetailPanelProps) {
@@ -389,6 +392,12 @@ export function TaskDetailPanel({
             <Trash2 className="size-4" strokeWidth={1.75} aria-hidden />
             Delete
           </button>
+          {onLogProgress && (
+            <button type="button" onClick={() => onLogProgress({ id: todo.id, title: todo.text })} className={cn(topBarPill, BTN_MD)}>
+              <NotebookPen className="size-4" strokeWidth={1.75} aria-hidden />
+              Log progress
+            </button>
+          )}
           <div className="flex-1" />
           <button type="button" onClick={handleSaveAndClose} disabled={!text.trim()} className={cn(topBarPrimary, BTN_MD, 'disabled:opacity-50')}>
             Save

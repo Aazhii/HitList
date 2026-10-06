@@ -41,7 +41,8 @@ public class WorkspaceBackupService {
         StorageTables.FIELD_VALUES,
         StorageTables.RULES,
         StorageTables.FAVORITES,
-        StorageTables.RECENTS
+        StorageTables.RECENTS,
+        StorageTables.WORK_LOG
     );
 
     /** A text field each kind of row must have, so a hand-edited file cannot add something the app cannot read. */

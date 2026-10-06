@@ -22,7 +22,7 @@ public class WorkspaceClaimService {
         StorageTables.LISTS, StorageTables.TASKS, StorageTables.NOTES, StorageTables.VIEWS, StorageTables.DATABASES,
         StorageTables.FIELD_DEFS, StorageTables.DATABASE_ROWS, StorageTables.FIELD_VALUES, StorageTables.RULES,
         StorageTables.FAVORITES, StorageTables.RECENTS, StorageTables.NOTIFICATIONS, StorageTables.RUNS,
-        StorageTables.QUEUE, StorageTables.CALENDAR_CONNECTIONS
+        StorageTables.QUEUE, StorageTables.CALENDAR_CONNECTIONS, StorageTables.WORK_LOG
     );
     private final EntityRepository repository;
     private final RowStore store;

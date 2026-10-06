@@ -213,6 +213,11 @@ validates the file name per platform, Mac architecture, SHA256SUMS if present (`
 `installer.js` also installs a `.dmg` (hdiutil attach, bundle id must be HitList, ditto, detach). UI: `UpdateDialog.tsx`
 (older version needs a confirmation). Not verified on real Windows/Linux machines.
 
+### Weekly update (progress log + Monday prompt)
+See `docs/weekly-update.md`. New table `KaizenWorkLog`, `/api/worklog`, page `WeeklyUpdatePage`, `l`/⌘L dialog, a `weekly-update` rule template.
+No LLM is called; the app only builds a prompt for the owner to paste.
+Evidence (2026-10-06, macOS arm64, Java 25.0.4, Maven 3.9.12, scratch data): `node scripts/ci/validate-desktop.cjs` and `sh scripts/ci/compute-version.test.sh` exit 0 on the final source; web 716 tests, API 73. Not run: native Windows/Linux/macOS package checks, real Monday firing, a real LLM paste.
+
 ## 4. Catalyst resources (names only)
 - Project "HitList" (org id in `.catalystrc`). Functions: `backup`, `cliq-webhook` (both Advanced I/O, Node 20). Web client at
   `https://hitlist-60090109165.development.catalystserverless.in/app/` (trailing slash needed). Function URL

@@ -18,6 +18,8 @@ public final class StorageTables {
     public static final String CALENDAR_CONNECTIONS = "KaizenZohoCalendarConnections";
     public static final String FAVORITES = "KaizenFavorites";
     public static final String RECENTS = "KaizenRecents";
+    /** Short progress lines the owner logs through the week, for the Monday update. Personal to the computer. */
+    public static final String WORK_LOG = "KaizenWorkLog";
     public static final String MIGRATION_MARKERS = "KaizenMigrationMarkers";
     public static final String CLIQ_COMMAND_RECEIPTS = "KaizenCliqCommandReceipts";
     /** Shared workspaces this device holds a copy of (one row, stored under the workspace's own id). */
@@ -43,6 +45,7 @@ public final class StorageTables {
         Map.entry(CALENDAR_CONNECTIONS, "ConnectionId"),
         Map.entry(FAVORITES, "MarkId"),
         Map.entry(RECENTS, "MarkId"),
+        Map.entry(WORK_LOG, "EntryId"),
         Map.entry(MIGRATION_MARKERS, "MarkerId"),
         Map.entry(CLIQ_COMMAND_RECEIPTS, "CommandKey"),
         Map.entry(WORKSPACE_INFO, "WorkspaceId"),
