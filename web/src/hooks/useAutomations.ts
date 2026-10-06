@@ -66,6 +66,8 @@ function fromApi(rule: ApiAutomationRule, todos: { id: string; text: string }[])
     recurrence: rule.recurrence,
     notifyInApp: rule.notifyInApp,
     notifyBrowser: rule.notifyBrowser,
+    notifyEmail: rule.notifyEmail,
+    timezone: rule.timezone,
     createdAt: rule.createdAt,
     updatedAt: rule.updatedAt,
     lastTriggeredAt: rule.lastTriggeredAt,
@@ -261,6 +263,7 @@ export function useAutomations(
         notifyInApp: existing.notifyInApp,
         notifyBrowser: existing.notifyBrowser,
         notifyEmail: existing.notifyEmail ?? false,
+        timezone: existing.timezone,
       });
       setRules((prev) => prev.map((r) => (r.id === id ? fromApi(saved, todosRef.current) : r)));
       setError(null);

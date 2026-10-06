@@ -550,6 +550,8 @@ public class WorkspaceService {
         output.put("notifyInApp", Values.bool(row.get("NotifyInApp")));
         output.put("notifyBrowser", Values.bool(row.get("NotifyBrowser")));
         output.put("notifyEmail", Values.bool(row.get("NotifyEmail")));
+        String zone = EntityRepository.text(row.get("Timezone"));
+        if (!zone.isBlank()) output.put("timezone", zone);
         output.put("createdAt", Values.number(row.get("CreatedAt"), 0));
         output.put("updatedAt", Values.number(row.get("UpdatedAt"), 0));
         if (Values.number(row.get("LastTriggeredAt"), 0) > 0) output.put("lastTriggeredAt", Values.number(row.get("LastTriggeredAt"), 0));

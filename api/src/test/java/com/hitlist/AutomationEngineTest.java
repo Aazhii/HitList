@@ -208,6 +208,34 @@ class AutomationEngineTest {
     }
 
     @Test
+    void oneTaskWithAMalformedDateDoesNotStopTheRuleForTheOthers() {
+        task("bad", "2030-13-45", "09:00", "TODO");
+        task("badTime", "2030-01-02", "25:99", "TODO");
+        task("good", "2030-01-02", "09:00", "TODO");
+        rule(Map.of("offsetMinutes", List.of(0)));
+        engine.sweepOwner(OWNER, utc("2030-01-02T09:01:00"));
+        assertEquals(1, notifications(), "the good task still fires");
+    }
+
+    @Test
+    void trimmingOldRunsNeverDeletesTheKeyThatStopsARecentMomentFiringTwice() {
+        task("t1", "2030-01-02", "09:00", "TODO");
+        rule(Map.of("offsetMinutes", List.of(0)));
+        long now = System.currentTimeMillis();
+        // A busy owner: more than the cap of runs, all recent and all guarding a firing.
+        for (int i = 0; i < 520; i++) {
+            Map<String, Object> run = new LinkedHashMap<>();
+            run.put("RunId", "r" + i);
+            run.put("RuleId", "x");
+            run.put("TriggeredAt", now - i);
+            run.put("FireKey", "key-" + i);
+            repository.insert(StorageTables.RUNS, OWNER, run);
+        }
+        engine.sweepOwner(OWNER, utc("2030-01-02T09:01:00"));
+        assertTrue(runs() >= 520, "recent runs that guard a firing are kept even above the cap");
+    }
+
+    @Test
     void oneOwnersRulesNeverTouchAnothersTasks() {
         task("t1", "2030-01-02", "09:00", "TODO");
         rule(Map.of("offsetMinutes", List.of(0)));

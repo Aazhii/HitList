@@ -46,6 +46,8 @@ export interface AutomationRule {
   notifyInApp: boolean;
   notifyBrowser: boolean;
   notifyEmail?: boolean;
+  /** The zone the rule's times are read in (saved with the rule). */
+  timezone?: string;
   createdAt: number;
   updatedAt: number;
   lastTriggeredAt?: number;

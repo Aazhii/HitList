@@ -92,7 +92,9 @@ public class AutomationEngine {
                 List<Long> offsets = offsets(rule);
                 for (Map<String, Object> task : scope(rule, tasks)) {
                     if ("DONE".equals(EntityRepository.text(task.get("Status")))) continue;
-                    long due = dueInstant(task, zone);
+                    long due;
+                    // One task with a malformed date must not stop the rule for every other task.
+                    try { due = dueInstant(task, zone); } catch (java.time.DateTimeException invalid) { continue; }
                     if (due < 0) continue;
                     for (long offset : offsets) {
                         long at = due + offset * 60_000L;
@@ -173,7 +175,8 @@ public class AutomationEngine {
             if ("DONE".equals(EntityRepository.text(task.get("Status")))) continue;
             String date = EntityRepository.text(task.get("DueDate"));
             if (date.isBlank()) continue;
-            LocalDate due = LocalDate.parse(date);
+            LocalDate due;
+            try { due = LocalDate.parse(date); } catch (java.time.DateTimeException invalid) { continue; }
             if (due.equals(today)) dueToday++;
             else if (due.isBefore(today)) overdue++;
         }
