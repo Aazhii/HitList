@@ -1,11 +1,11 @@
 import {
-  useRef, useEffect, useCallback, useState, useMemo,
+  useRef, useEffect, useCallback, useState, useMemo, Fragment,
   KeyboardEvent,
 } from 'react';
 import {
   Plus, GripVertical, Trash2, ArrowUp, ArrowDown,
   Type, Heading1, Heading2, Heading3, List, ListOrdered,
-  CheckSquare, Quote, Minus, Code2, Table2, Lightbulb,
+  CheckSquare, ChevronRight, Quote, Minus, Code2, Table2, Lightbulb,
   Bold, Italic, Underline, Strikethrough, Check,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -27,7 +27,7 @@ import { DatabasePicker } from '@/components/notes/DatabasePicker';
 import { createInlineDatabase } from '@/lib/inlineDatabase';
 import { toast } from 'sonner';
 import { TableBlock } from '@/components/notes/TableBlock';
-import { computeNumberedOrdinals, levelOf } from '@/lib/noteBlocks';
+import { computeNumberedOrdinals, hiddenBlockIds, levelOf, toggleHasChildren } from '@/lib/noteBlocks';
 
 /** How far each level of Tab pushes a line in, in px. */
 const INDENT_STEP = 24;
@@ -71,11 +71,12 @@ const BLOCK_ICONS: Record<BlockType, React.ReactNode> = {
   table:     <Table2 className={ICON} strokeWidth={STROKE} />,
   callout:   <Lightbulb className={ICON} strokeWidth={STROKE} />,
   database:  <Table2 className={ICON} strokeWidth={STROKE} />,
+  toggle:    <ChevronRight className={ICON} strokeWidth={STROKE} />,
 };
 
 const BLOCK_TYPES: BlockType[] = [
   'paragraph', 'heading1', 'heading2', 'heading3',
-  'bullet', 'numbered', 'todo', 'quote', 'callout', 'divider', 'code', 'table',
+  'bullet', 'numbered', 'todo', 'toggle', 'quote', 'callout', 'divider', 'code', 'table',
 ];
 
 // ── Spacing ────────────────────────────────────────────────────────────────────
@@ -122,6 +123,7 @@ function getBlockPlaceholder(type: BlockType): string {
     case 'numbered': return 'List item';
     case 'todo':     return 'To-do';
     case 'callout':  return 'Callout…';
+    case 'toggle':   return 'Toggle';
     default:         return 'Type "/" for blocks, "@" to add a line to a quadrant';
   }
 }
@@ -295,7 +297,7 @@ interface BlockRowProps {
   /** The textarea's selection may have changed; re-evaluate the format toolbar. */
   onSelectionChange: (id: string) => void;
   /** Non-content fields, such as a callout's emoji and tone. */
-  onUpdateMeta: (id: string, changes: Partial<Pick<NoteBlock, 'emoji' | 'tone'>>) => void;
+  onUpdateMeta: (id: string, changes: Partial<Pick<NoteBlock, 'emoji' | 'tone' | 'collapsed'>>) => void;
   /** The caret or text moved: open, update or close the "@" menu. */
   onMentionCheck: (id: string, el: HTMLTextAreaElement) => void;
   /** The linked-task chip, when this block is in a quadrant. */
@@ -469,6 +471,22 @@ function BlockRow({
               </DropdownMenuRadioGroup>
             </DropdownMenuContent>
           </DropdownMenu>
+          </span>
+        )}
+
+        {block.type === 'toggle' && (
+          <span className={markerBoxClass('toggle')} style={{ paddingTop: markerTop('toggle', 20) }}>
+            <button
+              type="button"
+              aria-expanded={!block.collapsed}
+              aria-label={block.collapsed ? 'Open toggle' : 'Close toggle'}
+              onClick={() => onUpdateMeta(block.id, { collapsed: !block.collapsed })}
+              className="flex size-5 items-center justify-center rounded-[4px] text-a-ink transition-colors duration-[120ms] hover:bg-a-line-soft"
+            >
+              <svg viewBox="0 0 10 10" aria-hidden className={cn('size-[9px] transition-transform duration-[120ms]', block.collapsed && '-rotate-90')}>
+                <polygon points="1,2.5 9,2.5 5,8.5" fill="currentColor" />
+              </svg>
+            </button>
           </span>
         )}
 
@@ -660,6 +678,7 @@ export function NoteEditor({
   // Numbered lists count within their own run. Computed once here rather than
   // per row, because a row alone cannot see where its list started.
   const numberedOrdinals = useMemo(() => computeNumberedOrdinals(blocks), [blocks]);
+  const hiddenIds = useMemo(() => hiddenBlockIds(blocks), [blocks]);
 
   const registerRef = useCallback((el: HTMLTextAreaElement | null, id: string) => {
     if (el) textareaRefs.current.set(id, el);
@@ -964,10 +983,21 @@ export function NoteEditor({
     }
 
     const isListItem = block.type === 'bullet' || block.type === 'numbered' || block.type === 'todo';
+    // The line above or below that is actually shown (lines inside a closed toggle are not).
+    const hidden = hiddenBlockIds(blocks);
+    const visibleNeighbour = (direction: -1 | 1) => {
+      let k = idx + direction;
+      while (blocks[k] && hidden.has(blocks[k].id)) k += direction;
+      return blocks[k];
+    };
 
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey) && block.type === 'toggle') {
+      // ⌘/Ctrl+↵ opens or closes a toggle without leaving the line.
       e.preventDefault();
-      if (isListItem && block.content === '') {
+      onUpdateBlock(blockId, { collapsed: !block.collapsed });
+    } else if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if ((isListItem || block.type === 'toggle') && block.content === '') {
         // An empty list item ends the list: one level back out when it is nested, otherwise plain text.
         if (levelOf(block) > 0 && onSetIndent) onSetIndent(blockId, 'out');
         else onChangeBlockType(blockId, 'paragraph');
@@ -986,14 +1016,14 @@ export function NoteEditor({
       e.preventDefault();
       if (blocks.length > 1) {
         onDeleteBlock(blockId);
-        const prevBlock = blocks[idx - 1] ?? blocks[idx + 1];
+        const prevBlock = visibleNeighbour(-1) ?? visibleNeighbour(1);
         if (prevBlock) pendingFocusId.current = prevBlock.id;
       }
     } else if (e.key === 'ArrowUp' && cursorAtStart) {
-      const prev = blocks[idx - 1];
+      const prev = visibleNeighbour(-1);
       if (prev) { e.preventDefault(); pendingFocusId.current = prev.id; }
     } else if (e.key === 'ArrowDown' && cursorAtEnd) {
-      const next = blocks[idx + 1];
+      const next = visibleNeighbour(1);
       if (next) { e.preventDefault(); pendingFocusId.current = next.id; }
     } else if (e.key === 'Tab' && !e.nativeEvent.isComposing) {
       e.preventDefault();
@@ -1075,9 +1105,9 @@ export function NoteEditor({
 
       {/* Blocks */}
       <div className="flex flex-col gap-[6px]">
-        {blocks.map((block, index) => (
+        {blocks.map((block, index) => hiddenIds.has(block.id) ? null : (
+          <Fragment key={block.id}>
           <BlockRow
-            key={block.id}
             block={block}
             index={index}
             ordinal={numberedOrdinals.get(block.id)}
@@ -1117,6 +1147,17 @@ export function NoteEditor({
               ) : undefined
             }
           />
+          {block.type === 'toggle' && !block.collapsed && !toggleHasChildren(blocks, index) && (
+            <button
+              type="button"
+              onClick={() => handleAddAfter(block.id)}
+              style={{ marginLeft: (levelOf(block) + 1) * INDENT_STEP + 22 }}
+              className="-mt-[2px] w-fit cursor-text text-left text-[14px] leading-[1.65] text-a-faint"
+            >
+              Empty toggle. Click or drop blocks inside.
+            </button>
+          )}
+          </Fragment>
         ))}
       </div>
 

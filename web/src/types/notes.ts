@@ -15,7 +15,8 @@ export type BlockType =
   | 'code'
   | 'table'
   | 'callout'
-  | 'database';
+  | 'database'
+  | 'toggle';
 
 /** A callout's tint: terracotta, or sage. */
 export type CalloutTone = 'accent' | 'sage';
@@ -50,6 +51,11 @@ export interface NoteBlock {
    * `checked`, so no existing note needs migrating, and any block type can carry it.
    */
   indent?: number;
+  /**
+   * Toggle blocks only: the lines nested under it (the blocks after it that are indented deeper) are hidden.
+   * Optional like `indent`, so no existing note needs migrating and the server stores it as part of the opaque blocks.
+   */
+  collapsed?: boolean;
   tableData?: TableData; // for table blocks
   /**
    * Callout blocks only. Optional, like `checked` and `tableData`, so no
@@ -99,6 +105,7 @@ export const BLOCK_TYPE_LABELS: Record<BlockType, string> = {
   table: 'Table',
   callout: 'Callout',
   database: 'Database',
+  toggle: 'Toggle list',
 };
 
 export const NOTE_EMOJIS = ['📝', '💡', '🗒️', '🔖', '⭐', '🎯', '🧠', '🌱', '🔥', '📌', '💭', '🚀'];

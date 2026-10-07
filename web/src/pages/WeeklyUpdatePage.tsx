@@ -14,9 +14,10 @@ import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { databaseApi, type ApiDatabaseRow } from '@/lib/api';
 import type { PageInfo } from '@/lib/pages';
 import {
-  DEFAULT_SETTINGS, buildMaterialText, buildWeeklyPrompt, collectWeek, defaultWeekOffset, normalizeSettings, weekRange,
+  DEFAULT_SETTINGS, buildMaterialText, buildWeeklyPrompt, collectWeek, defaultWeekOffset, isStory, normalizeSettings, noteText, weekRange,
   type MaterialItem, type SectionRule, type WeeklySettings,
 } from '@/lib/weeklyUpdate';
+import type { Note } from '@/types/notes';
 import type { Todo } from '@/types/todo';
 
 const SETTINGS_KEY = 'hitlist-weekly-settings-v1';
@@ -28,8 +29,10 @@ const small = 'h-[30px] rounded-[4px] border border-a-line-strong bg-a-surface p
 export interface WeeklyUpdatePageProps {
   todos: readonly Todo[];
   lists: ReadonlyArray<{ id: string; name: string }>;
-  /** Every page, with when it was last edited: notes and databases. */
+  /** Every page, with when it was last edited: used for the databases. */
   directory: readonly PageInfo[];
+  /** The notes with their text, so what you wrote reaches the prompt and not only the titles. */
+  notes: readonly Note[];
   /** The Log progress dialog is open; when it closes the week is read again. */
   logOpen: boolean;
   onLogProgress: () => void;
@@ -38,7 +41,7 @@ export interface WeeklyUpdatePageProps {
   now?: number;
 }
 
-export function WeeklyUpdatePage({ todos, lists, directory, logOpen, onLogProgress, onOpenSidebar, now: fixedNow }: WeeklyUpdatePageProps) {
+export function WeeklyUpdatePage({ todos, lists, directory, notes, logOpen, onLogProgress, onOpenSidebar, now: fixedNow }: WeeklyUpdatePageProps) {
   const [now] = useState(() => fixedNow ?? Date.now());
   const [offset, setOffset] = useState(() => defaultWeekOffset(now));
   const range = useMemo(() => weekRange(now, offset), [now, offset]);
@@ -63,8 +66,8 @@ export function WeeklyUpdatePage({ todos, lists, directory, logOpen, onLogProgre
 
   const material = useMemo(() => collectWeek({
     now, offsetWeeks: offset, settings, entries: log.entries, todos, lists, records,
-    notes: directory.filter((p) => p.kind === 'note' && p.editedAt !== undefined).map((p) => ({ id: p.id, title: p.name, updatedAt: p.editedAt as number })),
-  }), [now, offset, settings, log.entries, todos, lists, records, directory]);
+    notes: notes.map((n) => ({ id: n.id, title: n.title, updatedAt: n.updatedAt, text: noteText(n.blocks) })),
+  }), [now, offset, settings, log.entries, todos, lists, records, notes]);
   const prompt = useMemo(() => buildWeeklyPrompt(material, settings, skipped), [material, settings, skipped]);
 
   const toggle = (key: string) => setSkippedByWeek((cur) => {
@@ -88,8 +91,9 @@ export function WeeklyUpdatePage({ todos, lists, directory, logOpen, onLogProgre
     }
   };
 
-  const story = material.items.filter((i) => i.kind === 'progress' || i.kind === 'task-done');
-  const background = material.items.filter((i) => i.kind !== 'progress' && i.kind !== 'task-done');
+  const story = material.items.filter(isStory);
+  const noteRows = material.items.filter((i) => i.kind === 'note' && !!i.detail);
+  const background = material.items.filter((i) => !isStory(i) && !(i.kind === 'note' && i.detail));
   const hasStory = story.some((i) => !skipped.has(i.key));
 
   return (
@@ -154,6 +158,15 @@ export function WeeklyUpdatePage({ todos, lists, directory, logOpen, onLogProgre
               );
             })}
 
+            {noteRows.length > 0 && (
+              <section aria-label="Notes" className="flex flex-col gap-1">
+                <h2 className="text-[12px] font-semibold uppercase tracking-wide text-a-faint">Notes · your own words, sent to the model as raw text</h2>
+                <ul className="flex flex-col">
+                  {noteRows.map((item) => <ItemRow key={item.key} item={item} off={skipped.has(item.key)} settings={settings} onToggle={() => toggle(item.key)} />)}
+                </ul>
+              </section>
+            )}
+
             {background.length > 0 && (
               <section aria-label="Background" className="flex flex-col gap-1">
                 <h2 className="text-[12px] font-semibold uppercase tracking-wide text-a-faint">Background · context for the model, not lines of their own</h2>
@@ -174,6 +187,7 @@ export function WeeklyUpdatePage({ todos, lists, directory, logOpen, onLogProgre
                 {copied === 'prompt' ? 'Copied. Paste it into your LLM.' : copied === 'material' ? 'Copied the material.' : copied === 'failed' ? 'Could not copy automatically. The text is below, selected for you.' : ''}
               </span>
             </div>
+            {prompt.notesShortened && <p className="text-[12px] text-a-attention">Some notes were cut shorter to keep the prompt a reasonable size. Untick notes you do not need to give the others more room.</p>}
             {prompt.trimmed > 0 && <p className="text-[12px] text-a-attention">{prompt.trimmed} background {prompt.trimmed === 1 ? 'line was' : 'lines were'} left out to keep the prompt short enough.</p>}
             {showPreview && (
               <textarea readOnly aria-label="The prompt" value={prompt.text} rows={18} onFocus={(e) => e.currentTarget.select()}
@@ -192,7 +206,7 @@ function ItemRow({ item, off, settings, onToggle, onSection, onDelete, onEdit }:
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(item.text);
-  const label = item.kind === 'progress' ? (item.state ? STATE_LABEL[item.state] : 'Logged') : item.kind === 'task-done' ? 'Finished' : item.kind === 'task-touched' ? 'Task touched' : item.kind === 'note' ? 'Note edited' : 'Record';
+  const label = item.kind === 'progress' ? (item.state ? STATE_LABEL[item.state] : 'Logged') : item.kind === 'task-done' ? 'Finished' : item.kind === 'task-touched' ? 'Open task' : item.kind === 'note' ? 'Note edited' : 'Record';
   return (
     <li className={cn('flex items-start gap-2.5 border-b border-a-line-soft py-1.5 text-[13px]', off && 'opacity-50')}>
       <input type="checkbox" className="mt-[3px]" checked={!off} onChange={onToggle} aria-label={`Include: ${item.text}`} />
@@ -212,6 +226,7 @@ function ItemRow({ item, off, settings, onToggle, onSection, onDelete, onEdit }:
           </button>
         )}
         {item.taskTitle && <p className="text-[12px] text-a-faint">task: {item.taskTitle}</p>}
+        {item.detail && <p className="line-clamp-2 text-[12px] text-a-muted [overflow-wrap:anywhere]">{item.detail}</p>}
       </div>
       {onSection && (
         <select aria-label="Section" className={cn(field, 'h-[26px] w-[110px] flex-shrink-0 text-[12px]')} value={item.sectionId} onChange={(e) => onSection(e.target.value)}>

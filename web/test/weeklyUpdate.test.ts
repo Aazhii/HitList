@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ApiProgressEntry } from '@/lib/api';
 import {
+  noteText,
   DEFAULT_SETTINGS, PROMPT_LIMIT, buildMaterialText, buildWeeklyPrompt, collectWeek, defaultWeekOffset, normalizeSettings,
   sectionFor, titleLine, weekRange, type WeeklySettings,
 } from '@/lib/weeklyUpdate';
@@ -141,7 +142,10 @@ describe('buildWeeklyPrompt', () => {
     const { text } = buildWeeklyPrompt(material, DEFAULT_SETTINGS);
     expect(text).toContain('*Team - Sep 28-Oct04 Weekly Updates*');
     expect(titleLine(material.range, DEFAULT_SETTINGS)).toBe('*Team - Sep 28-Oct04 Weekly Updates*');
-    expect(text).toContain('Every line under Work Items starts with "RE - "');
+    expect(text).not.toContain('RE - ');
+    expect(text).not.toContain('starts with');
+    const withPrefix = buildWeeklyPrompt(material, { ...DEFAULT_SETTINGS, sections: DEFAULT_SETTINGS.sections.map((x) => (x.id === 'work' ? { ...x, prefix: 'TEAM - ' } : x)) }).text;
+    expect(withPrefix).toContain('Every line under Work Items starts with "TEAM - "');
     expect(text).toContain('Never report a PARTIAL item as fixed');
     expect(text).toContain('Tickets, Bugs, Work Items, Support');
     expect(text).toContain('EXAMPLES OF MY PAST UPDATES');
@@ -194,5 +198,70 @@ describe('buildWeeklyPrompt', () => {
     const only = buildMaterialText(material, DEFAULT_SETTINGS);
     expect(only.startsWith('MATERIAL (Sep 28-Oct04)')).toBe(true);
     expect(only).not.toContain('RULES');
+  });
+});
+
+describe('what you wrote reaches the prompt', () => {
+  const now = at('2026-10-07T09:00:00');
+  const week = { ...base, now, offsetWeeks: 0 };
+
+  it('an open task with a note becomes a line that carries the note, never a done one', () => {
+    const m = collectWeek({
+      ...week,
+      todos: [
+        todo({ id: 'a', text: 'follow up @indumathi reg table audi', note: "asked to @mandy this isn't not added", updatedAt: at('2026-10-06T11:00:00') }),
+        todo({ id: 'b', text: 'edited but no words', updatedAt: at('2026-10-06T12:00:00') }),
+      ],
+    });
+    const { text } = buildWeeklyPrompt(m, DEFAULT_SETTINGS);
+    expect(text).toContain("[OPEN - worked on this week, not done] Oct 06 · follow up @indumathi reg table audi  (list: Rule engine)  — note: asked to @mandy this isn't not added");
+    expect(text).toContain('- task touched: edited but no words');
+    expect(text).toContain('Never report an OPEN item as completed');
+  });
+
+  it('a finished task keeps its note as extra detail', () => {
+    const m = collectWeek({ ...week, todos: [todo({ id: 'a', text: 'Webhook flow', status: 'done', completedAt: at('2026-10-06T10:00:00'), note: 'tested with the sandbox' })] });
+    expect(buildWeeklyPrompt(m, DEFAULT_SETTINGS).text).toContain('[DONE] Oct 06 · Webhook flow  (list: Rule engine)  — note: tested with the sandbox');
+  });
+
+  it('a note edited in the week goes in with its words, laid out as lines', () => {
+    const text = noteText([
+      { type: 'heading2', content: 'Kiosk screen' },
+      { type: 'numbered', content: 'Sequence of the components in screen' },
+      { type: 'bullet', content: 'field of lookup ( need to ask reg this with @gowtham )', indent: 1 },
+      { type: 'todo', content: 'check **tab id**', checked: true },
+      { type: 'divider', content: '' },
+      { type: 'database', content: '' },
+    ]);
+    expect(text).toBe('Kiosk screen\n- Sequence of the components in screen\n  - field of lookup ( need to ask reg this with @gowtham )\n[x] check tab id');
+    const m = collectWeek({ ...week, notes: [{ id: 'n', title: 'Bugs', updatedAt: at('2026-10-06T10:00:00'), text }] });
+    const prompt = buildWeeklyPrompt(m, DEFAULT_SETTINGS).text;
+    expect(prompt).toContain('NOTES I WROTE OR EDITED THIS WEEK (raw text)');
+    expect(prompt).toContain('- Note "Bugs" (edited Oct 06):');
+    expect(prompt).toContain('      - field of lookup ( need to ask reg this with @gowtham )');
+    expect(prompt).not.toContain('(Nothing was logged or finished this week.)');
+  });
+
+  it('a very long note is cut to fit, the story is kept, and the prompt says it was shortened', () => {
+    const long = Array.from({ length: 12 }, (_, i) => ({ id: `n${i}`, title: `Note ${i}`, updatedAt: at('2026-10-06T10:00:00'), text: 'word '.repeat(600) }));
+    const m = collectWeek({ ...week, notes: long, entries: [entry({ text: 'Keep this line', at: at('2026-10-06T09:00:00') })] });
+    const { text, notesShortened } = buildWeeklyPrompt(m, DEFAULT_SETTINGS);
+    expect(text.length).toBeLessThanOrEqual(PROMPT_LIMIT);
+    expect(notesShortened).toBe(true);
+    expect(text).toContain('Keep this line');
+  });
+
+  it('settings saved by the older build keep working, without its "RE - " prefix', () => {
+    const legacy = {
+      teamName: 'Team', defaultSectionId: 'work', rules: [],
+      sections: [{ id: 'tickets', label: 'Tickets' }, { id: 'bugs', label: 'Bugs' }, { id: 'work', label: 'Work Items', prefix: 'RE - ' }, { id: 'support', label: 'Support' }],
+      examples: DEFAULT_SETTINGS.examples.replace(/^(\d\. )(?=Debug|Discussed|Webhook)/gm, '$1RE - '),
+    };
+    const migrated = normalizeSettings(legacy);
+    expect(migrated.sections.find((x) => x.id === 'work')?.prefix).toBeUndefined();
+    expect(migrated.examples).not.toContain('RE - ');
+    // Someone who chose their own prefix keeps it.
+    const own = normalizeSettings({ ...legacy, examples: 'my own examples', sections: legacy.sections });
+    expect(own.sections.find((x) => x.id === 'work')?.prefix).toBe('RE - ');
   });
 });

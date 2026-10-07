@@ -18,7 +18,7 @@ export interface DatabaseBlockProps {
   layout?: 'table' | 'board';
   linking?: DatabaseTaskLinking;
   onOpenDatabase?: (databaseId: string) => void;
-  /** How far left of its column the block now starts (px, 0 or negative), so the row's hover controls can follow it. */
+  /** Kept for the row's hover controls; the block now always starts at its column, so this is called with 0. */
   onShift?: (left: number) => void;
 }
 
@@ -55,8 +55,12 @@ function useWideAsPage(onShift?: (left: number) => void) {
     observer.observe(column);
     return () => observer.disconnect();
   }, [el]);
-  useEffect(() => { onShift?.(box ? box.left : 0); }, [box, onShift]);
-  return [ref, box ? { width: box.width, marginLeft: box.left } : undefined] as const;
+  // The block's own text and toolbar stay where the note's text starts; only the grid scrolls out over the margin. So the
+  // row's hover controls stay put too.
+  useEffect(() => { onShift?.(0); }, [onShift]);
+  return [ref, box
+    ? { width: box.width, marginLeft: box.left, paddingLeft: -box.left, '--note-inset': `${-box.left}px` } as React.CSSProperties
+    : undefined] as const;
 }
 
 export function DatabaseBlock({ databaseId, layout, linking, onOpenDatabase, onShift }: DatabaseBlockProps) {

@@ -46,6 +46,8 @@ export const BLOCK_METRICS: Record<BlockType, BlockMetric> = {
   divider:   { fontSize: 24, lineHeight: 1,    insetTop: 0 },
   // Not text: an inline database, whose header row is 28px tall.
   database:  { fontSize: 16, lineHeight: 1.75, insetTop: 0 },
+  // A line of text with an arrow before it.
+  toggle:    BODY,
 };
 
 /** Size of each gutter control button (the DS small IconButton, 28px). */
@@ -60,6 +62,7 @@ export const MARKERS = {
   bullet:   { col: 22, gap: 0 },
   numbered: { col: 22, gap: 0 },
   callout:  { col: 18, gap: 12 },
+  toggle:   { col: 22, gap: 0 },
 } as const;
 
 /** The marker column. Literal so Tailwind sees it; the test checks it against MARKERS. */
@@ -106,6 +109,7 @@ export function getBlockTextClass(type: BlockType): string {
     case 'todo':     return 'text-[14px] leading-[1.5] text-a-ink';
     case 'bullet':
     case 'numbered': return 'text-[14px] leading-[1.8] text-a-muted';
+    case 'toggle':   return 'text-[14px] leading-[1.65] text-a-ink';
     case 'divider':
     case 'database': return '';
     default:         return 'text-[14px] leading-[1.65] text-a-muted';

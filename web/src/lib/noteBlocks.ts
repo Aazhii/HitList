@@ -111,6 +111,8 @@ export function outdentBlock(blocks: NoteBlock[], id: string): NoteBlock[] {
 export function levelForNewBlockAfter(blocks: readonly NoteBlock[], index: number): number {
   const here = blocks[index];
   if (!here) return 0;
+  // An open toggle takes the new line inside it; a closed one gets a sibling after everything it holds.
+  if (here.type === 'toggle') return Math.min(MAX_INDENT, levelOf(here) + (here.collapsed ? 0 : 1));
   const hasChildren = index + 1 < blocks.length && levelOf(blocks[index + 1]) > levelOf(here);
   return Math.min(here.type === 'todo' ? MAX_TODO_INDENT : MAX_INDENT, levelOf(here) + (hasChildren ? 1 : 0));
 }
@@ -133,4 +135,32 @@ export function moveBlockWithChildren(blocks: NoteBlock[], id: string, direction
   if (end >= blocks.length || levelOf(blocks[end]) !== level) return blocks;
   const nextEnd = subtreeEnd(blocks, end);
   return [...blocks.slice(0, i), ...blocks.slice(end, nextEnd), ...blocks.slice(i, end), ...blocks.slice(nextEnd)];
+}
+
+/** Where a line added after `blocks[index]` goes: straight after it, or after everything inside it when it is a closed toggle. */
+export function insertIndexAfter(blocks: readonly NoteBlock[], index: number): number {
+  const here = blocks[index];
+  return here && here.type === 'toggle' && here.collapsed ? subtreeEnd(blocks, index) : index + 1;
+}
+
+/** Ids of the blocks that are not shown because a toggle above them (at any depth) is closed. */
+export function hiddenBlockIds(blocks: readonly NoteBlock[]): Set<string> {
+  const hidden = new Set<string>();
+  let i = 0;
+  while (i < blocks.length) {
+    const block = blocks[i];
+    if (block.type === 'toggle' && block.collapsed) {
+      const end = subtreeEnd(blocks, i);
+      for (let k = i + 1; k < end; k += 1) hidden.add(blocks[k].id);
+      i = end;
+    } else {
+      i += 1;
+    }
+  }
+  return hidden;
+}
+
+/** Whether a toggle holds anything: the block after it is nested deeper. */
+export function toggleHasChildren(blocks: readonly NoteBlock[], index: number): boolean {
+  return index + 1 < blocks.length && levelOf(blocks[index + 1]) > levelOf(blocks[index]);
 }

@@ -10,7 +10,7 @@ import { createNewNote, createEmptyBlock } from '@/types/notes';
 import { getActiveTaskStorageId } from '@/lib/storage';
 import { API_BASE_URL } from '@/lib/api';
 import { onSourceSave } from '@/lib/sourceSaves';
-import { indentBlock, levelForNewBlockAfter, moveBlockWithChildren, normalizeIndents, outdentBlock } from '@/lib/noteBlocks';
+import { indentBlock, insertIndexAfter, levelForNewBlockAfter, moveBlockWithChildren, normalizeIndents, outdentBlock } from '@/lib/noteBlocks';
 import { loadAccountNotes, notesStorageKey } from '@/lib/notesStorage';
 import { notesSyncService } from '@/services/notesSyncService';
 import type { NotePayload } from '@/services/notesSyncService';
@@ -248,7 +248,7 @@ export function useNotes() {
           const blocks = [...n.blocks];
           // A new line sits level with the one before it (or first among its children), as in an outline.
           const level = levelForNewBlockAfter(blocks, idx);
-          blocks.splice(idx + 1, 0, level > 0 ? { ...newBlock, indent: level } : newBlock);
+          blocks.splice(insertIndexAfter(blocks, idx), 0, level > 0 ? { ...newBlock, indent: level } : newBlock);
           return { ...n, blocks, updatedAt: Date.now() };
         });
         persistLocal(next);
@@ -292,6 +292,7 @@ export function useNotes() {
                       ...b,
                       type,
                       checked: type === 'todo' ? (b.checked ?? false) : undefined,
+                      collapsed: type === 'toggle' ? b.collapsed : undefined,
                       tableData: type === 'table' ? (b.tableData ?? { rows: [['', '', ''], ['', '', ''], ['', '', '']], hasHeader: true }) : undefined,
                     }
                   : b

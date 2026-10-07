@@ -286,8 +286,10 @@ export function RecordTable({
     <div className="animate-fade-in">
     {/* Full-bleed (showcase 614): the grid runs edge to edge under a hairline, its first
         column starting where the page content does. */}
-    <div className={cn('overflow-x-auto border-t border-a-line', !inline && '-mx-4 md:-mx-12')}>
-    <div className={cn('w-max', inline ? '[--tbl-inset:0px]' : cn('px-4 md:px-12', INSET_VARS))}>
+    {/* In a note the scroller reaches back over the page's left margin (the note sets --note-inset), and the grid starts
+        where the text does: it only slides left when scrolled sideways, as in Notion. */}
+    <div className={cn('overflow-x-auto border-t border-a-line', !inline && '-mx-4 md:-mx-12', inline && 'ml-[calc(var(--note-inset,0px)*-1)]')}>
+    <div className={cn('w-max', inline ? '[--tbl-inset:0px] pl-[var(--note-inset,0px)]' : cn('px-4 md:px-12', INSET_VARS))}>
       {/* DndContext must wrap the table, not sit inside <thead>: it renders a
           hidden accessibility <div>, which HTML forbids as a <thead> child —
           the browser would otherwise silently relocate it, taking the table's

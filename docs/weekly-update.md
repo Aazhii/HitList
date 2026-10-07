@@ -20,6 +20,13 @@ which section everything else goes to, and rules that route by a task's list, ca
 past updates into "Past updates" so the model copies their shape. These settings live in local storage
 (`hitlist-weekly-settings-v1`) and are not committed anywhere; the built-in example is generic.
 
+## What reaches the prompt
+- Your **progress lines** and the tasks you **finished** (with their notes).
+- **Open tasks you worked on this week that carry a note**: the task's own note is sent as the words behind it, tagged OPEN so the model reports what you wrote and that it is still open.
+- **Notes edited this week**, as raw text (at most 2,500 characters each; a bullet, to-do or toggle keeps its marker and nesting). A note has no per-line dates, so the prompt tells the model to use only lines that clearly say work was done, something was discussed or a decision was made.
+- Background (titles only): tasks saved without a note, records, notes with no text. If the prompt would pass 20,000 characters, the background goes first, then each note is cut shorter; your progress lines are never cut.
+- No line prefix is forced. A section's prefix (for example a team tag) is only added if you set one in "Sections and examples".
+
 ## What the page knows (and does not)
 Only what you log and what you complete is progress. Edits, notes and records are shown as background and are told to the model
 as context only. A task saved this week (`updatedAt`, from the server) cannot say what changed.

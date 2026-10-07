@@ -102,8 +102,9 @@ export function RecordBoard({
     >
       <div className="animate-fade-in">
         <div className="relative">
-          <div className="w-full overflow-x-auto pb-3">
-            <div className="flex min-w-max items-start gap-4">
+          {/* In a note (--note-inset) the lanes start under the text and slide left over the margin when scrolled. */}
+          <div className="overflow-x-auto pb-3 ml-[calc(var(--note-inset,0px)*-1)] w-[calc(100%+var(--note-inset,0px))]">
+            <div className="flex min-w-max items-start gap-4 pl-[var(--note-inset,0px)]">
               {columns.map((column) => (
                 <BoardColumn
                   key={column.key}

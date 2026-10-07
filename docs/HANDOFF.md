@@ -224,6 +224,9 @@ An overdue message shows the task's note under it (`   ↳ note`, at most 300 ch
 ### Fewer Data Store reads (shared-workspace sync)
 Found from the real function log (2026-10-07): a full refresh (`GET /ws`, `POST /ws/token`, a pull) every 5 minutes, all day, because the live signal (Ably) never connected on this computer even though the token request returned 200, plus a pull every 5 s during edits. Now: an edit syncs only workspaces with something queued (`syncQueued`); a doorbell whose number this computer already has is ignored; with only the live signal down the retry is a single pull every 5 minutes and the full refresh every 30 minutes; the reason the live signal is down is kept (`status().pushError`, and logged). **The underlying cause of the live signal failing is not yet known**; the log line `[hitlist] shared-workspace live signal unavailable: …` in a new build will say.
 
+### Toggle blocks, and a database in a note
+`toggle` is a note block type with `collapsed?` (additive; stored in the opaque blocks JSON, so no server change). Its children are the blocks after it that are indented deeper (the same `indent` model as Tab / Shift+Tab); a closed toggle hides them (`noteBlocks.hiddenBlockIds`), Enter in an open toggle starts its first inner line, in a closed one it adds a line after everything inside, ⌘/Ctrl+↵ opens or closes. An older HitList that does not know the type shows it as plain text and keeps the indent. A database block now starts where the note's text starts and its grid scrolls out over the left margin (`--note-inset`, `RecordTable`, `RecordBoard`, `DatabaseBlock`).
+
 ## 4. Catalyst resources (names only)
 - Project "HitList" (org id in `.catalystrc`). Functions: `backup`, `cliq-webhook` (both Advanced I/O, Node 20). Web client at
   `https://hitlist-60090109165.development.catalystserverless.in/app/` (trailing slash needed). Function URL

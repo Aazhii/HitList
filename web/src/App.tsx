@@ -58,6 +58,7 @@ import { takeClaimedMessage } from '@/lib/session';
 import { RestoreOffer } from '@/components/shell/RestoreOffer';
 import { QuickCapture } from '@/components/QuickCapture';
 import { LogProgressDialog } from '@/components/worklog/LogProgressDialog';
+import type { Note } from '@/types/notes';
 import { isTypingTarget } from '@/lib/taskKeyboard';
 import { PageSections } from '@/components/shell/PageSections';
 import { TodayPage } from '@/pages/TodayPage';
@@ -1424,6 +1425,11 @@ function UserScopedApp() {
   // ── Log progress: `l` or ⌘L, anywhere nothing is being typed into ──
   const [logOpen, setLogOpen] = useState(false);
   const [logTask, setLogTask] = useState<{ id: string; title: string } | null>(null);
+  // The notes with their text, read when the Weekly update page opens (and again when the log dialog closes).
+  const weeklyNotes = useMemo<Note[]>(() => {
+    if (activeView !== 'weekly') return [];
+    try { const saved = JSON.parse(localStorage.getItem(notesStorageKey(getActiveTaskStorageId())) ?? '[]'); return Array.isArray(saved) ? saved : []; } catch { return []; }
+  }, [activeView, logOpen]);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const chord = (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'l';
@@ -1843,6 +1849,7 @@ function UserScopedApp() {
             todos={todos}
             lists={lists}
             directory={pageDirectory}
+            notes={weeklyNotes}
             logOpen={logOpen}
             onLogProgress={() => { setLogTask(null); setLogOpen(true); }}
             onOpenSidebar={() => setSidebarOpen(true)}

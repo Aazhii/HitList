@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { WeeklyUpdatePage } from '@/pages/WeeklyUpdatePage';
 import { databaseApi, progressApi, type ApiProgressEntry } from '@/lib/api';
 import type { PageInfo } from '@/lib/pages';
+import type { Note } from '@/types/notes';
 import type { Todo } from '@/types/todo';
 
 vi.mock('@/lib/api', async (orig) => {
@@ -20,7 +21,9 @@ const entry = (id: string, text: string, when: string, o: Partial<ApiProgressEnt
   id, text, state: 'moved', at: at(when), section: '', taskId: '', noteId: '', recordId: '', createdAt: 0, updatedAt: 0, ...o,
 });
 const todo = (o: Partial<Todo> & { id: string; text: string }): Todo => ({ status: 'todo', createdAt: 0, listId: 'l1', order: 0, quadrant: 'do', ...o });
-const directory: PageInfo[] = [{ kind: 'note', id: 'n1', name: 'Playbook sync', editedAt: at('2026-10-02T10:00:00') }];
+const directory: PageInfo[] = [];
+const notes: Note[] = [{ id: 'n1', title: 'Playbook sync', emoji: '', pinned: false, createdAt: 0, updatedAt: at('2026-10-02T10:00:00'),
+  blocks: [{ id: 'b1', type: 'bullet', content: 'asked @mandy about the audit table' }] }];
 
 const clipboard = { writeText: vi.fn() };
 beforeEach(() => {
@@ -37,7 +40,7 @@ afterEach(() => vi.clearAllMocks());
 
 const page = (extra: Partial<React.ComponentProps<typeof WeeklyUpdatePage>> = {}) => render(
   <WeeklyUpdatePage now={NOW} todos={[todo({ id: 't', text: 'Webhook flow', status: 'done', completedAt: at('2026-10-02T10:00:00') })]}
-    lists={[{ id: 'l1', name: 'Rule engine' }]} directory={directory} logOpen={false} onLogProgress={vi.fn()} {...extra} />,
+    lists={[{ id: 'l1', name: 'Rule engine' }]} directory={directory} notes={notes} logOpen={false} onLogProgress={vi.fn()} {...extra} />,
 );
 
 describe('WeeklyUpdatePage', () => {
@@ -51,7 +54,7 @@ describe('WeeklyUpdatePage', () => {
     expect(within(work).getByText('Debugged instance create')).toBeInTheDocument();
     expect(within(work).getByText('Webhook flow')).toBeInTheDocument();
     expect(screen.queryByRole('region', { name: 'Support' })).toBeNull();
-    expect(screen.getByText('Playbook sync')).toBeInTheDocument(); // background
+    expect(screen.getByRole('region', { name: 'Notes' })).toHaveTextContent('Playbook sync'); // the note, with its words
   });
 
   it('copies a prompt that keeps partial progress partial and drops what was unticked', async () => {

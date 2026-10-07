@@ -7,7 +7,35 @@
  * as that, never as done. Pure functions, no I/O.
  */
 import type { ApiProgressEntry, ProgressState } from '@/lib/api';
+import { stripInline } from '@/lib/inlineMarkdown';
+import type { NoteBlock } from '@/types/notes';
 import type { Todo } from '@/types/todo';
+
+/** Longest stretch of one note (or one task's note) that goes into the prompt, in characters. */
+export const NOTE_CHARS = 2500;
+export const TASK_NOTE_CHARS = 600;
+
+/**
+ * The words of a note as plain lines, for the prompt: bullets and to-dos keep their markers and their nesting, tables
+ * become one line per row, and dividers and embedded databases (their rows are listed separately) are left out.
+ */
+export function noteText(blocks: readonly Pick<NoteBlock, 'type' | 'content' | 'checked' | 'indent' | 'tableData'>[], limit = NOTE_CHARS): string {
+  const lines: string[] = [];
+  for (const b of blocks) {
+    if (b.type === 'divider' || b.type === 'database') continue;
+    const pad = '  '.repeat(Math.min(6, Math.max(0, b.indent ?? 0)));
+    if (b.type === 'table') {
+      for (const row of b.tableData?.rows ?? []) { const cells = row.map((c) => stripInline(c).trim()).filter(Boolean); if (cells.length) lines.push(`${pad}${cells.join(' | ')}`); }
+      continue;
+    }
+    const text = (b.type === 'code' ? b.content : stripInline(b.content)).replace(/\s+/g, ' ').trim();
+    if (!text) continue;
+    const mark = b.type === 'todo' ? (b.checked ? '[x] ' : '[ ] ') : b.type === 'bullet' || b.type === 'numbered' ? '- ' : b.type === 'toggle' ? '> ' : '';
+    lines.push(`${pad}${mark}${text}`);
+  }
+  const all = lines.join('\n');
+  return all.length > limit ? `${all.slice(0, limit - 1)}…` : all;
+}
 
 export interface WeekRange {
   startMs: number;
@@ -71,6 +99,21 @@ export const DEFAULT_EXAMPLE = `*Team - Sep 21-27 Weekly Updates*
 2. PROJ-1057 - NullPointerException in the report export
 
 *--- Work Items*
+1. Debug and provide a solution to @asha for the client feature
+2. Discussed the import flow with @ravi, looping him in, issue not fixed yet
+3. Webhook action module flow - completed
+
+*--- Support*
+1. Build error fixed - [changeset](https://example.com/changeset/123)`;
+
+/** The example older builds shipped, with a line prefix on every work item. Saved settings still holding it are updated. */
+const LEGACY_EXAMPLE = `*Team - Sep 21-27 Weekly Updates*
+
+*--- Bugs*
+1. PROJ-1054 - Timeout from the scheduler under load
+2. PROJ-1057 - NullPointerException in the report export
+
+*--- Work Items*
 1. RE - Debug and provide a solution to @asha for the client feature
 2. RE - Discussed the import flow with @ravi, looping him in, issue not fixed yet
 3. RE - Webhook action module flow - completed
@@ -83,7 +126,7 @@ export const DEFAULT_SETTINGS: WeeklySettings = {
   sections: [
     { id: 'tickets', label: 'Tickets' },
     { id: 'bugs', label: 'Bugs' },
-    { id: 'work', label: 'Work Items', prefix: 'RE - ' },
+    { id: 'work', label: 'Work Items' },
     { id: 'support', label: 'Support' },
   ],
   rules: [],
@@ -98,7 +141,10 @@ export function normalizeSettings(raw: unknown): WeeklySettings {
     ? o.sections.filter((s): s is SectionDef => !!s && typeof s.id === 'string' && typeof s.label === 'string' && s.label.trim() !== '')
         .map((s) => ({ id: s.id, label: s.label.trim(), prefix: typeof s.prefix === 'string' ? s.prefix : undefined }))
     : [];
-  const use = sections.length ? sections : DEFAULT_SETTINGS.sections;
+  // Settings saved by an older build that were never edited still carry its "RE - " prefix and example: use the new defaults.
+  const untouchedLegacy = o.examples === LEGACY_EXAMPLE;
+  const use = (sections.length ? sections : DEFAULT_SETTINGS.sections)
+    .map((x) => (untouchedLegacy && x.id === 'work' && x.prefix === 'RE - ' ? { id: x.id, label: x.label } : x));
   const rules = Array.isArray(o.rules)
     ? o.rules.filter((r): r is SectionRule => !!r && ['list', 'category', 'field'].includes(r.from) && typeof r.value === 'string' && use.some((s) => s.id === r.sectionId))
     : [];
@@ -108,7 +154,7 @@ export function normalizeSettings(raw: unknown): WeeklySettings {
     rules,
     defaultSectionId: use.some((s) => s.id === o.defaultSectionId) ? (o.defaultSectionId as string)
       : use.some((s) => s.id === DEFAULT_SETTINGS.defaultSectionId) ? DEFAULT_SETTINGS.defaultSectionId : use[use.length - 1].id,
-    examples: typeof o.examples === 'string' ? o.examples : DEFAULT_SETTINGS.examples,
+    examples: typeof o.examples === 'string' && !untouchedLegacy ? o.examples : DEFAULT_SETTINGS.examples,
   };
 }
 
@@ -143,6 +189,8 @@ export interface MaterialItem {
   /** For a progress line about a task. */
   taskTitle?: string;
   listName?: string;
+  /** The words behind the title: a task's own note, or a note's text. */
+  detail?: string;
 }
 
 export interface WeekMaterial {
@@ -157,11 +205,19 @@ export interface WeekInput {
   entries: readonly ApiProgressEntry[];
   todos: readonly Todo[];
   lists: ReadonlyArray<{ id: string; name: string }>;
-  notes: ReadonlyArray<{ id: string; title: string; updatedAt: number }>;
+  notes: ReadonlyArray<{ id: string; title: string; updatedAt: number; text?: string }>;
   records?: ReadonlyArray<{ id: string; databaseName: string; title: string; createdAt: number; updatedAt: number }>;
   /** Option labels of select fields a task has, for the "field" rule. */
   fieldLabelsOf?: (taskId: string) => readonly string[];
 }
+
+const taskNote = (t: Todo): string | undefined => {
+  const text = (t.note ?? '').replace(/\s+/g, ' ').trim();
+  return text ? (text.length > TASK_NOTE_CHARS ? `${text.slice(0, TASK_NOTE_CHARS - 1)}…` : text) : undefined;
+};
+
+/** What tells the story: lines you logged, tasks you finished, and tasks you touched that carry a note. The rest is background. */
+export const isStory = (i: MaterialItem): boolean => i.kind === 'progress' || i.kind === 'task-done' || (i.kind === 'task-touched' && !!i.detail);
 
 const inside = (at: number | undefined, r: WeekRange) => at !== undefined && at >= r.startMs && at <= r.endMs;
 
@@ -195,7 +251,7 @@ export function collectWeek(input: WeekInput): WeekMaterial {
       doneIds.add(t.id);
       items.push({
         key: `done:${t.id}`, kind: 'task-done', sectionId: sectionFor(settings, hintOf(t)), text: t.text, state: 'done',
-        at: t.completedAt as number, listName: listName.get(t.listId),
+        at: t.completedAt as number, listName: listName.get(t.listId), detail: taskNote(t),
       });
     }
   }
@@ -204,11 +260,11 @@ export function collectWeek(input: WeekInput): WeekMaterial {
     // Created or saved in the week: the task was worked on, though the app cannot say how.
     const at = inside(t.updatedAt, range) ? t.updatedAt : inside(t.createdAt, range) ? t.createdAt : undefined;
     if (at === undefined) continue;
-    items.push({ key: `touched:${t.id}`, kind: 'task-touched', sectionId: sectionFor(settings, hintOf(t)), text: t.text, at, listName: listName.get(t.listId) });
+    items.push({ key: `touched:${t.id}`, kind: 'task-touched', sectionId: sectionFor(settings, hintOf(t)), text: t.text, at, listName: listName.get(t.listId), detail: taskNote(t) });
   }
   for (const n of input.notes) {
     if (!inside(n.updatedAt, range)) continue;
-    items.push({ key: `note:${n.id}`, kind: 'note', sectionId: settings.defaultSectionId, text: n.title.trim() || 'Untitled note', at: n.updatedAt });
+    items.push({ key: `note:${n.id}`, kind: 'note', sectionId: settings.defaultSectionId, text: n.title.trim() || 'Untitled note', at: n.updatedAt, detail: n.text || undefined });
   }
   for (const r of input.records ?? []) {
     const at = inside(r.updatedAt, range) ? r.updatedAt : inside(r.createdAt, range) ? r.createdAt : undefined;
@@ -219,7 +275,7 @@ export function collectWeek(input: WeekInput): WeekMaterial {
   return { range, items };
 }
 
-export const PROMPT_LIMIT = 12_000;
+export const PROMPT_LIMIT = 20_000;
 
 const STATE_TAG: Record<MaterialState, string> = {
   moved: 'PARTIAL - moved, not finished',
@@ -239,6 +295,8 @@ export interface WeeklyPrompt {
   text: string;
   /** Background lines left out to stay under the limit. */
   trimmed: number;
+  /** Whether notes were cut shorter than usual to stay under the limit. */
+  notesShortened: boolean;
 }
 
 /** The title line the update starts with. */
@@ -246,12 +304,15 @@ export function titleLine(range: WeekRange, settings: WeeklySettings): string {
   return `*${settings.teamName} - ${range.label} Weekly Updates*`;
 }
 
+const clip = (text: string, max: number) => (text.length > max ? `${text.slice(0, Math.max(1, max - 1))}…` : text);
+
 /** One block of text to paste into an LLM. `skip` holds keys of items the person unticked. */
 export function buildWeeklyPrompt(material: WeekMaterial, settings: WeeklySettings, skip: ReadonlySet<string> = new Set()): WeeklyPrompt {
   const kept = material.items.filter((i) => !skip.has(i.key));
   const sectionOrder = settings.sections.map((s) => s.id);
-  const story = kept.filter((i) => i.kind === 'progress' || i.kind === 'task-done');
-  const background = kept.filter((i) => i.kind !== 'progress' && i.kind !== 'task-done');
+  const story = kept.filter(isStory);
+  const noteItems = kept.filter((i) => i.kind === 'note' && !!i.detail);
+  const background = kept.filter((i) => !isStory(i) && !(i.kind === 'note' && i.detail));
 
   const head = [
     'You are writing my weekly progress update for my team. Rewrite the raw material below into the exact format shown.',
@@ -267,9 +328,11 @@ export function buildWeeklyPrompt(material: WeekMaterial, settings: WeeklySettin
     '- Keep markdown links exactly as written: [text](url).',
     '- One line per item, past tense, plain words. Add no detail that is not in the material.',
     '- PARTIAL means the work moved but is not finished. Say what was done and what is still open, for example "discussed with @asha, looping them in, issue not fixed yet". Never report a PARTIAL item as fixed, closed or completed.',
+    '- OPEN means I worked on the task this week and it is not marked done. Its "note" is what I wrote about it: report what the note says happened (who I talked to, what I found, what is pending) and that it is still open. Never report an OPEN item as completed.',
     '- BLOCKED means waiting on something. Say what it is waiting on.',
-    '- DONE may be reported as completed.',
+    '- DONE may be reported as completed. A "note" on it is extra detail.',
     '- Merge lines that are clearly about the same id or task into one line, keeping the latest state.',
+    '- NOTES are my own raw notes. They have no per-line dates, so use a line only when it clearly says work was done, something was discussed or a decision was made. Do not turn a plan, a question or a to-do into something done.',
     '- The background list is for context only. Use it only to make a line above it clearer. Do not make lines from it.',
     '',
   ];
@@ -278,10 +341,11 @@ export function buildWeeklyPrompt(material: WeekMaterial, settings: WeeklySettin
     : [];
 
   const line = (i: MaterialItem) => {
-    const tag = i.state ? `[${STATE_TAG[i.state]}] ` : '';
+    const tag = i.state ? `[${STATE_TAG[i.state]}] ` : i.kind === 'task-touched' ? '[OPEN - worked on this week, not done] ' : '';
     const about = i.taskTitle && i.kind === 'progress' ? `  (task: "${oneLine(i.taskTitle)}")` : '';
-    const list = i.listName && i.kind === 'task-done' ? `  (list: ${i.listName})` : '';
-    return `- ${tag}${dayLabel(i.at)} · ${oneLine(i.text)}${about}${list}`;
+    const list = i.listName && (i.kind === 'task-done' || i.kind === 'task-touched') ? `  (list: ${i.listName})` : '';
+    const note = i.detail && i.kind !== 'progress' ? `  — note: ${oneLine(i.detail)}` : '';
+    return `- ${tag}${dayLabel(i.at)} · ${oneLine(i.text)}${about}${list}${note}`;
   };
   const materialLines: string[] = [`MATERIAL (${material.range.label})`];
   for (const id of sectionOrder) {
@@ -289,17 +353,26 @@ export function buildWeeklyPrompt(material: WeekMaterial, settings: WeeklySettin
     if (!here.length) continue;
     materialLines.push(`*--- ${settings.sections.find((s) => s.id === id)?.label ?? id}*`, ...here.map(line));
   }
-  if (!story.length) materialLines.push('(Nothing was logged or finished this week.)');
+  if (!story.length && !noteItems.length) materialLines.push('(Nothing was logged or finished this week.)');
+
+  const notesBlock = (room: number): string[] => (noteItems.length
+    ? ['', 'NOTES I WROTE OR EDITED THIS WEEK (raw text)',
+      ...noteItems.flatMap((n) => [`- Note "${oneLine(n.text)}" (edited ${dayLabel(n.at)}):`, ...clip(n.detail ?? '', room).split('\n').map((l) => `    ${l}`)])]
+    : []);
 
   let bg = background.map((i) => `- ${i.kind === 'note' ? 'note edited' : i.kind === 'record' ? 'record' : 'task touched'}: ${oneLine(i.text)}`);
-  const assemble = () => [...head, ...examples, ...materialLines, ...(bg.length ? ['', 'BACKGROUND (context only)', ...bg] : [])].join('\n');
+  let room = NOTE_CHARS;
+  const assemble = () => [...head, ...examples, ...materialLines, ...notesBlock(room), ...(bg.length ? ['', 'BACKGROUND (context only)', ...bg] : [])].join('\n');
   let text = assemble();
   const before = bg.length;
-  while (text.length > PROMPT_LIMIT && bg.length) {
-    bg = bg.slice(0, -1);
+  let notesShortened = false;
+  // Too long: the background goes first, then each note gets a little less room. The story is never cut.
+  while (text.length > PROMPT_LIMIT && (bg.length || room > 300)) {
+    if (bg.length) bg = bg.slice(0, -1);
+    else { room = Math.floor(room * 0.7); notesShortened = true; }
     text = assemble();
   }
-  return { text, trimmed: before - bg.length };
+  return { text, trimmed: before - bg.length, notesShortened };
 }
 
 /** Only the material, for pasting somewhere else. */
