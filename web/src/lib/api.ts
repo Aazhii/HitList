@@ -47,6 +47,8 @@ export interface ApiTask {
   assigneeName?: string | null;
   assignedBy?: string | null;
   assignedAt?: string | null;
+  /** The tasks this one needs finished first (ids). Absent from older servers. */
+  needsFirst?: string[];
 }
 
 export interface ApiList {
@@ -92,6 +94,8 @@ export interface TaskCreateRequest {
   /** Who the task is for (a member's user id); '' clears on update. */
   assigneeUserId?: string;
   assigneeName?: string;
+  /** The tasks this one needs finished first (ids); [] clears on update. */
+  needsFirst?: string[];
   /** Stable local id used only by the one-time offline migration. */
   clientId?: string;
 }

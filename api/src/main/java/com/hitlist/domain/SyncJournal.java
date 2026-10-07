@@ -27,7 +27,7 @@ public class SyncJournal {
     public static final Map<String, Set<String>> SHARED_FIELDS = Map.of(
         StorageTables.TASKS, Set.of("Title", "Status", "Quadrant", "TaskPriority", "Note", "DueDate", "DueTime", "Category", "ListId",
             "TaskOrder", "ReminderEnabled", "ReminderMinutesBefore", "Recurrence", "CompletedAt", "CreatedAt", "UpdatedAt",
-            "AssigneeUserId", "AssigneeName", "AssignedBy", "AssignedAt"),
+            "AssigneeUserId", "AssigneeName", "AssignedBy", "AssignedAt", "NeedsFirstIds"),
         StorageTables.LISTS, Set.of("Name", "Color", "ListOrder", "CreatedAt", "UpdatedAt"),
         StorageTables.NOTES, Set.of("Title", "BlocksJson", "Emoji", "Pinned", "CreatedAt", "UpdatedAt"),
         StorageTables.DATABASES, Set.of("Name", "Icon", "DateFieldId", "TitleLabel", "DbOrder", "CreatedAt", "UpdatedAt"),

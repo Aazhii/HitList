@@ -7,6 +7,8 @@ import { CalendarDays, Clock, Plus, Repeat } from 'lucide-react';
 import { recurrenceLabel } from '@/lib/recurrence';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { parseQuickCapture, type CapturedTask } from '@/lib/quickCapture';
+import { resolveNeeds } from '@/lib/taskNeeds';
+import type { Todo } from '@/types/todo';
 import { getQuadrantConfig } from '@/types/todo';
 import { cn } from '@/lib/utils';
 
@@ -15,6 +17,8 @@ export interface QuickCaptureProps {
   onOpenChange: (open: boolean) => void;
   /** Name of the list the task will land in. */
   listName?: string;
+  /** The open tasks, so ">Write notes" can say whether it links one that exists or makes a new task. */
+  openTasks?: readonly Todo[];
   onAdd: (task: CapturedTask) => void;
 }
 
@@ -26,7 +30,7 @@ function timeLabel(hhmm: string): string {
   return new Date(`2000-01-01T${hhmm}:00`).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
 }
 
-export function QuickCapture({ open, onOpenChange, listName, onAdd }: QuickCaptureProps) {
+export function QuickCapture({ open, onOpenChange, listName, openTasks, onAdd }: QuickCaptureProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       {/* The body is its own component so each opening starts with an empty box. */}
@@ -36,16 +40,17 @@ export function QuickCapture({ open, onOpenChange, listName, onAdd }: QuickCaptu
       >
         <DialogTitle className="sr-only">Quick add</DialogTitle>
         <DialogDescription className="sr-only">Type a task. Add a date, a time or a quadrant in the same line.</DialogDescription>
-        <CaptureBody listName={listName} onAdd={(t) => { onOpenChange(false); onAdd(t); }} />
+        <CaptureBody listName={listName} openTasks={openTasks} onAdd={(t) => { onOpenChange(false); onAdd(t); }} />
       </DialogContent>
     </Dialog>
   );
 }
 
-function CaptureBody({ listName, onAdd }: { listName?: string; onAdd: (task: CapturedTask) => void }) {
+function CaptureBody({ listName, openTasks, onAdd }: { listName?: string; openTasks?: readonly Todo[]; onAdd: (task: CapturedTask) => void }) {
   const [text, setText] = useState('');
   const [now] = useState(() => new Date());
   const parsed = useMemo(() => (text.trim() ? parseQuickCapture(text, now) : null), [text, now]);
+  const needs = useMemo(() => (parsed?.needs?.length ? resolveNeeds(parsed.needs, openTasks ?? []) : null), [parsed, openTasks]);
 
   return (
     <>
@@ -80,9 +85,17 @@ function CaptureBody({ listName, onAdd }: { listName?: string; onAdd: (task: Cap
               {getQuadrantConfig(parsed.quadrant ?? 'do').label}
             </span>
             {listName && <span>in {listName}</span>}
+            {needs && (
+              <span className="w-full">
+                Needs first: {[
+                  ...needs.ids.map((id) => `${openTasks?.find((t) => t.id === id)?.text ?? ''} (existing)`),
+                  ...needs.newTitles.map((title) => `${title} (new)`),
+                ].join(' · ')}
+              </span>
+            )}
           </>
         ) : (
-          <span className="text-a-faint">Dates, times and !do / !schedule / !delegate / !eliminate are read from the line.</span>
+          <span className="text-a-faint">Dates, times and !do / !schedule / !delegate / !eliminate are read from the line. {'>'}Task makes it need that task first.</span>
         )}
       </div>
     </>

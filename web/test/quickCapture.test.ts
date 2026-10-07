@@ -5,6 +5,26 @@ import { parseQuickCapture } from '@/lib/quickCapture';
 const NOW = new Date('2026-09-30T10:00:00');
 const p = (s: string) => parseQuickCapture(s, NOW);
 
+describe('tasks it needs first (">")', () => {
+  it('reads each part after ">" as a task this one needs first, and leaves the title', () => {
+    expect(p('Ship release >Write notes >Run tests')).toEqual({ title: 'Ship release', needs: ['Write notes', 'Run tests'] });
+    // Nothing is left to call it, so the line is kept as typed rather than making an empty task.
+    expect(p('>Write notes').title).toBe('>Write notes');
+    expect(p('>Write notes').needs).toEqual(['Write notes']);
+  });
+
+  it('works next to a date, a time and a quadrant when those come before it or after a "!"', () => {
+    expect(p('Ship release fri 3pm >Write notes >Run tests !do')).toEqual({
+      title: 'Ship release', dueDate: '2026-10-02', dueTime: '15:00', quadrant: 'do', needs: ['Write notes', 'Run tests'],
+    });
+  });
+
+  it('a lone ">" with a space after it is just text, and repeats are read once', () => {
+    expect(p('Is 5 > 3 true')).toEqual({ title: 'Is 5 > 3 true' });
+    expect(p('Ship >Write notes >write notes').needs).toEqual(['Write notes']);
+  });
+});
+
 describe('parseQuickCapture', () => {
   it('leaves a plain line alone', () => {
     expect(p('Buy milk')).toEqual({ title: 'Buy milk' });

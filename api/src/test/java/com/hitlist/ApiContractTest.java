@@ -86,6 +86,55 @@ class ApiContractTest {
     }
 
     @Test
+    void aTaskCanNeedOthersFirstWithChecksAndTheNextRepeatStartsFree() throws Exception {
+        MockCookie browser = browser();
+        MockCookie other = browser();
+        for (String id : List.of("n1", "n2", "n3")) {
+            mvc.perform(post("/api/tasks").cookie(browser).contentType(MediaType.APPLICATION_JSON).content("{\"clientId\":\"" + id + "\",\"title\":\"Task " + id + "\"}"))
+                .andExpect(status().isCreated()).andExpect(jsonPath("$.needsFirst.length()").value(0));
+        }
+        // Set at creation and read back in the order chosen.
+        mvc.perform(post("/api/tasks").cookie(browser).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"clientId\":\"big\",\"title\":\"Big\",\"needsFirst\":[\"n2\",\"n3\",\"n2\"]}"))
+            .andExpect(status().isCreated()).andExpect(jsonPath("$.needsFirst[0]").value("n2")).andExpect(jsonPath("$.needsFirst[1]").value("n3"))
+            .andExpect(jsonPath("$.needsFirst.length()").value(2));
+        mvc.perform(get("/api/tasks/big").cookie(browser)).andExpect(jsonPath("$.needsFirst.length()").value(2));
+
+        // Not itself, not a task that does not exist, not someone else's task, not a loop, not a pile.
+        mvc.perform(put("/api/tasks/n1").cookie(browser).contentType(MediaType.APPLICATION_JSON).content("{\"needsFirst\":[\"n1\"]}")).andExpect(status().isBadRequest());
+        mvc.perform(put("/api/tasks/n1").cookie(browser).contentType(MediaType.APPLICATION_JSON).content("{\"needsFirst\":[\"nope\"]}")).andExpect(status().isBadRequest());
+        mvc.perform(put("/api/tasks/n1").cookie(other).contentType(MediaType.APPLICATION_JSON).content("{\"needsFirst\":[\"n2\"]}")).andExpect(status().isNotFound());
+        mvc.perform(put("/api/tasks/n2").cookie(browser).contentType(MediaType.APPLICATION_JSON).content("{\"needsFirst\":[\"big\"]}")).andExpect(status().isBadRequest());
+        mvc.perform(put("/api/tasks/n3").cookie(browser).contentType(MediaType.APPLICATION_JSON).content("{\"needsFirst\":\"n1\"}")).andExpect(status().isBadRequest());
+        mvc.perform(put("/api/tasks/n3").cookie(browser).contentType(MediaType.APPLICATION_JSON).content("{\"needsFirst\":[\"bad id!\"]}")).andExpect(status().isBadRequest());
+        // The loop check follows chains: n1 needs big, big needs n2, so n2 cannot need n1.
+        mvc.perform(put("/api/tasks/n1").cookie(browser).contentType(MediaType.APPLICATION_JSON).content("{\"needsFirst\":[\"big\"]}")).andExpect(status().isOk());
+        mvc.perform(put("/api/tasks/n2").cookie(browser).contentType(MediaType.APPLICATION_JSON).content("{\"needsFirst\":[\"n1\"]}")).andExpect(status().isBadRequest());
+        StringBuilder many = new StringBuilder("[");
+        for (int i = 0; i < 21; i++) many.append(i == 0 ? "" : ",").append("\"x").append(i).append("\"");
+        mvc.perform(put("/api/tasks/n3").cookie(browser).contentType(MediaType.APPLICATION_JSON).content("{\"needsFirst\":" + many + "]}")).andExpect(status().isBadRequest());
+
+        // Clearing works, and an edit that does not mention it leaves it alone.
+        mvc.perform(put("/api/tasks/big").cookie(browser).contentType(MediaType.APPLICATION_JSON).content("{\"title\":\"Bigger\"}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.needsFirst.length()").value(2));
+        mvc.perform(put("/api/tasks/big").cookie(browser).contentType(MediaType.APPLICATION_JSON).content("{\"needsFirst\":[]}"))
+            .andExpect(status().isOk()).andExpect(jsonPath("$.needsFirst.length()").value(0));
+
+        // A deleted prerequisite is simply ignored; nothing else needs rewriting.
+        mvc.perform(put("/api/tasks/big").cookie(browser).contentType(MediaType.APPLICATION_JSON).content("{\"needsFirst\":[\"n2\"]}")).andExpect(status().isOk());
+        mvc.perform(delete("/api/tasks/n2").cookie(browser)).andExpect(status().isNoContent());
+        mvc.perform(get("/api/tasks/big").cookie(browser)).andExpect(status().isOk());
+
+        // The next occurrence of a repeating task starts free.
+        mvc.perform(post("/api/tasks").cookie(browser).contentType(MediaType.APPLICATION_JSON)
+                .content("{\"clientId\":\"weekly\",\"title\":\"Weekly\",\"recurrence\":\"WEEKLY\",\"dueDate\":\"2030-01-02\",\"needsFirst\":[\"n3\"]}"))
+            .andExpect(status().isCreated()).andExpect(jsonPath("$.needsFirst.length()").value(1));
+        mvc.perform(put("/api/tasks/weekly").cookie(browser).contentType(MediaType.APPLICATION_JSON).content("{\"status\":\"DONE\"}")).andExpect(status().isOk());
+        mvc.perform(get("/api/tasks").cookie(browser))
+            .andExpect(jsonPath("$[?(@.title=='Weekly' && @.status=='TODO')].needsFirst.length()").value(0));
+    }
+
+    @Test
     void clearingDueFieldsPersistsAcrossFreshReads() throws Exception {
         MockCookie browser = browser();
         mvc.perform(post("/api/tasks").cookie(browser).contentType(MediaType.APPLICATION_JSON)

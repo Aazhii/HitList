@@ -27,6 +27,7 @@ import { selectAllState, toggleId, visibleSelection } from '@/lib/bulkSelection'
 import { isTypingTarget } from '@/lib/taskKeyboard';
 import { dueFill, fieldFill, fillRatio } from '@/lib/taskQuality';
 import { cn } from '@/lib/utils';
+import { WaitingBadge } from '@/components/tasks/WaitingBadge';
 import { topBarPill } from '@/components/shell/TopBar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -548,6 +549,7 @@ function TaskTableRow({ rowNumber, todo, columns, activeCol, selected, selecting
             todo={todo}
             onCommit={(text) => { if (text && text !== todo.text) onUpdate(todo.id, { text }); }}
           />
+          {todo.status !== 'done' && <WaitingBadge taskId={todo.id} className="mt-1 flex-shrink-0" />}
           <button
             type="button"
             onClick={() => onOpen(todo)}

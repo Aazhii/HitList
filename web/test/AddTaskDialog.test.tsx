@@ -7,7 +7,7 @@ describe('task creation dialog', () => {
   it('keeps an overdue draft on save failure and closes only after retry succeeds', async () => {
     const onOpenChange = vi.fn();
     const onAdd = vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce({ id: 'saved' } as Todo);
-    render(<AddTaskDialog open defaultQuadrant="do" onAdd={onAdd} onOpenChange={onOpenChange} />);
+    render(<AddTaskDialog open defaultQuadrant="do" onAdd={onAdd} onOpenChange={onOpenChange} todos={[]} />);
     const text = screen.getByLabelText(/Task\*/);
     const date = screen.getByLabelText('Due date');
     fireEvent.change(text, { target: { value: 'Overdue draft' } });
@@ -233,5 +233,22 @@ describe('AddTaskDialog', () => {
     await waitFor(() => {
       expect(screen.getByTestId('quadrant-schedule')).toHaveAttribute('aria-pressed', 'true');
     });
+  });
+});
+
+describe('task creation dialog: needs first', () => {
+  it('hands on the tasks chosen, and the titles to make, with the new task', async () => {
+    const onAdd = vi.fn().mockResolvedValue({ id: 'saved' } as Todo);
+    const open: Todo = { id: 'w', text: 'Write notes', status: 'todo', createdAt: 0, listId: 'l', order: 0, quadrant: 'do' };
+    render(<AddTaskDialog open defaultQuadrant="do" onAdd={onAdd} onOpenChange={vi.fn()} todos={[open]} />);
+    fireEvent.change(screen.getByLabelText(/Task\*/), { target: { value: 'Ship release' } });
+    const search = screen.getByLabelText('Add a task that needs to be done first');
+    fireEvent.change(search, { target: { value: 'write' } });
+    fireEvent.click(screen.getByRole('button', { name: /Write notes/ }));
+    fireEvent.change(search, { target: { value: 'Run tests' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create “Run tests” as a new task' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Add task' }));
+    await waitFor(() => expect(onAdd).toHaveBeenCalled());
+    expect(onAdd).toHaveBeenLastCalledWith('Ship release', 'do', undefined, undefined, undefined, { ids: ['w'], newTitles: ['Run tests'] });
   });
 });

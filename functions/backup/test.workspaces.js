@@ -275,3 +275,10 @@ test('a caller without a usable account is refused everywhere', async () => {
 	await assert.rejects(ctx.svc.createWorkspace({ userId: 'abc', email: 'a@b.co' }), { code: 'invalid_account' });
 	await assert.rejects(ctx.svc.listWorkspaces({ userId: '100001', email: null }), { code: 'invalid_account' });
 });
+
+test('a task may carry the tasks it needs first, and unknown fields are still refused', () => {
+	const ok = cleanOps([{ table: 'tasks', id: 't1', fields: { NeedsFirstIds: '["a","b"]' } }]);
+	assert.equal(ok[0].fields.NeedsFirstIds, '["a","b"]');
+	assert.equal(cleanOps([{ table: 'tasks', id: 't1', fields: { NeedsFirstIds: '' } }])[0].fields.NeedsFirstIds, '');
+	assert.throws(() => cleanOps([{ table: 'tasks', id: 't1', fields: { NotAField: 'x' } }]), (e) => e.code === 'invalid_field');
+});

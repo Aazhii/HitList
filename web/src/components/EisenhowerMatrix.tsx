@@ -10,6 +10,7 @@ import { bucketByQuadrant, type TaskCompare } from '@/lib/quadrantBuckets';
 import { DUE_TONE_CLASS, dueTone, getDueInfo } from '@/lib/dueInfo';
 import { NEXT_STATUS } from '@/lib/taskStatus';
 import { FieldChips } from '@/components/fields/FieldChips';
+import { WaitingBadge, useIsWaiting } from '@/components/tasks/WaitingBadge';
 import type { FieldDef, FieldValue, TaskFieldValues } from '@/types/fields';
 
 const FIELD_CHIP = 'inline-flex items-center gap-1 rounded-[6px] px-2 py-[3px] text-[12px] leading-none whitespace-nowrap';
@@ -174,7 +175,8 @@ function MatrixRow({ todo, isNext, index, onStatusChange, onDelete, onOpen, onOp
   const fromNote = !!todo.sourceNoteId && !!onOpenNote;
   const hasFieldChips = !!fieldDefs && !!fieldValues
     && fieldDefs.some((f) => f.showOnCard && fieldValues[f.id] !== undefined);
-  const hasMeta = !!category || !!dueInfo || fromNote || hasFieldChips;
+  const waiting = useIsWaiting(todo.id) && !isDone;
+  const hasMeta = waiting || !!category || !!dueInfo || fromNote || hasFieldChips;
 
   return (
     <div
@@ -213,6 +215,7 @@ function MatrixRow({ todo, isNext, index, onStatusChange, onDelete, onOpen, onOp
                 {dueInfo.label}<RepeatMark recurrence={todo.recurrence} />
               </span>
             )}
+            {waiting && <WaitingBadge taskId={todo.id} />}
             {category && <CategoryTag category={category} />}
             {fieldDefs && <FieldChips fields={fieldDefs} values={fieldValues} chipClass={FIELD_CHIP} />}
             {fromNote && (

@@ -433,6 +433,7 @@ export function apiTaskToTodo(t: ApiTask) {
     sourceFieldId:         t.sourceFieldId || undefined,
     assigneeUserId:        t.assigneeUserId || undefined,
     assigneeName:          t.assigneeName || undefined,
+    needsFirst:            t.needsFirst && t.needsFirst.length ? t.needsFirst : undefined,
   };
 }
 

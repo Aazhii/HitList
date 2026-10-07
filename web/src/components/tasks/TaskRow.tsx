@@ -26,6 +26,7 @@ import type { Todo, TodoStatus } from '@/types/todo';
 import { DUE_TONE_CLASS, dueTone, getDueInfo } from '@/lib/dueInfo';
 import { NEXT_STATUS } from '@/lib/taskStatus';
 import { FieldChips } from '@/components/fields/FieldChips';
+import { WaitingBadge } from '@/components/tasks/WaitingBadge';
 import type { FieldDef, FieldValue } from '@/types/fields';
 
 export interface TaskRowProps {
@@ -165,6 +166,7 @@ export function TaskRow({
         </span>
       )}
 
+      {todo.status !== 'done' && <WaitingBadge taskId={todo.id} className="flex-shrink-0" />}
       {fieldDefs && <FieldChips fields={fieldDefs} values={fieldValues} chipClass={CHIP} />}
 
       {/* Fixed 120px, right-aligned — showcase 238. */}

@@ -87,6 +87,31 @@ class CliqCommandTest {
     }
 
     @Test
+    void theBotWillNotCompleteATaskThatStillNeedsOthersFirst() {
+        Fixture fixture = fixture(false);
+        fixture.tasks.create(fixture.owner, Map.of("clientId", "first", "title", "Write notes"));
+        fixture.tasks.create(fixture.owner, Map.of("clientId", "second", "title", "Run tests"));
+        Map<String, Object> big = fixture.tasks.create(fixture.owner,
+            Map.of("clientId", "big", "title", "Ship release", "needsFirst", List.of("first", "second")));
+        String stamp = (String) big.get("updatedAt");
+        assertThatThrownBy(() -> fixture.commands.execute(fixture.owner,
+            command("complete-blocked", "complete", Map.of("taskId", "big", "expectedUpdatedAt", stamp)), identity()))
+            .isInstanceOf(ApiException.class).hasMessageContaining("still needs Write notes, Run tests first")
+            .hasMessageContaining("complete it in HitList");
+        // Once they are done it goes through.
+        fixture.tasks.complete(fixture.owner, "first");
+        fixture.tasks.complete(fixture.owner, "second");
+        String fresh = (String) fixture.tasks.get(fixture.owner, "big").get("updatedAt");
+        Map<String, Object> done = fixture.commands.execute(fixture.owner,
+            command("complete-ok", "complete", Map.of("taskId", "big", "expectedUpdatedAt", fresh)), identity());
+        assertThat(done.get("status")).isEqualTo("applied");
+        // A rule that marks it done is not stopped (tasks.update is what the automation calls).
+        fixture.tasks.create(fixture.owner, Map.of("clientId", "open", "title", "Still open"));
+        fixture.tasks.create(fixture.owner, Map.of("clientId", "auto", "title", "By a rule", "needsFirst", List.of("open")));
+        assertThat(fixture.tasks.update(fixture.owner, "auto", Map.of("status", "DONE")).get("status")).isEqualTo("DONE");
+    }
+
+    @Test
     void editChecksTimestampAndCompletionCreatesOneNextOccurrence() {
         Fixture fixture = fixture(false);
         Map<String, Object> original = fixture.tasks.create(fixture.owner,

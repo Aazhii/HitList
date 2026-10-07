@@ -1,7 +1,8 @@
 /**
  * Quick capture (P6.1): one line in, a task out. The line may carry a due date ("tomorrow", "fri",
  * "in 3 days", "oct 5", "2026-10-05"), a time ("3pm", "15:30", "at 9"), a repeat ("every week", "every weekday", or "daily" / "weekly" / "monthly" as the last word) and a quadrant ("!do",
- * "!schedule", "!delegate", "!eliminate"). What is recognised is taken out of the title; everything
+ * "!schedule", "!delegate", "!eliminate") and tasks it needs first (">Write notes >Run tests": each runs to the next ">", the next "!" or the end,
+ * so a date goes before them). What is recognised is taken out of the title; everything
  * else stays as typed. Pure: `now` is passed in.
  */
 import type { Quadrant } from '@/types/todo';
@@ -13,6 +14,8 @@ export interface CapturedTask {
   dueDate?: string;
   dueTime?: string;
   recurrence?: Recurrence;
+  /** Titles typed after ">": tasks this one needs finished first (matched to open tasks, or made, by the caller). */
+  needs?: string[];
 }
 
 const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
@@ -93,6 +96,16 @@ export function parseQuickCapture(input: string, now: Date): CapturedTask {
   const original = input.replace(/\s+/g, ' ').trim();
   let text = original;
 
+  // ">Write notes >Run tests": what this task needs first. A ">" with a space after it (a < b > c) is just text.
+  const needs: string[] = [];
+  for (let guard = 0; guard < 20; guard += 1) {
+    const [n, rest] = take(text, /(?:^|\s)>(\S[^>!]*)/);
+    if (!n) break;
+    const title = n[1].trim();
+    if (title && !needs.some((x) => x.toLowerCase() === title.toLowerCase())) needs.push(title);
+    text = rest;
+  }
+
   let quadrant: Quadrant | undefined;
   const [q, afterQ] = take(text, /(?:^|\s)!(do|schedule|delegate|eliminate)\b/i);
   if (q) { quadrant = QUADRANT_WORDS[q[1].toLowerCase()]; text = afterQ; }
@@ -112,5 +125,5 @@ export function parseQuickCapture(input: string, now: Date): CapturedTask {
 
   // Nothing left to call it: keep the line as typed rather than make an empty task.
   const title = text || original;
-  return { title, ...(quadrant && { quadrant }), ...(dueDate && { dueDate }), ...(dueTime && { dueTime }), ...(recurrence && { recurrence }) };
+  return { title, ...(quadrant && { quadrant }), ...(dueDate && { dueDate }), ...(dueTime && { dueTime }), ...(recurrence && { recurrence }), ...(needs.length && { needs }) };
 }

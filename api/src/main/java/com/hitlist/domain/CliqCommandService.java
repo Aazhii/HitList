@@ -100,6 +100,14 @@ public class CliqCommandService {
             throw ApiException.invalid("edit requires a changed field");
         }
         if (complete && "DONE".equals(current.get("status"))) throw ApiException.conflict("Task is already complete");
+        if (complete) {
+            List<Map<String, Object>> open = tasks.openNeeds(owner, taskId);
+            if (!open.isEmpty()) {
+                String names = open.stream().limit(3).map(task -> String.valueOf(task.get("title"))).collect(java.util.stream.Collectors.joining(", "))
+                    + (open.size() > 3 ? " and " + (open.size() - 3) + " more" : "");
+                throw ApiException.conflict("Task still needs " + names + " first. Finish those, or complete it in HitList.");
+            }
+        }
         Map<String, Object> changes = new LinkedHashMap<>(payload);
         changes.remove("taskId");
         changes.remove("expectedUpdatedAt");

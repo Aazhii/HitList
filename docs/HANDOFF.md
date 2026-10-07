@@ -227,6 +227,9 @@ Found from the real function log (2026-10-07): a full refresh (`GET /ws`, `POST 
 ### Toggle blocks, and a database in a note
 `toggle` is a note block type with `collapsed?` (additive; stored in the opaque blocks JSON, so no server change). Its children are the blocks after it that are indented deeper (the same `indent` model as Tab / Shift+Tab); a closed toggle hides them (`noteBlocks.hiddenBlockIds`), Enter in an open toggle starts its first inner line, in a closed one it adds a line after everything inside, ⌘/Ctrl+↵ opens or closes. An older HitList that does not know the type shows it as plain text and keeps the indent. A database block now starts where the note's text starts and its grid scrolls out over the left margin (`--note-inset`, `RecordTable`, `RecordBoard`, `DatabaseBlock`).
 
+### Needs first (task prerequisites)
+See `docs/needs-first.md`. Task row key `NeedsFirstIds`, API `needsFirst`, a completion gate in `App.tsx` (`useNeedsFirstGate`), picker in the detail panel, Add task dialog and quick add (`>`). **Release order: deploy `functions/backup` first.** Not extended: the desktop two-replica E2E (the sync path is covered by `SharedWorkspaceTest` and `functions/backup/test.workspaces.js`).
+
 ## 4. Catalyst resources (names only)
 - Project "HitList" (org id in `.catalystrc`). Functions: `backup`, `cliq-webhook` (both Advanced I/O, Node 20). Web client at
   `https://hitlist-60090109165.development.catalystserverless.in/app/` (trailing slash needed). Function URL

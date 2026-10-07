@@ -28,7 +28,7 @@ const SEQ_RETRIES = 6;
 const FIELDS = {
 	tasks: new Set(['Title', 'Status', 'Quadrant', 'TaskPriority', 'Note', 'DueDate', 'DueTime', 'Category', 'ListId', 'TaskOrder',
 		'ReminderEnabled', 'ReminderMinutesBefore', 'Recurrence', 'CompletedAt', 'CreatedAt', 'UpdatedAt',
-		'AssigneeUserId', 'AssigneeName', 'AssignedBy', 'AssignedAt', 'SourceNoteId', 'SourceBlockId', 'SourceRecordId', 'SourceFieldId']),
+		'AssigneeUserId', 'AssigneeName', 'AssignedBy', 'AssignedAt', 'NeedsFirstIds', 'SourceNoteId', 'SourceBlockId', 'SourceRecordId', 'SourceFieldId']),
 	lists: new Set(['Name', 'Color', 'ListOrder', 'CreatedAt', 'UpdatedAt']),
 	notes: new Set(['Title', 'BlocksJson', 'Emoji', 'Pinned', 'CreatedAt', 'UpdatedAt']),
 	databases: new Set(['Name', 'Icon', 'DateFieldId', 'TitleLabel', 'DbOrder', 'CreatedAt', 'UpdatedAt']),

@@ -35,6 +35,42 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+describe('TaskDetailPanel needs first', () => {
+  const other = (id: string, text: string, extra: Partial<Todo> = {}): Todo => makeTodo({ id, text, listId: 'list-1', ...extra });
+
+  it('shows what the task needs, lets one be added and saves it with the other changes', () => {
+    const onUpdate = vi.fn();
+    const todos = [makeTodo({ id: 'todo-1', needsFirst: ['a'] }), other('a', 'Write notes'), other('b', 'Run tests')];
+    render(<TaskDetailPanel {...defaultProps} onUpdate={onUpdate} todo={todos[0]} todos={todos} />);
+    expect(screen.getByRole('list', { name: 'Needs first' })).toHaveTextContent('Write notes');
+    fireEvent.change(screen.getByLabelText('Add a task that needs to be done first'), { target: { value: 'run' } });
+    fireEvent.click(screen.getByRole('button', { name: /Run tests/ }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(onUpdate).toHaveBeenCalledWith('todo-1', expect.objectContaining({ needsFirst: ['a', 'b'] }));
+  });
+
+  it('says which open tasks are waiting on this one, and does not send needsFirst when it did not change', () => {
+    const onUpdate = vi.fn();
+    const todos = [makeTodo({ id: 'todo-1' }), other('p', 'Ship release', { needsFirst: ['todo-1'] }), other('q', 'Closed one', { status: 'done', needsFirst: ['todo-1'] })];
+    render(<TaskDetailPanel {...defaultProps} onUpdate={onUpdate} todo={todos[0]} todos={todos} />);
+    expect(screen.getByText('Waiting on this: Ship release')).toBeInTheDocument();
+    fireEvent.change(screen.getByDisplayValue('Write unit tests'), { target: { value: 'Renamed' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(onUpdate.mock.calls[0][1]).not.toHaveProperty('needsFirst');
+  });
+
+  it('drops a prerequisite that no longer exists when saving, and has no section without the task list', () => {
+    const onUpdate = vi.fn();
+    const todos = [makeTodo({ id: 'todo-1', needsFirst: ['gone', 'a'] }), other('a', 'Write notes')];
+    const { rerender } = render(<TaskDetailPanel {...defaultProps} onUpdate={onUpdate} todo={todos[0]} todos={todos} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Write notes from needs first' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    expect(onUpdate).toHaveBeenCalledWith('todo-1', expect.objectContaining({ needsFirst: [] }));
+    rerender(<TaskDetailPanel {...defaultProps} todo={todos[0]} />);
+    expect(screen.queryByText('Needs first')).toBeNull();
+  });
+});
+
 describe('TaskDetailPanel', () => {
   it('logs progress about this task when asked to, and has no button when not', () => {
     const onLogProgress = vi.fn();

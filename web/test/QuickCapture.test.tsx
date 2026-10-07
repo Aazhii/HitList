@@ -1,6 +1,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { QuickCapture } from '@/components/QuickCapture';
+import type { Todo } from '@/types/todo';
 
 describe('QuickCapture', () => {
   it('shows what it read and adds that on Enter', () => {
@@ -22,5 +23,16 @@ describe('QuickCapture', () => {
     render(<QuickCapture open onOpenChange={vi.fn()} onAdd={onAdd} />);
     fireEvent.keyDown(screen.getByRole('textbox', { name: 'New task' }), { key: 'Enter' });
     expect(onAdd).not.toHaveBeenCalled();
+  });
+
+  it('says whether each ">" part links a task that exists or makes a new one, and hands them on', () => {
+    const open: Todo[] = [{ id: 'w', text: 'Write notes', status: 'todo', createdAt: 0, listId: 'l', order: 0, quadrant: 'do' }];
+    const onAdd = vi.fn();
+    render(<QuickCapture open onOpenChange={vi.fn()} openTasks={open} onAdd={onAdd} />);
+    const box = screen.getByRole('textbox', { name: 'New task' });
+    fireEvent.change(box, { target: { value: 'Ship release >write notes >Run tests' } });
+    expect(screen.getByText('Needs first: Write notes (existing) · Run tests (new)')).toBeInTheDocument();
+    fireEvent.keyDown(box, { key: 'Enter' });
+    expect(onAdd).toHaveBeenCalledWith({ title: 'Ship release', needs: ['write notes', 'Run tests'] });
   });
 });

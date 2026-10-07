@@ -5,6 +5,7 @@ import com.hitlist.web.ApiException;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -21,6 +22,8 @@ public class TaskService {
     private static final Set<String> QUADRANTS = Set.of("DO", "SCHEDULE", "DELEGATE", "ELIMINATE");
     private static final Set<String> RECURRENCES = Set.of("DAILY", "WEEKDAYS", "WEEKLY", "MONTHLY");
     private static final Set<String> PRIORITIES = Set.of("LOW", "MEDIUM", "HIGH");
+    /** How many tasks one task may need first. */
+    static final int MAX_NEEDS = 20;
     private final EntityRepository repository;
 
     public TaskService(EntityRepository repository) {
@@ -72,6 +75,7 @@ public class TaskService {
         task.put("SourceRecordId", optionalId(body, "sourceRecordId", ""));
         task.put("SourceFieldId", optionalId(body, "sourceFieldId", ""));
         applyAssignee(body, task, now);
+        applyNeedsFirst(owner, text(task, "TaskId"), body, task);
         repository.insert(StorageTables.TASKS, owner, task);
         return api(task);
     }
@@ -81,6 +85,7 @@ public class TaskService {
         Map<String, Object> existing = repository.require(StorageTables.TASKS, owner, id);
         Map<String, Object> updated = new LinkedHashMap<>(existing);
         patch(updated, body);
+        applyNeedsFirst(owner, id, body, updated);
         String listId = text(updated, "ListId");
         if (!listId.isBlank() && repository.find(StorageTables.LISTS, owner, listId).isEmpty()) {
             throw ApiException.notFound();
@@ -183,6 +188,69 @@ public class TaskService {
         if (body.containsKey("sourceRecordId")) task.put("SourceRecordId", optionalId(body, "sourceRecordId", text(task, "SourceRecordId")));
         if (body.containsKey("sourceFieldId")) task.put("SourceFieldId", optionalId(body, "sourceFieldId", text(task, "SourceFieldId")));
         applyAssignee(body, task, System.currentTimeMillis());
+    }
+
+    /**
+     * The tasks this one needs finished first, as ids (`needsFirst` in the API, `NeedsFirstIds` stored as a JSON array of text so it
+     * travels as one plain value in a shared workspace). Old rows have none. Ids of tasks that no longer exist are not removed here:
+     * they are ignored wherever the list is read, so deleting a task needs no sweep over the others.
+     */
+    private void applyNeedsFirst(String owner, String taskId, Map<String, Object> body, Map<String, Object> task) {
+        if (!body.containsKey("needsFirst")) return;
+        Object raw = body.get("needsFirst");
+        List<String> ids = new ArrayList<>();
+        if (raw != null) {
+            if (!(raw instanceof List<?> list)) throw ApiException.invalid("needsFirst must be a list of task ids");
+            for (Object item : list) {
+                if (!(item instanceof String id) || !Values.SAFE_ID.matcher(id).matches()) throw ApiException.invalid("needsFirst must be a list of task ids");
+                if (!ids.contains(id)) ids.add(id);
+            }
+        }
+        if (ids.size() > MAX_NEEDS) throw ApiException.invalid("A task can need at most " + MAX_NEEDS + " tasks first");
+        if (ids.contains(taskId)) throw ApiException.invalid("A task cannot need itself first");
+        for (String id : ids) {
+            if (repository.find(StorageTables.TASKS, owner, id).isEmpty()) throw ApiException.invalid("needsFirst names a task that does not exist");
+            if (reaches(owner, id, taskId)) throw ApiException.invalid("Those two tasks would each be waiting on the other");
+        }
+        task.put("NeedsFirstIds", ids.isEmpty() ? "" : serializeIds(ids));
+    }
+
+    /** Whether `from` needs `target` first, directly or through other tasks. Safe on loops left by edits made on two computers. */
+    private boolean reaches(String owner, String from, String target) {
+        Set<String> seen = new HashSet<>();
+        List<String> pending = new ArrayList<>(List.of(from));
+        while (!pending.isEmpty()) {
+            String id = pending.remove(pending.size() - 1);
+            if (id.equals(target)) return true;
+            if (!seen.add(id)) continue;
+            repository.find(StorageTables.TASKS, owner, id).ifPresent(row -> pending.addAll(needsFirstIds(row)));
+        }
+        return false;
+    }
+
+    /** The stored ids of a task, in the order they were chosen. */
+    static List<String> needsFirstIds(Map<String, Object> task) {
+        String raw = EntityRepository.text(task.get("NeedsFirstIds"));
+        List<String> ids = new ArrayList<>();
+        if (raw.isBlank()) return ids;
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"([A-Za-z0-9_-]{1,64})\"").matcher(raw);
+        while (m.find() && ids.size() < MAX_NEEDS) if (!ids.contains(m.group(1))) ids.add(m.group(1));
+        return ids;
+    }
+
+    private static String serializeIds(List<String> ids) {
+        return ids.stream().map(id -> "\"" + id + "\"").collect(java.util.stream.Collectors.joining(",", "[", "]"));
+    }
+
+    /** The tasks this one needs first that still exist and are not done: id and title, in the order chosen. */
+    public List<Map<String, Object>> openNeeds(String owner, String taskId) {
+        Values.id(taskId);
+        List<Map<String, Object>> open = new ArrayList<>();
+        for (String id : needsFirstIds(repository.require(StorageTables.TASKS, owner, taskId))) {
+            repository.find(StorageTables.TASKS, owner, id).filter(row -> !"DONE".equals(text(row, "Status")))
+                .ifPresent(row -> open.add(Map.of("id", id, "title", text(row, "Title"))));
+        }
+        return open;
     }
 
     /**
@@ -427,6 +495,7 @@ public class TaskService {
         output.put("assignedBy", nullable(task, "AssignedBy"));
         long assignedAt = Values.number(task.get("AssignedAt"), 0);
         output.put("assignedAt", assignedAt > 0 ? Values.iso(assignedAt) : null);
+        output.put("needsFirst", needsFirstIds(task));
         return output;
     }
 

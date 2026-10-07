@@ -58,6 +58,11 @@ import { takeClaimedMessage } from '@/lib/session';
 import { RestoreOffer } from '@/components/shell/RestoreOffer';
 import { QuickCapture } from '@/components/QuickCapture';
 import { LogProgressDialog } from '@/components/worklog/LogProgressDialog';
+import { NeedsFirstDialog } from '@/components/tasks/NeedsFirstDialog';
+import { NeedsFirstPicker } from '@/components/tasks/NeedsFirstPicker';
+import { useNeedsFirstGate } from '@/hooks/useNeedsFirstGate';
+import { MAX_NEEDS_FIRST, resolveNeeds, waitingCounts } from '@/lib/taskNeeds';
+import { WaitingCountsContext } from '@/components/tasks/WaitingBadge';
 import type { Note } from '@/types/notes';
 import { isTypingTarget } from '@/lib/taskKeyboard';
 import { PageSections } from '@/components/shell/PageSections';
@@ -139,18 +144,23 @@ interface AddTaskDialogProps {
   /** A due date to start with — set when adding from a calendar day. */
   defaultDueDate?: string;
   onOpenChange: (v: boolean) => void;
-  onAdd: (text: string, quadrant: Quadrant, category?: string, dueDate?: string, dueTime?: string) => Promise<Todo | null>;
+  onAdd: (text: string, quadrant: Quadrant, category?: string, dueDate?: string, dueTime?: string, needs?: { ids: string[]; newTitles: string[] }) => Promise<Todo | null>;
+  /** Every task, so "Needs first" can search them. */
+  todos: readonly Todo[];
+  listNameOf?: (listId: string) => string | undefined;
 }
 
 // DS field label (--font-label): 13px / 500, ink, sentence case.
 const FIELD_LABEL = 'text-[13px] font-medium leading-[1.35] text-a-ink';
 
-export function AddTaskDialog({ open, defaultQuadrant, defaultDueDate, onOpenChange, onAdd }: AddTaskDialogProps) {
+export function AddTaskDialog({ open, defaultQuadrant, defaultDueDate, onOpenChange, onAdd, todos, listNameOf }: AddTaskDialogProps) {
   const [text, setText] = useState('');
   const [quadrant, setQuadrant] = useState<Quadrant>(defaultQuadrant);
   const [category, setCategory] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [dueTime, setDueTime] = useState('');
+  const [needIds, setNeedIds] = useState<string[]>([]);
+  const [needTitles, setNeedTitles] = useState<string[]>([]);
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -170,12 +180,15 @@ export function AddTaskDialog({ open, defaultQuadrant, defaultDueDate, onOpenCha
     setSaving(true);
     setError('');
     try {
-      const created = await onAdd(text.trim(), quadrant, category || undefined, dueDate || undefined, dueTime || undefined);
+      const needs = needIds.length || needTitles.length ? { ids: needIds, newTitles: needTitles } : null;
+      const created = needs
+        ? await onAdd(text.trim(), quadrant, category || undefined, dueDate || undefined, dueTime || undefined, needs)
+        : await onAdd(text.trim(), quadrant, category || undefined, dueDate || undefined, dueTime || undefined);
       if (!created) {
         setError('Task was not saved. Your draft is still here; please try again.');
         return;
       }
-      setText(''); setCategory(''); setDueDate(''); setDueTime(''); setError('');
+      setText(''); setCategory(''); setDueDate(''); setDueTime(''); setNeedIds([]); setNeedTitles([]); setError('');
       onOpenChange(false);
     } catch {
       setError('Task was not saved. Your draft is still here; please try again.');
@@ -240,6 +253,11 @@ export function AddTaskDialog({ open, defaultQuadrant, defaultDueDate, onOpenCha
           <div className="flex w-1/2 flex-col gap-2">
             <Label className={FIELD_LABEL} htmlFor="add-task-time">Due time (optional)</Label>
             <Input id="add-task-time" type="time" value={dueTime} onChange={(e) => setDueTime(e.target.value)} />
+          </div>
+
+          <div className="flex flex-col gap-2">
+            <Label className={FIELD_LABEL}>Needs first (optional)</Label>
+            <NeedsFirstPicker todos={todos} ids={needIds} onIdsChange={setNeedIds} newTitles={needTitles} onNewTitlesChange={setNeedTitles} listName={listNameOf} />
           </div>
 
           <DialogFooter>
@@ -853,7 +871,7 @@ function UserScopedApp() {
   // ── Mutations (server-first, optimistic local update) ─────────────────────
 
   const handleAddTask = useCallback(
-    async (text: string, quadrant: Quadrant, category?: string, dueDate?: string, dueTime?: string, recurrence?: Recurrence) => {
+    async (text: string, quadrant: Quadrant, category?: string, dueDate?: string, dueTime?: string, recurrence?: Recurrence, extra?: { needsFirst?: string[]; quiet?: boolean }) => {
       if (server.loading) {
         toast.error('Your lists are still loading. Please try again shortly.');
         return null;
@@ -880,6 +898,7 @@ function UserScopedApp() {
         listId: activeListId,
         order: maxOrder + 1,
         quadrant,
+        ...(extra?.needsFirst?.length ? { needsFirst: extra.needsFirst } : {}),
       };
       setTodos((prev) => [optimisticTodo, ...prev]);
 
@@ -897,12 +916,13 @@ function UserScopedApp() {
         ...(recurrence && { recurrence: toApiRecurrence(recurrence) }),
         listId: activeListId,
         taskOrder: maxOrder + 1,
+        ...(extra?.needsFirst?.length ? { needsFirst: extra.needsFirst } : {}),
       });
       if (created) {
         // Replace temp with persisted task (has real id from mock/server)
         const saved = apiTaskToTodo(created);
         setTodos((prev) => prev.map((t) => t.id === tempId ? saved : t));
-        toast.success('Task added', { description: text, duration: 2000 });
+        if (!extra?.quiet) toast.success('Task added', { description: text, duration: 2000 });
         // Returned so a caller can act on the real id — the board's "+ Add"
         // sets the column's field value on the task it just created.
         return saved;
@@ -921,6 +941,26 @@ function UserScopedApp() {
     pendingTask.current = null;
     void handleAddTask(...draft);
   }, [listRequiredOpen, server.loading, lists, activeListId, handleAddTask]);
+
+  /**
+   * Adds a task that needs others first. Tasks named by title that do not exist yet are made first (quietly), then this one is made
+   * with all their ids. If one of them cannot be made nothing else is made, so there is no half-built set to clean up.
+   */
+  const addWithNeeds = useCallback(async (
+    text: string, quadrant: Quadrant, category?: string, dueDate?: string, dueTime?: string, recurrence?: Recurrence,
+    needs?: { ids: string[]; newTitles: string[] },
+  ): Promise<Todo | null> => {
+    if (!needs || (needs.ids.length === 0 && needs.newTitles.length === 0)) return handleAddTask(text, quadrant, category, dueDate, dueTime, recurrence);
+    const ids = [...needs.ids];
+    for (const title of needs.newTitles) {
+      const made = await handleAddTask(title, 'do', undefined, undefined, undefined, undefined, { quiet: true });
+      if (!made) return null;
+      ids.push(made.id);
+    }
+    const created = await handleAddTask(text, quadrant, category, dueDate, dueTime, recurrence, { needsFirst: ids.slice(0, MAX_NEEDS_FIRST) });
+    if (created && needs.newTitles.length) toast.success('Task added', { description: `${text} · needs ${taskCountLabel(ids.length)} first`, duration: 2500 });
+    return created;
+  }, [handleAddTask]);
 
   /** "+ Add" in a board column: create the task, then give it that column's value. */
   const handleAddTaskInColumn = useCallback(async (title: string, columnKey: string) => {
@@ -956,7 +996,8 @@ function UserScopedApp() {
     });
   }, []);
 
-  const handleStatusChange = useCallback(
+  /** Does the change, with no questions asked. Everything that completes a task goes through `handleStatusChange` below first. */
+  const applyStatusChange = useCallback(
     async (id: string, status: TodoStatus) => {
       // Optimistic update
       const prevTodo = todos.find((t) => t.id === id);
@@ -1031,7 +1072,19 @@ function UserScopedApp() {
     [todos, setTodos, setStats, appState.lastStreakDay, setLastStreakDay, server]
   );
 
-  useEffect(() => { statusChangeRef.current = handleStatusChange; }, [handleStatusChange]);
+  // ── "Needs first": completing a task whose prerequisites are still open asks first (see useNeedsFirstGate) ──
+  const needsGate = useNeedsFirstGate(todos, applyStatusChange);
+  const waitingByTask = useMemo(() => waitingCounts(todos), [todos]);
+  const { guardCompletion } = needsGate;
+
+  /** Completing asks first when the task still needs others; reopening never does. Resolves false when nothing was changed. */
+  const handleStatusChange = useCallback(async (id: string, status: TodoStatus): Promise<boolean> => {
+    if (status === 'done' && !(await guardCompletion([id]))) return false;
+    await applyStatusChange(id, status);
+    return true;
+  }, [guardCompletion, applyStatusChange]);
+
+  useEffect(() => { statusChangeRef.current = async (id, status) => { await handleStatusChange(id, status); }; }, [handleStatusChange]);
 
   /** Puts a mistakenly completed task back where it was. */
   const handleUndoComplete = useCallback(async (id: string) => {
@@ -1062,8 +1115,10 @@ function UserScopedApp() {
   );
 
   const handleUpdate = useCallback(
-    async (id: string, changes: Partial<Todo>, options?: { quiet?: boolean }) => {
+    async (id: string, changes: Partial<Todo>, options?: { quiet?: boolean; checked?: boolean }) => {
       const prevTodo = todos.find((t) => t.id === id);
+      // A table cell or the like marking a task done: the same question as ticking it (a bulk change asks once, for all, before this).
+      if (changes.status === 'done' && prevTodo && prevTodo.status !== 'done' && !options?.checked && !(await guardCompletion([id]))) return;
       // Optimistic update
       setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, ...changes } : t)));
       setDetailTodo((prev) => (prev?.id === id ? { ...prev, ...changes } : prev));
@@ -1088,6 +1143,7 @@ function UserScopedApp() {
       if (changes.recurrence !== undefined) req.recurrence = toApiRecurrence(changes.recurrence);
       if (changes.assigneeUserId !== undefined)    req.assigneeUserId = changes.assigneeUserId;
       if (changes.assigneeName !== undefined)      req.assigneeName = changes.assigneeName;
+      if ('needsFirst' in changes)                 req.needsFirst = changes.needsFirst ?? [];
       if (changes.reminderEnabled !== undefined)       req.reminderEnabled = changes.reminderEnabled;
       if (changes.reminderMinutesBefore !== undefined) req.reminderMinutesBefore = changes.reminderMinutesBefore;
 
@@ -1103,7 +1159,7 @@ function UserScopedApp() {
         setDetailTodo((prev) => (prev?.id === id ? updated : prev));
       }
     },
-    [todos, setTodos, server]
+    [todos, setTodos, server, guardCompletion]
   );
 
   /**
@@ -1121,24 +1177,28 @@ function UserScopedApp() {
     };
     // Setting the date also takes a repeat and reminder off a task with no date to hang them on.
     const run = async (changes: (t: Todo) => Partial<Todo>) => {
-      await Promise.all(targets.map((t) => handleUpdate(t.id, changes(t), { quiet: true })));
+      await Promise.all(targets.map((t) => handleUpdate(t.id, changes(t), { quiet: true, checked: true })));
       void server.refresh();
     };
-    void run(() => apply);
-    toast.success(`Updated ${taskCountLabel(targets.length)}`, {
-      duration: 5000,
-      action: {
-        label: 'Undo',
-        onClick: () => {
-          void run((t) => ({
-            ...(apply.status && { status: t.status }),
-            ...(apply.quadrant && { quadrant: t.quadrant }),
-            ...(apply.dueDate !== undefined && { dueDate: t.dueDate ?? '' }),
-          }));
+    void (async () => {
+      // Marking several done asks once for all of them, before anything changes.
+      if (apply.status === 'done' && !(await guardCompletion(targets.map((t) => t.id)))) return;
+      void run(() => apply);
+      toast.success(`Updated ${taskCountLabel(targets.length)}`, {
+        duration: 5000,
+        action: {
+          label: 'Undo',
+          onClick: () => {
+            void run((t) => ({
+              ...(apply.status && { status: t.status }),
+              ...(apply.quadrant && { quadrant: t.quadrant }),
+              ...(apply.dueDate !== undefined && { dueDate: t.dueDate ?? '' }),
+            }));
+          },
         },
-      },
-    });
-  }, [todos, handleUpdate, server]);
+      });
+    })();
+  }, [todos, handleUpdate, server, guardCompletion]);
 
   const handleBulkDelete = useCallback((ids: string[]) => {
     for (const id of ids) void handleDelete(id);
@@ -1685,6 +1745,7 @@ function UserScopedApp() {
 
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} getItems={getPaletteItems} onOpenItem={handleOpenPaletteItem} />
 
+      <WaitingCountsContext.Provider value={waitingByTask}>
       <AppShell
         rail={
           <Sidebar
@@ -2097,16 +2158,24 @@ function UserScopedApp() {
         )}
       </div>
       </AppShell>
+      </WaitingCountsContext.Provider>
 
       <RestoreOffer />
       <QuickCapture
         open={captureOpen}
         onOpenChange={setCaptureOpen}
         listName={activeList?.name}
-        onAdd={(t) => { void handleAddTask(t.title, t.quadrant ?? 'do', undefined, t.dueDate, t.dueTime, t.recurrence); }}
+        openTasks={todos.filter((x) => x.status !== 'done')}
+        onAdd={(t) => { void addWithNeeds(t.title, t.quadrant ?? 'do', undefined, t.dueDate, t.dueTime, t.recurrence, t.needs?.length ? resolveNeeds(t.needs, todos) : undefined); }}
       />
 
       <LogProgressDialog open={logOpen} onOpenChange={setLogOpen} task={logTask} />
+      <NeedsFirstDialog
+        groups={needsGate.prompt?.groups ?? null}
+        total={needsGate.prompt?.total ?? 0}
+        listName={(id) => lists.find((l) => l.id === id)?.name}
+        onDecide={needsGate.decide}
+      />
 
       {/* Add task dialog */}
       <CreateTaskListDialog
@@ -2122,7 +2191,9 @@ function UserScopedApp() {
         defaultQuadrant={defaultQuadrant}
         defaultDueDate={defaultDueDate}
         onOpenChange={(open) => { setDialogOpen(open); if (!open) setDefaultDueDate(''); }}
-        onAdd={handleAddTask}
+        onAdd={(text, quadrant, category, dueDate, dueTime, needs) => addWithNeeds(text, quadrant, category, dueDate, dueTime, undefined, needs)}
+        todos={todos}
+        listNameOf={(id) => lists.find((l) => l.id === id)?.name}
       />
 
       {/* Today's history panel — server-backed when online */}
@@ -2153,6 +2224,9 @@ function UserScopedApp() {
         onClose={() => setDetailOpen(false)}
         onOpenNote={handleOpenSourceNote}
         onLogProgress={(task) => { setLogTask(task); setLogOpen(true); }}
+        todos={todos}
+        listNameOf={(id) => lists.find((l) => l.id === id)?.name}
+        onCreateTask={async (title) => (await handleAddTask(title, 'do', undefined, undefined, undefined, undefined, { quiet: true }))?.id ?? null}
         listName={activeList?.name}
         fields={taskPanelFields}
         onUpdate={handleUpdate}

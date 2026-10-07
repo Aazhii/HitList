@@ -135,6 +135,8 @@ export interface Todo {
   /** Shared workspaces: the member the task is for. */
   assigneeUserId?: string;
   assigneeName?: string;
+  /** Ids of the tasks this one needs finished first. Ones that no longer exist are ignored wherever this is read. */
+  needsFirst?: string[];
 }
 
 export interface KaizenList {

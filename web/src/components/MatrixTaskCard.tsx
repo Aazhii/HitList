@@ -10,6 +10,7 @@ import type { Todo, TodoStatus } from '@/types/todo';
 import { DUE_TONE_CLASS, dueTone, getDueInfo } from '@/lib/dueInfo';
 import { NEXT_STATUS } from '@/lib/taskStatus';
 import { FieldChips } from '@/components/fields/FieldChips';
+import { WaitingBadge, useIsWaiting } from '@/components/tasks/WaitingBadge';
 import type { FieldDef, FieldValue } from '@/types/fields';
 
 // Moved to lib/dueInfo.ts so the list view shares them. Re-exported so existing
@@ -74,7 +75,8 @@ export function MatrixTaskCard({
   const fromNote = !!todo.sourceNoteId && !!onOpenNote;
   const hasFieldChips = !!fieldDefs && !!fieldValues
     && fieldDefs.some((f) => f.showOnCard && fieldValues[f.id] !== undefined);
-  const hasMeta = !!categoryConfig || !!dueInfo || !!todo.note || fromNote || hasFieldChips || !!todo.assigneeName;
+  const waiting = useIsWaiting(todo.id) && !isDone;
+  const hasMeta = waiting || !!categoryConfig || !!dueInfo || !!todo.note || fromNote || hasFieldChips || !!todo.assigneeName;
 
   const handleDelete = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -113,6 +115,7 @@ export function MatrixTaskCard({
               {categoryConfig.label}
             </span>
           )}
+          {waiting && <WaitingBadge taskId={todo.id} />}
           {fieldDefs && <FieldChips fields={fieldDefs} values={fieldValues} chipClass={CHIP} />}
           <AssigneeChip userId={todo.assigneeUserId} name={todo.assigneeName} />
           {fromNote && (
@@ -208,6 +211,7 @@ export function MatrixTaskCard({
             </span>
           )}
 
+          {waiting && <WaitingBadge taskId={todo.id} />}
           {fieldDefs && <FieldChips fields={fieldDefs} values={fieldValues} chipClass={CHIP} />}
 
           <AssigneeChip userId={todo.assigneeUserId} name={todo.assigneeName} />

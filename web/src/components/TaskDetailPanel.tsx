@@ -28,6 +28,8 @@ import { getDueInfo } from '@/components/MatrixTaskCard';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 import { memberLabel } from '@/lib/workspaceMessage';
 import { TaskFieldsSection } from '@/components/fields/TaskFieldsSection';
+import { NeedsFirstPicker } from '@/components/tasks/NeedsFirstPicker';
+import { waitingOn } from '@/lib/taskNeeds';
 import type { FieldDef, FieldValue } from '@/types/fields';
 
 interface TaskDetailPanelProps {
@@ -36,11 +38,18 @@ interface TaskDetailPanelProps {
   onClose: () => void;
   onUpdate: (id: string, changes: Partial<Todo>) => void;
   onDelete: (id: string) => void;
-  onStatusChange: (id: string, status: TodoStatus) => void;
+  /** May answer false when nothing changed (the person cancelled the "needs first" question); the status picker then goes back. */
+  onStatusChange: (id: string, status: TodoStatus) => void | Promise<boolean | void>;
   /** Opens the note a task was added from. */
   onOpenNote?: (noteId: string) => void;
   /** Logs a line of progress about this task, for the weekly update. The button is left out when this is not given. */
   onLogProgress?: (task: { id: string; title: string }) => void;
+  /** Every task, so "Needs first" can search them. The section is left out when this is not given. */
+  todos?: readonly Todo[];
+  /** Makes a new task for "Needs first" and gives back its id. */
+  onCreateTask?: (title: string) => Promise<string | null>;
+  /** Names a list, for the search results. */
+  listNameOf?: (listId: string) => string | undefined;
   /** The list the task is in, for the delete confirmation's wording. */
   listName?: string;
   /** Custom fields. The section is left out when this is not given. */
@@ -93,6 +102,9 @@ export function TaskDetailPanel({
   onLogProgress,
   listName,
   fields,
+  todos,
+  onCreateTask,
+  listNameOf,
 }: TaskDetailPanelProps) {
   const [text, setText] = useState(todo?.text ?? '');
   const [note, setNote] = useState(todo?.note ?? '');
@@ -100,6 +112,7 @@ export function TaskDetailPanel({
   const [dueTime, setDueTime] = useState(todo?.dueTime ?? '');
   const [category, setCategory] = useState(todo?.category ?? '');
   const [assignee, setAssignee] = useState(todo?.assigneeUserId ?? '');
+  const [needs, setNeeds] = useState<string[]>(todo?.needsFirst ?? []);
   const workspaces = useWorkspaces();
   const members = workspaces.current && workspaces.current.state === 'active' ? workspaces.current.members : [];
   const [quadrant, setQuadrant] = useState<Quadrant>(todo?.quadrant ?? 'schedule');
@@ -121,6 +134,7 @@ export function TaskDetailPanel({
     setDueTime(todo.dueTime ?? '');
     setCategory(todo.category ?? '');
     setAssignee(todo.assigneeUserId ?? '');
+    setNeeds(todo.needsFirst ?? []);
     setQuadrant(todo.quadrant ?? 'schedule');
     setStatus(todo.status ?? 'todo');
     setReminder(todo.reminderEnabled ? String(todo.reminderMinutesBefore ?? getDefaultReminderMinutes()) : 'off');
@@ -143,6 +157,8 @@ export function TaskDetailPanel({
       ...(members.length > 0 && assignee !== (todo.assigneeUserId ?? '')
         ? { assigneeUserId: assignee, assigneeName: assignee ? memberLabel(members.find((m) => m.userId === assignee) ?? {}) : '' }
         : {}),
+      // Only sent when it changed, and without prerequisites that no longer exist.
+      ...(todos && needs.join(',') !== (todo.needsFirst ?? []).join(',') ? { needsFirst: needs.filter((id) => todos.some((t) => t.id === id)) } : {}),
       quadrant,
       // A repeat needs a date to repeat from.
       recurrence: dueDate ? recurrence : '',
@@ -151,11 +167,12 @@ export function TaskDetailPanel({
     };
     // Handle status change separately (for streak tracking)
     if (status !== todo.status) {
-      onStatusChange(todo.id, status);
+      const was = todo.status ?? 'todo';
+      void Promise.resolve(onStatusChange(todo.id, status)).then((applied) => { if (applied === false) setStatus(was); });
     }
     onUpdate(todo.id, changes);
     setIsDirty(false);
-  }, [todo, text, note, dueDate, dueTime, category, assignee, members, quadrant, status, reminder, recurrence, onUpdate, onStatusChange]);
+  }, [todo, todos, needs, text, note, dueDate, dueTime, category, assignee, members, quadrant, status, reminder, recurrence, onUpdate, onStatusChange]);
 
   // Auto-save on close if dirty
   const handleClose = useCallback(() => {
@@ -349,6 +366,28 @@ export function TaskDetailPanel({
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          )}
+
+          {todos && (
+            <div className="flex flex-col gap-2">
+              <Label className={LABEL}>Needs first</Label>
+              <NeedsFirstPicker
+                taskId={todo.id}
+                todos={todos}
+                ids={needs}
+                onIdsChange={(next) => { setNeeds(next); markDirty(); }}
+                onCreate={onCreateTask}
+                listName={listNameOf}
+              />
+              {(() => {
+                const waiting = waitingOn(todo.id, todos);
+                return waiting.length > 0 ? (
+                  <p className="text-[12px] text-a-muted">
+                    Waiting on this: {waiting.map((w) => w.text).join(', ')}
+                  </p>
+                ) : null;
+              })()}
             </div>
           )}
 

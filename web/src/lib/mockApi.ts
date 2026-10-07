@@ -62,6 +62,7 @@ function todoToApiTask(t: Todo): ApiTask {
     sourceBlockId: t.sourceBlockId || null,
     sourceRecordId: t.sourceRecordId || null,
     sourceFieldId: t.sourceFieldId || null,
+    needsFirst: t.needsFirst ?? [],
   };
 }
 
@@ -173,6 +174,7 @@ export const mockTaskApi = {
       sourceBlockId: req.sourceBlockId || undefined,
       sourceRecordId: req.sourceRecordId || undefined,
       sourceFieldId: req.sourceFieldId || undefined,
+      needsFirst: req.needsFirst && req.needsFirst.length ? req.needsFirst : undefined,
       createdAt: now,
     };
     setState((s) => ({ ...s, todos: [...s.todos, newTodo] }));
@@ -201,6 +203,7 @@ export const mockTaskApi = {
       sourceBlockId: req.sourceBlockId !== undefined ? (req.sourceBlockId || undefined) : existing.sourceBlockId,
       sourceRecordId: req.sourceRecordId !== undefined ? (req.sourceRecordId || undefined) : existing.sourceRecordId,
       sourceFieldId: req.sourceFieldId !== undefined ? (req.sourceFieldId || undefined) : existing.sourceFieldId,
+      needsFirst: req.needsFirst !== undefined ? (req.needsFirst.length ? req.needsFirst : undefined) : existing.needsFirst,
     };
     setState((s) => ({ ...s, todos: s.todos.map((t) => (t.id === id ? updated : t)) }));
     return todoToApiTask(updated);

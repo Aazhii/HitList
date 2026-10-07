@@ -214,6 +214,24 @@ class SharedWorkspaceTest {
     }
 
     @Test
+    void whatATaskNeedsFirstIsSharedAndArrivesOnTheOtherSide() throws Exception {
+        register(ALICE, "active");
+        send(inWorkspace(post("/api/tasks"), ALICE), Map.of("title", "Write notes", "clientId", "task-a")).andExpect(status().isCreated());
+        send(inWorkspace(post("/api/tasks"), ALICE), Map.of("title", "Ship it", "clientId", "task-b", "needsFirst", List.of("task-a"))).andExpect(status().isCreated());
+        Map<?, ?> created = (Map<?, ?>) ((Map<?, ?>) outbox(ALICE).get(1).get("op")).get("fields");
+        assertThat(created.get("NeedsFirstIds")).isEqualTo("[\"task-a\"]");
+
+        // And a change from another member that carries it is applied (the field is on the shared list).
+        register(BOB, "active");
+        List<Map<String, Object>> changes = List.of(Map.of("seq", 1, "ops", List.of(
+            Map.of("table", "tasks", "id", "task-a", "fields", Map.of("Title", "Write notes", "Status", "TODO", "Quadrant", "DO", "CreatedAt", 1, "UpdatedAt", 1)),
+            Map.of("table", "tasks", "id", "task-b", "fields", Map.of("Title", "Ship it", "Status", "TODO", "Quadrant", "DO", "CreatedAt", 1, "UpdatedAt", 1,
+                "NeedsFirstIds", "[\"task-a\"]")))));
+        send(as(post("/api/sync/apply"), BOB), Map.of("workspaceId", WS, "changes", changes)).andExpect(jsonPath("$.applied").value(1));
+        mvc.perform(inWorkspace(get("/api/tasks/task-b"), BOB)).andExpect(jsonPath("$.needsFirst[0]").value("task-a"));
+    }
+
+    @Test
     void otherMembersChangesApplyInOrderOnceAndAreNotSentBack() throws Exception {
         register(BOB, "active");
         List<Map<String, Object>> changes = List.of(
