@@ -22,6 +22,9 @@ const { randomUUID, createHash } = require('node:crypto');
 const FLUSH_DELAY = 3_000;
 const MIN_BETWEEN_FLUSHES = 5_000;
 const RETRY_STEPS = [30_000, 60_000, 120_000, 300_000];
+// When only the live signal is down, the engine asks for new changes every 5 minutes (one cheap request) and tries to bring
+// the signal back only every sixth time (30 minutes), instead of repeating the whole refresh every 5 minutes.
+const PUSH_RETRY_EVERY = 6;
 const MAX_OPS_BYTES = 8_500;
 const MAX_OPS = 200;
 const MAX_TEXT = 4_900;
@@ -55,7 +58,7 @@ function fitOp(op) {
 
 function createWorkspaceSync({
   stateDir, getAccount, localGet, localPost, cloud, createPush, onApplied = () => {}, onAssigned = () => {}, onChange = () => {},
-  fetchTask = async () => null, now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout, uuid = randomUUID,
+  fetchTask = async () => null, now = Date.now, setTimer = setTimeout, clearTimer = clearTimeout, uuid = randomUUID, log = () => {},
 }) {
   const deviceFile = path.join(stateDir, 'workspace-device.json');
   const batchFile = path.join(stateDir, 'workspace-batches.json');
@@ -90,7 +93,8 @@ function createWorkspaceSync({
   let lastFlushAt = 0;
   let refreshing = null;
   const chains = new Map();      // per workspace: one sync at a time
-  const state = { lastError: null, skippedFields: 0, rejectedOps: 0 };
+  const state = { lastError: null, pushError: null, skippedFields: 0, rejectedOps: 0 };
+  let pollsSincePush = 0;
 
   const me = () => getAccount()?.userId || null;
   const status = () => ({ running, pushOn: !!stopPush, ...state });
@@ -272,6 +276,19 @@ function createWorkspaceSync({
     });
   }
 
+  /**
+   * After a local edit: only workspaces with something waiting to be sent are synced. Receiving other people's changes is the
+   * doorbell's job (and the start, reconnect and "Sync now" catch-ups), so an edit that is not shared costs the cloud nothing.
+   */
+  const syncQueued = async () => {
+    if (!me()) return;
+    const list = (await localWorkspaces()).filter((w) => w.state === 'active');
+    await Promise.all(list.map(async (w) => {
+      const outbox = await local(`/api/sync/outbox?workspaceId=${encodeURIComponent(w.workspaceId)}&limit=1`);
+      if (outbox.ops && outbox.ops.length) await syncWorkspace(w.workspaceId);
+    }));
+  };
+
   const syncAll = async () => {
     if (!me()) return;
     const list = await localWorkspaces();
@@ -283,9 +300,15 @@ function createWorkspaceSync({
   function scheduleRetry() {
     if (timers.retry || !running) return;
     const delay = RETRY_STEPS[Math.min(retryStep, RETRY_STEPS.length - 1)];
+    // After the quick early tries, a problem that is only the live signal (the cloud itself answers) is handled gently.
+    const pushOnly = retryStep >= RETRY_STEPS.length && state.lastError === 'push-unavailable';
     retryStep += 1;
     timers.retry = setTimer(() => {
       timers.retry = null;
+      if (pushOnly && (pollsSincePush += 1) % PUSH_RETRY_EVERY !== 0) {
+        void syncAll().then(() => { if (state.lastError === 'push-unavailable') scheduleRetry(); }).catch(() => { fail('offline'); scheduleRetry(); });
+        return;
+      }
       void refresh().catch(() => { fail('offline'); scheduleRetry(); });
     }, delay);
     timers.retry.unref?.();
@@ -298,7 +321,7 @@ function createWorkspaceSync({
     timers.flush = setTimer(() => {
       timers.flush = null;
       lastFlushAt = now();
-      void syncAll().catch(() => {});
+      void syncQueued().catch(() => {});
     }, wait);
     timers.flush.unref?.();
   }
@@ -310,11 +333,20 @@ function createWorkspaceSync({
     if (stopPush) { stopPush(); stopPush = null; }
     pushIds = key;
     if (!ids.length || !abort) return;
-    const pending = new Set();
-    const ring = (id) => {
-      if (pending.has(id)) return;
-      pending.add(id);
-      setTimer(() => { pending.delete(id); void syncWorkspace(id).catch(() => {}); }, 400).unref?.();
+    const pending = new Map();
+    const ring = (id, seq) => {
+      const n = Number.isSafeInteger(seq) ? seq : null;
+      if (pending.has(id)) { if (n === null || pending.get(id) === null || n > pending.get(id)) pending.set(id, n); return; }
+      pending.set(id, n);
+      setTimer(async () => {
+        const seen = pending.get(id);
+        pending.delete(id);
+        // A doorbell for a change this computer already has (its own push coming back, or a repeat) needs no request.
+        if (seen !== null) {
+          try { const info = (await localWorkspaces()).find((w) => w.workspaceId === id); if (info && info.cursor >= seen) return; } catch { /* sync to be safe */ }
+        }
+        void syncWorkspace(id).catch(() => {});
+      }, 400).unref?.();
     };
     try {
       const push = createPush({
@@ -326,13 +358,15 @@ function createWorkspaceSync({
       });
       const stop = await push.subscribe({
         signal: abort.signal,
-        onSignal: (id) => { if (version === epoch) ring(id); },
+        onSignal: (id, seq) => { if (version === epoch) ring(id, seq); },
         onReconnect: () => { if (version === epoch) void refresh().catch(() => { fail('offline'); scheduleRetry(); }); },
-        onUnavailable: () => {
+        onUnavailable: (reason) => {
           if (version !== epoch || !running) return;
           if (stopPush) stopPush();
           stopPush = null;
           pushIds = '';
+          state.pushError = String(reason || 'connection suspended').slice(0, 200);
+          log(`[hitlist] shared-workspace live signal dropped: ${state.pushError}`);
           fail('push-unavailable');
           scheduleRetry();
         },
@@ -340,11 +374,14 @@ function createWorkspaceSync({
       if (version !== epoch) { stop?.(); return; }
       stopPush = stop;
       if (!stop) throw new Error('No workspace subscription');
+      state.pushError = null;
       if (state.lastError === 'push-unavailable') state.lastError = null;
-    } catch {
+    } catch (error) {
       if (version !== epoch) return;
       stopPush = null;
       pushIds = '';
+      state.pushError = String((error && error.cause && error.cause.message) || (error && error.message) || 'unknown').slice(0, 200);
+      log(`[hitlist] shared-workspace live signal unavailable: ${state.pushError}`);
       fail('push-unavailable');
       scheduleRetry();
     }

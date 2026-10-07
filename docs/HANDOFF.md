@@ -221,6 +221,9 @@ Evidence (2026-10-06, macOS arm64, Java 25.0.4, Maven 3.9.12, scratch data): `no
 ### Task notes in Cliq messages
 An overdue message shows the task's note under it (`   ↳ note`, at most 300 characters, shorter when the message nears 1,800). The note is read live from the task at reserve and validate time (`DueScheduleStore`), sent by the desktop, cleaned in `functions/backup/cliq.js`. Automation Cliq messages do the same, and `{{note}}` works in templates. **The backup function must be redeployed** for the overdue path to show notes (owner's step).
 
+### Fewer Data Store reads (shared-workspace sync)
+Found from the real function log (2026-10-07): a full refresh (`GET /ws`, `POST /ws/token`, a pull) every 5 minutes, all day, because the live signal (Ably) never connected on this computer even though the token request returned 200, plus a pull every 5 s during edits. Now: an edit syncs only workspaces with something queued (`syncQueued`); a doorbell whose number this computer already has is ignored; with only the live signal down the retry is a single pull every 5 minutes and the full refresh every 30 minutes; the reason the live signal is down is kept (`status().pushError`, and logged). **The underlying cause of the live signal failing is not yet known**; the log line `[hitlist] shared-workspace live signal unavailable: …` in a new build will say.
+
 ## 4. Catalyst resources (names only)
 - Project "HitList" (org id in `.catalystrc`). Functions: `backup`, `cliq-webhook` (both Advanced I/O, Node 20). Web client at
   `https://hitlist-60090109165.development.catalystserverless.in/app/` (trailing slash needed). Function URL

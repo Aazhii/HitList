@@ -30,10 +30,12 @@ function createWorkspacePush({ requestToken, createRealtime = (options) => new (
     let attachedOnce = 0;
     let ready = false;
     const channels = [];
-    const unavailable = () => {
+    let lastReason = '';
+    const unavailable = (change) => {
+      if (change && change.reason && change.reason.message) lastReason = String(change.reason.message);
       if (closed || signal.aborted) return;
       stop();
-      if (ready) onUnavailable();
+      if (ready) onUnavailable(lastReason);
     };
     const stop = () => {
       if (closed) return;
@@ -87,9 +89,10 @@ function createWorkspacePush({ requestToken, createRealtime = (options) => new (
       first = null;
       ready = true;
       return stop;
-    } catch {
+    } catch (cause) {
       stop();
-      throw new Error('Push connection unavailable');
+      // The reason is kept (the connection's own, else the error's) so the app can say why the live signal is down.
+      throw new Error('Push connection unavailable', { cause: lastReason ? new Error(lastReason) : cause });
     }
   }
   return { subscribe };

@@ -542,3 +542,69 @@ test('escaped journal fragments cross bounded batches intact and retry without l
   assert.equal(fixture.engine.status().rejectedOps, 0);
   assert.equal(fixture.engine.status().lastError, null);
 });
+
+// ── fewer requests to the cloud (Data Store reads are limited) ──────────────────────────────────────────────────────────
+
+function counted(t) {
+  const calls = [];
+  const original = t.cloud.call;
+  t.cloud.call = async (method, url, body) => { calls.push(`${method} ${url.replace(/w{43}/, ':ws').replace(/after=\d+&limit=\d+/, 'after=n')}`); return original(method, url, body); };
+  return calls;
+}
+
+test('an edit with nothing queued for a shared workspace sends nothing to the cloud', async () => {
+  const t = rig();
+  await t.engine.start();
+  const calls = counted(t);
+  for (let i = 0; i < 5; i += 1) { t.engine.kick(); t.advance(5000); await t.timers.runAll(); }
+  assert.deepEqual(calls, []);
+});
+
+test('an edit with something queued is sent once, and its own doorbell coming back asks for nothing more', async () => {
+  const t = rig();
+  await t.engine.start();
+  const calls = counted(t);
+  t.local.queue(1);
+  t.engine.kick();
+  await t.timers.runAll();
+  assert.deepEqual(calls, ['POST /ws/:ws/changes', 'GET /ws/:ws/changes?after=n']);
+  const own = t.cloud.changes[0].seq;
+  t.push.ring(WS, own);
+  await t.timers.runAll();
+  assert.equal(calls.length, 2, 'a doorbell for a change this computer already has costs nothing');
+});
+
+test('a doorbell for a change this computer does not have yet still pulls it', async () => {
+  const t = rig();
+  await t.engine.start();
+  t.cloud.changes.push({ seq: 1, deviceId: 'other', authorUserId: OTHER, ops: [{ table: 'lists', id: 'l1', fields: { Name: 'L' } }] });
+  const calls = counted(t);
+  t.push.ring(WS, 1);
+  await t.timers.runAll();
+  assert.deepEqual(calls, ['GET /ws/:ws/changes?after=n']);
+  assert.equal(t.local.applied.length, 1);
+});
+
+test('with the live signal down, retries settle into one cheap request, and the full refresh comes only every sixth time', async () => {
+  const t = rig({ createPush: () => ({ subscribe: async () => { throw new Error('no key'); } }) });
+  await t.engine.start();
+  assert.equal(t.engine.status().lastError, 'push-unavailable');
+  assert.match(t.engine.status().pushError, /no key/);
+  const calls = counted(t);
+  const delays = [];
+  for (let i = 0; i < 16; i += 1) {
+    const retry = t.timers.queue.filter((x) => x.ms >= 30_000)[0];
+    if (!retry) break;
+    delays.push(retry.ms);
+    t.timers.queue.splice(t.timers.queue.indexOf(retry), 1);
+    await retry.fn();
+    await new Promise((r) => setImmediate(r));
+  }
+  assert.deepEqual(delays.slice(0, 6), [30_000, 60_000, 120_000, 300_000, 300_000, 300_000]);
+  // 4 quick full refreshes (30s, 1m, 2m, 5m), then 5-minute steps: five pulls and one refresh in every six.
+  const refreshes = calls.filter((c) => c === 'GET /ws').length;
+  const pulls = calls.filter((c) => c.startsWith('GET /ws/:ws/changes')).length;
+  assert.equal(calls.filter((c) => c === 'POST /ws/token').length, 0, 'the fake push never asks for a token');
+  assert.ok(refreshes < delays.length / 2, `refreshes ${refreshes} of ${delays.length} retries`);
+  assert.ok(pulls >= delays.length, 'every retry still asks for new changes');
+});

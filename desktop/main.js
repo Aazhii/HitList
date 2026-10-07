@@ -324,6 +324,7 @@ async function openWindow() {
     getAccount: () => account,
     localGet, localPost,
     cloud: cloudJson,
+    log: (message) => console.warn(message),
     createPush: createWorkspacePush,
     onApplied: (workspaceId) => toPage('workspaces:changed', { workspaceId }),
     onChange: (status) => toPage('workspaces:status', status),
