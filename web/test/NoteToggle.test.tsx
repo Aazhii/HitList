@@ -96,10 +96,20 @@ describe('toggle blocks in the editor', () => {
     expect(screen.queryByText('Empty toggle. Click or drop blocks inside.')).toBeNull();
   });
 
-  it('Enter in an open toggle starts its first inner line; in a closed one it adds a line after the whole toggle', () => {
+  it('Enter in a toggle with nothing inside adds another toggle level with it', () => {
     const open = setup([b('t', 'Open', 'toggle'), b('x', 'after')]);
     fireEvent.keyDown(screen.getByDisplayValue('Open'), { key: 'Enter' });
-    expect(open.blocks().map((x) => [x.content, levelOf(x)])).toEqual([['Open', 0], ['', 1], ['after', 0]]);
+    expect(open.blocks().map((x) => [x.content, x.type, levelOf(x)])).toEqual([
+      ['Open', 'toggle', 0], ['', 'toggle', 0], ['after', 'paragraph', 0],
+    ]);
+  });
+
+  it('Enter in an open toggle that holds lines starts its first inner line, as a toggle', () => {
+    const open = setup([b('t', 'Open', 'toggle'), b('c', 'kid', 'paragraph', 1)]);
+    fireEvent.keyDown(screen.getByDisplayValue('Open'), { key: 'Enter' });
+    expect(open.blocks().map((x) => [x.content, x.type, levelOf(x)])).toEqual([
+      ['Open', 'toggle', 0], ['', 'toggle', 1], ['kid', 'paragraph', 1],
+    ]);
   });
 
   it('Enter in a closed toggle goes after everything hidden inside it', () => {

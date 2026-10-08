@@ -128,6 +128,9 @@ function getBlockPlaceholder(type: BlockType): string {
   }
 }
 
+/** Block types whose pasted lines can be made into one block each. */
+const SPLITTABLE: ReadonlySet<BlockType> = new Set<BlockType>(['paragraph', 'bullet', 'numbered', 'todo']);
+
 // ── Inline formatting toolbar ──────────────────────────────────────────────────
 const MOD = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
 
@@ -146,10 +149,12 @@ const MARK_BUTTONS: Array<{ mark: Mark; label: string; shortcut: string; icon: R
  * content — see lib/inlineMarkdown. Only marks the block type supports are
  * offered, and a mark already covering the selection shows as pressed.
  */
-function InlineToolbar({ marks, active, onToggle }: {
+function InlineToolbar({ marks, active, onToggle, onSplit }: {
   marks: readonly Mark[];
   active: Set<Mark>;
   onToggle: (mark: Mark) => void;
+  /** Offered when the selection spans several lines of one list item. */
+  onSplit?: () => void;
 }) {
   return (
     <div
@@ -176,6 +181,17 @@ function InlineToolbar({ marks, active, onToggle }: {
           {icon}
         </button>
       ))}
+      {onSplit && (
+        <button
+          type="button"
+          title="Make each selected line its own item"
+          onMouseDown={(e) => { e.preventDefault(); onSplit(); }}
+          className="flex h-7 items-center gap-1 rounded-[8px] px-2 text-[12px] text-a-muted transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
+        >
+          <List className={ICON} strokeWidth={STROKE} />
+          Split lines
+        </button>
+      )}
     </div>
   );
 }
@@ -645,6 +661,7 @@ export function NoteEditor({
     y: number;
     marks: readonly Mark[];
     active: Set<Mark>;
+    canSplit: boolean;
   } | null>(null);
   const [slashState, setSlashState] = useState<{
     blockId: string;
@@ -730,6 +747,7 @@ export function NoteEditor({
         y: start.top - 8,
         marks,
         active: activeMarks(el.value, el.selectionStart, el.selectionEnd),
+        canSplit: SPLITTABLE.has(block.type) && el.value.slice(el.selectionStart, el.selectionEnd).includes('\n'),
       });
     } catch {
       setToolbar(null);
@@ -918,6 +936,29 @@ export function NoteEditor({
       : t));
   }, [blocks, onUpdateBlock]);
 
+  // A paste lands as one block with line breaks in it. This turns each selected line into its own block of the
+  // same type, so the pasted text does not have to be cut apart by hand.
+  const handleSplitLines = useCallback((blockId: string) => {
+    const el = textareaRefs.current.get(blockId);
+    const block = blocks.find((b) => b.id === blockId);
+    if (!el || !block || !SPLITTABLE.has(block.type)) return;
+    const { selectionStart: start, selectionEnd: end, value } = el;
+    const lines = value.slice(start, end).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (lines.length < 2) return;
+    const before = value.slice(0, start);
+    const after = value.slice(end);
+
+    onUpdateBlock(blockId, { content: before + lines[0] });
+    let prevId = blockId;
+    lines.slice(1).forEach((line, i) => {
+      const newId = onAddBlock(prevId, block.type);
+      onUpdateBlock(newId, { content: i === lines.length - 2 ? line + after : line });
+      prevId = newId;
+    });
+    setToolbar(null);
+    pendingFocusId.current = prevId;
+  }, [blocks, onAddBlock, onUpdateBlock]);
+
   const handleKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>, blockId: string) => {
     const block = blocks.find((b) => b.id === blockId);
     if (!block) return;
@@ -1004,8 +1045,13 @@ export function NoteEditor({
         pendingFocusId.current = blockId;
         return;
       }
-      const nextType: BlockType = isListItem ? block.type : 'paragraph';
+      // A list item or a toggle continues as the same kind. A toggle with nothing inside gets a sibling toggle
+      // (level with it), not one nested inside it, so repeated Enter builds a row of toggles rather than a staircase.
+      const nextType: BlockType = isListItem || block.type === 'toggle' ? block.type : 'paragraph';
       const newId = onAddBlock(blockId, nextType);
+      if (block.type === 'toggle' && !block.collapsed && !toggleHasChildren(blocks, idx) && onSetIndent) {
+        onSetIndent(newId, 'out');
+      }
       pendingFocusId.current = newId;
     } else if (e.key === 'Backspace' && cursorAtStart && levelOf(block) > 0 && onSetIndent) {
       // Backspace at the start of a pushed-in line first brings it back out; only a top-level empty line is deleted.
@@ -1064,6 +1110,7 @@ export function NoteEditor({
             marks={toolbar.marks}
             active={toolbar.active}
             onToggle={(mark) => handleToggleMark(toolbar.blockId, mark)}
+            onSplit={toolbar.canSplit ? () => handleSplitLines(toolbar.blockId) : undefined}
           />
         </div>
       )}
