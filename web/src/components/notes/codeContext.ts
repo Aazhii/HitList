@@ -41,6 +41,13 @@ export interface PagesApi {
   open: (id: string) => void;
   /** Makes an empty note to be a sub-page of the open note, without opening it. The caller links it with a page block. */
   create: () => { id: string; title: string };
+  /** A Notepad file by id (for a link to a file), or undefined when it is not here. */
+  getFile: (id: string) => { id: string; title: string } | undefined;
+  openFile: (id: string) => void;
+  /** Everything a link can point at, for the `[[` menu. */
+  linkables: () => ReadonlyArray<{ id: string; title: string; emoji?: string; kind: 'note' | 'file' }>;
+  /** Makes a top-level note with this title (the menu's "Create page"), without opening it. */
+  createNote: (title: string) => { id: string; title: string };
 }
 
 export const NotePagesContext = createContext<PagesApi | undefined>(undefined);

@@ -41,6 +41,8 @@ import { NoteFindBar } from '@/components/notes/NoteFindBar';
 import { FilePicker } from '@/components/notes/FilePicker';
 import { NoteCodeContext, NotePagesContext, type CodeFilesApi, type NoteCodeContextValue, type PagesApi } from '@/components/notes/codeContext';
 import { PageBlock } from '@/components/notes/PageBlock';
+import { LinkMenu, type LinkChoice, type LinkMenuHandle } from '@/components/notes/LinkMenu';
+import { detectLinkTrigger, insertNoteLink, type LinkTrigger } from '@/lib/noteLinks';
 
 // The code editor is large, so a note loads it only when it has a code block on screen.
 const CodeBlockView = lazy(() => import('@/components/notes/CodeBlocks').then((m) => ({ default: m.CodeBlockView })));
@@ -784,6 +786,10 @@ export function NoteEditor({
     message: string | null;
   } | null>(null);
   const mentionRef = useRef<MentionMenuHandle>(null);
+
+  // ── "[[" → link to a page or file ──
+  const [linkState, setLinkState] = useState<{ blockId: string; trigger: LinkTrigger; position: { top: number; left: number } } | null>(null);
+  const linkRef = useRef<LinkMenuHandle>(null);
   // Blocks whose task is being created; they show a pending chip.
   const [pendingLinks, setPendingLinks] = useState<ReadonlySet<string>>(new Set());
   const blocksRef = useRef(blocks);
@@ -1216,6 +1222,22 @@ export function NoteEditor({
 
   const handleMentionCheck = useCallback((blockId: string, el: HTMLTextAreaElement) => {
     const block = blocks.find((b) => b.id === blockId);
+    // "[[" opens the link menu in lines of text; it takes the place of the "@" menu while it is open.
+    const linkTrigger = pages && block && supportedMarks(block.type).length > 0 ? detectLinkTrigger(el.value, el.selectionStart) : null;
+    if (linkTrigger) {
+      setMention(null);
+      let position: { top: number; left: number };
+      try {
+        const coords = getCaretCoordinates(el, linkTrigger.at);
+        position = { top: coords.top + 22, left: coords.left };
+      } catch {
+        const rect = el.getBoundingClientRect();
+        position = { top: rect.bottom + 4, left: rect.left };
+      }
+      setLinkState((cur) => (cur && cur.blockId === blockId && cur.trigger.at === linkTrigger.at ? { ...cur, trigger: linkTrigger } : { blockId, trigger: linkTrigger, position }));
+      return;
+    }
+    setLinkState((cur) => (cur && cur.blockId === blockId ? null : cur));
     const trigger = linking && noteId && block && canMention(block.type) && !block.taskId && !pendingLinks.has(blockId)
       ? detectMentionTrigger(el.value, el.selectionStart)
       : null;
@@ -1243,7 +1265,7 @@ export function NoteEditor({
       }
       return { blockId, trigger, position, message };
     });
-  }, [blocks, linking, noteId, pendingLinks]);
+  }, [blocks, linking, noteId, pendingLinks, pages]);
 
   const handleMentionSelect = useCallback(async (listId: string, quadrant: Quadrant, assignee?: import('@/types/todo').TaskAssignee) => {
     if (!mention || !linking || !noteId) return;
@@ -1281,6 +1303,24 @@ export function NoteEditor({
       if (current && current.content === content) onUpdateBlock(blockId, { content: original });
     }
   }, [mention, linking, noteId, blocks, onUpdateBlock]);
+
+  const handleLinkSelect = useCallback((choice: LinkChoice) => {
+    if (!linkState || !pages) return;
+    const { blockId, trigger } = linkState;
+    const el = textareaRefs.current.get(blockId);
+    const block = blocks.find((b) => b.id === blockId);
+    if (!block) { setLinkState(null); return; }
+    const value = el?.value ?? block.content;
+    const caret = el?.selectionStart ?? value.length;
+    const target = choice.kind === 'create'
+      ? { ...pages.createNote(choice.title), kind: 'note' as const }
+      : { id: choice.option.id, title: choice.option.title, kind: choice.option.kind };
+    const next = insertNoteLink(value, caret, trigger, target.kind, target.id, target.title);
+    setLinkState(null);
+    onUpdateBlock(blockId, { content: next.content });
+    pendingSelection.current = { id: blockId, start: next.caret, end: next.caret };
+    el?.focus();
+  }, [linkState, pages, blocks, onUpdateBlock]);
 
   const handleSlashOpen = useCallback((blockId: string, pos: { top: number; left: number }) => {
     setSlashState((current) => current?.blockId === blockId
@@ -1464,6 +1504,16 @@ export function NoteEditor({
       }
     }
 
+    // "[[" menu navigation.
+    if (linkState && linkState.blockId === blockId && linkRef.current) {
+      if (['ArrowUp', 'ArrowDown', 'Enter', 'Tab', 'Escape'].includes(e.key)) {
+        if (linkRef.current.handleKey(e.key)) {
+          e.preventDefault();
+          return;
+        }
+      }
+    }
+
     // "@" menu navigation. Keys it doesn't use fall through, so ← at the
     // first column still moves the caret (and so closes the menu).
     if (mention && mention.blockId === blockId && mentionRef.current) {
@@ -1575,7 +1625,7 @@ export function NoteEditor({
         pendingFocusId.current = blockId;
       }
     }
-  }, [blocks, slashState, mention, onAddBlock, onDeleteBlock, onUpdateBlock, onSetIndent, onSetBlocks, onChangeBlockType, handleSlashSelect, handleToggleMark, enterSelection, chooseOnly, visibleBlocks, onUndo, stepHistory, foldAll]);
+  }, [blocks, slashState, mention, onAddBlock, onDeleteBlock, onUpdateBlock, onSetIndent, onSetBlocks, onChangeBlockType, handleSlashSelect, handleToggleMark, enterSelection, chooseOnly, visibleBlocks, onUndo, stepHistory, foldAll, linkState]);
 
   const handleAddAfter = useCallback((blockId: string) => {
     const newId = onAddBlock(blockId, 'paragraph');
@@ -1674,6 +1724,18 @@ export function NoteEditor({
           position={dbPicker.position}
           onClose={() => setDbPicker(null)}
           onPick={(db) => { attachDatabase(dbPicker.blockId, db.id, 'table'); setDbPicker(null); }}
+        />
+      )}
+
+      {/* "[[" → link to a page or file */}
+      {linkState && pages && (
+        <LinkMenu
+          ref={linkRef}
+          position={linkState.position}
+          options={pages.linkables()}
+          query={linkState.trigger.query}
+          onSelect={handleLinkSelect}
+          onClose={() => setLinkState(null)}
         />
       )}
 

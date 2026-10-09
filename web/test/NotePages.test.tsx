@@ -179,3 +179,39 @@ describe('moving a page', () => {
     for (const name of ['Child', 'Grand', 'Sibling']) expect(screen.queryByRole('menuitem', { name })).toBeNull();
   });
 });
+
+describe('links between notes', () => {
+  const linkTo = (id: string, title: string) => `[${title}](hitlist://note/${id})`;
+
+  it('a note shows "Linked from" for the other notes that link to it, and opens them', async () => {
+    seed([
+      note('a', 'Alpha', [{ id: 'a1', type: 'paragraph', content: `see ${linkTo('b', 'Beta')}` }], 3),
+      note('b', 'Beta', undefined, 2),
+      note('c', 'Gamma', [{ id: 'c1', type: 'paragraph', content: linkTo('b', 'Beta') }], 1),
+    ]);
+    render(<Harness />);
+    await sidebar().findByText('Beta');
+    fireEvent.click(sidebar().getByRole('button', { name: /^Beta/ }));
+    const section = await screen.findByRole('region', { name: 'Linked from' });
+    expect(within(section).getAllByRole('button').map((b) => b.textContent?.trim())).toEqual(['📝Alpha', '📝Gamma']);
+    fireEvent.click(within(section).getByRole('button', { name: /Gamma/ }));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Page: Beta' })).toBeInTheDocument());
+    expect(screen.queryByRole('region', { name: 'Linked from' })).toBeNull();
+  });
+
+  it('a link shows the note\'s current title after it is renamed', async () => {
+    seed([
+      note('a', 'Alpha', [{ id: 'a1', type: 'paragraph', content: `see ${linkTo('b', 'Beta')}` }, { id: 'a2', type: 'paragraph', content: '' }], 3),
+      note('b', 'Beta', undefined, 2),
+    ]);
+    render(<Harness />);
+    await sidebar().findByText('Beta');
+    fireEvent.click(sidebar().getByRole('button', { name: /^Alpha/ }));
+    expect(await screen.findByRole('button', { name: 'Page: Beta' })).toBeInTheDocument();
+    fireEvent.click(sidebar().getByRole('button', { name: /^Beta/ }));
+    const title = await screen.findByPlaceholderText('Untitled');
+    fireEvent.change(title, { target: { value: 'Beta renamed' } });
+    fireEvent.click(sidebar().getByRole('button', { name: /^Alpha/ }));
+    expect(await screen.findByRole('button', { name: 'Page: Beta renamed' })).toBeInTheDocument();
+  });
+});

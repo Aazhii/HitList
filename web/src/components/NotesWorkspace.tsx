@@ -13,6 +13,7 @@ import type { CodeFilesApi } from '@/components/notes/codeContext';
 import { fileSettings, isNotepadFile, newFileParts } from '@/lib/notepad';
 import type { PagesApi } from '@/components/notes/codeContext';
 import { ancestorsOf, descendantsOf, movePage, parentMap, treeRows, withPage, withoutPages } from '@/lib/notePages';
+import { backlinks } from '@/lib/noteLinks';
 import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { ShareSourceControl } from '@/components/shell/ShareSourceControl';
 import type { SaveStatus } from '@/hooks/useNotes';
@@ -235,6 +236,7 @@ export function NoteDetail({
   codeFiles,
   pages,
   trail,
+  linkedFrom,
   onOpenNote,
 }: {
   note: Note;
@@ -243,6 +245,8 @@ export function NoteDetail({
   pages?: PagesApi;
   /** The pages above this one, from the top down, and how to open one. */
   trail?: ReadonlyArray<{ id: string; title: string; emoji?: string }>;
+  /** The notes that link to this one, for the "Linked from" list. */
+  linkedFrom?: ReadonlyArray<Pick<Note, 'id' | 'title' | 'emoji'>>;
   onOpenNote?: (id: string) => void;
   onUpdateTitle: (id: string, title: string) => void;
   onUpdateEmoji: (id: string, emoji: string) => void;
@@ -391,6 +395,22 @@ export function NoteDetail({
             codeFiles={codeFiles}
             pages={pages}
           />
+
+          {linkedFrom && linkedFrom.length > 0 && (
+            <section aria-label="Linked from" className="mt-8 border-t border-a-line pt-4">
+              <h3 className="mb-2 text-[12px] font-semibold uppercase tracking-[0.06em] text-a-faint">Linked from</h3>
+              <ul className="flex flex-col gap-0.5">
+                {linkedFrom.map((from) => (
+                  <li key={from.id}>
+                    <button type="button" onClick={() => onOpenNote?.(from.id)} className="flex w-full min-w-0 items-center gap-2 rounded-[6px] px-1.5 py-1 text-left text-[14px] text-a-muted transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink">
+                      <span aria-hidden className="w-5 flex-shrink-0 text-center">{from.emoji ?? '📝'}</span>
+                      <span className="min-w-0 flex-1 truncate">{from.title || 'Untitled'}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
         </div>
       </div>
     </ScrollArea>
@@ -614,12 +634,19 @@ export function NotesWorkspace({ onOpenFile, linking, openNoteId, onOpenNoteHand
     setActiveNoteId(child.id);
   }, [notes, createNote, setBlocks, setExpandedIds, setActiveNoteId]);
 
-  /** What a page block in the open note needs: the pages' live names, opening one, and making a child. */
+  /** What a page block or a link in the open note needs: the pages' live names, opening one, and making a note. */
   const pagesApi = useMemo<PagesApi>(() => ({
     get: (id) => { const n = notes.find((x) => x.id === id); return n ? { id: n.id, title: n.title, emoji: n.emoji } : undefined; },
     open: (id) => setActiveNoteId(id),
     create: () => { const n = createNote('Untitled', undefined, { activate: false }); return { id: n.id, title: n.title }; },
-  }), [notes, createNote, setActiveNoteId]);
+    getFile: (id) => { const f = otherNotes.find((x) => x.id === id && isNotepadFile(x)); return f ? { id: f.id, title: f.title } : undefined; },
+    openFile: (id) => onOpenFile?.(id),
+    linkables: () => [
+      ...notes.map((n) => ({ id: n.id, title: n.title, emoji: n.emoji, kind: 'note' as const })),
+      ...otherNotes.filter(isNotepadFile).map((f) => ({ id: f.id, title: f.title, kind: 'file' as const })),
+    ],
+    createNote: (title) => { const n = createNote(title || 'Untitled', undefined, { activate: false }); return { id: n.id, title: n.title }; },
+  }), [notes, otherNotes, createNote, setActiveNoteId, onOpenFile]);
 
   /** Moves a page under another (null: to the top level); both parents' page blocks are updated. */
   const movePageTo = useCallback((id: string, parentId: string | null) => {
@@ -651,6 +678,9 @@ export function NotesWorkspace({ onOpenFile, linking, openNoteId, onOpenNoteHand
       setDeleteTarget(null);
     }
   }, [deleteTarget, deleteDescendants, deletePages]);
+
+  /** The other notes that link to the open one (not its parent: that is the path above the title). */
+  const linkedFrom = useMemo(() => (activeNote ? backlinks(notes, activeNote.id) : []), [activeNote, notes]);
 
   const trail = useMemo(
     () => (activeNote ? ancestorsOf(parents, activeNote.id).flatMap((id) => { const n = notes.find((x) => x.id === id); return n ? [{ id: n.id, title: n.title, emoji: n.emoji }] : []; }) : []),
@@ -837,6 +867,7 @@ export function NotesWorkspace({ onOpenFile, linking, openNoteId, onOpenNoteHand
             codeFiles={codeFiles}
             pages={pagesApi}
             trail={trail}
+            linkedFrom={linkedFrom}
             onOpenNote={setActiveNoteId}
           />
         ) : notes.length === 0 ? (

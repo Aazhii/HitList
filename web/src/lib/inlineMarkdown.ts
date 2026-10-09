@@ -36,7 +36,7 @@ export function findInlineLinks(text: string): InlineLink[] {
         try {
           url = new URL(token.href);
         } catch { url = null; }
-        if (url && ['https:', 'http:', 'mailto:', 'tel:'].includes(url.protocol)) {
+        if (url && ['https:', 'http:', 'mailto:', 'tel:', 'hitlist:'].includes(url.protocol)) {
           links.push({ start: offset, end: offset + token.raw.length, contentStart: offset + 1, text: token.text, href: url.href });
         }
       } else {

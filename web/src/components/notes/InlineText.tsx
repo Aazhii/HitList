@@ -13,6 +13,8 @@
 import { forwardRef, useImperativeHandle, useRef, type ReactNode } from 'react';
 import { cn } from '@/lib/utils';
 import { TextLink } from '@/components/LinkedText';
+import { NoteLinkChip } from '@/components/notes/NoteLinkChip';
+import { parseNoteLink } from '@/lib/noteLinks';
 import {
   parseInline,
   sourceOffsetFromRendered,
@@ -55,7 +57,9 @@ function RunView({ run }: { run: InlineRun }) {
   if (run.marks.includes('underline')) node = <u className="decoration-[1.5px] underline-offset-[3px]">{node}</u>;
   if (run.marks.includes('italic')) node = <em>{node}</em>;
   if (run.marks.includes('bold')) node = <strong className="font-bold">{node}</strong>;
-  if (run.href) node = <TextLink href={run.href}>{node}</TextLink>;
+  const link = run.href ? parseNoteLink(run.href) : null;
+  if (link) node = <NoteLinkChip link={link} fallback={node} />;
+  else if (run.href) node = <TextLink href={run.href}>{node}</TextLink>;
   return <>{node}</>;
 }
 

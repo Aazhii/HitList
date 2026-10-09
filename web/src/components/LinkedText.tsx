@@ -2,6 +2,8 @@ import { Fragment, type ReactNode } from 'react';
 import { findInlineLinks } from '@/lib/inlineMarkdown';
 
 export function TextLink({ href, children }: { href: string; children: ReactNode }) {
+  // A link to a note or file is only meaningful inside the notes editor, which renders it itself; anywhere else it is plain text.
+  if (href.startsWith('hitlist:')) return <>{children}</>;
   return (
     <a href={href} target="_blank" rel="noopener noreferrer" title={href}
       className="text-a-accent-600 underline underline-offset-2 [overflow-wrap:anywhere] hover:text-a-accent-700 focus-visible:outline focus-visible:outline-2"
