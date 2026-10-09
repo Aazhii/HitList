@@ -25,6 +25,7 @@ import com.hitlist.web.SyncController;
 import com.hitlist.web.TaskController;
 import com.hitlist.web.NoteController;
 import com.hitlist.web.WorkspaceController;
+import com.hitlist.domain.NoteBlocksCodec;
 import com.hitlist.domain.NoteService;
 import com.hitlist.domain.WorkspaceService;
 import java.nio.file.Path;
@@ -106,6 +107,31 @@ class SharedWorkspaceTest {
         String body = mvc.perform(as(get("/api/sync/outbox").param("workspaceId", WS), user)).andExpect(status().isOk())
             .andReturn().getResponse().getContentAsString();
         return (List<Map<String, Object>>) json.readValue(body, Map.class).get("ops");
+    }
+
+    @Test
+    void aNoteStoredDeflatedBecauseItIsOverTheLimitCanStillBeSharedAndAssignedFrom() throws Exception {
+        register(ALICE, "active");
+        send(inWorkspace(post("/api/lists"), ALICE), Map.of("name", "Bugs", "clientId", "bugs")).andExpect(status().isCreated());
+        java.util.List<Map<String, Object>> many = new java.util.ArrayList<>();
+        for (int i = 0; i < 150; i++) many.add(Map.of("id", i == 0 ? "block" : UUID.randomUUID().toString(), "type", "toggle", "content", "\"api_name\": \"Field_" + (i % 4) + "\","));
+        String plain = json.writeValueAsString(many);
+        String stored = NoteBlocksCodec.encode(plain);
+        assertThat(plain.length()).isGreaterThan(NoteBlocksCodec.LIMIT);
+        assertThat(stored).startsWith(NoteBlocksCodec.PREFIX);
+        send(as(post("/api/notes"), ALICE), Map.of("id", "bigbug", "title", "Big", "blocksJson", stored)).andExpect(status().isCreated());
+        mvc.perform(as(get("/api/notes/bigbug"), ALICE)).andExpect(jsonPath("$.blocksJson").value(stored));
+        Map<String, Object> input = Map.of("workspaceId", WS, "sourceNoteId", "bigbug", "sourceBlockId", "block", "title", "Fix",
+            "listId", "bugs", "assigneeUserId", BOB, "clientId", "big-assignment");
+        var result = json.readTree(send(as(post("/api/sync/source-task"), ALICE), input).andExpect(status().isOk())
+            .andReturn().getResponse().getContentAsString());
+        String sharedId = result.get("source").get("id").asText();
+        String shared = repository.require(StorageTables.NOTES, WS, sharedId).get("BlocksJson").toString();
+        assertThat(shared.length()).isLessThanOrEqualTo(NoteBlocksCodec.LIMIT);
+        var blocks = json.readTree(NoteBlocksCodec.decode(shared));
+        assertThat(blocks).hasSize(150);
+        assertThat(blocks.get(0).get("taskId").asText()).isEqualTo(result.get("task").get("id").asText());
+        assertThat(repository.require(StorageTables.NOTES, alice, "bigbug").get("BlocksJson")).isEqualTo(stored);
     }
 
     @Test

@@ -15,6 +15,8 @@ import { simpleRequest } from '@/lib/simpleRequest';
 import { getActiveTaskStorageId } from '@/lib/storage';
 import { onSourceSave } from '@/lib/sourceSaves';
 import { onPreLogout } from '@/lib/preLogout';
+import { encodeBlocksJson } from '@/lib/noteBlocksCodec';
+import { NOTE_SYNC_LIMIT } from '@/types/notes';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -287,7 +289,12 @@ class NotesSyncService {
     }
   }
 
-  private async apiUpsert(payload: NotePayload): Promise<void> {
+  private async apiUpsert(queued: NotePayload): Promise<void> {
+    // The queue and this computer keep the plain blocks; only what is sent is deflated, and only when it is over the limit.
+    // A note that fits is sent as it always was, with no extra await.
+    const payload = queued.blocksJson.length > NOTE_SYNC_LIMIT
+      ? { ...queued, blocksJson: await encodeBlocksJson(queued.blocksJson) }
+      : queued;
     // Try PUT first (update), fall back to POST (create) on 404
     // Simple requests carrying the session cookie; see lib/simpleRequest.ts.
     const put = simpleRequest(`${API_BASE}/${payload.id}`, 'PUT', JSON.stringify(payload));

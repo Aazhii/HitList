@@ -287,7 +287,7 @@ public class SyncService {
         } else {
             Map<String, Object> copy = only(source, table);
             try {
-                List<Map<String, Object>> blocks = json.readValue(EntityRepository.text(copy.get("BlocksJson")),
+                List<Map<String, Object>> blocks = json.readValue(NoteBlocksCodec.decode(EntityRepository.text(copy.get("BlocksJson"))),
                     new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() { });
                 for (Map<String, Object> block : blocks) {
                     block.remove("taskId");
@@ -295,8 +295,8 @@ public class SyncService {
                         throw ApiException.invalid("Share embedded databases separately before sharing this note");
                     }
                 }
-                copy.put("BlocksJson", write(blocks));
-            } catch (JsonProcessingException error) { throw ApiException.invalid("source note content is invalid"); }
+                copy.put("BlocksJson", NoteBlocksCodec.encode(write(blocks)));
+            } catch (JsonProcessingException | IllegalArgumentException error) { throw ApiException.invalid("source note content is invalid"); }
             copy.put("NoteId", sharedId);
             repository.insert(table, workspaceId, copy);
         }
@@ -349,15 +349,15 @@ public class SyncService {
             String sharedId = String.valueOf(source.get("id"));
             Map<String, Object> note = new LinkedHashMap<>(repository.require(StorageTables.NOTES, workspaceId, sharedId));
             try {
-                List<Map<String, Object>> blocks = json.readValue(EntityRepository.text(note.get("BlocksJson")),
+                List<Map<String, Object>> blocks = json.readValue(NoteBlocksCodec.decode(EntityRepository.text(note.get("BlocksJson"))),
                     new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() { });
                 String blockId = EntityRepository.text(body.get("sourceBlockId"));
                 Map<String, Object> block = blocks.stream().filter(item -> blockId.equals(item.get("id"))).findFirst().orElseThrow(ApiException::notFound);
                 block.put("taskId", task.get("id"));
-                note.put("BlocksJson", write(blocks));
+                note.put("BlocksJson", NoteBlocksCodec.encode(write(blocks)));
                 note.put("UpdatedAt", System.currentTimeMillis());
                 repository.replace(StorageTables.NOTES, workspaceId, sharedId, note);
-            } catch (JsonProcessingException error) { throw ApiException.invalid("source note content is invalid"); }
+            } catch (JsonProcessingException | IllegalArgumentException error) { throw ApiException.invalid("source note content is invalid"); }
         }
         Map<String, Object> result = Map.of("task", task, "source", source);
         repository.insert(StorageTables.SHARED_SOURCES, personal, Map.of("SourceKey", receiptId, "Result", write(result)));

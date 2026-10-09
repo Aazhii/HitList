@@ -10,6 +10,7 @@ import { createNewNote, createEmptyBlock } from '@/types/notes';
 import { getActiveTaskStorageId } from '@/lib/storage';
 import { API_BASE_URL } from '@/lib/api';
 import { onSourceSave } from '@/lib/sourceSaves';
+import { decodeBlocksJson, isCompressed } from '@/lib/noteBlocksCodec';
 import { indentBlock, insertIndexAfter, levelForNewBlockAfter, moveBlockWithChildren, normalizeIndents, outdentBlock } from '@/lib/noteBlocks';
 import { loadAccountNotes, notesStorageKey } from '@/lib/notesStorage';
 import { notesSyncService } from '@/services/notesSyncService';
@@ -104,11 +105,25 @@ export function useNotes() {
         const response = await fetch(`${API_BASE_URL}/api/notes`, { credentials: 'include' });
         if (!response.ok) throw new Error('Notes unavailable');
         const payloads = await response.json() as NotePayload[];
-        const remote = payloads.map((payload) => ({ ...payload, blocks: JSON.parse(payload.blocksJson), createdAt: payload.createdAt ?? payload.updatedAt })) as Note[];
+        // A note this device cannot read is left as it is here, never replaced or dropped.
+        const unreadable = new Set<string>();
+        const open = (payload: NotePayload): Note | null | Promise<Note | null> => {
+          const build = (json: string): Note | null => {
+            try { return { ...payload, blocks: JSON.parse(json), createdAt: payload.createdAt ?? payload.updatedAt } as Note; }
+            catch { unreadable.add(payload.id); return null; }
+          };
+          // Plain notes are read straight away, as before; only a deflated one waits for its decoding.
+          return isCompressed(payload.blocksJson)
+            ? decodeBlocksJson(payload.blocksJson).then(build, () => { unreadable.add(payload.id); return null; })
+            : build(payload.blocksJson);
+        };
+        const opened = payloads.map(open);
+        const remote = (opened.some((item) => item instanceof Promise) ? await Promise.all(opened) : opened as Array<Note | null>)
+          .filter((note): note is Note => note !== null);
         if (cancelled || request !== generation) return;
         setNotes((current) => {
           const latestVersions = notesSyncService.editVersions();
-          const keep = (id: string) => protectedIds.has(id) || notesSyncService.hasPending(id) || versions.get(id) !== latestVersions.get(id);
+          const keep = (id: string) => unreadable.has(id) || protectedIds.has(id) || notesSyncService.hasPending(id) || versions.get(id) !== latestVersions.get(id);
           const merged = [...remote.filter((note) => !keep(note.id)), ...current.filter((note) => keep(note.id))];
           persistLocal(merged);
           notesRef.current = merged;
