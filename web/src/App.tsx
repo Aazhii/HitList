@@ -1429,6 +1429,14 @@ function UserScopedApp() {
     void server.updateTask(taskId, { sourceNoteId: '', sourceBlockId: '', sourceRecordId: '', sourceFieldId: '' });
   }, [server, setTodos]);
 
+  /** Undoing a delete: the task goes back to the note block it was unlinked from, if it still exists and is not linked elsewhere. */
+  const handleRelinkNoteTask = useCallback((taskId: string, source: { noteId: string; blockId: string }) => {
+    const current = todosRef.current.find((t) => t.id === taskId);
+    if (!current || current.sourceNoteId || current.sourceRecordId) return;
+    setTodos((prev) => prev.map((t) => (t.id === taskId ? { ...t, sourceNoteId: source.noteId, sourceBlockId: source.blockId } : t)));
+    void server.updateTask(taskId, { sourceNoteId: source.noteId, sourceBlockId: source.blockId });
+  }, [server, setTodos]);
+
   const handleOpenLinkedTask = useCallback((taskId: string) => {
     const t = todosRef.current.find((x) => x.id === taskId);
     if (!t) { toast.error('That task no longer exists', { duration: 2500 }); return; }
@@ -1590,9 +1598,10 @@ function UserScopedApp() {
     createTask: handleCreateLinkedTask,
     updateTaskTitle: handleUpdateLinkedTaskTitle,
     unlinkTask: handleUnlinkTask,
+    relinkTask: handleRelinkNoteTask,
     openTask: handleOpenLinkedTask,
     openDatabase: (databaseId: string) => { setPendingDatabaseId(databaseId); setActiveView('databases'); },
-  }), [lists, todos, server.loading, activeListId, handleCreateLinkedTask, handleUpdateLinkedTaskTitle, handleUnlinkTask, handleOpenLinkedTask, setActiveView]);
+  }), [lists, todos, server.loading, activeListId, handleCreateLinkedTask, handleUpdateLinkedTaskTitle, handleUnlinkTask, handleRelinkNoteTask, handleOpenLinkedTask, setActiveView]);
 
   const databaseLinking = useMemo<DatabaseTaskLinking>(() => ({
     lists,

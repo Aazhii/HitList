@@ -11,6 +11,7 @@ import { getActiveTaskStorageId } from '@/lib/storage';
 import { API_BASE_URL } from '@/lib/api';
 import { onSourceSave } from '@/lib/sourceSaves';
 import { decodeBlocksJson, isCompressed } from '@/lib/noteBlocksCodec';
+import { NoteHistory } from '@/lib/noteHistory';
 import { indentBlock, insertIndexAfter, levelForNewBlockAfter, moveBlockWithChildren, normalizeIndents, outdentBlock } from '@/lib/noteBlocks';
 import { loadAccountNotes, notesStorageKey } from '@/lib/notesStorage';
 import { notesSyncService } from '@/services/notesSyncService';
@@ -57,6 +58,28 @@ export function useNotes() {
   const notesRef = useRef(notes);
   useEffect(() => { notesRef.current = notes; });
 
+  // ── Undo / redo ─────────────────────────────────────────────────────────────
+  // Every change to a note's blocks that the person makes is noticed here, after the render, by comparing with the
+  // blocks last seen. A burst of updates in one tick (add a line + fill it) is therefore one step. Changes that come
+  // from outside (a reload from the server) or from undo/redo itself are not steps: `unrecorded` marks them.
+  const history = useRef(new NoteHistory());
+  const seenBlocks = useRef(new Map<string, NoteBlock[]>());
+  const unrecorded = useRef(new Set<string>());
+  useEffect(() => {
+    for (const note of notes) {
+      const before = seenBlocks.current.get(note.id);
+      seenBlocks.current.set(note.id, note.blocks);
+      if (before && before !== note.blocks) {
+        if (unrecorded.current.has(note.id)) history.current.forget(note.id);
+        else history.current.record(note.id, before, note.blocks);
+      }
+    }
+    const present = new Set(notes.map((n) => n.id));
+    for (const id of [...seenBlocks.current.keys()]) if (!present.has(id)) seenBlocks.current.delete(id);
+    history.current.forgetExcept(present);
+    unrecorded.current.clear();
+  }, [notes]);
+
   // Debounce timer for save-status indicator
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -77,11 +100,14 @@ export function useNotes() {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     persistLocal(notesRef.current);
     await notesSyncService.flushForSignOut();
+    history.current.clear();
   }), []);
 
   // ── Initial load ────────────────────────────────────────────────────────────
   useEffect(() => {
     const local = loadLocalNotes();
+    history.current.clear();
+    seenBlocks.current.clear();
     notesSyncService.restorePending();
     notesRef.current = local;
     setNotes(local);
@@ -125,6 +151,8 @@ export function useNotes() {
           const latestVersions = notesSyncService.editVersions();
           const keep = (id: string) => unreadable.has(id) || protectedIds.has(id) || notesSyncService.hasPending(id) || versions.get(id) !== latestVersions.get(id);
           const merged = [...remote.filter((note) => !keep(note.id)), ...current.filter((note) => keep(note.id))];
+          // A note replaced from the server starts a new history.
+          for (const note of remote) if (!keep(note.id)) unrecorded.current.add(note.id);
           persistLocal(merged);
           notesRef.current = merged;
           return merged;
@@ -356,6 +384,28 @@ export function useNotes() {
     });
   }, [scheduleSave]);
 
+  const stepHistory = useCallback((noteId: string, direction: 'undo' | 'redo'): NoteBlock[] | null => {
+    const current = notesRef.current.find((n) => n.id === noteId)?.blocks;
+    if (!current) return null;
+    const target = direction === 'undo' ? history.current.undo(noteId, current) : history.current.redo(noteId, current);
+    if (!target) return null;
+    const restored = normalizeIndents(target);
+    setNotes((prev) => {
+      const next = prev.map((n) => (n.id === noteId ? { ...n, updatedAt: Date.now(), blocks: restored } : n));
+      persistLocal(next);
+      const updated = next.find((n) => n.id === noteId);
+      if (updated) scheduleSave(updated);
+      return next;
+    });
+    // The restored blocks are not a new edit, and keep the other direction's steps.
+    seenBlocks.current.set(noteId, restored);
+    return restored;
+  }, [scheduleSave]);
+
+  /** Undo the last change to this note's blocks; the restored blocks, or null when there is nothing to undo. */
+  const undoBlocks = useCallback((noteId: string) => stepHistory(noteId, 'undo'), [stepHistory]);
+  const redoBlocks = useCallback((noteId: string) => stepHistory(noteId, 'redo'), [stepHistory]);
+
   /** Replaces a note's blocks in one step (several blocks deleted, moved or copied together). Saved and synced like any edit. */
   const setBlocks = useCallback((noteId: string, blocks: NoteBlock[]) => {
     setNotes((prev) => {
@@ -393,5 +443,7 @@ export function useNotes() {
     moveBlock,
     setBlockIndent,
     setBlocks,
+    undoBlocks,
+    redoBlocks,
   };
 }

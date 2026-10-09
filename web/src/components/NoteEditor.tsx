@@ -657,6 +657,9 @@ interface NoteEditorProps {
   onSetIndent?: (blockId: string, direction: 'in' | 'out') => void;
   /** Replaces all the note's blocks at once: what acting on a selection (delete, copy, move, indent) uses. Without it there is no selection. */
   onSetBlocks?: (blocks: NoteBlock[]) => void;
+  /** ⌘Z / ⌘⇧Z: go back or forward one step in this note's history. Returns the blocks now shown, or null when there was nothing to do. */
+  onUndo?: () => NoteBlock[] | null;
+  onRedo?: () => NoteBlock[] | null;
   /** The note these blocks belong to; needed to link a block to a task. */
   noteId?: string;
   linking?: NoteTaskLinking;
@@ -671,6 +674,8 @@ export function NoteEditor({
   onMoveBlock,
   onSetIndent,
   onSetBlocks,
+  onUndo,
+  onRedo,
   noteId,
   linking,
 }: NoteEditorProps) {
@@ -743,6 +748,21 @@ export function NoteEditor({
     }
   });
 
+  // ── Undo / redo ──
+  // The browser's own undo only knows one text box; this one knows whole-note changes (a deleted group, a move).
+  const stepHistory = useCallback((direction: 'undo' | 'redo') => {
+    const restored = direction === 'undo' ? onUndo?.() : onRedo?.();
+    if (!restored) return false;
+    // A delete let its tasks go; bringing the line back puts the task back on it if the task is still there.
+    if (linking?.relinkTask && noteId) {
+      for (const block of restored) {
+        const task = block.taskId ? todosById.get(block.taskId) : undefined;
+        if (block.taskId && task && !task.sourceNoteId) linking.relinkTask(block.taskId, { noteId, blockId: block.id });
+      }
+    }
+    return true;
+  }, [onUndo, onRedo, linking, noteId, todosById]);
+
   // ── Selecting blocks ──
   // A block is chosen from its grip (click; ⇧ extends, ⌘ adds) or with Esc inside it. A chosen block always
   // stands for its children too, so deleting, copying, moving or indenting acts on the whole group.
@@ -803,8 +823,13 @@ export function NoteEditor({
     clearSelection();
     const before = blocks.slice(0, firstGone).reverse().find((b) => !gone.has(b.id));
     pendingFocusId.current = (before ?? next[0])?.id ?? null;
-    if (gone.size > 1) toast(`Deleted ${gone.size} blocks`, { duration: 2500 });
-  }, [onSetBlocks, blocks, linking, clearSelection]);
+    if (gone.size > 1) {
+      toast(`Deleted ${gone.size} blocks`, {
+        duration: 5000,
+        ...(onUndo ? { action: { label: 'Undo', onClick: () => { stepHistory('undo'); } } } : {}),
+      });
+    }
+  }, [onSetBlocks, blocks, linking, clearSelection, onUndo, stepHistory]);
 
   const duplicateChosen = useCallback(() => {
     if (!onSetBlocks || selected.size === 0) return;
@@ -827,11 +852,17 @@ export function NoteEditor({
   }, [onSetBlocks, blocks, selected]);
 
   const handleRootKeyDown = useCallback((e: KeyboardEvent<HTMLDivElement>) => {
-    if (!onSetBlocks || selected.size === 0) return;
     const target = e.target as HTMLElement;
     // Text boxes and open menus keep their own keys.
     if (target.closest('textarea, input, [contenteditable="true"], [role="menu"]')) return;
     const mod = e.metaKey || e.ctrlKey;
+    if (mod && !e.altKey && onUndo && (e.key.toLowerCase() === 'z' || (e.key.toLowerCase() === 'y' && !e.metaKey))) {
+      e.preventDefault();
+      clearSelection();
+      stepHistory(e.key.toLowerCase() === 'y' || e.shiftKey ? 'redo' : 'undo');
+      return;
+    }
+    if (!onSetBlocks || selected.size === 0) return;
     const indexOf = (id: string | null) => visibleBlocks.findIndex((b) => b.id === id);
 
     if (e.key === 'Backspace' || e.key === 'Delete') {
@@ -867,7 +898,7 @@ export function NoteEditor({
         if (step) chooseOnly([step.id], step.id, step.id);
       }
     }
-  }, [onSetBlocks, selected, covered, blocks, visibleBlocks, deleteChosen, clearSelection, duplicateChosen, moveChosen, indentChosen, chooseOnly]);
+  }, [onSetBlocks, onUndo, stepHistory, selected, covered, blocks, visibleBlocks, deleteChosen, clearSelection, duplicateChosen, moveChosen, indentChosen, chooseOnly]);
 
   // A click anywhere but the block controls and their menu lets go of the selection.
   useEffect(() => {
@@ -1129,6 +1160,16 @@ export function NoteEditor({
     const cursorAtStart = el?.selectionStart === 0 && el?.selectionEnd === 0;
     const cursorAtEnd = el && el.selectionStart === el.value.length;
 
+    // ⌘Z / ⌘⇧Z (Ctrl+Y): undo and redo for the whole note.
+    if ((e.metaKey || e.ctrlKey) && !e.altKey && onUndo) {
+      const key = e.key.toLowerCase();
+      if (key === 'z' || (key === 'y' && !e.metaKey)) {
+        e.preventDefault();
+        stepHistory(key === 'y' || e.shiftKey ? 'redo' : 'undo');
+        return;
+      }
+    }
+
     // Formatting shortcuts, only in block types that take marks — so ⌘B inside
     // a code block is left alone.
     if ((e.metaKey || e.ctrlKey) && !e.altKey) {
@@ -1260,7 +1301,7 @@ export function NoteEditor({
         pendingFocusId.current = blockId;
       }
     }
-  }, [blocks, slashState, mention, onAddBlock, onDeleteBlock, onUpdateBlock, onSetIndent, onSetBlocks, onChangeBlockType, handleSlashSelect, handleToggleMark, enterSelection, chooseOnly, visibleBlocks]);
+  }, [blocks, slashState, mention, onAddBlock, onDeleteBlock, onUpdateBlock, onSetIndent, onSetBlocks, onChangeBlockType, handleSlashSelect, handleToggleMark, enterSelection, chooseOnly, visibleBlocks, onUndo, stepHistory]);
 
   const handleAddAfter = useCallback((blockId: string) => {
     const newId = onAddBlock(blockId, 'paragraph');

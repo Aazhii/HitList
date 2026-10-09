@@ -171,6 +171,8 @@ export interface TaskLinking<Source extends Record<string, string>> {
   createTask: (args: { listId: string; quadrant: Quadrant; title: string; assignee?: TaskAssignee } & Source) => Promise<Todo | null>;
   updateTaskTitle: (taskId: string, title: string) => void;
   unlinkTask: (taskId: string) => void;
+  /** Puts a task back on the source it was unlinked from (undoing a delete); a note editor passes the note and block ids. */
+  relinkTask?: (taskId: string, source: Source) => void;
   openTask: (taskId: string) => void;
 }
 
