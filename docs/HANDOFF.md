@@ -299,4 +299,4 @@ See `docs/needs-first.md`. Task row key `NeedsFirstIds`, API `needsFirst`, a com
 - The web build in the jar and the desktop shell are versioned together; the old cookie/web mode still exists in code.
 
 ### Split pasted lines into items
-A paste into a note stays one block with line breaks. Selecting several lines inside a paragraph, bullet, numbered or to-do block shows a **Split lines** button in the selection toolbar (`NoteEditor.handleSplitLines`): each non-empty line, trimmed, becomes its own block of the same type; text before/after the selection stays on the first/last line. Nothing stored changes shape (ordinary blocks). Test: `web/test/NoteSplitLines.test.tsx`.
+A paste into a note stays one block with line breaks. Selecting several lines inside a paragraph, bullet, numbered, to-do or toggle block (new toggles come out level with each other) shows a **Split lines** button in the selection toolbar (`NoteEditor.handleSplitLines`): each non-empty line, trimmed, becomes its own block of the same type; text before/after the selection stays on the first/last line. Nothing stored changes shape (ordinary blocks). Test: `web/test/NoteSplitLines.test.tsx`.

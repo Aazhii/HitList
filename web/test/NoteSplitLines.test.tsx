@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { NoteEditor } from '@/components/NoteEditor';
 import type { NoteBlock } from '@/types/notes';
+import { indentBlock, insertIndexAfter, levelForNewBlockAfter, levelOf, outdentBlock } from '@/lib/noteBlocks';
 
 const pasted = '"type": "SingleLine", "label": "Customer Remark",\n   "api_name": "Customer_Remark",\n   "length": 255,\n   "required": false';
 
@@ -17,10 +18,13 @@ function Editor({ initial, onBlocks }: { initial: NoteBlock[]; onBlocks: (x: Not
       const id = `new-${n++}`;
       set((cur) => {
         const i = cur.findIndex((x) => x.id === after);
-        return [...cur.slice(0, i + 1), { id, type, content: '' }, ...cur.slice(i + 1)];
+        const level = levelForNewBlockAfter(cur, i);
+        const at = insertIndexAfter(cur, i);
+        return [...cur.slice(0, at), { id, type, content: '', ...(level ? { indent: level } : {}) }, ...cur.slice(at)];
       });
       return id;
     }}
+    onSetIndent={(id, dir) => set((cur) => (dir === 'in' ? indentBlock(cur, id) : outdentBlock(cur, id)))}
     onDeleteBlock={vi.fn()}
     onChangeBlockType={vi.fn()}
     onMoveBlock={vi.fn()}
@@ -51,5 +55,18 @@ describe('Split lines', () => {
     ta.setSelectionRange(0, 10);
     fireEvent.select(ta);
     expect(screen.queryByRole('button', { name: /split lines/i })).toBeNull();
+  });
+
+  it('splits a toggle into toggles level with each other', () => {
+    let latest: NoteBlock[] = [];
+    render(<Editor initial={[{ id: 'a', type: 'toggle', content: pasted }, { id: 'z', type: 'paragraph', content: 'after' }]} onBlocks={(x) => { latest = x; }} />);
+    const ta = screen.getByDisplayValue(/"type": "SingleLine"/) as HTMLTextAreaElement;
+    ta.focus();
+    ta.setSelectionRange(0, pasted.length);
+    fireEvent.select(ta);
+    fireEvent.mouseDown(screen.getByRole('button', { name: /split lines/i }));
+    expect(latest.map((b) => [b.type, levelOf(b)])).toEqual([
+      ['toggle', 0], ['toggle', 0], ['toggle', 0], ['toggle', 0], ['paragraph', 0],
+    ]);
   });
 });

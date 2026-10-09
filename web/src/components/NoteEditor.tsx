@@ -129,7 +129,7 @@ function getBlockPlaceholder(type: BlockType): string {
 }
 
 /** Block types whose pasted lines can be made into one block each. */
-const SPLITTABLE: ReadonlySet<BlockType> = new Set<BlockType>(['paragraph', 'bullet', 'numbered', 'todo']);
+const SPLITTABLE: ReadonlySet<BlockType> = new Set<BlockType>(['paragraph', 'bullet', 'numbered', 'todo', 'toggle']);
 
 // ── Inline formatting toolbar ──────────────────────────────────────────────────
 const MOD = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+';
@@ -950,14 +950,19 @@ export function NoteEditor({
 
     onUpdateBlock(blockId, { content: before + lines[0] });
     let prevId = blockId;
+    // A new line after an open toggle goes inside it; the items made here are siblings, so they come back out.
+    const idx = blocks.findIndex((b) => b.id === blockId);
     lines.slice(1).forEach((line, i) => {
       const newId = onAddBlock(prevId, block.type);
+      const insideOpenToggle = block.type === 'toggle'
+        && (i > 0 || (!block.collapsed && !toggleHasChildren(blocks, idx)));
+      if (insideOpenToggle && onSetIndent) onSetIndent(newId, 'out');
       onUpdateBlock(newId, { content: i === lines.length - 2 ? line + after : line });
       prevId = newId;
     });
     setToolbar(null);
     pendingFocusId.current = prevId;
-  }, [blocks, onAddBlock, onUpdateBlock]);
+  }, [blocks, onAddBlock, onUpdateBlock, onSetIndent]);
 
   const handleKeyDown = useCallback((e: KeyboardEvent<HTMLTextAreaElement>, blockId: string) => {
     const block = blocks.find((b) => b.id === blockId);
