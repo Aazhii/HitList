@@ -50,6 +50,8 @@ export const BLOCK_METRICS: Record<BlockType, BlockMetric> = {
   toggle:    BODY,
   // Not text: an embedded editor with its own header.
   codefile:  { fontSize: 13, lineHeight: 1.6, insetTop: 0 },
+  // A link row: the page's icon and title.
+  page:      { fontSize: 14, lineHeight: 1.65, insetTop: 0 },
 };
 
 /** Size of each gutter control button (the DS small IconButton, 28px). */
@@ -114,6 +116,7 @@ export function getBlockTextClass(type: BlockType): string {
     case 'toggle':   return 'text-[14px] leading-[1.65] text-a-ink';
     case 'divider':
     case 'codefile':
+    case 'page':
     case 'database': return '';
     default:         return 'text-[14px] leading-[1.65] text-a-muted';
   }

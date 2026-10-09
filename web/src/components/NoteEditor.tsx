@@ -6,7 +6,7 @@ import {
   Plus, GripVertical, Trash2, ArrowUp, ArrowDown,
   Type, Heading1, Heading2, Heading3, List, ListOrdered,
   CheckSquare, ChevronRight, Quote, Minus, Code2, Table2, Lightbulb,
-  Bold, Italic, Underline, Strikethrough, Check, FileCode2,
+  Bold, Italic, Underline, Strikethrough, Check, FileCode2, FileText,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { NoteBlock, BlockType, TableData, CalloutTone } from '@/types/notes';
@@ -39,7 +39,8 @@ import {
 } from '@/lib/noteBlocks';
 import { NoteFindBar } from '@/components/notes/NoteFindBar';
 import { FilePicker } from '@/components/notes/FilePicker';
-import { NoteCodeContext, type CodeFilesApi, type NoteCodeContextValue } from '@/components/notes/codeContext';
+import { NoteCodeContext, NotePagesContext, type CodeFilesApi, type NoteCodeContextValue, type PagesApi } from '@/components/notes/codeContext';
+import { PageBlock } from '@/components/notes/PageBlock';
 
 // The code editor is large, so a note loads it only when it has a code block on screen.
 const CodeBlockView = lazy(() => import('@/components/notes/CodeBlocks').then((m) => ({ default: m.CodeBlockView })));
@@ -89,6 +90,7 @@ const BLOCK_ICONS: Record<BlockType, React.ReactNode> = {
   database:  <Table2 className={ICON} strokeWidth={STROKE} />,
   toggle:    <ChevronRight className={ICON} strokeWidth={STROKE} />,
   codefile:  <FileCode2 className={ICON} strokeWidth={STROKE} />,
+  page:      <FileText className={ICON} strokeWidth={STROKE} />,
 };
 
 const BLOCK_TYPES: BlockType[] = [
@@ -365,7 +367,7 @@ interface BlockRowProps {
   /** The textarea's selection may have changed; re-evaluate the format toolbar. */
   onSelectionChange: (id: string) => void;
   /** Non-content fields, such as a callout's emoji and tone. */
-  onUpdateMeta: (id: string, changes: Partial<Pick<NoteBlock, 'emoji' | 'tone' | 'collapsed' | 'content' | 'language' | 'codeIndent' | 'codeWrap' | 'fileId'>>) => void;
+  onUpdateMeta: (id: string, changes: Partial<Pick<NoteBlock, 'emoji' | 'tone' | 'collapsed' | 'content' | 'language' | 'codeIndent' | 'codeWrap' | 'fileId' | 'pageId'>>) => void;
   /** The caret or text moved: open, update or close the "@" menu. */
   onMentionCheck: (id: string, el: HTMLTextAreaElement) => void;
   /** The linked-task chip, when this block is in a quadrant. */
@@ -472,6 +474,18 @@ function BlockRow({
           {block.databaseId
             ? <DatabaseBlock databaseId={block.databaseId} layout={block.dbLayout} onOpenDatabase={onOpenDatabase} onShift={setShift} />
             : <div className="rounded-[8px] border border-dashed border-a-line-strong px-4 py-3 text-[13px] text-a-faint">Choosing a database…</div>}
+        </div>
+      </div>
+    );
+  }
+
+  // ── A sub-page ───────────────────────────────────────────────────────────────
+  if (block.type === 'page') {
+    return (
+      <div {...rowProps}>
+        {gutter}
+        <div className="min-w-0 flex-1">
+          <PageBlock block={block} onRemove={() => onDelete(block.id)} />
         </div>
       </div>
     );
@@ -716,6 +730,8 @@ interface NoteEditorProps {
   onRedo?: () => NoteBlock[] | null;
   /** Notepad files, for the "Notepad file" block. Without it that block shows "not available". */
   codeFiles?: CodeFilesApi;
+  /** Sub-pages, for the "Page" block. Without it that block shows "not available". */
+  pages?: PagesApi;
   /** The note these blocks belong to; needed to link a block to a task. */
   noteId?: string;
   linking?: NoteTaskLinking;
@@ -733,6 +749,7 @@ export function NoteEditor({
   onUndo,
   onRedo,
   codeFiles,
+  pages,
   noteId,
   linking,
 }: NoteEditorProps) {
@@ -886,6 +903,8 @@ export function NoteEditor({
     clearSelection();
     const before = blocks.slice(0, firstGone).reverse().find((b) => !gone.has(b.id));
     pendingFocusId.current = (before ?? next[0])?.id ?? null;
+    const keptPages = blocks.filter((b) => gone.has(b.id) && b.type === 'page' && b.pageId).length;
+    if (keptPages > 0) toast(keptPages === 1 ? 'The page is kept as a separate note' : `${keptPages} pages are kept as separate notes`, { duration: 3500 });
     if (gone.size > 1) {
       toast(`Deleted ${gone.size} blocks`, {
         duration: 5000,
@@ -1296,6 +1315,19 @@ export function NoteEditor({
       setDbPicker({ blockId, position });
       return;
     }
+    if (cmd.action === 'page-new') {
+      if (!pages) {
+        onUpdateBlock(blockId, { content: '' });
+        toast.error('Sub-pages are not available here');
+        return;
+      }
+      // The child is made first (and not opened), the line becomes its link, and then it opens.
+      const child = pages.create();
+      onChangeBlockType(blockId, 'page');
+      onUpdateBlock(blockId, { content: child.title || 'Untitled', pageId: child.id });
+      pages.open(child.id);
+      return;
+    }
     if (cmd.action === 'file-pick') {
       onUpdateBlock(blockId, { content: '' });
       setFilePicker({ blockId, position });
@@ -1313,7 +1345,7 @@ export function NoteEditor({
     onChangeBlockType(blockId, cmd.type);
     onUpdateBlock(blockId, { content: '' });
     pendingFocusId.current = blockId;
-  }, [slashState, onChangeBlockType, onUpdateBlock, attachDatabase]);
+  }, [slashState, onChangeBlockType, onUpdateBlock, attachDatabase, pages]);
 
   const handleChange = useCallback((blockId: string, content: string) => {
     if (slashState && slashState.blockId === blockId) {
@@ -1587,6 +1619,7 @@ export function NoteEditor({
 
   return (
     <NoteCodeContext.Provider value={codeContext}>
+    <NotePagesContext.Provider value={pages}>
     <div
       ref={rootRef}
       tabIndex={-1}
@@ -1790,6 +1823,7 @@ export function NoteEditor({
         aria-label="Add new block"
       />
     </div>
+    </NotePagesContext.Provider>
     </NoteCodeContext.Provider>
   );
 }

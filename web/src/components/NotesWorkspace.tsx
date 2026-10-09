@@ -1,6 +1,6 @@
-import { useState, useCallback, useMemo, useRef, useEffect, type ReactNode } from 'react';
+import { Fragment, useState, useCallback, useMemo, useRef, useEffect, type ReactNode } from 'react';
 import {
-  Plus, Pin, PinOff, Trash2, FileText, MoreHorizontal,
+  Plus, Pin, PinOff, Trash2, FileText, MoreHorizontal, FilePlus, FolderInput, ChevronRight, ChevronDown,
   Loader2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -11,6 +11,9 @@ import type { BlockType } from '@/types/notes';
 import { useNotes } from '@/hooks/useNotes';
 import type { CodeFilesApi } from '@/components/notes/codeContext';
 import { fileSettings, isNotepadFile, newFileParts } from '@/lib/notepad';
+import type { PagesApi } from '@/components/notes/codeContext';
+import { ancestorsOf, descendantsOf, movePage, parentMap, treeRows, withPage, withoutPages } from '@/lib/notePages';
+import { useLocalStorage } from '@/hooks/useLocalStorage';
 import { ShareSourceControl } from '@/components/shell/ShareSourceControl';
 import type { SaveStatus } from '@/hooks/useNotes';
 import { useSyncStatus } from '@/hooks/useSyncStatus';
@@ -30,6 +33,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import {
@@ -50,25 +56,52 @@ function NoteListItem({
   onSelect,
   onPin,
   onDelete,
+  depth = 0,
+  hasChildren = false,
+  expanded = false,
+  onToggle,
+  onAddChild,
 }: {
   note: Note;
   isActive: boolean;
   onSelect: () => void;
   onPin: () => void;
   onDelete: () => void;
+  /** In the page tree: how deep, whether it holds sub-pages, whether they are shown, and the actions on them. */
+  depth?: number;
+  hasChildren?: boolean;
+  expanded?: boolean;
+  onToggle?: () => void;
+  onAddChild?: () => void;
 }) {
   const { closeContext } = useViewLayout();
   const preview = getNotePreview(note);
 
   return (
-    <li className="group relative">
+    <li className="group relative" style={depth > 0 ? { paddingLeft: depth * 14 } : undefined}>
+      {onToggle && (
+        <button
+          type="button"
+          onClick={onToggle}
+          aria-expanded={hasChildren ? expanded : undefined}
+          aria-label={hasChildren ? (expanded ? `Collapse ${note.title || 'Untitled'}` : `Expand ${note.title || 'Untitled'}`) : undefined}
+          tabIndex={hasChildren ? 0 : -1}
+          className={cn(
+            'absolute top-1/2 z-10 grid size-5 -translate-y-1/2 place-items-center rounded-[4px] text-a-faint hover:bg-a-row-hover hover:text-a-ink',
+            !hasChildren && 'pointer-events-none opacity-0',
+          )}
+          style={{ left: 2 + depth * 14 }}
+        >
+          {expanded ? <ChevronDown className="size-3.5" strokeWidth={1.75} /> : <ChevronRight className="size-3.5" strokeWidth={1.75} />}
+        </button>
+      )}
       <button
         type="button"
         onClick={() => { onSelect(); closeContext(); }}
         aria-current={isActive ? 'true' : undefined}
         // The preview is still what search matches on; here it is the tooltip.
         title={preview ? `${note.title || 'Untitled'} — ${preview}` : undefined}
-        className={cn(contextRowClass(isActive), 'pr-9')}
+        className={cn(contextRowClass(isActive), 'pr-14', onToggle && 'pl-7')}
       >
         <span className="flex-shrink-0 text-[14px] leading-none" aria-hidden>{note.emoji ?? '📝'}</span>
         <span className={cn('min-w-0 flex-1 truncate text-[14px]', isActive ? 'font-semibold text-a-ink' : 'text-a-muted')}>
@@ -77,7 +110,12 @@ function NoteListItem({
       </button>
 
       {/* A sibling of the row button, so there are no nested interactive elements. */}
-      <div className="absolute top-1/2 right-2 -translate-y-1/2 opacity-0 transition-opacity duration-[120ms] group-hover:opacity-100 group-focus-within:opacity-100 has-[[data-state=open]]:opacity-100">
+      <div className="absolute top-1/2 right-2 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity duration-[120ms] group-hover:opacity-100 group-focus-within:opacity-100 has-[[data-state=open]]:opacity-100">
+        {onAddChild && (
+          <button type="button" onClick={onAddChild} className={contextIconButton} aria-label={`Add a page inside ${note.title || 'Untitled'}`} title="Add a page inside">
+            <Plus className="size-3.5" strokeWidth={1.75} />
+          </button>
+        )}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button type="button" className={contextIconButton} aria-label={`Options for ${note.title || 'Untitled'}`}>
@@ -195,10 +233,17 @@ export function NoteDetail({
   onRedoBlocks,
   linking,
   codeFiles,
+  pages,
+  trail,
+  onOpenNote,
 }: {
   note: Note;
   linking?: NoteTaskLinking;
   codeFiles?: CodeFilesApi;
+  pages?: PagesApi;
+  /** The pages above this one, from the top down, and how to open one. */
+  trail?: ReadonlyArray<{ id: string; title: string; emoji?: string }>;
+  onOpenNote?: (id: string) => void;
   onUpdateTitle: (id: string, title: string) => void;
   onUpdateEmoji: (id: string, emoji: string) => void;
   onUpdateBlock: (noteId: string, blockId: string, changes: Partial<import('@/types/notes').NoteBlock>) => void;
@@ -245,6 +290,19 @@ export function NoteDetail({
             metadata, every block, tables and panels share one left edge. */}
         <div className="mx-auto w-full max-w-[calc(var(--a-measure)+var(--a-gutter))] md:pl-[var(--a-gutter)]">
           <div>
+            {trail && trail.length > 0 && (
+              <nav aria-label="Page path" className="mb-2 flex flex-wrap items-center gap-1 text-[13px] text-a-faint">
+                {trail.map((page) => (
+                  <Fragment key={page.id}>
+                    <button type="button" onClick={() => onOpenNote?.(page.id)} className="max-w-[200px] truncate rounded-[4px] px-1 hover:bg-a-row-hover hover:text-a-ink">
+                      {page.emoji ? `${page.emoji} ` : ''}{page.title || 'Untitled'}
+                    </button>
+                    <ChevronRight className="size-3 flex-shrink-0" strokeWidth={1.75} aria-hidden />
+                  </Fragment>
+                ))}
+                <span className="max-w-[200px] truncate px-1 text-a-muted">{note.title || 'Untitled'}</span>
+              </nav>
+            )}
             <div className="flex min-w-0 items-start gap-3">
               {note.emoji !== '' && (
                 <EmojiPicker
@@ -331,6 +389,7 @@ export function NoteDetail({
             noteId={note.id}
             linking={linking}
             codeFiles={codeFiles}
+            pages={pages}
           />
         </div>
       </div>
@@ -519,7 +578,6 @@ export function NotesWorkspace({ onOpenFile, linking, openNoteId, onOpenNoteHand
     : notes;
 
   const pinned = filtered.filter((n) => n.pinned);
-  const unpinned = filtered.filter((n) => !n.pinned);
 
   const handleCreate = useCallback(() => {
     createNote('Untitled');
@@ -531,12 +589,73 @@ export function NotesWorkspace({ onOpenFile, linking, openNoteId, onOpenNoteHand
     onCreateHandled?.();
   }, [createOnOpen, isLoading, handleCreate, onCreateHandled]);
 
-  const handleDeleteConfirm = useCallback(() => {
+  // ── Pages inside pages ──
+  // A note's parent is the note that holds a page block pointing at it (lib/notePages), so the tree is read from the notes.
+  const parents = useMemo(() => parentMap(notes), [notes]);
+  const [expandedIds, setExpandedIds] = useLocalStorage<string[]>('hitlist-notes-expanded', []);
+  const expanded = useMemo(() => new Set(expandedIds), [expandedIds]);
+  const toggleExpanded = useCallback((id: string) => {
+    setExpandedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  }, [setExpandedIds]);
+  // The open page is always visible in the tree: what it sits under is opened.
+  useEffect(() => {
+    if (!activeNoteId) return;
+    const chain = ancestorsOf(parents, activeNoteId);
+    if (chain.some((id) => !expanded.has(id))) setExpandedIds((prev) => [...new Set([...prev, ...chain])]);
+  }, [activeNoteId, parents, expanded, setExpandedIds]);
+
+  /** A new, empty page inside `parentId`: made, linked from the parent by a page block, and opened. */
+  const createSubPage = useCallback((parentId: string) => {
+    const parent = notes.find((n) => n.id === parentId);
+    if (!parent) return;
+    const child = createNote('Untitled', undefined, { activate: false });
+    setBlocks(parentId, withPage(parent.blocks, child));
+    setExpandedIds((prev) => (prev.includes(parentId) ? prev : [...prev, parentId]));
+    setActiveNoteId(child.id);
+  }, [notes, createNote, setBlocks, setExpandedIds, setActiveNoteId]);
+
+  /** What a page block in the open note needs: the pages' live names, opening one, and making a child. */
+  const pagesApi = useMemo<PagesApi>(() => ({
+    get: (id) => { const n = notes.find((x) => x.id === id); return n ? { id: n.id, title: n.title, emoji: n.emoji } : undefined; },
+    open: (id) => setActiveNoteId(id),
+    create: () => { const n = createNote('Untitled', undefined, { activate: false }); return { id: n.id, title: n.title }; },
+  }), [notes, createNote, setActiveNoteId]);
+
+  /** Moves a page under another (null: to the top level); both parents' page blocks are updated. */
+  const movePageTo = useCallback((id: string, parentId: string | null) => {
+    const changes = movePage(notes, id, parentId);
+    if (!changes) { toast.error("A page can't go inside itself"); return; }
+    for (const [noteId, blocks] of Object.entries(changes)) setBlocks(noteId, blocks);
+    if (parentId) setExpandedIds((prev) => (prev.includes(parentId) ? prev : [...prev, parentId]));
+    if (Object.keys(changes).length > 0) toast.success(parentId ? 'Page moved' : 'Page moved to the top level', { duration: 1800 });
+  }, [notes, setBlocks, setExpandedIds]);
+
+  /** Deletes pages, and removes the page blocks that pointed at them from whatever held them. */
+  const deletePages = useCallback((ids: string[]) => {
+    const gone = new Set(ids);
+    for (const n of notes) {
+      if (gone.has(n.id)) continue;
+      const next = withoutPages(n.blocks, gone);
+      if (next !== n.blocks) setBlocks(n.id, next);
+    }
+    for (const id of ids) deleteNote(id);
+  }, [notes, setBlocks, deleteNote]);
+
+  const deleteDescendants = useMemo(
+    () => (deleteTarget ? descendantsOf(notes, parents, deleteTarget.id) : []),
+    [deleteTarget, notes, parents],
+  );
+  const handleDeleteConfirm = useCallback((withSubPages: boolean) => {
     if (deleteTarget) {
-      deleteNote(deleteTarget.id);
+      deletePages(withSubPages ? [deleteTarget.id, ...deleteDescendants] : [deleteTarget.id]);
       setDeleteTarget(null);
     }
-  }, [deleteTarget, deleteNote]);
+  }, [deleteTarget, deleteDescendants, deletePages]);
+
+  const trail = useMemo(
+    () => (activeNote ? ancestorsOf(parents, activeNote.id).flatMap((id) => { const n = notes.find((x) => x.id === id); return n ? [{ id: n.id, title: n.title, emoji: n.emoji }] : []; }) : []),
+    [activeNote, parents, notes],
+  );
 
   const renderRow = (note: Note) => (
     <NoteListItem
@@ -546,6 +665,24 @@ export function NotesWorkspace({ onOpenFile, linking, openNoteId, onOpenNoteHand
       onSelect={() => setActiveNoteId(note.id)}
       onPin={() => togglePinNote(note.id)}
       onDelete={() => setDeleteTarget(note)}
+    />
+  );
+
+  // The Notes list is a tree: each page with the pages inside it. A search shows its matches flat.
+  const treeRowsNow = search.trim() ? [] : treeRows(notes, parents, expanded);
+  const renderTreeRow = (row: ReturnType<typeof treeRows<Note>>[number]) => (
+    <NoteListItem
+      key={row.note.id}
+      note={row.note}
+      isActive={row.note.id === activeNoteId}
+      onSelect={() => setActiveNoteId(row.note.id)}
+      onPin={() => togglePinNote(row.note.id)}
+      onDelete={() => setDeleteTarget(row.note)}
+      depth={row.depth}
+      hasChildren={row.hasChildren}
+      expanded={row.expanded}
+      onToggle={() => toggleExpanded(row.note.id)}
+      onAddChild={() => createSubPage(row.note.id)}
     />
   );
 
@@ -569,10 +706,10 @@ export function NotesWorkspace({ onOpenFile, linking, openNoteId, onOpenNoteHand
 
       {notes.length === 0 && <p className="px-2.5 py-1 text-[12px] text-a-faint">No notes yet.</p>}
 
-      {unpinned.length > 0 && (
-        <>
-          <ul>{unpinned.map(renderRow)}</ul>
-        </>
+      {search.trim() ? (
+        filtered.length > 0 && <ul>{filtered.map(renderRow)}</ul>
+      ) : (
+        notes.length > 0 && <ul>{treeRowsNow.map(renderTreeRow)}</ul>
       )}
 
       {search && filtered.length === 0 && (
@@ -592,7 +729,7 @@ export function NotesWorkspace({ onOpenFile, linking, openNoteId, onOpenNoteHand
   // fresh array every render, and a fresh element every render, so depending
   // on either object reference would re-run this effect every render and
   // loop (setState in the effect triggers the next render).
-  const notesSignature = notes.map((n) => `${n.id}:${n.title}:${n.pinned}`).join('|');
+  const notesSignature = `${notes.map((n) => `${n.id}:${n.title}:${n.pinned}`).join('|')}#${[...parents].join(',')}#${expandedIds.join(',')}`;
   useEffect(() => {
     if (isLoading) return;
     onSidebarContentChange?.(notesList);
@@ -625,11 +762,33 @@ export function NotesWorkspace({ onOpenFile, linking, openNoteId, onOpenNoteHand
                   <MoreHorizontal className="size-4" strokeWidth={1.75} />
                 </button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-44">
+              <DropdownMenuContent align="end" className="w-52">
                 <DropdownMenuItem onClick={() => togglePinNote(activeNote.id)}>
                   {activeNote.pinned ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}
                   {activeNote.pinned ? 'Unpin note' : 'Pin note'}
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => createSubPage(activeNote.id)}>
+                  <FilePlus className="size-3.5" /> Add a page inside
+                </DropdownMenuItem>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger>
+                    <FolderInput className="size-3.5" /> Move to
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent className="max-h-[320px] w-56 overflow-auto">
+                    {parents.has(activeNote.id) && (
+                      <DropdownMenuItem onClick={() => movePageTo(activeNote.id, null)}>Top level</DropdownMenuItem>
+                    )}
+                    {notes
+                      .filter((n) => n.id !== activeNote.id && n.id !== parents.get(activeNote.id) && !descendantsOf(notes, parents, activeNote.id).includes(n.id))
+                      .slice(0, 60)
+                      .map((n) => (
+                        <DropdownMenuItem key={n.id} onClick={() => movePageTo(activeNote.id, n.id)}>
+                          <span aria-hidden>{n.emoji ?? '📝'}</span>
+                          <span className="min-w-0 flex-1 truncate">{n.title || 'Untitled'}</span>
+                        </DropdownMenuItem>
+                      ))}
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem variant="destructive" onClick={() => setDeleteTarget(activeNote)}>
                   <Trash2 className="size-3.5" /> Delete note
@@ -676,6 +835,9 @@ export function NotesWorkspace({ onOpenFile, linking, openNoteId, onOpenNoteHand
             onRedoBlocks={redoBlocks}
             linking={linking}
             codeFiles={codeFiles}
+            pages={pagesApi}
+            trail={trail}
+            onOpenNote={setActiveNoteId}
           />
         ) : notes.length === 0 ? (
           <NotesEmptyState onCreate={handleCreate} />
@@ -692,16 +854,23 @@ export function NotesWorkspace({ onOpenFile, linking, openNoteId, onOpenNoteHand
           <AlertDialogHeader>
             <AlertDialogTitle>Delete note?</AlertDialogTitle>
             <AlertDialogDescription>
-              "{deleteTarget?.title || 'Untitled'}" will be permanently deleted. This cannot be undone.
+              {deleteDescendants.length > 0
+                ? `"${deleteTarget?.title || 'Untitled'}" has ${deleteDescendants.length} page${deleteDescendants.length !== 1 ? 's' : ''} inside it. Delete them too, or keep them as separate notes. This cannot be undone.`
+                : `"${deleteTarget?.title || 'Untitled'}" will be permanently deleted. This cannot be undone.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
+            {deleteDescendants.length > 0 && (
+              <AlertDialogAction onClick={() => handleDeleteConfirm(false)} className="bg-a-surface-2 text-a-ink hover:bg-a-row-hover">
+                Delete only this page
+              </AlertDialogAction>
+            )}
             <AlertDialogAction
-              onClick={handleDeleteConfirm}
+              onClick={() => handleDeleteConfirm(true)}
               className="bg-destructive text-a-surface hover:bg-destructive/90"
             >
-              Delete
+              {deleteDescendants.length > 0 ? `Delete with ${deleteDescendants.length} page${deleteDescendants.length !== 1 ? 's' : ''}` : 'Delete'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

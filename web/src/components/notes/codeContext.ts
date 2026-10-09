@@ -32,3 +32,16 @@ const NOOP: NoteCodeContextValue = {
 
 export const NoteCodeContext = createContext<NoteCodeContextValue>(NOOP);
 export const useNoteCode = () => useContext(NoteCodeContext);
+
+/** What a note's sub-page blocks need from the notes around them. */
+export interface PagesApi {
+  /** A page (a note) by id, or undefined when it is not here (deleted, or not in this workspace). */
+  get: (id: string) => { id: string; title: string; emoji?: string } | undefined;
+  /** Opens a page. */
+  open: (id: string) => void;
+  /** Makes an empty note to be a sub-page of the open note, without opening it. The caller links it with a page block. */
+  create: () => { id: string; title: string };
+}
+
+export const NotePagesContext = createContext<PagesApi | undefined>(undefined);
+export const useNotePages = () => useContext(NotePagesContext);

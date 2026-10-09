@@ -38,6 +38,7 @@ export function supportedMarks(type: BlockType): readonly Mark[] {
     case 'table':
     case 'database':
     case 'codefile':
+    case 'page':
       return [];
     case 'heading1':
     case 'heading2':

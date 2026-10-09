@@ -64,6 +64,16 @@ describe('acting on a selection', () => {
     expect(blocks[0].taskId).toBe('t1');
   });
 
+  it('never copies a page block (a sub-page has one parent), and loses nothing else', () => {
+    let n = 0;
+    const l = [b('a'), b('p', 0, { type: 'page', pageId: 'kid' }), b('p1', 1), b('z')];
+    const dup = duplicateSubtrees(l, new Set(['a', 'p']), () => `c${n++}`);
+    expect(dup.blocks.map((x) => x.id)).toEqual(['a', 'c0', 'p', 'p1', 'z']);
+    expect(dup.copies).toEqual(['c0']);
+    const inside = duplicateSubtrees([b('a'), b('k', 1, { type: 'page', pageId: 'kid' })], new Set(['a']), () => `d${n++}`);
+    expect(inside.blocks.map((x) => x.type)).toEqual(['todo', 'page', 'todo']);
+  });
+
   it('moves a parent with its children past its neighbour', () => {
     expect(ids(moveSelection(list(), new Set(['a']), 'down'))).toEqual(['b', 'a', 'a1', 'a1x', 'a2']);
     const l = list();

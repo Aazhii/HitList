@@ -236,10 +236,12 @@ export function duplicateSubtrees(
     out.push(blocks[i]);
     if (!roots.includes(blocks[i].id)) continue;
     const end = subtreeEnd(blocks, i);
-    const group = blocks.slice(i, end).map((b) => {
+    // A sub-page has exactly one parent, so its page block is not copied.
+    const group = blocks.slice(i, end).filter((b, k) => k === 0 || b.type !== 'page').map((b) => {
       const { taskId: _task, ...rest } = b;
       return { ...rest, id: newId() } as NoteBlock;
     });
+    if (blocks[i].type === 'page') { out.push(...blocks.slice(i + 1, end)); i = end - 1; continue; }
     copies.push(group[0].id);
     // The children come right after the parent in the original; put the copies after the whole group.
     out.push(...blocks.slice(i + 1, end), ...group);

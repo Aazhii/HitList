@@ -25,9 +25,10 @@ function tableText(data: TableData | undefined): string {
 }
 
 /** The blocks a selection copies: each chosen block with its children, in note order. */
+// A sub-page has exactly one parent, so a page block is never copied (a copy would be a second parent).
 export function chosenBlocks(blocks: readonly NoteBlock[], chosen: ReadonlySet<string>): NoteBlock[] {
   const ids = new Set(selectionRoots(blocks, chosen).flatMap((root) => subtreeIds(blocks, root)));
-  return blocks.filter((b) => ids.has(b.id));
+  return blocks.filter((b) => ids.has(b.id) && b.type !== 'page');
 }
 
 export function blocksToText(blocks: readonly NoteBlock[]): string {

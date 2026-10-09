@@ -17,7 +17,8 @@ export type BlockType =
   | 'callout'
   | 'database'
   | 'toggle'
-  | 'codefile';
+  | 'codefile'
+  | 'page';
 
 /** A callout's tint: terracotta, or sage. */
 export type CalloutTone = 'accent' | 'sage';
@@ -80,6 +81,12 @@ export interface NoteBlock {
   databaseId?: string;
   /** Notepad-file blocks only: the file (a note, see lib/notepad) this block shows. Only the id is stored; deleting the block never deletes the file. */
   fileId?: string;
+  /**
+   * Page blocks only: the sub-page (an ordinary note) this block links to. A note's parent is the note that holds a page
+   * block pointing at it, so nothing about nesting is stored on the child. `content` holds the title at creation, which
+   * an older version shows as text.
+   */
+  pageId?: string;
   /** Database blocks only: which view it opens on. */
   dbLayout?: 'table' | 'board';
   /**
@@ -117,6 +124,7 @@ export const BLOCK_TYPE_LABELS: Record<BlockType, string> = {
   database: 'Database',
   toggle: 'Toggle list',
   codefile: 'Notepad file',
+  page: 'Page',
 };
 
 export const NOTE_EMOJIS = ['📝', '💡', '🗒️', '🔖', '⭐', '🎯', '🧠', '🌱', '🔥', '📌', '💭', '🚀'];
