@@ -894,3 +894,46 @@ html.login-locked body {
     transition-timing-function: var(--a-ease-standard);
   }
 }
+
+/* ── Code editor (Notepad, code blocks) ──────────────────────────────────────────
+   Token colours for the CodeMirror editor. Light: GitHub-light-like inks, each at
+   4.5:1 or better on the white surface; dark: GitHub-dark-like inks on the dark surface.
+   Kept as variables here so components never carry a raw colour. */
+.app-organic {
+  --code-bg: var(--a-surface);
+  --code-fg: #24292f;
+  --code-gutter: #6e7781;
+  --code-active-line: rgba(55, 53, 47, 0.05);
+  --code-selection: rgba(9, 105, 218, 0.2);
+  --code-match: rgba(255, 213, 0, 0.35);
+  --code-cursor: #24292f;
+  --code-comment: #6e7781;
+  --code-keyword: #cf222e;
+  --code-string: #0a3069;
+  --code-number: #0550ae;
+  --code-function: #8250df;
+  --code-type: #953800;
+  --code-property: #0550ae;
+  --code-tag: #116329;
+  --code-punct: #57606a;
+  --code-invalid: #cf222e;
+}
+.app-organic.dark {
+  --code-bg: #1c1a18;
+  --code-fg: #e6edf3;
+  --code-gutter: #8b949e;
+  --code-active-line: rgba(245, 234, 216, 0.06);
+  --code-selection: rgba(56, 139, 253, 0.35);
+  --code-match: rgba(187, 128, 9, 0.5);
+  --code-cursor: #e6edf3;
+  --code-comment: #8b949e;
+  --code-keyword: #ff7b72;
+  --code-string: #a5d6ff;
+  --code-number: #79c0ff;
+  --code-function: #d2a8ff;
+  --code-type: #ffa657;
+  --code-property: #79c0ff;
+  --code-tag: #7ee787;
+  --code-punct: #9da7b3;
+  --code-invalid: #ffa198;
+}

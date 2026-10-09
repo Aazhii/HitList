@@ -61,3 +61,10 @@ Object.defineProperty(window, 'localStorage', { value: localStorageMock });
 beforeEach(() => {
   localStorageMock.clear();
 });
+
+// jsdom has no layout: CodeMirror measures text with Range rects, so give ranges (and elements) empty ones.
+if (typeof Range !== 'undefined') {
+  const empty = () => ({ x: 0, y: 0, width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0, toJSON() {} }) as DOMRect;
+  if (!Range.prototype.getBoundingClientRect) Range.prototype.getBoundingClientRect = empty;
+  if (!Range.prototype.getClientRects) Range.prototype.getClientRects = () => ({ length: 0, item: () => null, [Symbol.iterator]: function* () {} }) as unknown as DOMRectList;
+}

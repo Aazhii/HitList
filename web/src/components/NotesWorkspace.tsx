@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { Note, NoteBlock } from '@/types/notes';
-import { syncedLength } from '@/lib/noteBlocksCodec';
+import { useSyncedSize } from '@/hooks/useSyncedSize';
 import { NOTE_EMOJIS, NOTE_SYNC_LIMIT, NOTE_SYNC_WARN, formatNoteEdited, getNotePreview } from '@/types/notes';
 import type { BlockType } from '@/types/notes';
 import { useNotes } from '@/hooks/useNotes';
@@ -221,17 +221,7 @@ export function NoteDetail({
   // Exactly what is sent to the server (useNotes.noteToPayload), so the count
   // shown is the count the 10,000-character limit applies to.
   const plainJson = JSON.stringify(note.blocks);
-  // Past the limit the note is sent deflated, so the count that matters is the deflated one (worked out off the
-  // render; until it is known the plain count stands in, without the "too long" alert).
-  const [packedSize, setPackedSize] = useState<{ json: string; size: number } | null>(null);
-  useEffect(() => {
-    if (plainJson.length <= NOTE_SYNC_LIMIT) return;
-    let live = true;
-    void syncedLength(plainJson).then((size) => { if (live) setPackedSize({ json: plainJson, size }); }).catch(() => {});
-    return () => { live = false; };
-  }, [plainJson]);
-  const packedKnown = plainJson.length > NOTE_SYNC_LIMIT && packedSize?.json === plainJson;
-  const syncSize = plainJson.length <= NOTE_SYNC_LIMIT ? plainJson.length : packedKnown ? packedSize.size : 0;
+  const { size: syncSize, packed: packedKnown } = useSyncedSize(plainJson);
   // Read live from the tasks when they are available, so a note says how its tasks are getting on.
   const rollup = linking ? noteTaskRollup(note.blocks, linking.todos) : { total: note.blocks.filter((b) => b.taskId).length, done: 0 };
   const rollupText = rollupLabel(rollup);
@@ -392,7 +382,7 @@ function SyncIndicator({ saveStatus, syncStatus }: { saveStatus: SaveStatus; syn
 }
 
 // Wrapper that subscribes to live sync status
-function SyncIndicatorWrapper({ saveStatus }: { saveStatus: SaveStatus }) {
+export function SyncIndicatorWrapper({ saveStatus }: { saveStatus: SaveStatus }) {
   const syncStatus = useSyncStatus();
   return <SyncIndicator saveStatus={saveStatus} syncStatus={syncStatus} />;
 }

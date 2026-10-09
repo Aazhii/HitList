@@ -58,6 +58,13 @@ export interface NoteBlock {
   collapsed?: boolean;
   tableData?: TableData; // for table blocks
   /**
+   * Code blocks only: the language (an id from lib/codeLanguages; missing is plain text), the indent unit and whether
+   * long lines wrap. Optional like the callout fields, so no existing note needs migrating.
+   */
+  language?: string;
+  codeIndent?: '2' | '4' | 'tab';
+  codeWrap?: boolean;
+  /**
    * Callout blocks only. Optional, like `checked` and `tableData`, so no
    * existing note needs migrating — and the server stores blocks as opaque
    * JSON, so it needs no change either.

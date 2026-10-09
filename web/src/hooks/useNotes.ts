@@ -7,6 +7,7 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import type { Note, NoteBlock, BlockType } from '@/types/notes';
 import { createNewNote, createEmptyBlock } from '@/types/notes';
+import { isNotepadFile } from '@/lib/notepad';
 import { getActiveTaskStorageId } from '@/lib/storage';
 import { API_BASE_URL } from '@/lib/api';
 import { onSourceSave } from '@/lib/sourceSaves';
@@ -48,7 +49,13 @@ export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
 
-export function useNotes() {
+/**
+ * Notes, with sync and undo. Notepad files are notes too (lib/notepad), kept in the same store and the same sync:
+ * the Notes page asks for the notes that are not files, the Notepad page for the ones that are. Everything stored,
+ * pushed or refreshed covers both; only what is returned (the list and the open note) is filtered.
+ */
+export function useNotes({ files = false }: { files?: boolean } = {}) {
+  const shows = useCallback((note: { emoji?: string | null }) => isNotepadFile(note) === files, [files]);
   const [notes, setNotes] = useState<Note[]>([]);
   const [activeNoteId, setActiveNoteId] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
@@ -111,7 +118,7 @@ export function useNotes() {
     notesSyncService.restorePending();
     notesRef.current = local;
     setNotes(local);
-    setActiveNoteId(local[0]?.id ?? null);
+    setActiveNoteId(local.find(shows)?.id ?? null);
     const shared = getActiveTaskStorageId()?.includes(':workspace:');
     if (!shared) setIsLoading(false);
 
@@ -157,7 +164,7 @@ export function useNotes() {
           notesRef.current = merged;
           return merged;
         });
-        setActiveNoteId((current) => current ?? remote[0]?.id ?? null);
+        setActiveNoteId((current) => current ?? remote.find(shows)?.id ?? null);
       } catch { /* retain the workspace-scoped offline cache */ }
       finally { if (!cancelled && request === generation) setIsLoading(false); }
     };
@@ -194,9 +201,9 @@ export function useNotes() {
   }, []);
 
   // ── Derived ────────────────────────────────────────────────────────────────
-  const activeNote = notes.find((n) => n.id === activeNoteId) ?? null;
+  const activeNote = notes.find((n) => n.id === activeNoteId && shows(n)) ?? null;
 
-  const sortedNotes = [...notes].sort((a, b) => {
+  const sortedNotes = notes.filter(shows).sort((a, b) => {
     if (a.pinned && !b.pinned) return -1;
     if (!a.pinned && b.pinned) return 1;
     return b.updatedAt - a.updatedAt;
@@ -204,8 +211,8 @@ export function useNotes() {
 
   // ── CRUD ───────────────────────────────────────────────────────────────────
 
-  const createNote = useCallback((title = 'Untitled') => {
-    const newNote = createNewNote(title);
+  const createNote = useCallback((title = 'Untitled', init?: Partial<Pick<Note, 'blocks' | 'emoji'>>) => {
+    const newNote = { ...createNewNote(title), ...init };
     setNotes((prev) => {
       const next = [newNote, ...prev];
       persistLocal(next);
@@ -230,7 +237,7 @@ export function useNotes() {
     });
     setActiveNoteId((cur) => {
       if (cur !== id) return cur;
-      const remaining = notesRef.current.filter((n) => n.id !== id);
+      const remaining = notesRef.current.filter((n) => n.id !== id && shows(n));
       return remaining[0]?.id ?? null;
     });
     // Queue server delete — SyncService handles offline gracefully

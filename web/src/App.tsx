@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect, useRef, type ReactNode } from 'react';
+import { lazy, Suspense, useState, useCallback, useMemo, useEffect, useRef, type ReactNode } from 'react';
 import {
   Plus,
   Grid2x2,
@@ -10,6 +10,9 @@ import {
   CalendarOff,
 } from 'lucide-react';
 import { NotesWorkspace } from '@/components/NotesWorkspace';
+// The code editor is large, so Notepad loads the first time it is opened, not with the app.
+const NotepadWorkspace = lazy(() => import('@/components/NotepadWorkspace').then((m) => ({ default: m.NotepadWorkspace })));
+import { isNotepadFile } from '@/lib/notepad';
 import type { NoteTaskLinking } from '@/components/NoteEditor';
 import { DatabasesPage, type DatabaseTaskLinking } from '@/pages/DatabasesPage';
 import { CalendarPage } from '@/pages/CalendarPage';
@@ -547,6 +550,12 @@ function UserScopedApp() {
   const [notesSidebarContext, setNotesSidebarContext] = useState<ReactNode>(null);
   /** Nav count badges — showcase hides a view's own count while it's active. */
   const [notesCount, setNotesCount] = useState(0);
+  /** Notepad's own file list and count, reported up the same way, and the file to open / the one open. */
+  const [notepadSidebarContext, setNotepadSidebarContext] = useState<ReactNode>(null);
+  const [notepadCount, setNotepadCount] = useState(0);
+  const [pendingFileId, setPendingFileId] = useState<string | null>(null);
+  const [activeFileId, setActiveFileId] = useState<string | null>(null);
+  const [createFileOnOpen, setCreateFileOnOpen] = useState(false);
   const [dbCount, setDbCount] = useState(0);
   /** A note to open once Notes mounts — set from a task's "Note" chip, or restored. */
   const [pendingNoteId, setPendingNoteId] = useState<string | null>(() => initialScreen?.noteId ?? null);
@@ -734,7 +743,7 @@ function UserScopedApp() {
     ),
     useCallback((screen) => {
       setActiveView(
-        screen.view === 'notes' || screen.view === 'databases' || screen.view === 'calendar' || screen.view === 'today'
+        screen.view === 'notes' || screen.view === 'notepad' || screen.view === 'databases' || screen.view === 'calendar' || screen.view === 'today'
           ? screen.view
           : 'tasks'
       );
@@ -755,7 +764,7 @@ function UserScopedApp() {
   );
 
   useEffect(() => {
-    if (activeView === 'today' || activeView === 'tasks' || activeView === 'notes' || activeView === 'databases' || activeView === 'calendar' || activeView === 'automations' || activeView === 'library' || activeView === 'assigned' || activeView === 'weekly') {
+    if (activeView === 'today' || activeView === 'tasks' || activeView === 'notes' || activeView === 'notepad' || activeView === 'databases' || activeView === 'calendar' || activeView === 'automations' || activeView === 'library' || activeView === 'assigned' || activeView === 'weekly') {
       return;
     }
     setActiveView('tasks');
@@ -1551,24 +1560,29 @@ function UserScopedApp() {
       ]);
     })();
     return () => { live = false; };
-  }, [lists, activeView, activeNoteId, activeDatabaseId]);
+  }, [lists, activeView, activeNoteId, activeFileId, activeDatabaseId]);
 
   const openPage = useCallback((page: PageRef) => {
-    if (page.kind === 'note') { setPendingNoteId(page.id); setActiveView('notes'); }
-    else if (page.kind === 'database') { setPendingDatabaseId(page.id); setActiveView('databases'); }
+    if (page.kind === 'note') {
+      // A notepad file is a note too, but it opens in Notepad.
+      if (pageDirectory.some((p) => p.kind === 'note' && p.id === page.id && isNotepadFile({ emoji: p.emoji }))) { setPendingFileId(page.id); setActiveView('notepad'); }
+      else { setPendingNoteId(page.id); setActiveView('notes'); }
+    } else if (page.kind === 'database') { setPendingDatabaseId(page.id); setActiveView('databases'); }
     else { setActiveView('tasks'); handleSelectList(page.id); }
-  }, [handleSelectList, setActiveView]);
+  }, [handleSelectList, setActiveView, pageDirectory]);
 
   // Whatever page is on screen goes to the top of Recents.
   const { visit } = marks;
   useEffect(() => {
     if (activeView === 'tasks' && activeListId && lists.some((l) => l.id === activeListId)) visit({ kind: 'list', id: activeListId });
     else if (activeView === 'notes' && activeNoteId) visit({ kind: 'note', id: activeNoteId });
+    else if (activeView === 'notepad' && activeFileId) visit({ kind: 'note', id: activeFileId });
     else if (activeView === 'databases' && activeDatabaseId) visit({ kind: 'database', id: activeDatabaseId });
-  }, [activeView, activeListId, lists, activeNoteId, activeDatabaseId, visit]);
+  }, [activeView, activeListId, lists, activeNoteId, activeFileId, activeDatabaseId, visit]);
 
   const activePageKey = activeView === 'tasks' && activeListId ? pageKey({ kind: 'list', id: activeListId })
     : activeView === 'notes' && activeNoteId ? pageKey({ kind: 'note', id: activeNoteId })
+    : activeView === 'notepad' && activeFileId ? pageKey({ kind: 'note', id: activeFileId })
     : activeView === 'databases' && activeDatabaseId ? pageKey({ kind: 'database', id: activeDatabaseId }) : undefined;
   const favoritePages = useMemo(() => resolvePages(marks.favorites, pageDirectory), [marks.favorites, pageDirectory]);
   const recentPages = useMemo(() => resolvePages(marks.recents, pageDirectory), [marks.recents, pageDirectory]);
@@ -1708,11 +1722,12 @@ function UserScopedApp() {
     />
   );
 
-  const shellView = activeView === 'today' || activeView === 'assigned' || activeView === 'notes' || activeView === 'databases' || activeView === 'calendar' || activeView === 'automations' || activeView === 'library' || activeView === 'weekly' ? activeView : 'tasks';
-  const crumb1 = shellView === 'today' ? 'Today' : shellView === 'assigned' ? 'Assigned to me' : shellView === 'notes' ? 'Notes' : shellView === 'databases' ? 'Databases' : shellView === 'calendar' ? 'Calendar' : shellView === 'automations' ? 'Automations' : shellView === 'weekly' ? 'Weekly update' : shellView === 'library' ? 'Home' : 'Tasks';
+  const shellView = activeView === 'today' || activeView === 'assigned' || activeView === 'notes' || activeView === 'notepad' || activeView === 'databases' || activeView === 'calendar' || activeView === 'automations' || activeView === 'library' || activeView === 'weekly' ? activeView : 'tasks';
+  const crumb1 = shellView === 'today' ? 'Today' : shellView === 'assigned' ? 'Assigned to me' : shellView === 'notes' ? 'Notes' : shellView === 'notepad' ? 'Notepad' : shellView === 'databases' ? 'Databases' : shellView === 'calendar' ? 'Calendar' : shellView === 'automations' ? 'Automations' : shellView === 'weekly' ? 'Weekly update' : shellView === 'library' ? 'Home' : 'Tasks';
   const openPageName = (kind: 'note' | 'database', id: string | null) =>
     id ? pageDirectory.find((p) => p.kind === kind && p.id === id)?.name : undefined;
   const crumb2 = shellView === 'notes' ? openPageName('note', activeNoteId)
+    : shellView === 'notepad' ? openPageName('note', activeFileId)
     : shellView === 'databases' ? openPageName('database', activeDatabaseId)
     : shellView === 'calendar' ? calendarMonth || undefined : shellView === 'tasks' ? activeList?.name : shellView === 'library' ? 'Library' : undefined;
   const syncStatus: { tone: 'success' | 'warning' | 'danger'; label: string } = server.error
@@ -1774,7 +1789,7 @@ function UserScopedApp() {
                 onViewAll={() => setActiveView('library')}
               />
             }
-            counts={{ tasks: totalCount, notes: notesCount, databases: dbCount }}
+            counts={{ tasks: totalCount, notes: notesCount, notepad: notepadCount, databases: dbCount }}
             mobileOpen={sidebarOpen}
             onMobileOpenChange={setSidebarOpen}
             context={shellView === 'tasks' ? (
@@ -1809,7 +1824,7 @@ function UserScopedApp() {
                   loading={server.loading}
                 />
               </>
-            ) : shellView === 'databases' ? dbSidebarContext : shellView === 'calendar' ? calSidebarContext : shellView === 'automations' ? autoSidebarContext : shellView === 'notes' ? notesSidebarContext : null}
+            ) : shellView === 'databases' ? dbSidebarContext : shellView === 'calendar' ? calSidebarContext : shellView === 'automations' ? autoSidebarContext : shellView === 'notes' ? notesSidebarContext : shellView === 'notepad' ? notepadSidebarContext : null}
             contextFoot={shellView === 'tasks' ? (
               <>
                 {/* Momentum moved here from a card at the top of the page. */}
@@ -1893,6 +1908,21 @@ function UserScopedApp() {
               onOpenSidebar={() => setSidebarOpen(true)}
               onCountChange={setNotesCount}
             />
+          </div>
+        ) : activeView === 'notepad' ? (
+          <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
+            <Suspense fallback={<div className="flex-1 p-8" aria-busy />}>
+            <NotepadWorkspace
+              openNoteId={pendingFileId}
+              createOnOpen={createFileOnOpen}
+              onCreateHandled={() => setCreateFileOnOpen(false)}
+              onOpenNoteHandled={() => setPendingFileId(null)}
+              onActiveNoteChange={setActiveFileId}
+              onSidebarContentChange={setNotepadSidebarContext}
+              onOpenSidebar={() => setSidebarOpen(true)}
+              onCountChange={setNotepadCount}
+            />
+            </Suspense>
           </div>
         ) : activeView === 'databases' ? (
           <DatabasesPage

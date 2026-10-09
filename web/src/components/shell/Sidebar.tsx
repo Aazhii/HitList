@@ -1,11 +1,11 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { CalendarCheck, CalendarDays, Leaf, Sun, ListChecks, Search, StickyNote, Table2, UserCheck, Zap } from 'lucide-react';
+import { CalendarCheck, CalendarDays, FileCode2, Leaf, Sun, ListChecks, Search, StickyNote, Table2, UserCheck, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { useIsDesktop } from '@/components/shell/ViewLayout';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
 
-export type AppView = 'tasks' | 'notes' | 'databases' | 'calendar' | 'automations' | 'library' | 'today' | 'assigned' | 'weekly';
+export type AppView = 'tasks' | 'notes' | 'notepad' | 'databases' | 'calendar' | 'automations' | 'library' | 'today' | 'assigned' | 'weekly';
 
 const VIEWS: ReadonlyArray<{ id: AppView; label: string; icon: typeof ListChecks }> = [
   // The front door: the one task to do next.
@@ -14,6 +14,8 @@ const VIEWS: ReadonlyArray<{ id: AppView; label: string; icon: typeof ListChecks
   // Only shown when there are shared workspaces to be assigned in.
   { id: 'assigned', label: 'Assigned to me', icon: UserCheck },
   { id: 'notes', label: 'Notes', icon: StickyNote },
+  // Code and text files, with colours for each language; they are kept as notes.
+  { id: 'notepad', label: 'Notepad', icon: FileCode2 },
   { id: 'databases', label: 'Databases', icon: Table2 },
   // One calendar for everything that has a date: tasks and database records.
   { id: 'calendar', label: 'Calendar', icon: CalendarDays },
