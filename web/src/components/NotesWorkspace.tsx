@@ -4,7 +4,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import type { Note } from '@/types/notes';
+import type { Note, NoteBlock } from '@/types/notes';
 import { syncedLength } from '@/lib/noteBlocksCodec';
 import { NOTE_EMOJIS, NOTE_SYNC_LIMIT, NOTE_SYNC_WARN, formatNoteEdited, getNotePreview } from '@/types/notes';
 import type { BlockType } from '@/types/notes';
@@ -188,6 +188,7 @@ export function NoteDetail({
   onChangeBlockType,
   onMoveBlock,
   onSetIndent,
+  onSetBlocks,
   linking,
 }: {
   note: Note;
@@ -200,6 +201,7 @@ export function NoteDetail({
   onChangeBlockType: (noteId: string, blockId: string, type: BlockType) => void;
   onMoveBlock: (noteId: string, blockId: string, direction: 'up' | 'down') => void;
   onSetIndent: (noteId: string, blockId: string, direction: 'in' | 'out') => void;
+  onSetBlocks: (noteId: string, blocks: NoteBlock[]) => void;
 }) {
   const titleRef = useRef<HTMLTextAreaElement>(null);
   const firstBlockRef = useRef<string | null>(null);
@@ -325,6 +327,7 @@ export function NoteDetail({
             onChangeBlockType={(blockId, type) => onChangeBlockType(note.id, blockId, type)}
             onMoveBlock={(blockId, direction) => onMoveBlock(note.id, blockId, direction)}
             onSetIndent={(blockId, direction) => onSetIndent(note.id, blockId, direction)}
+            onSetBlocks={(blocks) => onSetBlocks(note.id, blocks)}
             noteId={note.id}
             linking={linking}
           />
@@ -461,6 +464,7 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
     changeBlockType,
     moveBlock,
     setBlockIndent,
+    setBlocks,
     flushNote,
   } = useNotes();
 
@@ -646,6 +650,7 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
             onChangeBlockType={changeBlockType}
             onMoveBlock={moveBlock}
             onSetIndent={setBlockIndent}
+            onSetBlocks={setBlocks}
             linking={linking}
           />
         ) : notes.length === 0 ? (

@@ -27,7 +27,10 @@ import { DatabasePicker } from '@/components/notes/DatabasePicker';
 import { createInlineDatabase } from '@/lib/inlineDatabase';
 import { toast } from 'sonner';
 import { TableBlock } from '@/components/notes/TableBlock';
-import { computeNumberedOrdinals, hiddenBlockIds, levelOf, toggleHasChildren } from '@/lib/noteBlocks';
+import {
+  computeNumberedOrdinals, duplicateSubtrees, hiddenBlockIds, indentSelection, levelOf, moveSelection,
+  removeSubtrees, selectRange, selectionIds, selectionRoots, toggleHasChildren,
+} from '@/lib/noteBlocks';
 
 /** How far each level of Tab pushes a line in, in px. */
 const INDENT_STEP = 24;
@@ -225,6 +228,10 @@ interface BlockControlsProps {
   onChangeType: (id: string, type: BlockType) => void;
   onMoveUp: (id: string) => void;
   onMoveDown: (id: string) => void;
+  /** The grip was used: open its menu on this block (selecting it), or with Shift / ⌘ extend or toggle the selection. */
+  onGrip: (id: string, mode: 'replace' | 'extend' | 'toggle') => void;
+  /** More than one block is selected and this one is among them: the menu's delete acts on all of them. */
+  selectedCount: number;
 }
 
 const GUTTER_BUTTON = cn(
@@ -233,7 +240,7 @@ const GUTTER_BUTTON = cn(
   'data-[state=open]:bg-[color-mix(in_srgb,var(--a-ink)_9%,transparent)] data-[state=open]:text-a-ink',
 );
 
-function BlockControls({ block, index, total, onAddAfter, onDelete, onChangeType, onMoveUp, onMoveDown }: BlockControlsProps) {
+function BlockControls({ block, index, total, onAddAfter, onDelete, onChangeType, onMoveUp, onMoveDown, onGrip, selectedCount }: BlockControlsProps) {
   return (
     <>
       <button
@@ -246,14 +253,20 @@ function BlockControls({ block, index, total, onAddAfter, onDelete, onChangeType
         <Plus className="size-4" strokeWidth={STROKE} />
       </button>
 
-      <DropdownMenu>
+      <DropdownMenu onOpenChange={(open) => { if (open) onGrip(block.id, 'replace'); }}>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
             className={GUTTER_BUTTON}
             aria-label="Block options"
-            // Not "drag to reorder": there is no drag, and the old title said there was.
-            title="Move, turn into, or delete"
+            title="Select, move, turn into, or delete (⇧ or ⌘ click adds to the selection)"
+            // Shift / ⌘ click builds a selection instead of opening the menu.
+            onPointerDown={(e) => {
+              if (e.shiftKey || e.metaKey || e.ctrlKey) {
+                e.preventDefault();
+                onGrip(block.id, e.shiftKey ? 'extend' : 'toggle');
+              }
+            }}
           >
             <GripVertical className="size-4" strokeWidth={STROKE} />
           </button>
@@ -280,7 +293,7 @@ function BlockControls({ block, index, total, onAddAfter, onDelete, onChangeType
           ))}
           <DropdownMenuSeparator />
           <DropdownMenuItem variant="destructive" onClick={() => onDelete(block.id)}>
-            <Trash2 className="size-3.5" /> Delete block
+            <Trash2 className="size-3.5" /> {selectedCount > 1 ? `Delete ${selectedCount} blocks` : 'Delete block'}
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -307,6 +320,8 @@ interface BlockRowProps {
   onChangeType: (id: string, type: BlockType) => void;
   onMoveUp: (id: string) => void;
   onMoveDown: (id: string) => void;
+  onGrip: (id: string, mode: 'replace' | 'extend' | 'toggle') => void;
+  selectedCount: number;
   onUpdateTable: (id: string, tableData: TableData) => void;
   textareaRef: (el: HTMLTextAreaElement | null, id: string) => void;
   onSlashOpen: (blockId: string, pos: { top: number; left: number }) => void;
@@ -338,7 +353,7 @@ interface BlockRowProps {
 function BlockRow({
   block, index, ordinal, joinPrev, total, focusedId,
   onFocus, onChange, onToggleCheck, onKeyDown,
-  onAddAfter, onDelete, onChangeType, onMoveUp, onMoveDown,
+  onAddAfter, onDelete, onChangeType, onMoveUp, onMoveDown, onGrip, selectedCount,
   onUpdateTable, textareaRef, onSlashOpen, onSelectionChange, onUpdateMeta,
   onMentionCheck, chip, onOpenDatabase, linkedDone,
 }: BlockRowProps) {
@@ -360,6 +375,7 @@ function BlockRow({
   const [shift, setShift] = useState(0);
   const gutter = (
     <div
+      data-block-controls
       className={cn(
         'absolute right-full z-10 hidden gap-[2px] pr-3.5 select-none transition-opacity duration-[120ms] md:flex',
         // Also kept visible while a control has keyboard focus or its menu is open.
@@ -371,6 +387,7 @@ function BlockRow({
         block={block} index={index} total={total}
         onAddAfter={onAddAfter} onDelete={onDelete}
         onChangeType={onChangeType} onMoveUp={onMoveUp} onMoveDown={onMoveDown}
+        onGrip={onGrip} selectedCount={selectedCount}
       />
     </div>
   );
@@ -638,6 +655,8 @@ interface NoteEditorProps {
   onMoveBlock: (blockId: string, direction: 'up' | 'down') => void;
   /** Tab / Shift+Tab: push a line in or bring it back out one level (its children go with it). */
   onSetIndent?: (blockId: string, direction: 'in' | 'out') => void;
+  /** Replaces all the note's blocks at once: what acting on a selection (delete, copy, move, indent) uses. Without it there is no selection. */
+  onSetBlocks?: (blocks: NoteBlock[]) => void;
   /** The note these blocks belong to; needed to link a block to a task. */
   noteId?: string;
   linking?: NoteTaskLinking;
@@ -651,6 +670,7 @@ export function NoteEditor({
   onChangeBlockType,
   onMoveBlock,
   onSetIndent,
+  onSetBlocks,
   noteId,
   linking,
 }: NoteEditorProps) {
@@ -722,6 +742,143 @@ export function NoteEditor({
       }
     }
   });
+
+  // ── Selecting blocks ──
+  // A block is chosen from its grip (click; ⇧ extends, ⌘ adds) or with Esc inside it. A chosen block always
+  // stands for its children too, so deleting, copying, moving or indenting acts on the whole group.
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const anchorId = useRef<string | null>(null);
+  const endId = useRef<string | null>(null);
+  const covered = useMemo(() => selectionIds(blocks, selected), [blocks, selected]);
+  const visibleBlocks = useMemo(() => blocks.filter((b) => !hiddenIds.has(b.id)), [blocks, hiddenIds]);
+  const visibleIndex = useMemo(() => new Map(visibleBlocks.map((b, i) => [b.id, i])), [visibleBlocks]);
+
+  const clearSelection = useCallback(() => {
+    anchorId.current = null;
+    endId.current = null;
+    setSelected((cur) => (cur.size ? new Set() : cur));
+  }, []);
+
+  const chooseOnly = useCallback((ids: string[], anchor: string, end: string) => {
+    anchorId.current = anchor;
+    endId.current = end;
+    setSelected(new Set(ids));
+  }, []);
+
+  const handleGrip = useCallback((id: string, mode: 'replace' | 'extend' | 'toggle') => {
+    if (!onSetBlocks) return;
+    if (mode === 'extend' && anchorId.current) {
+      chooseOnly(selectRange(blocks, anchorId.current, id), anchorId.current, id);
+    } else if (mode === 'toggle') {
+      setSelected((cur) => {
+        const next = new Set(cur);
+        if (next.has(id)) next.delete(id); else next.add(id);
+        return next;
+      });
+      anchorId.current = id;
+      endId.current = id;
+    } else if (!covered.has(id)) {
+      chooseOnly([id], id, id);
+    }
+  }, [onSetBlocks, blocks, covered, chooseOnly]);
+
+  /** Esc inside a block: leave the text and choose the block. */
+  const enterSelection = useCallback((id: string) => {
+    if (!onSetBlocks) return;
+    chooseOnly([id], id, id);
+    textareaRefs.current.get(id)?.blur();
+    rootRef.current?.focus();
+  }, [onSetBlocks, chooseOnly]);
+
+  const deleteChosen = useCallback((chosen: ReadonlySet<string>) => {
+    if (!onSetBlocks || chosen.size === 0) return;
+    const gone = selectionIds(blocks, chosen);
+    if (gone.size === 0) return;
+    // A task is never deleted with its line; it is only let go of, as deleting a single line always did.
+    for (const b of blocks) if (gone.has(b.id) && b.taskId) linking?.unlinkTask(b.taskId);
+    const firstGone = blocks.findIndex((b) => gone.has(b.id));
+    const next = removeSubtrees(blocks, chosen);
+    onSetBlocks(next);
+    clearSelection();
+    const before = blocks.slice(0, firstGone).reverse().find((b) => !gone.has(b.id));
+    pendingFocusId.current = (before ?? next[0])?.id ?? null;
+    if (gone.size > 1) toast(`Deleted ${gone.size} blocks`, { duration: 2500 });
+  }, [onSetBlocks, blocks, linking, clearSelection]);
+
+  const duplicateChosen = useCallback(() => {
+    if (!onSetBlocks || selected.size === 0) return;
+    const { blocks: next, copies } = duplicateSubtrees(blocks, selected);
+    if (copies.length === 0) return;
+    onSetBlocks(next);
+    chooseOnly(copies, copies[0], copies[copies.length - 1]);
+  }, [onSetBlocks, blocks, selected, chooseOnly]);
+
+  const moveChosen = useCallback((direction: 'up' | 'down') => {
+    if (!onSetBlocks) return;
+    const next = moveSelection(blocks, selected, direction);
+    if (next !== blocks) onSetBlocks(next);
+  }, [onSetBlocks, blocks, selected]);
+
+  const indentChosen = useCallback((direction: 'in' | 'out') => {
+    if (!onSetBlocks) return;
+    const next = indentSelection(blocks, selected, direction);
+    if (next !== blocks) onSetBlocks(next);
+  }, [onSetBlocks, blocks, selected]);
+
+  const handleRootKeyDown = useCallback((e: KeyboardEvent<HTMLDivElement>) => {
+    if (!onSetBlocks || selected.size === 0) return;
+    const target = e.target as HTMLElement;
+    // Text boxes and open menus keep their own keys.
+    if (target.closest('textarea, input, [contenteditable="true"], [role="menu"]')) return;
+    const mod = e.metaKey || e.ctrlKey;
+    const indexOf = (id: string | null) => visibleBlocks.findIndex((b) => b.id === id);
+
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      e.preventDefault();
+      deleteChosen(selected);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      clearSelection();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const first = selectionRoots(blocks, selected)[0];
+      clearSelection();
+      if (first) pendingFocusId.current = first;
+    } else if (mod && e.key.toLowerCase() === 'd') {
+      e.preventDefault();
+      duplicateChosen();
+    } else if (mod && e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      e.preventDefault();
+      moveChosen(e.key === 'ArrowUp' ? 'up' : 'down');
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      indentChosen(e.shiftKey ? 'out' : 'in');
+    } else if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      const up = e.key === 'ArrowUp';
+      if (e.shiftKey) {
+        const at = indexOf(endId.current);
+        const step = visibleBlocks[at + (up ? -1 : 1)];
+        if (step && anchorId.current) chooseOnly(selectRange(blocks, anchorId.current, step.id), anchorId.current, step.id);
+      } else {
+        const coveredAt = visibleBlocks.map((b, i) => (covered.has(b.id) ? i : -1)).filter((i) => i >= 0);
+        const step = up ? visibleBlocks[Math.min(...coveredAt) - 1] : visibleBlocks[Math.max(...coveredAt) + 1];
+        if (step) chooseOnly([step.id], step.id, step.id);
+      }
+    }
+  }, [onSetBlocks, selected, covered, blocks, visibleBlocks, deleteChosen, clearSelection, duplicateChosen, moveChosen, indentChosen, chooseOnly]);
+
+  // A click anywhere but the block controls and their menu lets go of the selection.
+  useEffect(() => {
+    if (selected.size === 0) return;
+    const release = (e: MouseEvent) => {
+      if ((e.target as HTMLElement).closest('[data-block-controls], [role="menu"]')) return;
+      clearSelection();
+    };
+    document.addEventListener('mousedown', release);
+    return () => document.removeEventListener('mousedown', release);
+  }, [selected.size, clearSelection]);
 
   // ── Formatting toolbar ──
   // Shown for a non-empty selection inside a block type that takes marks.
@@ -1028,6 +1185,22 @@ export function NoteEditor({
       }
     }
 
+    // Esc leaves the text and chooses the block; ⌘A a second time (the whole text already chosen) chooses every block.
+    if (onSetBlocks && e.key === 'Escape') {
+      e.preventDefault();
+      enterSelection(blockId);
+      return;
+    }
+    if (onSetBlocks && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'a'
+        && el && (el.value === '' || (el.selectionStart === 0 && el.selectionEnd === el.value.length))) {
+      e.preventDefault();
+      const all = visibleBlocks.map((b) => b.id);
+      chooseOnly(all, all[0], all[all.length - 1]);
+      el.blur();
+      rootRef.current?.focus();
+      return;
+    }
+
     const isListItem = block.type === 'bullet' || block.type === 'numbered' || block.type === 'todo';
     // The line above or below that is actually shown (lines inside a closed toggle are not).
     const hidden = hiddenBlockIds(blocks);
@@ -1087,25 +1260,28 @@ export function NoteEditor({
         pendingFocusId.current = blockId;
       }
     }
-  }, [blocks, slashState, mention, onAddBlock, onDeleteBlock, onUpdateBlock, onSetIndent, onChangeBlockType, handleSlashSelect, handleToggleMark]);
+  }, [blocks, slashState, mention, onAddBlock, onDeleteBlock, onUpdateBlock, onSetIndent, onSetBlocks, onChangeBlockType, handleSlashSelect, handleToggleMark, enterSelection, chooseOnly, visibleBlocks]);
 
   const handleAddAfter = useCallback((blockId: string) => {
     const newId = onAddBlock(blockId, 'paragraph');
     pendingFocusId.current = newId;
   }, [onAddBlock]);
 
-  // Deleting a linked block must also unlink its task — otherwise the task is
-  // left pointing at a note/block that no longer exists, same cleanup the
-  // LinkedTaskChip's own "unlink" action does.
+  // Deleting from the grip menu removes the block with its children, or the whole selection when it is part of one.
+  // A linked task is let go of, not deleted, same as the LinkedTaskChip's own "unlink".
   const handleDeleteBlock = useCallback((blockId: string) => {
+    if (onSetBlocks) {
+      deleteChosen(covered.has(blockId) ? selected : new Set([blockId]));
+      return;
+    }
     const block = blocks.find((b) => b.id === blockId);
     if (block?.taskId) linking?.unlinkTask(block.taskId);
     onDeleteBlock(blockId);
-  }, [blocks, linking, onDeleteBlock]);
+  }, [onSetBlocks, deleteChosen, covered, selected, blocks, linking, onDeleteBlock]);
 
 
   return (
-    <div className="relative">
+    <div ref={rootRef} tabIndex={-1} onKeyDown={handleRootKeyDown} className="relative outline-none">
       {/* Inline toolbar */}
       {toolbar && (
         <div
@@ -1159,7 +1335,17 @@ export function NoteEditor({
       {/* Blocks */}
       <div className="flex flex-col gap-[6px]">
         {blocks.map((block, index) => hiddenIds.has(block.id) ? null : (
-          <Fragment key={block.id}>
+          <div
+            key={block.id}
+            data-selected={covered.has(block.id) || undefined}
+            // A chosen group is one tinted slab: rows pad into the gap above and below so neighbours touch.
+            className={cn(
+              'flex flex-col gap-[6px]',
+              covered.has(block.id) && '-my-[3px] bg-a-accent-tint py-[3px]',
+              covered.has(block.id) && !covered.has(visibleBlocks[(visibleIndex.get(block.id) ?? 0) - 1]?.id ?? '') && 'rounded-t-[6px]',
+              covered.has(block.id) && !covered.has(visibleBlocks[(visibleIndex.get(block.id) ?? 0) + 1]?.id ?? '') && 'rounded-b-[6px]',
+            )}
+          >
           <BlockRow
             block={block}
             index={index}
@@ -1167,7 +1353,9 @@ export function NoteEditor({
             joinPrev={index > 0 && (block.type === 'bullet' || block.type === 'numbered') && blocks[index - 1].type === block.type}
             total={blocks.length}
             focusedId={focusedId}
-            onFocus={setFocusedId}
+            onFocus={(id) => { setFocusedId(id); clearSelection(); }}
+            onGrip={handleGrip}
+            selectedCount={covered.has(block.id) ? covered.size : 0}
             onChange={handleChange}
             onToggleCheck={handleToggleCheck}
             onKeyDown={handleKeyDown}
@@ -1210,7 +1398,7 @@ export function NoteEditor({
               Empty toggle. Click or drop blocks inside.
             </button>
           )}
-          </Fragment>
+          </div>
         ))}
       </div>
 

@@ -356,6 +356,23 @@ export function useNotes() {
     });
   }, [scheduleSave]);
 
+  /** Replaces a note's blocks in one step (several blocks deleted, moved or copied together). Saved and synced like any edit. */
+  const setBlocks = useCallback((noteId: string, blocks: NoteBlock[]) => {
+    setNotes((prev) => {
+      let changed = false;
+      const next = prev.map((n) => {
+        if (n.id !== noteId || n.blocks === blocks) return n;
+        changed = true;
+        return { ...n, updatedAt: Date.now(), blocks: normalizeIndents(blocks) };
+      });
+      if (!changed) return prev;
+      persistLocal(next);
+      const updated = next.find((n) => n.id === noteId);
+      if (updated) scheduleSave(updated);
+      return next;
+    });
+  }, [scheduleSave]);
+
   return {
     flushNote,
     notes: sortedNotes,
@@ -375,5 +392,6 @@ export function useNotes() {
     changeBlockType,
     moveBlock,
     setBlockIndent,
+    setBlocks,
   };
 }

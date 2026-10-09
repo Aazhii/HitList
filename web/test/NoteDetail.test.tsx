@@ -21,6 +21,7 @@ function Header({ onEmoji }: { onEmoji: (emoji: string) => void }) {
     onChangeBlockType={vi.fn()}
     onMoveBlock={vi.fn()}
     onSetIndent={vi.fn()}
+    onSetBlocks={vi.fn()}
   />;
 }
 

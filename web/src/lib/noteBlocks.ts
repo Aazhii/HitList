@@ -2,6 +2,7 @@
  * Pure helpers over a note's block list.
  */
 import type { NoteBlock } from '@/types/notes';
+import { createEmptyBlock } from '@/types/notes';
 
 /**
  * The number each numbered-list block displays, keyed by block id.
@@ -163,4 +164,104 @@ export function hiddenBlockIds(blocks: readonly NoteBlock[]): Set<string> {
 /** Whether a toggle holds anything: the block after it is nested deeper. */
 export function toggleHasChildren(blocks: readonly NoteBlock[], index: number): boolean {
   return index + 1 < blocks.length && levelOf(blocks[index + 1]) > levelOf(blocks[index]);
+}
+
+// ── Selecting and acting on several blocks (a parent always goes with its children) ───────────────
+
+/** Ids of a block and everything nested under it, in document order. */
+export function subtreeIds(blocks: readonly NoteBlock[], id: string): string[] {
+  const i = blocks.findIndex((b) => b.id === id);
+  if (i === -1) return [];
+  return blocks.slice(i, subtreeEnd(blocks, i)).map((b) => b.id);
+}
+
+/**
+ * The blocks a selection acts on: each chosen block that is not already inside another chosen block's subtree,
+ * in document order. Choosing a parent and one of its children is the same as choosing the parent.
+ */
+export function selectionRoots(blocks: readonly NoteBlock[], chosen: ReadonlySet<string>): string[] {
+  const roots: string[] = [];
+  let coveredUntil = -1;
+  blocks.forEach((block, i) => {
+    if (i < coveredUntil || !chosen.has(block.id)) return;
+    roots.push(block.id);
+    coveredUntil = subtreeEnd(blocks, i);
+  });
+  return roots;
+}
+
+/** Every id a selection covers: its roots and all their children. */
+export function selectionIds(blocks: readonly NoteBlock[], chosen: ReadonlySet<string>): Set<string> {
+  const all = new Set<string>();
+  for (const root of selectionRoots(blocks, chosen)) for (const id of subtreeIds(blocks, root)) all.add(id);
+  return all;
+}
+
+/** The blocks from `from` to `to` (either order) that are shown, for Shift+click: a closed toggle's children are not separate stops. */
+export function selectRange(blocks: readonly NoteBlock[], from: string, to: string): string[] {
+  const hidden = hiddenBlockIds(blocks);
+  const a = blocks.findIndex((b) => b.id === from);
+  const b = blocks.findIndex((x) => x.id === to);
+  if (a === -1 || b === -1) return [];
+  const [lo, hi] = a <= b ? [a, b] : [b, a];
+  return blocks.slice(lo, hi + 1).filter((x) => !hidden.has(x.id)).map((x) => x.id);
+}
+
+/**
+ * The note after removing the chosen blocks with their children. A note is never left with no blocks: it gets one
+ * empty paragraph, as deleting the last block always did. Same array when nothing matches.
+ */
+export function removeSubtrees(blocks: NoteBlock[], chosen: ReadonlySet<string>): NoteBlock[] {
+  const gone = selectionIds(blocks, chosen);
+  if (gone.size === 0) return blocks;
+  const kept = blocks.filter((b) => !gone.has(b.id));
+  return kept.length === 0 ? [createEmptyBlock('paragraph')] : normalizeIndents(kept);
+}
+
+/**
+ * Copies the chosen blocks (with their children) right after themselves, with new ids. A copy is not linked to the
+ * original's task (a task belongs to one line) and is not collapsed state-shared; a database block keeps pointing at
+ * the same database. Returns the new list and the ids of the copies' roots.
+ */
+export function duplicateSubtrees(
+  blocks: NoteBlock[],
+  chosen: ReadonlySet<string>,
+  newId: () => string = () => crypto.randomUUID(),
+): { blocks: NoteBlock[]; copies: string[] } {
+  const roots = selectionRoots(blocks, chosen);
+  if (roots.length === 0) return { blocks, copies: [] };
+  const copies: string[] = [];
+  const out: NoteBlock[] = [];
+  for (let i = 0; i < blocks.length; i += 1) {
+    out.push(blocks[i]);
+    if (!roots.includes(blocks[i].id)) continue;
+    const end = subtreeEnd(blocks, i);
+    const group = blocks.slice(i, end).map((b) => {
+      const { taskId: _task, ...rest } = b;
+      return { ...rest, id: newId() } as NoteBlock;
+    });
+    copies.push(group[0].id);
+    // The children come right after the parent in the original; put the copies after the whole group.
+    out.push(...blocks.slice(i + 1, end), ...group);
+    i = end - 1;
+  }
+  return { blocks: out, copies };
+}
+
+/** Moves each chosen block, with its children, up or down past its neighbour at the same level. Same array when none can move. */
+export function moveSelection(blocks: NoteBlock[], chosen: ReadonlySet<string>, direction: 'up' | 'down'): NoteBlock[] {
+  const roots = selectionRoots(blocks, chosen);
+  const order = direction === 'up' ? roots : [...roots].reverse();
+  let next = blocks;
+  for (const id of order) next = moveBlockWithChildren(next, id, direction);
+  return next;
+}
+
+/** Tab / Shift+Tab for a selection: each chosen block, with its children, one level in or out. */
+export function indentSelection(blocks: NoteBlock[], chosen: ReadonlySet<string>, direction: 'in' | 'out'): NoteBlock[] {
+  let next = blocks;
+  for (const id of selectionRoots(blocks, chosen)) {
+    next = direction === 'in' ? indentBlock(next, id) : outdentBlock(next, id);
+  }
+  return next;
 }
