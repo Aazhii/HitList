@@ -26,16 +26,22 @@ import { DatabaseBlock } from '@/components/notes/DatabaseBlock';
 import { DatabasePicker } from '@/components/notes/DatabasePicker';
 import { createInlineDatabase } from '@/lib/inlineDatabase';
 import { toast } from 'sonner';
+import {
+  DndContext, DragOverlay, PointerSensor, useDraggable, useSensor, useSensors,
+  type DragEndEvent, type DragMoveEvent, type DragStartEvent,
+} from '@dnd-kit/core';
+import { BLOCKS_MIME, fromClipboard, pasteBlocksAfter, toClipboard } from '@/lib/noteClipboard';
 import { TableBlock } from '@/components/notes/TableBlock';
 import {
   computeNumberedOrdinals, duplicateSubtrees, hiddenBlockIds, indentSelection, levelOf, moveSelection,
-  removeSubtrees, selectRange, selectionIds, selectionRoots, toggleHasChildren,
+  computeDrop, foldAllToggles, moveSubtreesTo, removeSubtrees, selectRange, selectionIds, selectionRoots, toggleHasChildren,
+  turnInto, type DropTarget,
 } from '@/lib/noteBlocks';
 
 /** How far each level of Tab pushes a line in, in px. */
 const INDENT_STEP = 24;
 import { InlineText, supportedMarks } from '@/components/notes/InlineText';
-import { activeMarks, hasInlineMarks, toggleMark, type Mark } from '@/lib/inlineMarkdown';
+import { activeMarks, hasInlineMarks, stripInline, toggleMark, type Mark } from '@/lib/inlineMarkdown';
 import { getCaretCoordinates } from '@/lib/caretCoordinates';
 import {
   controlsTop, getBlockTextClass, markerBoxClass, markerTop,
@@ -232,7 +238,12 @@ interface BlockControlsProps {
   onGrip: (id: string, mode: 'replace' | 'extend' | 'toggle') => void;
   /** More than one block is selected and this one is among them: the menu's delete acts on all of them. */
   selectedCount: number;
+  /** The grip can be dragged to move this block (and its children) elsewhere. */
+  canDrag: boolean;
 }
+
+/** When a block drag last ended, so the click that can follow it is not taken as a click on the grip. */
+let lastDragEnd = 0;
 
 const GUTTER_BUTTON = cn(
   'flex size-7 items-center justify-center rounded-[4px] text-a-faint transition-colors duration-[120ms]',
@@ -240,7 +251,11 @@ const GUTTER_BUTTON = cn(
   'data-[state=open]:bg-[color-mix(in_srgb,var(--a-ink)_9%,transparent)] data-[state=open]:text-a-ink',
 );
 
-function BlockControls({ block, index, total, onAddAfter, onDelete, onChangeType, onMoveUp, onMoveDown, onGrip, selectedCount }: BlockControlsProps) {
+function BlockControls({ block, index, total, onAddAfter, onDelete, onChangeType, onMoveUp, onMoveDown, onGrip, selectedCount, canDrag }: BlockControlsProps) {
+  // The grip does two jobs: a click opens its menu (and chooses the block), a drag moves the block with its
+  // children. The menu is opened by the click, not by the press, so pressing to drag never flashes it open.
+  const [open, setOpen] = useState(false);
+  const { attributes, listeners, setNodeRef } = useDraggable({ id: block.id, disabled: !canDrag });
   return (
     <>
       <button
@@ -253,19 +268,32 @@ function BlockControls({ block, index, total, onAddAfter, onDelete, onChangeType
         <Plus className="size-4" strokeWidth={STROKE} />
       </button>
 
-      <DropdownMenu onOpenChange={(open) => { if (open) onGrip(block.id, 'replace'); }}>
+      <DropdownMenu open={open} onOpenChange={(next) => { setOpen(next); if (next) onGrip(block.id, 'replace'); }}>
         <DropdownMenuTrigger asChild>
           <button
             type="button"
-            className={GUTTER_BUTTON}
+            ref={setNodeRef}
+            {...attributes}
+            className={cn(GUTTER_BUTTON, canDrag && 'cursor-grab touch-none')}
             aria-label="Block options"
-            title="Select, move, turn into, or delete (⇧ or ⌘ click adds to the selection)"
-            // Shift / ⌘ click builds a selection instead of opening the menu.
+            title="Click for options, drag to move (⇧ or ⌘ click adds to the selection)"
             onPointerDown={(e) => {
+              // Shift / ⌘ click builds a selection; any other press is the start of a click or a drag.
               if (e.shiftKey || e.metaKey || e.ctrlKey) {
                 e.preventDefault();
                 onGrip(block.id, e.shiftKey ? 'extend' : 'toggle');
+                return;
               }
+              if (canDrag) {
+                // The drag library first (it ignores a press that is already default-prevented), then stop the menu opening on press.
+                (listeners?.onPointerDown as ((ev: React.PointerEvent) => void) | undefined)?.(e);
+                e.preventDefault();
+              }
+            }}
+            onClick={() => {
+              // A drag that ends over the grip is not a click on it.
+              if (Date.now() - lastDragEnd < 300) return;
+              if (canDrag) setOpen((o) => { if (!o) onGrip(block.id, 'replace'); return !o; });
             }}
           >
             <GripVertical className="size-4" strokeWidth={STROKE} />
@@ -322,6 +350,7 @@ interface BlockRowProps {
   onMoveDown: (id: string) => void;
   onGrip: (id: string, mode: 'replace' | 'extend' | 'toggle') => void;
   selectedCount: number;
+  canDrag: boolean;
   onUpdateTable: (id: string, tableData: TableData) => void;
   textareaRef: (el: HTMLTextAreaElement | null, id: string) => void;
   onSlashOpen: (blockId: string, pos: { top: number; left: number }) => void;
@@ -353,7 +382,7 @@ interface BlockRowProps {
 function BlockRow({
   block, index, ordinal, joinPrev, total, focusedId,
   onFocus, onChange, onToggleCheck, onKeyDown,
-  onAddAfter, onDelete, onChangeType, onMoveUp, onMoveDown, onGrip, selectedCount,
+  onAddAfter, onDelete, onChangeType, onMoveUp, onMoveDown, onGrip, selectedCount, canDrag,
   onUpdateTable, textareaRef, onSlashOpen, onSelectionChange, onUpdateMeta,
   onMentionCheck, chip, onOpenDatabase, linkedDone,
 }: BlockRowProps) {
@@ -387,7 +416,7 @@ function BlockRow({
         block={block} index={index} total={total}
         onAddAfter={onAddAfter} onDelete={onDelete}
         onChangeType={onChangeType} onMoveUp={onMoveUp} onMoveDown={onMoveDown}
-        onGrip={onGrip} selectedCount={selectedCount}
+        onGrip={onGrip} selectedCount={selectedCount} canDrag={canDrag}
       />
     </div>
   );
@@ -851,6 +880,110 @@ export function NoteEditor({
     if (next !== blocks) onSetBlocks(next);
   }, [onSetBlocks, blocks, selected]);
 
+  // ── Copy, cut and paste of blocks ──
+  const handleCopyCut = useCallback((e: React.ClipboardEvent<HTMLDivElement>, cut: boolean) => {
+    if (!onSetBlocks || selected.size === 0) return;
+    if ((e.target as HTMLElement).closest('textarea, input, [contenteditable="true"]')) return;
+    const data = toClipboard(blocks, selected);
+    if (!data) return;
+    e.preventDefault();
+    e.clipboardData.setData('text/plain', data.text);
+    e.clipboardData.setData(BLOCKS_MIME, data.json);
+    if (cut) deleteChosen(selected);
+  }, [onSetBlocks, selected, blocks, deleteChosen]);
+
+  const handlePaste = useCallback((e: React.ClipboardEvent<HTMLDivElement>) => {
+    if (!onSetBlocks) return;
+    const json = e.clipboardData.getData(BLOCKS_MIME);
+    const pasted = json ? fromClipboard(json) : null;
+    if (!pasted) return; // anything else pastes as it always did
+    const target = e.target as HTMLElement;
+    const inBlock = target.closest('textarea') ? (target.closest('[data-block-id]') as HTMLElement | null)?.dataset.blockId : undefined;
+    const afterId = inBlock ?? (selected.size ? selectionRoots(blocks, selected).at(-1) : undefined);
+    if (!afterId) return;
+    e.preventDefault();
+    const result = pasteBlocksAfter(blocks, afterId, pasted);
+    if (result.ids.length === 0) return;
+    onSetBlocks(result.blocks);
+    if (inBlock) {
+      clearSelection();
+      pendingFocusId.current = result.ids[result.ids.length - 1];
+    } else {
+      chooseOnly(result.ids, result.ids[0], result.ids[result.ids.length - 1]);
+    }
+  }, [onSetBlocks, blocks, selected, clearSelection, chooseOnly]);
+
+  // ── Turn into, for several chosen blocks at once; fold all toggles ──
+  const handleTurnInto = useCallback((id: string, type: BlockType) => {
+    const roots = covered.has(id) ? selectionRoots(blocks, selected) : [];
+    if (onSetBlocks && roots.length > 1) onSetBlocks(turnInto(blocks, new Set(roots), type));
+    else onChangeBlockType(id, type);
+  }, [onSetBlocks, covered, blocks, selected, onChangeBlockType]);
+
+  const foldAll = useCallback(() => {
+    if (!onSetBlocks) return;
+    const next = foldAllToggles(blocks);
+    if (next !== blocks) onSetBlocks(next);
+  }, [onSetBlocks, blocks]);
+
+  // ── Dragging a block with its children ──
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+  const [drag, setDrag] = useState<{ ids: ReadonlySet<string>; label: string; count: number } | null>(null);
+  const [drop, setDrop] = useState<(DropTarget & { top: number }) | null>(null);
+  const dragChosen = useRef<ReadonlySet<string>>(new Set());
+  const dragCopy = useRef(false);
+
+  const handleDragStart = useCallback(({ active, activatorEvent }: DragStartEvent) => {
+    const id = String(active.id);
+    const chosen: ReadonlySet<string> = covered.has(id) ? selected : new Set([id]);
+    if (!covered.has(id)) chooseOnly([id], id, id);
+    dragChosen.current = chosen;
+    dragCopy.current = !!(activatorEvent as MouseEvent).altKey;
+    const ids = selectionIds(blocks, chosen);
+    const first = blocks.find((b) => ids.has(b.id));
+    setDrag({ ids, label: first ? stripInline(first.content) || BLOCK_TYPE_LABELS[first.type] : '', count: ids.size });
+  }, [covered, selected, blocks, chooseOnly]);
+
+  const locate = useCallback((event: DragMoveEvent | DragEndEvent) => {
+    const root = rootRef.current;
+    const start = event.activatorEvent as MouseEvent;
+    if (!root || !start) return null;
+    const rows = new Map<string, { top: number; bottom: number }>();
+    root.querySelectorAll<HTMLElement>('[data-block-id]').forEach((el) => {
+      const r = el.getBoundingClientRect();
+      rows.set(el.dataset.blockId as string, { top: r.top, bottom: r.bottom });
+    });
+    const target = computeDrop(blocks, dragChosen.current, rows, start.clientY + event.delta.y, event.delta.x, INDENT_STEP);
+    if (!target) return null;
+    const rootTop = root.getBoundingClientRect().top;
+    const above = target.afterId ? rows.get(target.afterId)?.bottom : [...rows.values()][0]?.top;
+    return { ...target, top: (above ?? rootTop) - rootTop };
+  }, [blocks]);
+
+  const handleDragMove = useCallback((event: DragMoveEvent) => { setDrop(locate(event)); }, [locate]);
+
+  const finishDrag = useCallback(() => {
+    lastDragEnd = Date.now();
+    setDrag(null);
+    setDrop(null);
+  }, []);
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const target = locate(event);
+    finishDrag();
+    if (!target || !onSetBlocks) return;
+    let list = blocks;
+    let chosen = dragChosen.current;
+    if (dragCopy.current) {
+      // Option held as the drag began: leave the originals and place copies.
+      const copied = duplicateSubtrees(blocks, chosen);
+      list = copied.blocks;
+      chosen = new Set(copied.copies);
+    }
+    const next = moveSubtreesTo(list, chosen, target.beforeId, target.level);
+    if (next !== blocks) onSetBlocks(next);
+  }, [locate, finishDrag, blocks, onSetBlocks]);
+
   const handleRootKeyDown = useCallback((e: KeyboardEvent<HTMLDivElement>) => {
     const target = e.target as HTMLElement;
     // Text boxes and open menus keep their own keys.
@@ -862,6 +995,7 @@ export function NoteEditor({
       stepHistory(e.key.toLowerCase() === 'y' || e.shiftKey ? 'redo' : 'undo');
       return;
     }
+    if (mod && e.altKey && e.code === 'KeyT' && onSetBlocks) { e.preventDefault(); foldAll(); return; }
     if (!onSetBlocks || selected.size === 0) return;
     const indexOf = (id: string | null) => visibleBlocks.findIndex((b) => b.id === id);
 
@@ -898,7 +1032,7 @@ export function NoteEditor({
         if (step) chooseOnly([step.id], step.id, step.id);
       }
     }
-  }, [onSetBlocks, onUndo, stepHistory, selected, covered, blocks, visibleBlocks, deleteChosen, clearSelection, duplicateChosen, moveChosen, indentChosen, chooseOnly]);
+  }, [onSetBlocks, onUndo, stepHistory, foldAll, selected, covered, blocks, visibleBlocks, deleteChosen, clearSelection, duplicateChosen, moveChosen, indentChosen, chooseOnly]);
 
   // A click anywhere but the block controls and their menu lets go of the selection.
   useEffect(() => {
@@ -1160,6 +1294,13 @@ export function NoteEditor({
     const cursorAtStart = el?.selectionStart === 0 && el?.selectionEnd === 0;
     const cursorAtEnd = el && el.selectionStart === el.value.length;
 
+    // ⌘⌥T: close or open every toggle.
+    if ((e.metaKey || e.ctrlKey) && e.altKey && e.code === 'KeyT' && onSetBlocks) {
+      e.preventDefault();
+      foldAll();
+      return;
+    }
+
     // ⌘Z / ⌘⇧Z (Ctrl+Y): undo and redo for the whole note.
     if ((e.metaKey || e.ctrlKey) && !e.altKey && onUndo) {
       const key = e.key.toLowerCase();
@@ -1301,7 +1442,7 @@ export function NoteEditor({
         pendingFocusId.current = blockId;
       }
     }
-  }, [blocks, slashState, mention, onAddBlock, onDeleteBlock, onUpdateBlock, onSetIndent, onSetBlocks, onChangeBlockType, handleSlashSelect, handleToggleMark, enterSelection, chooseOnly, visibleBlocks, onUndo, stepHistory]);
+  }, [blocks, slashState, mention, onAddBlock, onDeleteBlock, onUpdateBlock, onSetIndent, onSetBlocks, onChangeBlockType, handleSlashSelect, handleToggleMark, enterSelection, chooseOnly, visibleBlocks, onUndo, stepHistory, foldAll]);
 
   const handleAddAfter = useCallback((blockId: string) => {
     const newId = onAddBlock(blockId, 'paragraph');
@@ -1322,7 +1463,15 @@ export function NoteEditor({
 
 
   return (
-    <div ref={rootRef} tabIndex={-1} onKeyDown={handleRootKeyDown} className="relative outline-none">
+    <div
+      ref={rootRef}
+      tabIndex={-1}
+      onKeyDown={handleRootKeyDown}
+      onCopy={(e) => handleCopyCut(e, false)}
+      onCut={(e) => handleCopyCut(e, true)}
+      onPaste={handlePaste}
+      className="relative outline-none"
+    >
       {/* Inline toolbar */}
       {toolbar && (
         <div
@@ -1374,19 +1523,33 @@ export function NoteEditor({
       )}
 
       {/* Blocks */}
+      <DndContext sensors={sensors} onDragStart={handleDragStart} onDragMove={handleDragMove} onDragEnd={handleDragEnd} onDragCancel={finishDrag}>
+      {drop && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute right-0 z-20 h-[2px] bg-a-accent-700"
+          style={{ top: drop.top - 1, left: drop.level * INDENT_STEP }}
+        />
+      )}
       <div className="flex flex-col gap-[6px]">
         {blocks.map((block, index) => hiddenIds.has(block.id) ? null : (
           <div
             key={block.id}
+            data-block-id={block.id}
             data-selected={covered.has(block.id) || undefined}
             // A chosen group is one tinted slab: rows pad into the gap above and below so neighbours touch.
             className={cn(
-              'flex flex-col gap-[6px]',
+              'relative flex flex-col gap-[6px]',
+              drag?.ids.has(block.id) && 'opacity-40',
               covered.has(block.id) && '-my-[3px] bg-a-accent-tint py-[3px]',
               covered.has(block.id) && !covered.has(visibleBlocks[(visibleIndex.get(block.id) ?? 0) - 1]?.id ?? '') && 'rounded-t-[6px]',
               covered.has(block.id) && !covered.has(visibleBlocks[(visibleIndex.get(block.id) ?? 0) + 1]?.id ?? '') && 'rounded-b-[6px]',
             )}
           >
+          {levelOf(block) > 0 && Array.from({ length: levelOf(block) }, (_, k) => (
+            // A faint line down the left of everything nested, so what belongs to which parent reads at a glance.
+            <span key={k} aria-hidden className="pointer-events-none absolute -bottom-[3px] -top-[3px] w-px bg-a-line-soft" style={{ left: k * INDENT_STEP + 10 }} />
+          ))}
           <BlockRow
             block={block}
             index={index}
@@ -1402,7 +1565,8 @@ export function NoteEditor({
             onKeyDown={handleKeyDown}
             onAddAfter={handleAddAfter}
             onDelete={handleDeleteBlock}
-            onChangeType={onChangeBlockType}
+            onChangeType={handleTurnInto}
+            canDrag={!!onSetBlocks}
             onMoveUp={(id) => onMoveBlock(id, 'up')}
             onMoveDown={(id) => onMoveBlock(id, 'down')}
             onUpdateTable={handleUpdateTable}
@@ -1442,6 +1606,16 @@ export function NoteEditor({
           </div>
         ))}
       </div>
+
+      <DragOverlay dropAnimation={null}>
+        {drag && (
+          <div className="flex max-w-[360px] items-center gap-2 rounded-[8px] border border-a-line bg-a-bg px-3 py-1.5 text-[13px] text-a-ink shadow-[var(--a-shadow-md)]">
+            <span className="truncate">{drag.label}</span>
+            {drag.count > 1 && <span className="shrink-0 text-a-faint">+{drag.count - 1}</span>}
+          </div>
+        )}
+      </DragOverlay>
+      </DndContext>
 
       {/* Click-to-add area */}
       <button

@@ -265,3 +265,102 @@ export function indentSelection(blocks: NoteBlock[], chosen: ReadonlySet<string>
   }
   return next;
 }
+
+// ── Turn into, fold all, move to a new place ──────────────────────────────────────────────────────
+
+/** Block kinds that are just a line of text, and so can be turned into one another in bulk. */
+export const TEXT_BLOCK_TYPES: ReadonlySet<NoteBlock['type']> = new Set<NoteBlock['type']>([
+  'paragraph', 'heading1', 'heading2', 'heading3', 'bullet', 'numbered', 'todo', 'toggle', 'quote',
+]);
+
+/**
+ * Turns every block in `ids` into `type`. Only text-like lines change (a table, a database, a divider or code is
+ * left as it is), and the type-specific fields follow the type, as changing one block's type always did.
+ */
+export function turnInto(blocks: NoteBlock[], ids: ReadonlySet<string>, type: NoteBlock['type']): NoteBlock[] {
+  if (!TEXT_BLOCK_TYPES.has(type)) return blocks;
+  let changed = false;
+  const next = blocks.map((b) => {
+    if (!ids.has(b.id) || b.type === type || !TEXT_BLOCK_TYPES.has(b.type)) return b;
+    changed = true;
+    const { checked: _c, collapsed: _o, ...rest } = b;
+    return { ...rest, type, ...(type === 'todo' ? { checked: b.checked ?? false } : {}), ...(type === 'toggle' && b.collapsed ? { collapsed: true } : {}) };
+  });
+  return changed ? next : blocks;
+}
+
+/** ⌘⌥T: close every toggle that holds something, or open them all when they are all closed already. */
+export function foldAllToggles(blocks: NoteBlock[]): NoteBlock[] {
+  const holders = blocks.filter((b, i) => b.type === 'toggle' && toggleHasChildren(blocks, i));
+  if (holders.length === 0) return blocks;
+  const collapse = holders.some((b) => !b.collapsed);
+  const ids = new Set(holders.map((b) => b.id));
+  return blocks.map((b) => (ids.has(b.id) ? (collapse ? { ...b, collapsed: true } : (() => { const { collapsed: _o, ...rest } = b; return rest; })()) : b));
+}
+
+/**
+ * Moves the chosen blocks, with their children, to sit before `beforeId` (null: the end) with the first of them at
+ * `level`. Same array when that is where they already are, or when the target is inside what is being moved.
+ */
+export function moveSubtreesTo(blocks: NoteBlock[], chosen: ReadonlySet<string>, beforeId: string | null, level: number): NoteBlock[] {
+  const roots = selectionRoots(blocks, chosen);
+  if (roots.length === 0) return blocks;
+  const moving = new Set(roots.flatMap((root) => subtreeIds(blocks, root)));
+  if (beforeId && moving.has(beforeId)) return blocks;
+  const group = blocks.filter((b) => moving.has(b.id));
+  const rest = blocks.filter((b) => !moving.has(b.id));
+  const at = beforeId ? rest.findIndex((b) => b.id === beforeId) : rest.length;
+  if (at === -1) return blocks;
+  const delta = level - levelOf(group[0]);
+  const shifted = group.map((b) => withLevel(b, Math.min(MAX_INDENT, Math.max(0, levelOf(b) + delta))));
+  const next = normalizeIndents([...rest.slice(0, at), ...shifted, ...rest.slice(at)]);
+  const same = next.length === blocks.length && next.every((b, i) => b.id === blocks[i].id && levelOf(b) === levelOf(blocks[i]));
+  return same ? blocks : next;
+}
+
+export interface DropTarget {
+  /** The shown block the dragged ones go under, or null for the very top. */
+  afterId: string | null;
+  /** What `moveSubtreesTo` needs: the block they go before (null: the end), and their level. */
+  beforeId: string | null;
+  level: number;
+}
+
+/**
+ * Where a drag lands. `rows` is where each shown block is on screen; `y` is the pointer's height and `dx` how far
+ * right (or left) it has moved since the drag began, in steps of `step` pixels per level. The dragged blocks go
+ * after the last shown block whose middle is above the pointer, level with it; dragging right nests them under it
+ * (not under a closed toggle, whose children are hidden), left brings them out.
+ */
+export function computeDrop(
+  blocks: readonly NoteBlock[],
+  chosen: ReadonlySet<string>,
+  rows: ReadonlyMap<string, { top: number; bottom: number }>,
+  y: number,
+  dx: number,
+  step: number,
+): DropTarget | null {
+  const roots = selectionRoots(blocks, chosen);
+  if (roots.length === 0) return null;
+  const moving = new Set(roots.flatMap((root) => subtreeIds(blocks, root)));
+  const hidden = hiddenBlockIds(blocks);
+  const stops = blocks.filter((b) => !moving.has(b.id) && !hidden.has(b.id) && rows.has(b.id));
+  let after: NoteBlock | null = null;
+  for (const b of stops) {
+    const r = rows.get(b.id)!;
+    if ((r.top + r.bottom) / 2 < y) after = b; else break;
+  }
+  const rest = blocks.filter((b) => !moving.has(b.id));
+  let beforeId: string | null;
+  let level = 0;
+  if (!after) {
+    beforeId = rest[0]?.id ?? null;
+  } else {
+    const at = blocks.indexOf(after);
+    const resume = after.type === 'toggle' && after.collapsed ? subtreeEnd(blocks, at) : at + 1;
+    beforeId = blocks.slice(resume).find((b) => !moving.has(b.id))?.id ?? null;
+    const max = after.type === 'toggle' && after.collapsed ? levelOf(after) : Math.min(MAX_INDENT, levelOf(after) + 1);
+    level = Math.min(max, Math.max(0, levelOf(after) + Math.round(dx / step)));
+  }
+  return { afterId: after?.id ?? null, beforeId, level };
+}
