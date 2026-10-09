@@ -22,7 +22,7 @@ export const TASK_NOTE_CHARS = 600;
 export function noteText(blocks: readonly Pick<NoteBlock, 'type' | 'content' | 'checked' | 'indent' | 'tableData'>[], limit = NOTE_CHARS): string {
   const lines: string[] = [];
   for (const b of blocks) {
-    if (b.type === 'divider' || b.type === 'database') continue;
+    if (b.type === 'divider' || b.type === 'database' || b.type === 'codefile') continue;
     const pad = '  '.repeat(Math.min(6, Math.max(0, b.indent ?? 0)));
     if (b.type === 'table') {
       for (const row of b.tableData?.rows ?? []) { const cells = row.map((c) => stripInline(c).trim()).filter(Boolean); if (cells.length) lines.push(`${pad}${cells.join(' | ')}`); }

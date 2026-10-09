@@ -1899,6 +1899,7 @@ function UserScopedApp() {
           <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
             <NotesWorkspace
               linking={noteLinking}
+              onOpenFile={(id) => { setPendingFileId(id); setActiveView('notepad'); }}
               openNoteId={pendingNoteId}
               createOnOpen={createNoteOnOpen}
               onCreateHandled={() => setCreateNoteOnOpen(false)}

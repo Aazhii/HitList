@@ -1,13 +1,13 @@
 import { useRef, useEffect } from 'react';
 import {
   Columns3, Link2, Type, Heading1, Heading2, Heading3, List, ListOrdered,
-  CheckSquare, ChevronRight, Quote, Minus, Code2, Table2, Lightbulb,
+  CheckSquare, ChevronRight, Quote, Minus, Code2, Table2, Lightbulb, FileCode2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { BlockType } from '@/types/notes';
 
 /** What a command sets up beyond changing the block's type: the database group (showcase 1753). */
-export type SlashAction = 'db-table' | 'db-board' | 'db-linked';
+export type SlashAction = 'db-table' | 'db-board' | 'db-linked' | 'file-pick';
 
 export interface SlashCommand {
   trigger: string;
@@ -38,6 +38,7 @@ export const SLASH_COMMANDS: SlashCommand[] = [
   { trigger: 'table',    label: 'Table',         description: 'Insert a table',        type: 'table',     icon: <Table2 className={ICON} strokeWidth={STROKE} /> },
   { trigger: 'database', label: 'Create database', description: 'A new table inside this note', type: 'database', action: 'db-table', icon: <Table2 className={ICON} strokeWidth={STROKE} /> },
   { trigger: 'board',    label: 'Create board',    description: 'A new database shown as a board', type: 'database', action: 'db-board', icon: <Columns3 className={ICON} strokeWidth={STROKE} /> },
+  { trigger: 'file',     label: 'Notepad file',  description: 'Show a Notepad file here, editable', type: 'codefile', action: 'file-pick', icon: <FileCode2 className={ICON} strokeWidth={STROKE} /> },
   { trigger: 'linked',   label: 'Linked view of a database', description: 'Show an existing database here', type: 'database', action: 'db-linked', icon: <Link2 className={ICON} strokeWidth={STROKE} /> },
 ];
 

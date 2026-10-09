@@ -37,6 +37,7 @@ export function blocksToText(blocks: readonly NoteBlock[]): string {
     if (b.type === 'divider') return `${pad}---`;
     if (b.type === 'table') return tableText(b.tableData);
     if (b.type === 'database') return `${pad}[database]`;
+    if (b.type === 'codefile') return `${pad}[notepad file]`;
     return `${pad}${TEXT_MARK[b.type]?.(b) ?? ''}${b.content}`;
   }).join('\n');
 }
@@ -51,7 +52,7 @@ export function toClipboard(blocks: readonly NoteBlock[], chosen: ReadonlySet<st
 
 const TYPES: ReadonlySet<string> = new Set([
   'paragraph', 'heading1', 'heading2', 'heading3', 'bullet', 'numbered', 'todo', 'quote', 'divider',
-  'code', 'table', 'callout', 'database', 'toggle',
+  'code', 'table', 'callout', 'database', 'toggle', 'codefile',
 ]);
 
 /**
@@ -76,6 +77,12 @@ export function fromClipboard(json: string, newId: () => string = () => crypto.r
       if (typeof raw.emoji === 'string') block.emoji = raw.emoji;
       if (raw.tone === 'accent' || raw.tone === 'sage') block.tone = raw.tone;
     }
+    if (raw.type === 'code') {
+      if (typeof raw.language === 'string' && raw.language.length <= 40) block.language = raw.language;
+      if (raw.codeIndent === '2' || raw.codeIndent === '4' || raw.codeIndent === 'tab') block.codeIndent = raw.codeIndent;
+      if (raw.codeWrap === true) block.codeWrap = true;
+    }
+    if (raw.type === 'codefile' && typeof raw.fileId === 'string') block.fileId = raw.fileId;
     if (raw.type === 'database' && typeof raw.databaseId === 'string') {
       block.databaseId = raw.databaseId;
       if (raw.dbLayout === 'table' || raw.dbLayout === 'board') block.dbLayout = raw.dbLayout;

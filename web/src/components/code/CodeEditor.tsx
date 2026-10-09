@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Annotation, Compartment, EditorState } from '@codemirror/state';
+import { Annotation, Compartment, EditorState, Prec } from '@codemirror/state';
 import {
   EditorView, crosshairCursor, drawSelection, dropCursor, highlightActiveLine, highlightActiveLineGutter,
   highlightSpecialChars, keymap, lineNumbers, rectangularSelection,
@@ -26,6 +26,13 @@ export interface CodeEditorProps {
   readOnly?: boolean;
   ariaLabel?: string;
   autoFocus?: boolean;
+  /** Grow with the text (up to `maxHeight` px, then scroll) instead of filling the box; for an editor inside a note. */
+  autoHeight?: boolean;
+  maxHeight?: number;
+  /** Gives the editor view once it exists (and null when it is gone), so the caller can focus it. */
+  onView?: (view: EditorView | null) => void;
+  /** ArrowUp on the first line / ArrowDown on the last: the caller may move on to a neighbouring block. */
+  onEdge?: (direction: 'up' | 'down') => void;
   /** Where the caret is, for a status line. */
   onCursor?: (position: { line: number; column: number; selected: number }) => void;
   className?: string;
@@ -40,14 +47,14 @@ export interface CodeEditorProps {
  */
 export function CodeEditor({
   value, onChange, language, indent = '2', wrap = false, fontSize = 13, readOnly = false, ariaLabel = 'Code',
-  autoFocus = false, onCursor, className,
+  autoFocus = false, autoHeight = false, maxHeight = 480, onView, onEdge, onCursor, className,
 }: CodeEditorProps) {
   const host = useRef<HTMLDivElement | null>(null);
   const view = useRef<EditorView | null>(null);
   const parts = useRef({ language: new Compartment(), indent: new Compartment(), wrap: new Compartment(), readOnly: new Compartment() });
   // The latest callbacks, read by the editor's long-lived listener.
-  const callbacks = useRef({ onChange, onCursor });
-  useEffect(() => { callbacks.current = { onChange, onCursor }; });
+  const callbacks = useRef({ onChange, onCursor, onView, onEdge });
+  useEffect(() => { callbacks.current = { onChange, onCursor, onView, onEdge }; });
 
   const indentExtension = (choice: IndentChoice) => [indentUnit.of(indentString(choice)), EditorState.tabSize.of(choice === 'tab' ? 4 : Number(choice))];
 
@@ -64,6 +71,20 @@ export function CodeEditor({
           search({ top: true }),
           keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...foldKeymap, ...completionKeymap, indentWithTab]),
           codeTheme,
+          // Past either end the arrows are the caller's, to move to the next block.
+          Prec.highest(EditorView.domEventHandlers({
+            keydown: (event, editor) => {
+              if ((event.key !== 'ArrowUp' && event.key !== 'ArrowDown') || event.shiftKey || event.altKey || event.metaKey || event.ctrlKey) return false;
+              const { main } = editor.state.selection;
+              if (!main.empty || !callbacks.current.onEdge) return false;
+              const line = editor.state.doc.lineAt(main.head).number;
+              const edge = event.key === 'ArrowUp' ? line === 1 : line === editor.state.doc.lines;
+              if (!edge) return false;
+              event.preventDefault();
+              callbacks.current.onEdge(event.key === 'ArrowUp' ? 'up' : 'down');
+              return true;
+            },
+          })),
           EditorView.contentAttributes.of({ 'aria-label': ariaLabel, spellcheck: 'false', autocorrect: 'off', autocapitalize: 'off' }),
           parts.current.language.of([]),
           parts.current.indent.of(indentExtension(indent)),
@@ -84,7 +105,8 @@ export function CodeEditor({
     });
     view.current = editor;
     if (autoFocus) editor.focus();
-    return () => { editor.destroy(); view.current = null; };
+    callbacks.current.onView?.(editor);
+    return () => { callbacks.current.onView?.(null); editor.destroy(); view.current = null; };
     // The editor is created once; every prop below is applied by its own effect.
   }, []);
 
@@ -110,5 +132,16 @@ export function CodeEditor({
     view.current?.dispatch({ effects: parts.current.readOnly.reconfigure([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]) });
   }, [readOnly]);
 
-  return <div ref={host} data-code-editor className={cn('h-full min-h-0 overflow-hidden', className)} style={{ ['--code-size' as string]: `${fontSize}px` }} />;
+  return (
+    <div
+      ref={host}
+      data-code-editor
+      className={cn('min-h-0 overflow-hidden', !autoHeight && 'h-full', className)}
+      style={{
+        ['--code-size' as string]: `${fontSize}px`,
+        ['--code-height' as string]: autoHeight ? 'auto' : '100%',
+        ['--code-max' as string]: autoHeight ? `${maxHeight}px` : 'none',
+      }}
+    />
+  );
 }

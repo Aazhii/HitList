@@ -37,6 +37,7 @@ export function supportedMarks(type: BlockType): readonly Mark[] {
     case 'divider':
     case 'table':
     case 'database':
+    case 'codefile':
       return [];
     case 'heading1':
     case 'heading2':

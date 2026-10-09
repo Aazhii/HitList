@@ -41,7 +41,7 @@ describe('blockMetrics', () => {
 
   it('keeps the text classes in step with the metrics', () => {
     for (const type of TYPES) {
-      if (type === 'divider' || type === 'database') continue;
+      if (type === 'divider' || type === 'database' || type === 'codefile') continue;
       const { fontSize, lineHeight } = BLOCK_METRICS[type];
       const cls = getBlockTextClass(type);
       expect(cls, type).toContain(`text-[${fontSize}px]`);

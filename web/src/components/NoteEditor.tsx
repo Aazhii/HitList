@@ -1,12 +1,12 @@
 import {
-  useRef, useEffect, useCallback, useState, useMemo, Fragment,
+  useRef, useEffect, useCallback, useState, useMemo, lazy, Suspense,
   KeyboardEvent,
 } from 'react';
 import {
   Plus, GripVertical, Trash2, ArrowUp, ArrowDown,
   Type, Heading1, Heading2, Heading3, List, ListOrdered,
   CheckSquare, ChevronRight, Quote, Minus, Code2, Table2, Lightbulb,
-  Bold, Italic, Underline, Strikethrough, Check,
+  Bold, Italic, Underline, Strikethrough, Check, FileCode2,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { NoteBlock, BlockType, TableData, CalloutTone } from '@/types/notes';
@@ -38,6 +38,12 @@ import {
   findMatches, revealBlock, turnInto, type DropTarget,
 } from '@/lib/noteBlocks';
 import { NoteFindBar } from '@/components/notes/NoteFindBar';
+import { FilePicker } from '@/components/notes/FilePicker';
+import { NoteCodeContext, type CodeFilesApi, type NoteCodeContextValue } from '@/components/notes/codeContext';
+
+// The code editor is large, so a note loads it only when it has a code block on screen.
+const CodeBlockView = lazy(() => import('@/components/notes/CodeBlocks').then((m) => ({ default: m.CodeBlockView })));
+const CodeFileView = lazy(() => import('@/components/notes/CodeBlocks').then((m) => ({ default: m.CodeFileView })));
 
 /** How far each level of Tab pushes a line in, in px. */
 const INDENT_STEP = 24;
@@ -82,6 +88,7 @@ const BLOCK_ICONS: Record<BlockType, React.ReactNode> = {
   callout:   <Lightbulb className={ICON} strokeWidth={STROKE} />,
   database:  <Table2 className={ICON} strokeWidth={STROKE} />,
   toggle:    <ChevronRight className={ICON} strokeWidth={STROKE} />,
+  codefile:  <FileCode2 className={ICON} strokeWidth={STROKE} />,
 };
 
 const BLOCK_TYPES: BlockType[] = [
@@ -358,7 +365,7 @@ interface BlockRowProps {
   /** The textarea's selection may have changed; re-evaluate the format toolbar. */
   onSelectionChange: (id: string) => void;
   /** Non-content fields, such as a callout's emoji and tone. */
-  onUpdateMeta: (id: string, changes: Partial<Pick<NoteBlock, 'emoji' | 'tone' | 'collapsed'>>) => void;
+  onUpdateMeta: (id: string, changes: Partial<Pick<NoteBlock, 'emoji' | 'tone' | 'collapsed' | 'content' | 'language' | 'codeIndent' | 'codeWrap' | 'fileId'>>) => void;
   /** The caret or text moved: open, update or close the "@" menu. */
   onMentionCheck: (id: string, el: HTMLTextAreaElement) => void;
   /** The linked-task chip, when this block is in a quadrant. */
@@ -465,6 +472,23 @@ function BlockRow({
           {block.databaseId
             ? <DatabaseBlock databaseId={block.databaseId} layout={block.dbLayout} onOpenDatabase={onOpenDatabase} onShift={setShift} />
             : <div className="rounded-[8px] border border-dashed border-a-line-strong px-4 py-3 text-[13px] text-a-faint">Choosing a database…</div>}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Code, and a Notepad file shown in the note ───────────────────────────────
+  if (block.type === 'code' || block.type === 'codefile') {
+    const loading = <div className="h-16 rounded-[8px] border border-a-line bg-a-surface" aria-busy />;
+    return (
+      <div {...rowProps}>
+        {gutter}
+        <div className="min-w-0 flex-1">
+          <Suspense fallback={loading}>
+            {block.type === 'code'
+              ? <CodeBlockView block={block} onChange={(changes) => onUpdateMeta(block.id, changes)} />
+              : <CodeFileView block={block} onRemove={() => onDelete(block.id)} />}
+          </Suspense>
         </div>
       </div>
     );
@@ -690,6 +714,8 @@ interface NoteEditorProps {
   /** ⌘Z / ⌘⇧Z: go back or forward one step in this note's history. Returns the blocks now shown, or null when there was nothing to do. */
   onUndo?: () => NoteBlock[] | null;
   onRedo?: () => NoteBlock[] | null;
+  /** Notepad files, for the "Notepad file" block. Without it that block shows "not available". */
+  codeFiles?: CodeFilesApi;
   /** The note these blocks belong to; needed to link a block to a task. */
   noteId?: string;
   linking?: NoteTaskLinking;
@@ -706,6 +732,7 @@ export function NoteEditor({
   onSetBlocks,
   onUndo,
   onRedo,
+  codeFiles,
   noteId,
   linking,
 }: NoteEditorProps) {
@@ -726,6 +753,8 @@ export function NoteEditor({
   } | null>(null);
 
   const textareaRefs = useRef<Map<string, HTMLTextAreaElement>>(new Map());
+  /** Mounted code editors offer a way to focus them, by block id. */
+  const codeFocusers = useRef<Map<string, () => void>>(new Map());
   const pendingFocusId = useRef<string | null>(null);
   // A selection to restore once a formatting edit has re-rendered its block.
   const pendingSelection = useRef<{ id: string; start: number; end: number } | null>(null);
@@ -760,8 +789,12 @@ export function NoteEditor({
   // Focus pending block after render
   useEffect(() => {
     if (pendingFocusId.current) {
-      const el = textareaRefs.current.get(pendingFocusId.current);
-      if (el) {
+      const focusCode = codeFocusers.current.get(pendingFocusId.current);
+      const el = focusCode ? undefined : textareaRefs.current.get(pendingFocusId.current);
+      if (focusCode) {
+        focusCode();
+        pendingFocusId.current = null;
+      } else if (el) {
         el.focus();
         const len = el.value.length;
         el.setSelectionRange(len, len);
@@ -894,6 +927,8 @@ export function NoteEditor({
     const open = (e: globalThis.KeyboardEvent) => {
       if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== 'f') return;
       if (!rootRef.current?.isConnected) return;
+      // Inside a code editor ⌘F is its own find and replace.
+      if ((e.target as HTMLElement | null)?.closest?.('.cm-editor')) return;
       e.preventDefault();
       setFind((cur) => cur ?? { query: '', matchCase: false, current: 0 });
       requestAnimationFrame(() => { findInput.current?.focus(); findInput.current?.select(); });
@@ -1237,6 +1272,15 @@ export function NoteEditor({
   /** Where the linked-database picker hangs, and which block it is for. */
   const [dbPicker, setDbPicker] = useState<{ blockId: string; position: { top: number; left: number } } | null>(null);
 
+  /** Where the Notepad-file picker hangs, and which block it is for. */
+  const [filePicker, setFilePicker] = useState<{ blockId: string; position: { top: number; left: number } } | null>(null);
+
+  /** A block becomes a Notepad-file block showing `fileId`. */
+  const attachFile = useCallback((blockId: string, fileId: string) => {
+    onChangeBlockType(blockId, 'codefile');
+    onUpdateBlock(blockId, { content: '', fileId });
+  }, [onChangeBlockType, onUpdateBlock]);
+
   /** A block becomes a database block pointing at `databaseId`. */
   const attachDatabase = useCallback((blockId: string, databaseId: string, layout: 'table' | 'board') => {
     onChangeBlockType(blockId, 'database');
@@ -1250,6 +1294,11 @@ export function NoteEditor({
     if (cmd.action === 'db-linked') {
       onUpdateBlock(blockId, { content: '' });
       setDbPicker({ blockId, position });
+      return;
+    }
+    if (cmd.action === 'file-pick') {
+      onUpdateBlock(blockId, { content: '' });
+      setFilePicker({ blockId, position });
       return;
     }
     if (cmd.action) {
@@ -1489,10 +1538,7 @@ export function NoteEditor({
       if (next) { e.preventDefault(); pendingFocusId.current = next.id; }
     } else if (e.key === 'Tab' && !e.nativeEvent.isComposing) {
       e.preventDefault();
-      if (block.type === 'code') {
-        // Code keeps real spacing: Tab adds two spaces, Shift+Tab takes up to two from the start of the line.
-        onUpdateBlock(blockId, { content: e.shiftKey ? block.content.replace(/^ {1,2}/, '') : block.content + '  ' });
-      } else if (onSetIndent) {
+      if (onSetIndent) {
         onSetIndent(blockId, e.shiftKey ? 'out' : 'in');
         pendingFocusId.current = blockId;
       }
@@ -1517,7 +1563,30 @@ export function NoteEditor({
   }, [onSetBlocks, deleteChosen, covered, selected, blocks, linking, onDeleteBlock]);
 
 
+  // What the code blocks on screen ask of this editor: Esc to choose the block, arrows past either end, focus on arrival.
+  const codeContext = useMemo<NoteCodeContextValue>(() => ({
+    codeFiles,
+    exitBlock: enterSelection,
+    leaveBlock: (blockId, direction) => {
+      const at = visibleIndex.get(blockId);
+      const target = at === undefined ? undefined : visibleBlocks[at + (direction === 'up' ? -1 : 1)];
+      if (!target) return;
+      pendingFocusId.current = target.id;
+      setFocusedId(target.id);
+    },
+    consumeFocus: (blockId) => {
+      if (pendingFocusId.current !== blockId) return false;
+      pendingFocusId.current = null;
+      return true;
+    },
+    registerFocus: (blockId, focus) => {
+      if (focus) codeFocusers.current.set(blockId, focus);
+      else codeFocusers.current.delete(blockId);
+    },
+  }), [codeFiles, enterSelection, visibleIndex, visibleBlocks]);
+
   return (
+    <NoteCodeContext.Provider value={codeContext}>
     <div
       ref={rootRef}
       tabIndex={-1}
@@ -1550,6 +1619,20 @@ export function NoteEditor({
           onSelect={handleSlashSelect}
           onClose={() => setSlashState(null)}
           selectedIndex={slashState.selectedIndex}
+        />
+      )}
+
+      {filePicker && (
+        <FilePicker
+          position={filePicker.position}
+          files={codeFiles?.files ?? []}
+          onClose={() => setFilePicker(null)}
+          onPick={(fileId) => { attachFile(filePicker.blockId, fileId); setFilePicker(null); }}
+          onNew={() => {
+            if (!codeFiles) { toast.error('Notepad files are not available here'); setFilePicker(null); return; }
+            attachFile(filePicker.blockId, codeFiles.create());
+            setFilePicker(null);
+          }}
         />
       )}
 
@@ -1707,6 +1790,7 @@ export function NoteEditor({
         aria-label="Add new block"
       />
     </div>
+    </NoteCodeContext.Provider>
   );
 }
 

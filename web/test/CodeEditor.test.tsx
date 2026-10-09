@@ -77,4 +77,27 @@ describe('code editor', () => {
     expect(view.state.doc.toString()).toBe('locked');
     expect(view.contentDOM.getAttribute('contenteditable')).toBe('false');
   });
+
+  it('arrows past the first or last line are handed to the caller; inside the text they move the caret', () => {
+    const onEdge = vi.fn();
+    const { container } = render(<CodeEditor value={'one\ntwo\nthree'} onEdge={onEdge} />);
+    const view = viewOf(container);
+    select(view, 5); // on the middle line
+    press(view, 'ArrowUp');
+    press(view, 'ArrowDown');
+    expect(onEdge).not.toHaveBeenCalled();
+    select(view, 1); // first line
+    press(view, 'ArrowUp');
+    expect(onEdge).toHaveBeenLastCalledWith('up');
+    select(view, view.state.doc.length); // last line
+    press(view, 'ArrowDown');
+    expect(onEdge).toHaveBeenLastCalledWith('down');
+    // a selection, or Shift, keeps the arrow for the editor
+    onEdge.mockClear();
+    select(view, 0, 3);
+    press(view, 'ArrowUp');
+    select(view, 1);
+    press(view, 'ArrowUp', { shiftKey: true });
+    expect(onEdge).not.toHaveBeenCalled();
+  });
 });

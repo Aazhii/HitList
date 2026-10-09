@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { NoteEditor } from '@/components/NoteEditor';
 import { indentBlock, levelForNewBlockAfter, levelOf, outdentBlock } from '@/lib/noteBlocks';
@@ -72,14 +72,13 @@ describe('Tab and Shift+Tab in a note', () => {
     expect(t.blocks()[3].type).toBe('heading2');
   });
 
-  it('in a code block Tab adds two spaces, Shift+Tab takes them away, and nothing is indented', () => {
+  it('a code block is the code editor, not a text box: it takes Tab itself and the line is never nested', async () => {
     const t = setup([para('a', 'x'), para('c', 'if (a)', 0, 'code')]);
-    const code = t.inputs()[1];
-    fireEvent.keyDown(code, { key: 'Tab' });
-    expect(t.blocks()[1].content).toBe('if (a)  ');
+    // Only the plain line is a text box; the code block is rendered by the code editor (loaded on demand).
+    expect(t.inputs()).toHaveLength(1);
+    await waitFor(() => expect(document.querySelector('[data-code-block] .cm-editor')).not.toBeNull());
+    expect(t.blocks()[1].content).toBe('if (a)');
     expect(levelOf(t.blocks()[1])).toBe(0);
-    fireEvent.keyDown(code, { key: 'Tab', shiftKey: true });
-    expect(t.blocks()[1].content).toBe('if (a)  '.replace(/^ {1,2}/, ''));
   });
 
   it('with the slash menu open, Tab picks the highlighted block type instead of indenting', () => {

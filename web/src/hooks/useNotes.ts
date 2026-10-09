@@ -211,14 +211,15 @@ export function useNotes({ files = false }: { files?: boolean } = {}) {
 
   // ── CRUD ───────────────────────────────────────────────────────────────────
 
-  const createNote = useCallback((title = 'Untitled', init?: Partial<Pick<Note, 'blocks' | 'emoji'>>) => {
+  const createNote = useCallback((title = 'Untitled', init?: Partial<Pick<Note, 'blocks' | 'emoji'>>, options: { activate?: boolean } = {}) => {
     const newNote = { ...createNewNote(title), ...init };
     setNotes((prev) => {
       const next = [newNote, ...prev];
       persistLocal(next);
       return next;
     });
-    setActiveNoteId(newNote.id);
+    // A note made on someone else's behalf (a file made from inside a note) does not take over the screen.
+    if (options.activate !== false) setActiveNoteId(newNote.id);
     setSaveStatus('saving');
     // Queue server sync immediately (no debounce for new notes)
     notesSyncService.queueUpsert(noteToPayload(newNote));
@@ -433,6 +434,8 @@ export function useNotes({ files = false }: { files?: boolean } = {}) {
   return {
     flushNote,
     notes: sortedNotes,
+    /** The notes this view does not show (Notes view: the Notepad files), for blocks that point at them. */
+    otherNotes: notes.filter((n) => !shows(n)),
     activeNote,
     activeNoteId,
     setActiveNoteId,

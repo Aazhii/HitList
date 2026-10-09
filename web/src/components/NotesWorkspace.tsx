@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect, type ReactNode } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect, type ReactNode } from 'react';
 import {
   Plus, Pin, PinOff, Trash2, FileText, MoreHorizontal,
   Loader2,
@@ -9,6 +9,8 @@ import { useSyncedSize } from '@/hooks/useSyncedSize';
 import { NOTE_EMOJIS, NOTE_SYNC_LIMIT, NOTE_SYNC_WARN, formatNoteEdited, getNotePreview } from '@/types/notes';
 import type { BlockType } from '@/types/notes';
 import { useNotes } from '@/hooks/useNotes';
+import type { CodeFilesApi } from '@/components/notes/codeContext';
+import { fileSettings, isNotepadFile, newFileParts } from '@/lib/notepad';
 import { ShareSourceControl } from '@/components/shell/ShareSourceControl';
 import type { SaveStatus } from '@/hooks/useNotes';
 import { useSyncStatus } from '@/hooks/useSyncStatus';
@@ -192,9 +194,11 @@ export function NoteDetail({
   onUndoBlocks,
   onRedoBlocks,
   linking,
+  codeFiles,
 }: {
   note: Note;
   linking?: NoteTaskLinking;
+  codeFiles?: CodeFilesApi;
   onUpdateTitle: (id: string, title: string) => void;
   onUpdateEmoji: (id: string, emoji: string) => void;
   onUpdateBlock: (noteId: string, blockId: string, changes: Partial<import('@/types/notes').NoteBlock>) => void;
@@ -326,6 +330,7 @@ export function NoteDetail({
             onRedo={() => onRedoBlocks(note.id)}
             noteId={note.id}
             linking={linking}
+            codeFiles={codeFiles}
           />
         </div>
       </div>
@@ -422,6 +427,8 @@ function NotesLoadingSkeleton({ onSidebarContentChange }: { onSidebarContentChan
 
 // ── Main NotesWorkspace ────────────────────────────────────────────────────────
 interface NotesWorkspaceProps {
+  /** Opens a Notepad file (one shown inside a note) on the Notepad page. */
+  onOpenFile?: (fileId: string) => void;
   /** Tasks access for the "@ → Add to quadrant" menu. */
   linking?: NoteTaskLinking;
   /** A note to open, e.g. from a task's "Note" chip. Cleared through onOpenNoteHandled. */
@@ -441,7 +448,7 @@ interface NotesWorkspaceProps {
   onCreateHandled?: () => void;
 }
 
-export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiveNoteChange, onSidebarContentChange, onOpenSidebar, onCountChange, createOnOpen, onCreateHandled }: NotesWorkspaceProps = {}) {
+export function NotesWorkspace({ onOpenFile, linking, openNoteId, onOpenNoteHandled, onActiveNoteChange, onSidebarContentChange, onOpenSidebar, onCountChange, createOnOpen, onCreateHandled }: NotesWorkspaceProps = {}) {
   const {
     notes,
     activeNote,
@@ -464,10 +471,26 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
     undoBlocks,
     redoBlocks,
     flushNote,
+    otherNotes,
   } = useNotes();
 
   const [search, setSearch] = useState('');
   const [deleteTarget, setDeleteTarget] = useState<Note | null>(null);
+
+  // Notepad files, for a "Notepad file" block inside a note. They live in the same store as notes.
+  const codeFiles = useMemo<CodeFilesApi>(() => {
+    const files = otherNotes.filter(isNotepadFile);
+    return {
+      files: files.map((n) => ({ id: n.id, title: n.title, language: fileSettings(n).language })),
+      get: (id) => files.find((n) => n.id === id),
+      setBlocks,
+      create: () => {
+        const parts = newFileParts();
+        return createNote(parts.title, { blocks: parts.blocks, emoji: parts.emoji }, { activate: false }).id;
+      },
+      open: (id) => onOpenFile?.(id),
+    };
+  }, [otherNotes, setBlocks, createNote, onOpenFile]);
 
   // Opened from a task. Notes are stored per device and never pulled from the
   // server, so a note written elsewhere may simply not be here.
@@ -652,6 +675,7 @@ export function NotesWorkspace({ linking, openNoteId, onOpenNoteHandled, onActiv
             onUndoBlocks={undoBlocks}
             onRedoBlocks={redoBlocks}
             linking={linking}
+            codeFiles={codeFiles}
           />
         ) : notes.length === 0 ? (
           <NotesEmptyState onCreate={handleCreate} />

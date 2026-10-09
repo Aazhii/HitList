@@ -16,7 +16,8 @@ export type BlockType =
   | 'table'
   | 'callout'
   | 'database'
-  | 'toggle';
+  | 'toggle'
+  | 'codefile';
 
 /** A callout's tint: terracotta, or sage. */
 export type CalloutTone = 'accent' | 'sage';
@@ -77,6 +78,8 @@ export interface NoteBlock {
    * the database — deleting the block never deletes it.
    */
   databaseId?: string;
+  /** Notepad-file blocks only: the file (a note, see lib/notepad) this block shows. Only the id is stored; deleting the block never deletes the file. */
+  fileId?: string;
   /** Database blocks only: which view it opens on. */
   dbLayout?: 'table' | 'board';
   /**
@@ -113,6 +116,7 @@ export const BLOCK_TYPE_LABELS: Record<BlockType, string> = {
   callout: 'Callout',
   database: 'Database',
   toggle: 'Toggle list',
+  codefile: 'Notepad file',
 };
 
 export const NOTE_EMOJIS = ['📝', '💡', '🗒️', '🔖', '⭐', '🎯', '🧠', '🌱', '🔥', '📌', '💭', '🚀'];
@@ -185,7 +189,7 @@ export function formatNoteDate(ts: number): string {
  */
 export function getNotePreview(note: Note): string {
   for (const block of note.blocks) {
-    if (block.type === 'divider' || block.type === 'table' || block.type === 'database') continue;
+    if (block.type === 'divider' || block.type === 'table' || block.type === 'database' || block.type === 'codefile') continue;
     const plain = block.type === 'code' ? block.content : stripInline(block.content);
     const text = plain.trim();
     if (text) return text.slice(0, 120);
