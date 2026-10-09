@@ -1038,7 +1038,8 @@ export function NoteEditor({
       onUpdateBlock(blockId, { collapsed: !block.collapsed });
     } else if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      if ((isListItem || block.type === 'toggle') && block.content === '') {
+      // A toggle is never ended by Enter, even when empty: it adds the next toggle (Backspace removes an empty one).
+      if (isListItem && block.content === '') {
         // An empty list item ends the list: one level back out when it is nested, otherwise plain text.
         if (levelOf(block) > 0 && onSetIndent) onSetIndent(blockId, 'out');
         else onChangeBlockType(blockId, 'paragraph');

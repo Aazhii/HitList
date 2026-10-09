@@ -104,6 +104,14 @@ describe('toggle blocks in the editor', () => {
     ]);
   });
 
+  it('Enter in an empty toggle keeps it and adds another, so toggles can be made one after another', () => {
+    const t = setup([b('t', '', 'toggle'), b('x', 'after')]);
+    fireEvent.keyDown(screen.getAllByRole('textbox')[0], { key: 'Enter' });
+    expect(t.blocks().map((x) => [x.content, x.type, levelOf(x)])).toEqual([
+      ['', 'toggle', 0], ['', 'toggle', 0], ['after', 'paragraph', 0],
+    ]);
+  });
+
   it('Enter in an open toggle that holds lines starts its first inner line, as a toggle', () => {
     const open = setup([b('t', 'Open', 'toggle'), b('c', 'kid', 'paragraph', 1)]);
     fireEvent.keyDown(screen.getByDisplayValue('Open'), { key: 'Enter' });
