@@ -364,3 +364,58 @@ export function computeDrop(
   }
   return { afterId: after?.id ?? null, beforeId, level };
 }
+
+// ── Find in a note ───────────────────────────────────────────────────────────────────────────────
+
+export interface FindMatch {
+  blockId: string;
+  /** Which occurrence within the block (0 first). */
+  nth: number;
+}
+
+function fold(text: string, matchCase: boolean): string {
+  return matchCase ? text : text.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase();
+}
+
+/** The text of a block as it is searched: its content, and a table's cells. */
+function searchableText(block: NoteBlock): string {
+  if (block.type === 'table') return (block.tableData?.rows ?? []).map((row) => row.join('\t')).join('\n');
+  return block.content;
+}
+
+/**
+ * Every place `query` occurs across the note, in reading order. Case and accents are ignored unless `matchCase`.
+ * Hidden lines (inside a closed toggle) are searched too; going to one opens the toggles above it.
+ */
+export function findMatches(blocks: readonly NoteBlock[], query: string, matchCase = false): FindMatch[] {
+  const needle = fold(query, matchCase);
+  if (needle === '') return [];
+  const found: FindMatch[] = [];
+  for (const block of blocks) {
+    const text = fold(searchableText(block), matchCase);
+    let at = text.indexOf(needle);
+    let nth = 0;
+    while (at !== -1) {
+      found.push({ blockId: block.id, nth });
+      nth += 1;
+      at = text.indexOf(needle, at + needle.length);
+    }
+  }
+  return found;
+}
+
+/** The note with every closed toggle above `id` opened, so the line can be seen. Same array when it already can. */
+export function revealBlock(blocks: NoteBlock[], id: string): NoteBlock[] {
+  const i = blocks.findIndex((b) => b.id === id);
+  if (i === -1) return blocks;
+  let level = levelOf(blocks[i]);
+  const open = new Set<string>();
+  for (let j = i - 1; j >= 0 && level > 0; j -= 1) {
+    if (levelOf(blocks[j]) < level) {
+      level = levelOf(blocks[j]);
+      if (blocks[j].type === 'toggle' && blocks[j].collapsed) open.add(blocks[j].id);
+    }
+  }
+  if (open.size === 0) return blocks;
+  return blocks.map((b) => (open.has(b.id) ? (() => { const { collapsed: _o, ...rest } = b; return rest; })() : b));
+}

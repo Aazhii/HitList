@@ -35,8 +35,9 @@ import { TableBlock } from '@/components/notes/TableBlock';
 import {
   computeNumberedOrdinals, duplicateSubtrees, hiddenBlockIds, indentSelection, levelOf, moveSelection,
   computeDrop, foldAllToggles, moveSubtreesTo, removeSubtrees, selectRange, selectionIds, selectionRoots, toggleHasChildren,
-  turnInto, type DropTarget,
+  findMatches, revealBlock, turnInto, type DropTarget,
 } from '@/lib/noteBlocks';
+import { NoteFindBar } from '@/components/notes/NoteFindBar';
 
 /** How far each level of Tab pushes a line in, in px. */
 const INDENT_STEP = 24;
@@ -880,6 +881,60 @@ export function NoteEditor({
     if (next !== blocks) onSetBlocks(next);
   }, [onSetBlocks, blocks, selected]);
 
+  // ── Find in the note (⌘F) ──
+  const [find, setFind] = useState<{ query: string; matchCase: boolean; current: number } | null>(null);
+  const findInput = useRef<HTMLInputElement | null>(null);
+  const scrollTarget = useRef<string | null>(null);
+  const matches = useMemo(() => (find ? findMatches(blocks, find.query, find.matchCase) : []), [blocks, find]);
+  const matchIds = useMemo(() => new Set(matches.map((m) => m.blockId)), [matches]);
+  const currentIndex = find && matches.length ? Math.min(find.current, matches.length - 1) : 0;
+  const currentBlockId = matches[currentIndex]?.blockId;
+
+  useEffect(() => {
+    const open = (e: globalThis.KeyboardEvent) => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== 'f') return;
+      if (!rootRef.current?.isConnected) return;
+      e.preventDefault();
+      setFind((cur) => cur ?? { query: '', matchCase: false, current: 0 });
+      requestAnimationFrame(() => { findInput.current?.focus(); findInput.current?.select(); });
+    };
+    document.addEventListener('keydown', open);
+    return () => document.removeEventListener('keydown', open);
+  }, []);
+
+  // Open what hides the match, then bring it into view (the bar keeps the keyboard).
+  const showMatch = useCallback((blockId: string) => {
+    const revealed = revealBlock(blocks, blockId);
+    if (revealed !== blocks) {
+      if (onSetBlocks) onSetBlocks(revealed);
+      else revealed.forEach((b, i) => { if (b !== blocks[i]) onUpdateBlock(b.id, { collapsed: false }); });
+    }
+    scrollTarget.current = blockId;
+  }, [blocks, onSetBlocks, onUpdateBlock]);
+
+  const stepMatch = useCallback((direction: 1 | -1) => {
+    if (!find || matches.length === 0) return;
+    const next = (currentIndex + direction + matches.length) % matches.length;
+    setFind({ ...find, current: next });
+    showMatch(matches[next].blockId);
+  }, [find, matches, currentIndex, showMatch]);
+
+  const changeQuery = useCallback((query: string) => {
+    if (!find) return;
+    setFind({ ...find, query, current: 0 });
+    const first = findMatches(blocks, query, find.matchCase)[0];
+    if (first) showMatch(first.blockId);
+  }, [find, blocks, showMatch]);
+
+  useEffect(() => {
+    const id = scrollTarget.current;
+    if (!id) return;
+    const row = [...(rootRef.current?.querySelectorAll<HTMLElement>('[data-block-id]') ?? [])].find((el) => el.dataset.blockId === id);
+    if (!row) return;
+    scrollTarget.current = null;
+    row.scrollIntoView?.({ block: 'center', behavior: 'smooth' });
+  });
+
   // ── Copy, cut and paste of blocks ──
   const handleCopyCut = useCallback((e: React.ClipboardEvent<HTMLDivElement>, cut: boolean) => {
     if (!onSetBlocks || selected.size === 0) return;
@@ -1522,6 +1577,20 @@ export function NoteEditor({
         />
       )}
 
+      {find && (
+        <NoteFindBar
+          query={find.query}
+          matchCase={find.matchCase}
+          count={matches.length}
+          current={currentIndex}
+          inputRef={findInput}
+          onQuery={changeQuery}
+          onToggleCase={() => setFind({ ...find, matchCase: !find.matchCase, current: 0 })}
+          onStep={stepMatch}
+          onClose={() => setFind(null)}
+        />
+      )}
+
       {/* Blocks */}
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragMove={handleDragMove} onDragEnd={handleDragEnd} onDragCancel={finishDrag}>
       {drop && (
@@ -1537,10 +1606,13 @@ export function NoteEditor({
             key={block.id}
             data-block-id={block.id}
             data-selected={covered.has(block.id) || undefined}
+            data-find={find && matchIds.has(block.id) ? (block.id === currentBlockId ? 'current' : 'match') : undefined}
             // A chosen group is one tinted slab: rows pad into the gap above and below so neighbours touch.
             className={cn(
               'relative flex flex-col gap-[6px]',
               drag?.ids.has(block.id) && 'opacity-40',
+              find && !covered.has(block.id) && matchIds.has(block.id) && '-my-[3px] rounded-[6px] py-[3px]',
+              find && !covered.has(block.id) && matchIds.has(block.id) && (block.id === currentBlockId ? 'bg-a-accent-tint' : 'bg-a-row-hover'),
               covered.has(block.id) && '-my-[3px] bg-a-accent-tint py-[3px]',
               covered.has(block.id) && !covered.has(visibleBlocks[(visibleIndex.get(block.id) ?? 0) - 1]?.id ?? '') && 'rounded-t-[6px]',
               covered.has(block.id) && !covered.has(visibleBlocks[(visibleIndex.get(block.id) ?? 0) + 1]?.id ?? '') && 'rounded-b-[6px]',
