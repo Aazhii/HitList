@@ -1149,6 +1149,60 @@ export function NoteEditor({
     }
   }, [onSetBlocks, onUndo, stepHistory, foldAll, selected, covered, blocks, visibleBlocks, deleteChosen, clearSelection, duplicateChosen, moveChosen, indentChosen, chooseOnly]);
 
+  // ── Drag to choose (the rubber band) ──
+  // Pressing on blank space (the margins, the gaps between lines) and dragging draws a box; every block it touches is
+  // chosen, with its children. A press on text, a control, a menu or a code editor is left alone: that drag selects text.
+  const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  useEffect(() => {
+    if (!onSetBlocks) return;
+    const THRESHOLD = 4;
+    const down = (e: MouseEvent) => {
+      if (e.button !== 0 || e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return;
+      const root = rootRef.current;
+      const target = e.target as HTMLElement | null;
+      if (!root || !target?.closest) return;
+      if (target.closest('textarea, input, select, button, a, [contenteditable="true"], .cm-editor, [role="menu"], [role="dialog"], [data-block-controls], [data-find-bar], [role="search"]')) return;
+      // Only from this note's own page (its margins included), not from the sidebar or the header bar.
+      if (!root.contains(target) && !target.closest('[data-note-page]')) return;
+      const startX = e.clientX;
+      const startY = e.clientY;
+      let active = false;
+
+      const rectOf = (ev: MouseEvent) => ({
+        x: Math.min(startX, ev.clientX), y: Math.min(startY, ev.clientY),
+        w: Math.abs(ev.clientX - startX), h: Math.abs(ev.clientY - startY),
+      });
+      const move = (ev: MouseEvent) => {
+        if (!active && Math.hypot(ev.clientX - startX, ev.clientY - startY) < THRESHOLD) return;
+        if (!active) {
+          active = true;
+          // The box takes over from any text caret, so Backspace and the other keys reach the selection.
+          (document.activeElement as HTMLElement | null)?.blur?.();
+          root.focus();
+        }
+        ev.preventDefault();
+        const box = rectOf(ev);
+        setMarquee(box);
+        const hit: string[] = [];
+        root.querySelectorAll<HTMLElement>('[data-block-id]').forEach((row) => {
+          const r = row.getBoundingClientRect();
+          if (r.bottom >= box.y && r.top <= box.y + box.h && r.right >= box.x && r.left <= box.x + box.w) hit.push(row.dataset.blockId as string);
+        });
+        if (hit.length > 0) chooseOnly(hit, hit[0], hit[hit.length - 1]);
+        else clearSelection();
+      };
+      const up = () => {
+        document.removeEventListener('mousemove', move);
+        document.removeEventListener('mouseup', up);
+        setMarquee(null);
+      };
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', up);
+    };
+    document.addEventListener('mousedown', down);
+    return () => document.removeEventListener('mousedown', down);
+  }, [onSetBlocks, chooseOnly, clearSelection]);
+
   // A click anywhere but the block controls and their menu lets go of the selection.
   useEffect(() => {
     if (selected.size === 0) return;
@@ -1752,6 +1806,14 @@ export function NoteEditor({
           contextLabel="Note block"
           onSelect={(listId, quadrant, assignee) => { void handleMentionSelect(listId, quadrant, assignee); }}
           onClose={() => setMention(null)}
+        />
+      )}
+
+      {marquee && (
+        <div
+          aria-hidden
+          className="pointer-events-none fixed z-40 border border-a-accent-700 bg-a-accent-tint"
+          style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }}
         />
       )}
 
