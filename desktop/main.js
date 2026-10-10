@@ -216,10 +216,9 @@ async function openWindow() {
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
   });
   let connection = null;
-  win.on('closed', () => { connection?.stop(); stopBackupSchedule?.(); stopAlertsSchedule?.(); stopUpdateSchedule?.(); });
+  win.on('closed', () => { connection?.stop(); stopBackupSchedule?.(); stopAlertsSchedule?.(); });
   let stopBackupSchedule;
   let stopAlertsSchedule;
-  let stopUpdateSchedule;
 
   // The shared workspace the person has open, remembered per account. Task and source-editor requests carry it; account services
   // databases stay personal.
@@ -394,7 +393,7 @@ async function openWindow() {
     openFile: async (file) => { if (process.platform === 'linux') shell.showItemInFolder(file); else await shell.openPath(file); },
     onChange: (s) => { if (!win.isDestroyed()) win.webContents.send('update:progress', s); },
   });
-  if (app.isPackaged) stopUpdateSchedule = updater.startSchedule();
+  // No background checks: GitHub is asked only when the person opens Check for updates (a limited, shared API).
 
   /** Set at sign-in, spent by the first check afterwards: that check may look in the cloud even if there is data here. */
   let justSignedIn = false;

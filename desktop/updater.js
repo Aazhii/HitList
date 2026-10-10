@@ -12,7 +12,6 @@ const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
-const CHECK_INTERVAL = 24 * 60 * 60 * 1000;
 const PROGRESS_EVERY_MS = 250;
 const STAGE_ORDER = { alpha: 1, beta: 2 };
 
@@ -264,8 +263,23 @@ function createUpdater({
     set({ phase: 'checking', error: null });
     try {
       let found = null;
+      const limited = (res) => res.status === 403 || res.status === 429;
+      // Straight to the release by its tag (one small request, so a name like "1.1.33" does not page through every release);
+      // older releases are tagged "HitList_x", newer ones "vx". The scan below is the fallback for any other tag.
+      const wantedText = versionText(wanted);
+      for (const tag of [`HitList_${wantedText}`, `v${wantedText}`, wantedText]) {
+        if (found) break;
+        let res;
+        try { res = await fetch(`https://api.github.com/repos/${repo}/releases/tags/${tag}`, { headers }); } catch { break; }
+        if (limited(res)) { set({ phase: 'error', error: 'rate-limited', checkedAt: now() }); return status(); }
+        if (!res.ok) continue;
+        const r = await res.json();
+        const v = r && !Array.isArray(r) && !r.draft ? versionIn(r.tag_name) : null;
+        if (v && compareVersions(v, wanted) === 0) found = r;
+      }
       for (let page = 1; page <= 5 && !found; page += 1) {
         const res = await fetch(`https://api.github.com/repos/${repo}/releases?per_page=100&page=${page}`, { headers });
+        if (limited(res)) { set({ phase: 'error', error: 'rate-limited', checkedAt: now() }); return status(); }
         if (!res.ok) throw new Error(`releases ${res.status}`);
         const releases = await res.json();
         if (!releases.length) break;
@@ -368,15 +382,7 @@ function createUpdater({
     return { ...status(), restart: false };
   }
 
-  /** First check shortly after launch, then once a day. Returns a stop function. */
-  function startSchedule({ firstDelay = 60 * 1000, every = CHECK_INTERVAL } = {}) {
-    const first = setTimeout(() => { void check(); }, firstDelay);
-    const timer = setInterval(() => { void check(); }, every);
-    first.unref?.(); timer.unref?.();
-    return () => { clearTimeout(first); clearInterval(timer); };
-  }
-
-  return { check, checkVersion, useFile, download, cancel, install, status, startSchedule };
+  return { check, checkVersion, useFile, download, cancel, install, status };
 }
 
-module.exports = { createUpdater, parseVersion, versionIn, compareVersions, pickAsset, isSwapAsset, hashFor, CHECK_INTERVAL };
+module.exports = { createUpdater, parseVersion, versionIn, compareVersions, pickAsset, isSwapAsset, hashFor };

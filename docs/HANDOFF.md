@@ -106,7 +106,7 @@ In-app updates query GitHub Releases, not Catalyst Data Store. The generic updat
 offline status or a Catalyst quota failure.
 
 ### 3.2 Updates (in-app, from GitHub Releases)
-`desktop/updater.js` checks `Aazhii/HitList` releases (a minute after launch, then daily; also "Account → Check for updates"). It
+`desktop/updater.js` checks `Aazhii/HitList` releases (only when the person opens "Account → Check for updates"; there is no background or daily check, so GitHub's unauthenticated rate limit is not spent). It
 picks the asset for this computer (Mac arm64 `.zip` for self-replace else `.dmg`; Windows `.exe`; Linux `.AppImage` else `.deb`),
 **downloads with progress**, verifies it against the release's `SHA256SUMS.txt`, and stops at "ready". "Restart and update" then asks
 `desktop/installer.js` to replace the app and restart:

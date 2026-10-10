@@ -80,6 +80,7 @@ export function updateErrorMessage(code: string | null): string {
     case 'size-mismatch': return 'The download did not match its checksum, so it was thrown away. Try again.';
     case 'bad-version': return 'Type a version such as 1.1.27 or HitList 1.1.27.';
     case 'version-not-found': return 'No published release has that version.';
+    case 'rate-limited': return 'GitHub is limiting requests from this network right now. Wait a few minutes and try again.';
     case 'no-installer': return 'That release has no installer for this computer.';
     case 'file-missing': return 'That file could not be read.';
     case 'not-a-hitlist-file': return 'That is not a HitList installer for this computer.';

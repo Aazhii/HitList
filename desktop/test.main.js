@@ -101,7 +101,7 @@ function launch({ failNavigation = false, backupGate, platform = 'darwin', packa
       cancel: () => { lifecycle.push('alerts-cancel'); }, check: async () => { wakeChecks++; },
     }; } },
     './cliqConnection': { createCliqConnection: () => ({ stop: () => { lifecycle.push('stop'); }, beforeRestore: async () => { lifecycle.push('beforeRestore'); }, get: async () => ({}), start: async () => ({}), confirm: async () => ({}), enable: async () => ({}), fetchNow: async () => ({}), unlink: async () => ({}) }) },
-    './updater': { createUpdater: () => ({ status: () => ({}), check: () => {}, download: () => {}, cancel: () => {}, install: () => {}, startSchedule: () => () => {} }) },
+    './updater': { createUpdater: () => ({ status: () => ({}), check: () => {}, download: () => {}, cancel: () => {}, install: () => {} }) },
     './installer': { cleanupAfterUpdate: () => {}, canSwap: () => false, swapPlan: () => ({ ok: false, reason: 'dev-run' }) },
     './dataDir': { dataDirIn: () => '/fake/HitList', migrateLegacyData: () => null, LEGACY_FOLDER: 'old' },
     './catalyst-config': { BACKUP_FUNCTION_URL: 'https://example.invalid' },

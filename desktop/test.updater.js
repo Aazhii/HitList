@@ -55,13 +55,19 @@ function bodyOf(text, chunk = 2) {
   return { getReader: () => ({ read: async () => (at >= buf.length ? { done: true } : { done: false, value: buf.subarray(at, (at += chunk)) }) }) };
 }
 
-function makeUpdater({ releases, current = '1.1.0', files = {}, platform = 'darwin', canSwap = false, install = async () => ({ ok: true }), slow = null }) {
+function makeUpdater({ releases, current = '1.1.0', files = {}, platform = 'darwin', canSwap = false, install = async () => ({ ok: true }), slow = null, limit = false }) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'upd-'));
   const opened = [];
   const calls = [];
   const changes = [];
   const fetch = async (url, opts = {}) => {
     calls.push(url);
+    if (url.includes('/releases/tags/')) {
+      if (limit) return { ok: false, status: 403 };
+      const hit = releases.find((r) => r.tag_name === url.split('/releases/tags/')[1]);
+      return hit ? { ok: true, status: 200, json: async () => hit } : { ok: false, status: 404 };
+    }
+    if (limit) return { ok: false, status: 403 };
     if (url.includes('/releases')) return { ok: true, status: 200, json: async () => releases };
     if (url in files) {
       if (url === slow) {
@@ -277,6 +283,22 @@ test('a version asked for by name is found among the releases, whether newer, ol
   }
   assert.equal((await a.u.checkVersion('1.3.0')).direction, 'newer');
   assert.equal((await a.u.checkVersion('1.2.0')).direction, 'same');
+});
+
+test('a version asked for by name is looked up by its tag, not by paging through every release', async () => {
+  const a = makeUpdater({ releases: many(['1.1.33', '1.1.32']), current: '1.1.30' });
+  const s = await a.u.checkVersion('HitList 1.1.33');
+  assert.equal(s.phase, 'available');
+  assert.equal(s.latest.version, '1.1.33');
+  assert.ok(a.calls.every((u) => u.includes('/releases/tags/')), 'only tag lookups: ' + a.calls.join(' '));
+  assert.ok(a.calls.length <= 3);
+});
+
+test('GitHub limiting requests is reported as that, not as being offline', async () => {
+  const a = makeUpdater({ releases: many(['1.1.33']), limit: true });
+  const s = await a.u.checkVersion('1.1.33');
+  assert.equal(s.phase, 'error');
+  assert.equal(s.error, 'rate-limited');
 });
 
 test('a version that does not exist, or is not a version, says so and changes nothing', async () => {
