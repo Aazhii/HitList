@@ -1149,6 +1149,51 @@ export function NoteEditor({
     }
   }, [onSetBlocks, onUndo, stepHistory, foldAll, selected, covered, blocks, visibleBlocks, deleteChosen, clearSelection, duplicateChosen, moveChosen, indentChosen, chooseOnly]);
 
+  // ── Clicking empty space puts the caret where you would expect (as in Notion) ──
+  /** Puts the caret at the end of a line of text, or in a code editor. False when the block has neither. */
+  const focusBlockEnd = useCallback((id: string): boolean => {
+    const focusCode = codeFocusers.current.get(id);
+    if (focusCode) { focusCode(); return true; }
+    const el = textareaRefs.current.get(id);
+    if (!el) return false;
+    el.focus();
+    el.setSelectionRange(el.value.length, el.value.length);
+    return true;
+  }, []);
+
+  /** Below the last block: an empty last line takes the caret, otherwise a new empty line is added there. */
+  const addAtEnd = useCallback(() => {
+    const last = blocksRef.current[blocksRef.current.length - 1];
+    if (!last) return;
+    if (last.content.trim() === '' && last.type === 'paragraph') {
+      focusBlockEnd(last.id);
+    } else {
+      pendingFocusId.current = onAddBlock(last.id, 'paragraph');
+    }
+  }, [onAddBlock, focusBlockEnd]);
+
+  /**
+   * A plain click on empty space (the margins, the gaps between lines, the page below the last line). Below the last
+   * block it works on the end of the note; between or beside blocks it goes to the nearest one.
+   */
+  const clickEmptySpace = useCallback((y: number) => {
+    const root = rootRef.current;
+    if (!root) return;
+    const rows = [...root.querySelectorAll<HTMLElement>('[data-block-id]')].map((el) => ({ id: el.dataset.blockId as string, rect: el.getBoundingClientRect() }));
+    if (rows.length === 0) return;
+    if (y > rows[rows.length - 1].rect.bottom) { addAtEnd(); return; }
+    if (y < rows[0].rect.top) return;
+    let best = rows[0];
+    let bestGap = Infinity;
+    for (const row of rows) {
+      const gap = y < row.rect.top ? row.rect.top - y : y > row.rect.bottom ? y - row.rect.bottom : 0;
+      if (gap < bestGap) { best = row; bestGap = gap; }
+    }
+    focusBlockEnd(best.id);
+  }, [addAtEnd, focusBlockEnd]);
+  const clickEmptySpaceRef = useRef(clickEmptySpace);
+  useEffect(() => { clickEmptySpaceRef.current = clickEmptySpace; });
+
   // ── Drag to choose (the rubber band) ──
   // Pressing on blank space (the margins, the gaps between lines) and dragging draws a box; every block it touches is
   // chosen, with its children. A press on text, a control, a menu or a code editor is left alone: that drag selects text.
@@ -1191,10 +1236,12 @@ export function NoteEditor({
         if (hit.length > 0) chooseOnly(hit, hit[0], hit[hit.length - 1]);
         else clearSelection();
       };
-      const up = () => {
+      const up = (ev: MouseEvent) => {
         document.removeEventListener('mousemove', move);
         document.removeEventListener('mouseup', up);
         setMarquee(null);
+        // No box was drawn: it was a click on empty space.
+        if (!active) clickEmptySpaceRef.current(ev.clientY);
       };
       document.addEventListener('mousemove', move);
       document.addEventListener('mouseup', up);
@@ -1202,6 +1249,60 @@ export function NoteEditor({
     document.addEventListener('mousedown', down);
     return () => document.removeEventListener('mousedown', down);
   }, [onSetBlocks, chooseOnly, clearSelection]);
+
+  // ── Drag through text into the next line (Notion's cross-block selection) ──
+  // Pressing in a line's text and dragging within it selects text, as in any text box. The moment the pointer crosses
+  // into another line the drag becomes a choice of blocks: every line from where it began to where it is now, each with
+  // its children, ready for Backspace, copy, move and the rest.
+  const [crossing, setCrossing] = useState(false);
+  useEffect(() => {
+    if (!onSetBlocks) return;
+    const down = (e: MouseEvent) => {
+      if (e.button !== 0 || e.shiftKey || e.metaKey || e.ctrlKey || e.altKey) return;
+      const root = rootRef.current;
+      const target = e.target as HTMLElement | null;
+      if (!root || !target?.closest || !target.closest('textarea') || !root.contains(target)) return;
+      const startId = (target.closest('[data-block-id]') as HTMLElement | null)?.dataset.blockId;
+      if (!startId) return;
+      let crossed = false;
+
+      const rowAt = (y: number): string | null => {
+        let nearest: { id: string; gap: number } | null = null;
+        for (const row of root.querySelectorAll<HTMLElement>('[data-block-id]')) {
+          const r = row.getBoundingClientRect();
+          if (y >= r.top && y <= r.bottom) return row.dataset.blockId as string;
+          const gap = y < r.top ? r.top - y : y - r.bottom;
+          if (!nearest || gap < nearest.gap) nearest = { id: row.dataset.blockId as string, gap };
+        }
+        return nearest?.id ?? null;
+      };
+      const move = (ev: MouseEvent) => {
+        const hovered = rowAt(ev.clientY);
+        if (!crossed) {
+          if (!hovered || hovered === startId) return;
+          crossed = true;
+          setCrossing(true);
+          // The drag stops selecting text and starts choosing blocks.
+          (document.activeElement as HTMLElement | null)?.blur?.();
+          root.focus();
+        }
+        ev.preventDefault();
+        window.getSelection()?.removeAllRanges();
+        if (!hovered) return;
+        const range = selectRange(blocksRef.current, startId, hovered);
+        if (range.length > 0) chooseOnly(range, startId, hovered);
+      };
+      const up = () => {
+        document.removeEventListener('mousemove', move);
+        document.removeEventListener('mouseup', up);
+        if (crossed) setCrossing(false);
+      };
+      document.addEventListener('mousemove', move);
+      document.addEventListener('mouseup', up);
+    };
+    document.addEventListener('mousedown', down);
+    return () => document.removeEventListener('mousedown', down);
+  }, [onSetBlocks, chooseOnly]);
 
   // A click anywhere but the block controls and their menu lets go of the selection.
   useEffect(() => {
@@ -1731,7 +1832,7 @@ export function NoteEditor({
       onCopy={(e) => handleCopyCut(e, false)}
       onCut={(e) => handleCopyCut(e, true)}
       onPaste={handlePaste}
-      className="relative outline-none"
+      className={cn('relative outline-none', crossing && 'select-none')}
     >
       {/* Inline toolbar */}
       {toolbar && (
@@ -1929,20 +2030,10 @@ export function NoteEditor({
       </DragOverlay>
       </DndContext>
 
-      {/* Click-to-add area */}
+      {/* Click-to-add area: the page below the last line is clickable too (see clickEmptySpace); this is the keyboard-reachable one. */}
       <button
         type="button"
-        onClick={() => {
-          const lastBlock = blocks[blocks.length - 1];
-          if (lastBlock) {
-            if (lastBlock.content.trim() === '' && lastBlock.type === 'paragraph') {
-              pendingFocusId.current = lastBlock.id;
-            } else {
-              const newId = onAddBlock(lastBlock.id, 'paragraph');
-              pendingFocusId.current = newId;
-            }
-          }
-        }}
+        onClick={addAtEnd}
         className="mt-2 block h-16 w-full cursor-text"
         aria-label="Add new block"
       />
