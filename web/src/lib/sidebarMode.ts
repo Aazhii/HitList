@@ -1,21 +1,19 @@
 import { useCallback, useState } from 'react';
 
 /**
- * How the desktop sidebar is shown. Kept per device (local storage only): it is a layout preference, so nothing syncs.
- * - shown: the whole sidebar.
- * - sections: only the workspace row, search and the view list; the view's own sections (lists, notes, favorites…) are hidden.
- * - hidden: no sidebar; a small button reopens it.
- * - hover: no sidebar until the pointer reaches the left edge, then it slides in over the page.
+ * How the desktop sidebar is shown, as in Notion. Kept per device (local storage only): it is a layout preference, so nothing syncs.
+ * - shown: the sidebar beside the page.
+ * - hidden: no sidebar; a button at the top left brings it back, and pointing at that button or the left edge slides it in over the page.
  */
-export type SidebarMode = 'shown' | 'sections' | 'hidden' | 'hover';
+export type SidebarMode = 'shown' | 'hidden';
 
 export const SIDEBAR_MODE_KEY = 'hitlist-sidebar-mode';
-const MODES: readonly SidebarMode[] = ['shown', 'sections', 'hidden', 'hover'];
 
 export function readSidebarMode(): SidebarMode {
   try {
     const value = window.localStorage.getItem(SIDEBAR_MODE_KEY);
-    return MODES.includes(value as SidebarMode) ? (value as SidebarMode) : 'shown';
+    // 'hover' was an earlier mode that is now what hidden does; anything else, including the old 'sections', is shown.
+    return value === 'hidden' || value === 'hover' ? 'hidden' : 'shown';
   } catch {
     return 'shown';
   }

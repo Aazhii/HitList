@@ -341,13 +341,12 @@ Two drags choose blocks (`NoteEditor`, document-level mouse listeners; both then
 ### Clicking empty space in a note
 A plain click (no drag) on blank space now puts the caret where you would expect (`NoteEditor.clickEmptySpace`, run from the same mouse listener as the box-drag, so a press that moves is a box and one that does not is a click): **below the last block** an empty last line takes the caret, otherwise a new empty line is added and focused; **beside or between lines** it goes to the end of the nearest line (lines that are not text, such as a table or database, are left alone); above the first line nothing happens. The note page has a minimum height so the whole visible page below the text is clickable. The old bottom strip only marked the line for focus without a re-render, so with an empty last line nothing happened; it now uses the same `addAtEnd`. Tests: `NoteMarquee`.
 
-## Sidebar hide options (desktop)
-`web/src/components/shell/Sidebar.tsx` and `web/src/lib/sidebarMode.ts`. A "Hide sidebar" button at the foot of the sidebar opens a menu:
-**Hide Sidebar** (nothing shown; a small "Show sidebar" button sits bottom-left), **Hide Sections** (keeps the workspace row, search and
-view list; hides the lists/notes/databases, Favorites/Recents and the Tasks momentum card), **Show on hover** (hidden until the pointer
-reaches a 6px strip on the left edge, then it slides in over the page and leaves when the pointer does; stays while its menu is open).
-`Ctrl/Cmd + \` toggles hidden/shown. The mode is kept per device in local storage (`hitlist-sidebar-mode`); nothing syncs and nothing
-stored elsewhere changes. The mobile sheet is unchanged. Not verified in a real window; only jsdom tests.
+## Sidebar hide (desktop), like Notion
+`web/src/components/shell/Sidebar.tsx` and `web/src/lib/sidebarMode.ts`. A "Hide sidebar" button shows at the right of the sidebar's top row while the
+pointer is over the sidebar (also Ctrl/Cmd + `\`). Hidden, the page uses the full width and a "Show sidebar" button sits in the page header's left
+gutter: a click brings the sidebar back; just pointing at that button or at the left edge slides the sidebar in over the page until the pointer leaves.
+The choice is kept per device in local storage (`hitlist-sidebar-mode`: `shown` or `hidden`; the earlier `hover` reads as hidden, `sections` as shown).
+An earlier version had a Cliq-style menu (Hide Sidebar / Hide Sections / Show on hover) at the foot; it was removed. Mobile sheet unchanged. Only jsdom tests.
 
 ## JSON colours (Notepad and code blocks)
 In a JSON editor keys are orange-brown and strings, numbers and values blue, like Postman's body view (`.cm-lang-json` overrides the

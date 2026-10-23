@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Sidebar } from '@/components/shell/Sidebar';
@@ -60,50 +60,55 @@ describe('Sidebar', () => {
       />,
     );
 
-    it('Hide Sidebar removes it and leaves a button that brings it back; the choice is remembered', async () => {
+    it('has no menu or bottom button, just a Hide sidebar button in the top row, and hiding keeps the choice', async () => {
       const user = userEvent.setup();
       const first = mount();
-      await user.click(screen.getByRole('button', { name: 'Sidebar options' }));
-      await user.click(await screen.findByRole('menuitem', { name: 'Hide Sidebar' }));
-      expect(screen.queryByRole('navigation', { name: 'Views' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Sidebar options' })).not.toBeInTheDocument();
+      expect(screen.queryByRole('menuitem')).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Hide sidebar' }));
       expect(window.localStorage.getItem('hitlist-sidebar-mode')).toBe('hidden');
+      expect(screen.getByRole('button', { name: 'Show sidebar' })).toBeInTheDocument();
       first.unmount();
       mount();
       await user.click(screen.getByRole('button', { name: 'Show sidebar' }));
       expect(screen.getByRole('navigation', { name: 'Views' })).toBeInTheDocument();
       expect(screen.getByText('My lists')).toBeInTheDocument();
+      expect(screen.getByText('Favorites')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Hide sidebar' })).toBeInTheDocument();
     });
 
-    it('Hide Sections keeps the views and hides the lists, notes and favorites under them', async () => {
+    it('hidden, pointing at the button or the left edge slides it in over the page, and a click keeps it open', async () => {
       const user = userEvent.setup();
       mount();
-      await user.click(screen.getByRole('button', { name: 'Sidebar options' }));
-      await user.click(await screen.findByRole('menuitem', { name: 'Hide Sections' }));
-      expect(screen.getByRole('button', { name: 'Notes' })).toBeInTheDocument();
-      expect(screen.queryByText('My lists')).not.toBeInTheDocument();
-      expect(screen.queryByText('Favorites')).not.toBeInTheDocument();
-      await user.click(screen.getByRole('button', { name: 'Sidebar options' }));
-      await user.click(await screen.findByRole('menuitem', { name: 'Show Sections' }));
-      expect(screen.getByText('My lists')).toBeInTheDocument();
-    });
-
-    it('Show on hover keeps it out of sight until the pointer reaches the left edge', async () => {
-      const user = userEvent.setup();
-      mount();
-      await user.click(screen.getByRole('button', { name: 'Sidebar options' }));
-      await user.click(await screen.findByRole('menuitem', { name: 'Show on hover' }));
+      await user.click(screen.getByRole('button', { name: 'Hide sidebar' }));
       const aside = document.querySelector('aside') as HTMLElement;
       expect(aside).toHaveAttribute('aria-hidden', 'true');
       fireEvent.mouseEnter(screen.getByTestId('sidebar-hot-edge'));
       expect(aside).toHaveAttribute('aria-hidden', 'false');
+      expect(aside.className).toContain('fixed');
+      // While peeking there is no hide button; the show button pins it.
+      expect(within(aside).queryByRole('button', { name: 'Hide sidebar' })).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Show sidebar' }));
+      expect((document.querySelector('aside') as HTMLElement).className).not.toContain('fixed');
     });
 
     it('Ctrl+\\ hides the sidebar and shows it again', () => {
       mount();
       fireEvent.keyDown(window, { key: '\\', ctrlKey: true });
-      expect(screen.queryByRole('navigation', { name: 'Views' })).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Show sidebar' })).toBeInTheDocument();
       fireEvent.keyDown(window, { key: '\\', ctrlKey: true });
+      expect(screen.queryByRole('button', { name: 'Show sidebar' })).not.toBeInTheDocument();
       expect(screen.getByRole('navigation', { name: 'Views' })).toBeInTheDocument();
+    });
+
+    it('the earlier "hover" choice now means hidden, and the earlier "sections" choice means shown', () => {
+      window.localStorage.setItem('hitlist-sidebar-mode', 'hover');
+      const a = mount();
+      expect(screen.getByRole('button', { name: 'Show sidebar' })).toBeInTheDocument();
+      a.unmount();
+      window.localStorage.setItem('hitlist-sidebar-mode', 'sections');
+      mount();
+      expect(screen.getByText('My lists')).toBeInTheDocument();
     });
   });
 });

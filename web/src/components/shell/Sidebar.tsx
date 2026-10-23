@@ -1,11 +1,10 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { CalendarCheck, CalendarDays, Check, FileCode2, Leaf, PanelLeftClose, PanelLeftOpen, Sun, ListChecks, Search, StickyNote, Table2, UserCheck, Zap } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
+import { CalendarCheck, CalendarDays, FileCode2, Leaf, PanelLeftClose, PanelLeftOpen, Sun, ListChecks, Search, StickyNote, Table2, UserCheck, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { useIsDesktop } from '@/components/shell/ViewLayout';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { useSidebarMode, type SidebarMode } from '@/lib/sidebarMode';
+import { useSidebarMode } from '@/lib/sidebarMode';
 
 export type AppView = 'tasks' | 'notes' | 'notepad' | 'databases' | 'calendar' | 'automations' | 'library' | 'today' | 'assigned' | 'weekly';
 
@@ -80,16 +79,13 @@ export function Sidebar({
 
   const [mode, setMode] = useSidebarMode();
   const [peek, setPeek] = useState(false);
-  const menuOpen = useRef(false);
   const closeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   useEffect(() => () => clearTimeout(closeTimer.current), []);
 
-  const body = (menu: ReactNode) => (
-    <SidebarBody
-      activeView={activeView} onViewChange={onViewChange} counts={counts} context={context} contextFoot={contextFoot} pages={pages}
-      onSearch={onSearch} workspace={workspace} menu={menu} sectionsHidden={isDesktop && mode === 'sections'}
-    />
-  );
+  const bodyProps = { activeView, onViewChange, counts, context, contextFoot, pages, onSearch, workspace };
+
+  const show = useCallback(() => { clearTimeout(closeTimer.current); setPeek(false); setMode('shown'); }, [setMode]);
+  const hide = useCallback(() => { clearTimeout(closeTimer.current); setPeek(false); setMode('hidden'); }, [setMode]);
 
   // Ctrl/Cmd + \ hides the sidebar, or shows it again.
   useEffect(() => {
@@ -97,51 +93,31 @@ export function Sidebar({
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== '\\' || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
       e.preventDefault();
-      setPeek(false);
-      setMode(mode === 'hidden' || mode === 'hover' ? 'shown' : 'hidden');
+      if (mode === 'hidden') show(); else hide();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isDesktop, mode, setMode]);
+  }, [isDesktop, mode, show, hide]);
 
-  const choose = (next: SidebarMode) => { setPeek(false); setMode(next); };
-  const menu = (
-    <SidebarMenu
-      mode={mode}
-      onChoose={choose}
-      onOpenChange={(open) => {
-        menuOpen.current = open;
-        // The pointer may have left while the menu was open: the peeking sidebar goes once the menu closes.
-        if (!open && mode === 'hover') { clearTimeout(closeTimer.current); closeTimer.current = setTimeout(() => setPeek(false), 400); }
-      }}
-    />
-  );
-
+  // Hidden, as in Notion: a button in the page header's left gutter brings it back (a click keeps it open), and merely pointing at
+  // that button or the left edge slides it in over the page until the pointer leaves.
   if (isDesktop && mode === 'hidden') {
-    return (
-      <button
-        type="button"
-        aria-label="Show sidebar"
-        title="Show sidebar (Ctrl/Cmd + \)"
-        onClick={() => choose('shown')}
-        className="fixed bottom-3 left-3 z-30 flex size-8 items-center justify-center rounded-[4px] border border-a-line bg-a-surface text-a-muted transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
-      >
-        <PanelLeftOpen className="size-4" strokeWidth={1.75} aria-hidden />
-      </button>
-    );
-  }
-
-  if (isDesktop && mode === 'hover') {
     const open = () => { clearTimeout(closeTimer.current); setPeek(true); };
-    const close = () => {
-      if (menuOpen.current) return;
-      clearTimeout(closeTimer.current);
-      closeTimer.current = setTimeout(() => setPeek(false), 250);
-    };
+    const close = () => { clearTimeout(closeTimer.current); closeTimer.current = setTimeout(() => setPeek(false), 250); };
     return (
       <>
-        {/* A thin hot strip along the left edge: reaching it brings the sidebar in. */}
-        <div aria-hidden data-testid="sidebar-hot-edge" className="fixed inset-y-0 left-0 z-40 w-1.5" onMouseEnter={open} />
+        <button
+          type="button"
+          aria-label="Show sidebar"
+          title="Show sidebar (Ctrl/Cmd + \)"
+          onClick={show}
+          onMouseEnter={open}
+          onMouseLeave={close}
+          className="fixed left-2 top-[6px] z-30 flex size-8 items-center justify-center rounded-[4px] text-a-muted transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
+        >
+          <PanelLeftOpen className="size-[17px]" strokeWidth={1.75} aria-hidden />
+        </button>
+        <div aria-hidden data-testid="sidebar-hot-edge" className="fixed inset-y-0 left-0 z-40 w-1.5" onMouseEnter={open} onMouseLeave={close} />
         <aside
           aria-label="Sidebar"
           aria-hidden={!peek}
@@ -149,11 +125,11 @@ export function Sidebar({
           onMouseLeave={close}
           onFocus={open}
           className={cn(
-            'fixed inset-y-0 left-0 z-50 flex w-[248px] flex-col border-r border-a-line bg-a-bg shadow-[var(--a-shadow-xl)] transition-[transform,visibility] duration-[120ms]',
-            peek ? 'visible translate-x-0' : 'invisible -translate-x-full',
+            'fixed inset-y-1 left-1 z-50 flex w-[248px] flex-col overflow-hidden rounded-[8px] border border-a-line bg-a-bg shadow-[var(--a-shadow-xl)] transition-[transform,visibility] duration-[120ms]',
+            peek ? 'visible translate-x-0' : 'invisible -translate-x-[260px]',
           )}
         >
-          {body(menu)}
+          <SidebarBody {...bodyProps} />
         </aside>
       </>
     );
@@ -162,7 +138,7 @@ export function Sidebar({
   if (isDesktop) {
     return (
       <aside aria-label="Sidebar" className="flex h-full w-[248px] flex-shrink-0 flex-col border-r border-a-line bg-a-bg">
-        {body(menu)}
+        <SidebarBody {...bodyProps} onCollapse={hide} />
       </aside>
     );
   }
@@ -172,26 +148,39 @@ export function Sidebar({
       <SheetContent side="left" className="w-[280px] max-w-[85vw] gap-0 border-a-line bg-a-bg p-0">
         <SheetTitle className="sr-only">Sidebar</SheetTitle>
         <SheetDescription className="sr-only">Navigation and this view's sections</SheetDescription>
-        {body(null)}
+        <SidebarBody {...bodyProps} />
       </SheetContent>
     </Sheet>
   );
 }
 
-function SidebarBody({ activeView, onViewChange, counts, context, contextFoot, pages, onSearch, workspace, menu, sectionsHidden }: Omit<SidebarProps, 'mobileOpen' | 'onMobileOpenChange'> & { menu: ReactNode; sectionsHidden: boolean }) {
+function SidebarBody({ activeView, onViewChange, counts, context, contextFoot, pages, onSearch, workspace, onCollapse }: Omit<SidebarProps, 'mobileOpen' | 'onMobileOpenChange'> & { onCollapse?: () => void }) {
   const shared = useWorkspaces();
   const views = VIEWS.filter((v) => v.id !== 'assigned' || (shared.available && shared.workspaces.length > 0));
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      {/* Logo / workspace row */}
+    <div className="group/side flex h-full min-h-0 flex-col">
+      {/* Logo / workspace row; the hide button shows while the pointer is over the sidebar, as in Notion. */}
       <div className="flex min-w-0 flex-shrink-0 items-center gap-2 px-3.5 pt-3 pb-1.5">
-        {workspace ?? (
-          <>
-            <span className="flex size-[22px] flex-shrink-0 items-center justify-center rounded-[4px] bg-a-accent" aria-hidden>
-              <Leaf className="size-[13px] text-white" strokeWidth={1.75} />
-            </span>
-            <span className="text-[14px] font-semibold text-a-ink">HitList</span>
-          </>
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          {workspace ?? (
+            <>
+              <span className="flex size-[22px] flex-shrink-0 items-center justify-center rounded-[4px] bg-a-accent" aria-hidden>
+                <Leaf className="size-[13px] text-white" strokeWidth={1.75} />
+              </span>
+              <span className="text-[14px] font-semibold text-a-ink">HitList</span>
+            </>
+          )}
+        </div>
+        {onCollapse && (
+          <button
+            type="button"
+            aria-label="Hide sidebar"
+            title="Hide sidebar (Ctrl/Cmd + \)"
+            onClick={onCollapse}
+            className="flex size-6 flex-shrink-0 items-center justify-center rounded-[4px] text-a-faint opacity-0 transition-[opacity,background-color] duration-[120ms] hover:bg-a-row-hover hover:text-a-ink focus-visible:opacity-100 group-hover/side:opacity-100"
+          >
+            <PanelLeftClose className="size-[17px]" strokeWidth={1.75} aria-hidden />
+          </button>
         )}
       </div>
 
@@ -238,50 +227,11 @@ function SidebarBody({ activeView, onViewChange, counts, context, contextFoot, p
 
       {/* This view's own contextual sections. */}
       {/* Each section header carries 12px above it (the prototype's rhythm); -mt-2 takes back the nav's own bottom padding for the first. */}
-      {sectionsHidden ? <div className="min-h-0 flex-1" /> : <div className="-mt-1.5 min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-3">{context}{pages}</div>}
+      <div className="-mt-1.5 min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-2 pb-3">{context}{pages}</div>
 
-      {contextFoot && !sectionsHidden && (
+      {contextFoot && (
         <div className="flex-shrink-0 border-t border-a-line-soft p-3">{contextFoot}</div>
       )}
-
-      {menu && <div className="flex-shrink-0 border-t border-a-line-soft px-2 py-1.5">{menu}</div>}
     </div>
-  );
-}
-
-const MENU_ITEM = 'gap-2.5 px-2.5 py-2 text-[14px] text-a-muted';
-
-/** The button at the foot of the sidebar: hide it, hide only its sections, or show it when the pointer reaches the edge. */
-function SidebarMenu({ mode, onChoose, onOpenChange }: { mode: SidebarMode; onChoose: (mode: SidebarMode) => void; onOpenChange: (open: boolean) => void }) {
-  const tick = (on: boolean) => <Check className={cn('ml-auto size-[14px]', on ? 'text-a-accent' : 'invisible')} strokeWidth={1.75} aria-hidden />;
-  return (
-    <DropdownMenu onOpenChange={onOpenChange}>
-      <DropdownMenuTrigger asChild>
-        <button
-          type="button"
-          aria-label="Sidebar options"
-          title="Sidebar options (Ctrl/Cmd + \ hides it)"
-          className="flex min-h-[28px] w-full items-center gap-2.5 rounded-[4px] px-2 text-left text-[14px] text-a-muted transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
-        >
-          <PanelLeftClose className="size-[17px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
-          <span className="flex-1">Hide sidebar</span>
-        </button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent side="top" align="start" className="w-[232px]">
-        <DropdownMenuItem onSelect={() => onChoose('hidden')} className={MENU_ITEM}>
-          <PanelLeftClose className="size-[15px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
-          Hide Sidebar
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => onChoose(mode === 'sections' ? 'shown' : 'sections')} className={MENU_ITEM}>
-          <PanelLeftClose className="size-[15px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
-          {mode === 'sections' ? 'Show Sections' : 'Hide Sections'}
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => onChoose(mode === 'hover' ? 'shown' : 'hover')} className={MENU_ITEM}>
-          <PanelLeftOpen className="size-[15px] flex-shrink-0" strokeWidth={1.75} aria-hidden />
-          Show on hover
-          {tick(mode === 'hover')}
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
