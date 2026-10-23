@@ -937,3 +937,15 @@ html.login-locked body {
   --code-punct: #9da7b3;
   --code-invalid: #ffa198;
 }
+
+/* JSON, coloured like Postman's body view: keys in a warm orange-brown, strings and values in blue. Only inside a JSON editor. */
+.app-organic .cm-lang-json {
+  --code-property: #a8431b;
+  --code-string: #1a47a0;
+  --code-number: #1a47a0;
+}
+.app-organic.dark .cm-lang-json {
+  --code-property: #f0a070;
+  --code-string: #8ab4ff;
+  --code-number: #8ab4ff;
+}

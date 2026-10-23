@@ -348,3 +348,7 @@ view list; hides the lists/notes/databases, Favorites/Recents and the Tasks mome
 reaches a 6px strip on the left edge, then it slides in over the page and leaves when the pointer does; stays while its menu is open).
 `Ctrl/Cmd + \` toggles hidden/shown. The mode is kept per device in local storage (`hitlist-sidebar-mode`); nothing syncs and nothing
 stored elsewhere changes. The mobile sheet is unchanged. Not verified in a real window; only jsdom tests.
+
+## JSON colours (Notepad and code blocks)
+In a JSON editor keys are orange-brown and strings, numbers and values blue, like Postman's body view (`.cm-lang-json` overrides the
+`--code-*` tokens in `web/src/index.css`, light and dark). Other languages are unchanged. The colours are only checked in jsdom, not by eye.

@@ -119,4 +119,13 @@ describe('code editor', () => {
     press(view, '/', { ctrlKey: true });
     expect(view.state.doc.toString()).toBe('a = 1\nb = 2');
   });
+
+  it('a JSON editor is marked so its keys and strings get the Postman colours', async () => {
+    const { container } = render(<CodeEditor value={'{"a": "b"}'} language="json" />);
+    await act(async () => { await new Promise((r) => setTimeout(r, 300)); });
+    expect(container.querySelector('.cm-editor')).toHaveClass('cm-lang-json');
+    const other = render(<CodeEditor value="x" language="python" />);
+    await act(async () => { await new Promise((r) => setTimeout(r, 300)); });
+    expect(other.container.querySelector('.cm-editor')).not.toHaveClass('cm-lang-json');
+  });
 });
