@@ -352,3 +352,10 @@ stored elsewhere changes. The mobile sheet is unchanged. Not verified in a real 
 ## JSON colours (Notepad and code blocks)
 In a JSON editor keys are orange-brown and strings, numbers and values blue, like Postman's body view (`.cm-lang-json` overrides the
 `--code-*` tokens in `web/src/index.css`, light and dark). Other languages are unchanged. The colours are only checked in jsdom, not by eye.
+
+## JSON warnings
+`web/src/lib/jsonLint.ts` (pure, no package) finds the first JSON problem in plain words: a missing `}` or `]` (pointing at the one left
+open), a string without its closing quote, a missing `,` or `:`, a trailing comma, an unquoted key, single quotes, comments, a missing
+value. `components/code/jsonDiagnostics.ts` shows a wavy underline there (hover for the reason) and a bar at the bottom ("Line 3: …",
+click to go there). JSON only for now (Notepad files and code blocks set to JSON); other languages have none. It is a checker, not a
+parser for JSON5/JSONC: comments are reported. Only the first problem is shown.

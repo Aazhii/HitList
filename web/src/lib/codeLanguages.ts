@@ -35,7 +35,7 @@ export const CODE_LANGUAGES: readonly CodeLanguage[] = [
   { id: 'tsx', label: 'TSX', extensions: ['tsx'], load: () => import('@codemirror/lang-javascript').then((m) => m.javascript({ jsx: true, typescript: true })) },
   // Deluge (Zoho) is not a CodeMirror language; it reads close enough to JavaScript for colours and indentation.
   { id: 'deluge', label: 'Deluge (Zoho)', extensions: ['dg', 'deluge'], load: () => import('@codemirror/lang-javascript').then((m) => m.javascript()) },
-  { id: 'json', label: 'JSON', extensions: ['json', 'jsonc', 'geojson'], load: () => import('@codemirror/lang-json').then((m) => [m.json(), EditorView.editorAttributes.of({ class: 'cm-lang-json' })]) },
+  { id: 'json', label: 'JSON', extensions: ['json', 'jsonc', 'geojson'], load: () => Promise.all([import('@codemirror/lang-json'), import('@/components/code/jsonDiagnostics')]).then(([m, d]) => [m.json(), EditorView.editorAttributes.of({ class: 'cm-lang-json' }), d.jsonDiagnostics]) },
   { id: 'html', label: 'HTML', extensions: ['html', 'htm'], load: () => import('@codemirror/lang-html').then((m) => m.html()) },
   { id: 'css', label: 'CSS', extensions: ['css'], load: () => import('@codemirror/lang-css').then((m) => m.css()) },
   { id: 'scss', label: 'SCSS / Sass', extensions: ['scss', 'sass'], load: () => import('@codemirror/lang-sass').then((m) => m.sass({ indented: false })) },

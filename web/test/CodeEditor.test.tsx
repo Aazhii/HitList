@@ -128,4 +128,23 @@ describe('code editor', () => {
     await act(async () => { await new Promise((r) => setTimeout(r, 300)); });
     expect(other.container.querySelector('.cm-editor')).not.toHaveClass('cm-lang-json');
   });
+
+  it('JSON warns where a brace, a quote or a comma is missing, and only while something is wrong', async () => {
+    const { container } = render(<CodeEditor value={'{"a": {"b": 1}'} language="json" />);
+    const view = viewOf(container);
+    await act(async () => { await new Promise((r) => setTimeout(r, 300)); });
+    expect(container.querySelector('.cm-json-problem')?.textContent).toBe('Line 1: Missing } to close this {');
+    expect(container.querySelector('.cm-json-error')).not.toBeNull();
+    act(() => view.dispatch({ changes: { from: view.state.doc.length, insert: '}' } }));
+    expect(container.querySelector('.cm-json-problem')).toBeNull();
+    expect(container.querySelector('.cm-json-error')).toBeNull();
+    act(() => view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: '{\n  "a": "hello,\n  "b": 2\n}' } }));
+    expect(container.querySelector('.cm-json-problem')?.textContent).toContain('Line 2: This string is missing its closing quote');
+  });
+
+  it('other languages show no JSON warnings', async () => {
+    const { container } = render(<CodeEditor value={'{"a": {'} language="python" />);
+    await act(async () => { await new Promise((r) => setTimeout(r, 300)); });
+    expect(container.querySelector('.cm-json-problem')).toBeNull();
+  });
 });
