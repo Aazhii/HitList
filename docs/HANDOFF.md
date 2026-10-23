@@ -340,3 +340,11 @@ Two drags choose blocks (`NoteEditor`, document-level mouse listeners; both then
 
 ### Clicking empty space in a note
 A plain click (no drag) on blank space now puts the caret where you would expect (`NoteEditor.clickEmptySpace`, run from the same mouse listener as the box-drag, so a press that moves is a box and one that does not is a click): **below the last block** an empty last line takes the caret, otherwise a new empty line is added and focused; **beside or between lines** it goes to the end of the nearest line (lines that are not text, such as a table or database, are left alone); above the first line nothing happens. The note page has a minimum height so the whole visible page below the text is clickable. The old bottom strip only marked the line for focus without a re-render, so with an empty last line nothing happened; it now uses the same `addAtEnd`. Tests: `NoteMarquee`.
+
+## Sidebar hide options (desktop)
+`web/src/components/shell/Sidebar.tsx` and `web/src/lib/sidebarMode.ts`. A "Hide sidebar" button at the foot of the sidebar opens a menu:
+**Hide Sidebar** (nothing shown; a small "Show sidebar" button sits bottom-left), **Hide Sections** (keeps the workspace row, search and
+view list; hides the lists/notes/databases, Favorites/Recents and the Tasks momentum card), **Show on hover** (hidden until the pointer
+reaches a 6px strip on the left edge, then it slides in over the page and leaves when the pointer does; stays while its menu is open).
+`Ctrl/Cmd + \` toggles hidden/shown. The mode is kept per device in local storage (`hitlist-sidebar-mode`); nothing syncs and nothing
+stored elsewhere changes. The mobile sheet is unchanged. Not verified in a real window; only jsdom tests.

@@ -12,6 +12,7 @@ const SHORTCUTS: Array<{ keys: string; does: string }> = [
   { keys: '⌘ / Ctrl + B, I, U', does: 'Bold, italic, underline the selection' },
   { keys: '⌘ / Ctrl + ⇧ + X', does: 'Strike the selection through' },
   { keys: '⌘ / Ctrl + K', does: 'Search tasks, notes, databases and lists' },
+  { keys: '⌘ / Ctrl + \\', does: 'Hide the sidebar, or show it again' },
   { keys: 'j k  /  ↑ ↓', does: 'In the table or board: move the cursor between tasks' },
   { keys: 'h l  /  ← →', does: 'In the table or board: move across cells or columns' },
   { keys: '↵  /  o', does: 'In the table or board: edit the cell, or open the task' },
