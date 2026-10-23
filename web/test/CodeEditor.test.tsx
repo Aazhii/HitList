@@ -147,4 +147,13 @@ describe('code editor', () => {
     await act(async () => { await new Promise((r) => setTimeout(r, 300)); });
     expect(container.querySelector('.cm-json-problem')).toBeNull();
   });
+
+  it('JSON keys and values keep their own colours even when the text is not valid JSON', async () => {
+    const broken = '{\n  "data": [\n    "Name" : "merge",\n    "n": 1,\n    "ok": true,\n    "x": {"id": "{{Id}}"}\n  ]\n}';
+    const { container } = render(<CodeEditor value={broken} language="json" />);
+    await act(async () => { await new Promise((r) => setTimeout(r, 300)); });
+    const text = (selector: string) => Array.from(container.querySelectorAll(`.cm-content ${selector}`)).filter((el) => !el.querySelector(selector)).map((el) => el.textContent);
+    expect(text('.cm-json-key')).toEqual(['"data"', '"Name"', '"n"', '"ok"', '"x"', '"id"']);
+    expect(text('.cm-json-value')).toEqual(['"merge"', '1', 'true', '"{{Id}}"']);
+  });
 });

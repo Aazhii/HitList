@@ -365,3 +365,7 @@ parser for JSON5/JSONC: comments are reported. Only the first problem is shown.
 everything between it and its partner, brackets excluded; double-click again to include them. Matching follows the syntax tree, so a
 brace inside a string is ignored. Other double-clicks still select a word. The selection logic is tested in jsdom; the mouse handler
 itself (it needs real layout to turn a click into a position) is not, so check it by hand in the app.
+
+JSON colouring no longer depends on the text being valid: `web/src/components/code/jsonColors.ts` marks a string followed by `:` as a key and any other
+string, number, true/false/null as a value (the parser's own colours guessed differently line to line once something was wrong, e.g. a key
+inside an array). The marks override the parser's in `codeTheme.ts`.
