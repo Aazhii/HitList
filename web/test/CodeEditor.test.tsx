@@ -45,14 +45,14 @@ describe('code editor', () => {
     expect(view.state.doc.toString()).toBe('  x\n  y\n  z');
   });
 
-  it('Enter keeps the indentation of the line, and goes one level deeper after an opening brace in code', async () => {
+  it('Enter keeps the indentation of the line, goes one level deeper after an opening brace in code, and closes the brace', async () => {
     const { container } = render(<CodeEditor value={'function f() {'} language="javascript" indent="2" />);
     const view = viewOf(container);
     // Wait for the language: the editor starts plain and gains it when it has loaded.
     await waitFor(() => expect(container.querySelector('.cm-line span')).not.toBeNull());
     select(view, view.state.doc.length);
     press(view, 'Enter');
-    expect(view.state.doc.toString()).toBe('function f() {\n  ');
+    expect(view.state.doc.toString()).toBe('function f() {\n  \n}');
   });
 
   it('colours code by language, and shows plain text as plain', async () => {

@@ -10,6 +10,7 @@ import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } 
 import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search';
 import { cn } from '@/lib/utils';
 import { bracketDoubleClick } from '@/components/code/bracketSelect';
+import { smartEnter } from '@/components/code/smartEnter';
 import { indentString, languageById, type IndentChoice } from '@/lib/codeLanguages';
 import { codeHighlight, codeTheme } from '@/components/code/codeTheme';
 
@@ -71,7 +72,7 @@ export function CodeEditor({
           closeBrackets(), autocompletion(), rectangularSelection(), crosshairCursor(), highlightActiveLine(), highlightSelectionMatches(),
           search({ top: true }),
           keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...foldKeymap, ...completionKeymap, indentWithTab]),
-          codeTheme, bracketDoubleClick,
+          codeTheme, bracketDoubleClick, smartEnter,
           // Past either end the arrows are the caller's, to move to the next block.
           Prec.highest(EditorView.domEventHandlers({
             keydown: (event, editor) => {

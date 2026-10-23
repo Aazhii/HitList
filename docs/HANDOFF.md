@@ -369,3 +369,8 @@ itself (it needs real layout to turn a click into a position) is not, so check i
 JSON colouring no longer depends on the text being valid: `web/src/components/code/jsonColors.ts` marks a string followed by `:` as a key and any other
 string, number, true/false/null as a value (the parser's own colours guessed differently line to line once something was wrong, e.g. a key
 inside an array). The marks override the parser's in `codeTheme.ts`.
+
+## Enter after an opening bracket
+`web/src/components/code/smartEnter.ts`: in the code editor, Enter right after `{`, `[` or `(` that has no partner (and nothing else after the caret on
+that line) adds the closing bracket on its own line and leaves the caret on the indented line between. Typing `{` already auto-inserts `}` and
+Enter between a pair already opens it up; this covers a bracket whose closer is missing. Tested in jsdom only.
