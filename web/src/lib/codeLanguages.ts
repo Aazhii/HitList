@@ -5,7 +5,7 @@
  *
  * Everything but `load` is plain data and pure, so it is tested without the editor.
  */
-import type { Extension } from '@codemirror/state';
+import { EditorState, type Extension } from '@codemirror/state';
 import { StreamLanguage } from '@codemirror/language';
 
 export interface CodeLanguage {
@@ -26,7 +26,8 @@ const stream = async (parser: Promise<Record<string, unknown>>, key: string): Pr
 export const PLAIN_TEXT = 'plaintext';
 
 export const CODE_LANGUAGES: readonly CodeLanguage[] = [
-  { id: PLAIN_TEXT, label: 'Plain text', extensions: ['txt', 'text', 'log'], load: async () => [] },
+  { id: PLAIN_TEXT, label: 'Plain text', extensions: ['txt', 'text', 'log'], // No language, so no comment syntax of its own: "//" is what ⌘/ uses there, as in most languages.
+    load: async () => EditorState.languageData.of(() => [{ commentTokens: { line: '//' } }]) },
   { id: 'javascript', label: 'JavaScript', extensions: ['js', 'mjs', 'cjs'], load: () => import('@codemirror/lang-javascript').then((m) => m.javascript()) },
   { id: 'typescript', label: 'TypeScript', extensions: ['ts', 'mts', 'cts'], load: () => import('@codemirror/lang-javascript').then((m) => m.javascript({ typescript: true })) },
   { id: 'jsx', label: 'JSX', extensions: ['jsx'], load: () => import('@codemirror/lang-javascript').then((m) => m.javascript({ jsx: true })) },

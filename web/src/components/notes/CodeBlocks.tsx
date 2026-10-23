@@ -70,7 +70,7 @@ export function CodeBlockView({ block, onChange }: { block: NoteBlock; onChange:
         value={block.content}
         onChange={(content) => onChange({ content })}
         language={block.language}
-        indent={isIndentChoice(block.codeIndent) ? block.codeIndent : '2'}
+        indent={isIndentChoice(block.codeIndent) ? block.codeIndent : '4'}
         wrap={!!block.codeWrap}
         autoHeight
         ariaLabel="Code block"

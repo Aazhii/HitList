@@ -7,7 +7,7 @@ const SHORTCUTS: Array<{ keys: string; does: string }> = [
   { keys: '/', does: 'In a note or on an empty line: choose a block type' },
   { keys: '@', does: 'In a note or a text cell: add the line to a quadrant' },
   { keys: '↵', does: 'In a note: start a new block' },
-  { keys: 'Tab', does: 'In a note: push the line in one level (in a table: next cell; in code: two spaces)' },
+  { keys: 'Tab', does: 'In a note: push the line in one level (in a table: next cell; in code: one indent, 4 spaces unless changed)' },
   { keys: 'Shift Tab', does: 'In a note: bring the line back out one level' },
   { keys: '⌘ / Ctrl + B, I, U', does: 'Bold, italic, underline the selection' },
   { keys: '⌘ / Ctrl + ⇧ + X', does: 'Strike the selection through' },

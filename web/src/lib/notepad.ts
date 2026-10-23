@@ -35,7 +35,7 @@ export function fileSettings(note: Pick<Note, 'blocks'>): FileSettings {
   const block = fileBlock(note);
   return {
     language: block?.language ?? PLAIN_TEXT,
-    indent: isIndentChoice(block?.codeIndent) ? block.codeIndent : '2',
+    indent: isIndentChoice(block?.codeIndent) ? block.codeIndent : '4',
     wrap: block?.codeWrap === true,
   };
 }

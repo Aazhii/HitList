@@ -100,4 +100,23 @@ describe('code editor', () => {
     press(view, 'ArrowUp', { shiftKey: true });
     expect(onEdge).not.toHaveBeenCalled();
   });
+
+  it('indents by 4 spaces unless told otherwise', () => {
+    const { container } = render(<CodeEditor value="a" />);
+    const view = viewOf(container);
+    select(view, 1);
+    press(view, 'Tab');
+    expect(view.state.doc.toString()).toBe('    a');
+  });
+
+  it.each([['javascript', '// '], ['python', '# '], ['sql', '-- '], ['plaintext', '// ']])('Ctrl/Cmd + / comments and uncomments the lines in %s', async (language, mark) => {
+    const { container } = render(<CodeEditor value={'a = 1\nb = 2'} language={language} />);
+    const view = viewOf(container);
+    await act(async () => { await new Promise((r) => setTimeout(r, 300)); });
+    select(view, 0, 11);
+    press(view, '/', { ctrlKey: true });
+    expect(view.state.doc.toString()).toBe(`${mark}a = 1\n${mark}b = 2`);
+    press(view, '/', { ctrlKey: true });
+    expect(view.state.doc.toString()).toBe('a = 1\nb = 2');
+  });
 });

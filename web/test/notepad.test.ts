@@ -20,13 +20,13 @@ describe('notepad files', () => {
     expect(f.title).toBe('script.py');
     expect(f.blocks).toHaveLength(1);
     expect(f.blocks[0]).toMatchObject({ type: 'code', content: '', language: 'python' });
-    expect(fileSettings(f)).toEqual({ language: 'python', indent: '2', wrap: false });
+    expect(fileSettings(f)).toEqual({ language: 'python', indent: '4', wrap: false });
   });
 
   it('reads settings with safe defaults for anything missing or unknown', () => {
-    expect(fileSettings({ blocks: [] })).toEqual({ language: 'plaintext', indent: '2', wrap: false });
+    expect(fileSettings({ blocks: [] })).toEqual({ language: 'plaintext', indent: '4', wrap: false });
     const odd = [{ id: 'a', type: 'code', content: 'x', codeIndent: '8' as never, codeWrap: true }] as NoteBlock[];
-    expect(fileSettings({ blocks: odd })).toEqual({ language: 'plaintext', indent: '2', wrap: true });
+    expect(fileSettings({ blocks: odd })).toEqual({ language: 'plaintext', indent: '4', wrap: true });
     expect(fileText({ blocks: odd })).toBe('x');
   });
 

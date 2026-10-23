@@ -46,7 +46,7 @@ export interface CodeEditorProps {
  * The text is the `value` prop: typing reports through `onChange`; changing `value` from outside replaces the text.
  */
 export function CodeEditor({
-  value, onChange, language, indent = '2', wrap = false, fontSize = 13, readOnly = false, ariaLabel = 'Code',
+  value, onChange, language, indent = '4', wrap = false, fontSize = 13, readOnly = false, ariaLabel = 'Code',
   autoFocus = false, autoHeight = false, maxHeight = 480, onView, onEdge, onCursor, className,
 }: CodeEditorProps) {
   const host = useRef<HTMLDivElement | null>(null);
