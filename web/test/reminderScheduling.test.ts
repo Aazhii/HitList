@@ -80,7 +80,15 @@ describe('reminder reconciliation', () => {
     scheduleAllReminders([todo]);
 
     const setSpy = vi.spyOn(globalThis, 'setTimeout');
-    scheduleAllReminders([{ ...todo, dueTime: '23:30' }]);
+    // Two hours out, on its own date: always different from the hour-out time above, whatever time of day the test runs
+    // (a fixed "23:30" was the same time between 22:30 and 22:59, so nothing was rescheduled then).
+    const later = new Date(Date.now() + 2 * 60 * 60 * 1000);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    scheduleAllReminders([{
+      ...todo,
+      dueDate: `${later.getFullYear()}-${pad(later.getMonth() + 1)}-${pad(later.getDate())}`,
+      dueTime: `${pad(later.getHours())}:${pad(later.getMinutes())}`,
+    }]);
 
     expect(setSpy).toHaveBeenCalled();
   });
