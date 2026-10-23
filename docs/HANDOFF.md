@@ -359,3 +359,9 @@ open), a string without its closing quote, a missing `,` or `:`, a trailing comm
 value. `components/code/jsonDiagnostics.ts` shows a wavy underline there (hover for the reason) and a bar at the bottom ("Line 3: …",
 click to go there). JSON only for now (Notepad files and code blocks set to JSON); other languages have none. It is a checker, not a
 parser for JSON5/JSONC: comments are reported. Only the first problem is shown.
+
+## Double-click inside brackets
+`web/src/components/code/bracketSelect.ts`: double-click a bracket ( { [ ( ) ] } ) in the code editor (Notepad, code blocks) to select
+everything between it and its partner, brackets excluded; double-click again to include them. Matching follows the syntax tree, so a
+brace inside a string is ignored. Other double-clicks still select a word. The selection logic is tested in jsdom; the mouse handler
+itself (it needs real layout to turn a click into a position) is not, so check it by hand in the app.

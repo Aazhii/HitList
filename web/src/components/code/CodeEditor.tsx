@@ -9,6 +9,7 @@ import { bracketMatching, foldGutter, foldKeymap, indentOnInput, indentUnit, syn
 import { autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap } from '@codemirror/autocomplete';
 import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search';
 import { cn } from '@/lib/utils';
+import { bracketDoubleClick } from '@/components/code/bracketSelect';
 import { indentString, languageById, type IndentChoice } from '@/lib/codeLanguages';
 import { codeHighlight, codeTheme } from '@/components/code/codeTheme';
 
@@ -70,7 +71,7 @@ export function CodeEditor({
           closeBrackets(), autocompletion(), rectangularSelection(), crosshairCursor(), highlightActiveLine(), highlightSelectionMatches(),
           search({ top: true }),
           keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...foldKeymap, ...completionKeymap, indentWithTab]),
-          codeTheme,
+          codeTheme, bracketDoubleClick,
           // Past either end the arrows are the caller's, to move to the next block.
           Prec.highest(EditorView.domEventHandlers({
             keydown: (event, editor) => {
