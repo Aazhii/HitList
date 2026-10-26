@@ -42,10 +42,13 @@ export const codeTheme = EditorView.theme({
   '&:hover .cm-foldGutter .cm-fold-open': { opacity: '1' },
   '.cm-foldGutter .cm-fold-open:focus-visible': { opacity: '1' },
   '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--code-cursor)' },
-  // Rounded corners, as Postman's is — the selection should read as a soft band over the code, not a highlighter pen.
-  '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, ::selection': {
+  // One flat band, as Postman's is. Only the drawn layer is coloured: `drawSelection` hides the browser's own selection so
+  // the two do not paint over each other — a `::selection` colour here put a second, darker pass on the text and the
+  // spaces between words, which is what made the band look dotted and patchy. Square corners, because rounded ones
+  // turn a block of several lines into a ragged staircase.
+  '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground': {
     backgroundColor: 'var(--code-selection)',
-    borderRadius: '3px',
+    borderRadius: '0',
   },
   '.cm-activeLine': { backgroundColor: 'var(--code-active-line)' },
   // No rule between the numbers and the code, as in Postman: with the indentation rules drawn just inside it, a border
