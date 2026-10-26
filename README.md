@@ -43,6 +43,41 @@ OWNER_COOKIE_SECRET='replace-with-a-random-32-byte-or-longer-secret' \
 docker compose up --build
 ```
 
+### Try changes without building the app
+
+The whole app on <http://localhost:9000> (the Spring Boot API plus Vite), with no desktop build in between.
+
+**Start**
+
+```bash
+docker compose -f compose.dev.yaml up
+```
+
+Leave it running in that terminal and open <http://localhost:9000>. The first start installs the web dependencies
+(about a minute and a half); later starts take seconds. Add `-d` to run it in the background.
+
+**Update: what to do after you change something**
+
+| You changed | Do this |
+|-------------|---------|
+| Anything under `web/src` (UI, styles) | Nothing. The open page updates by itself, without a reload. |
+| Java under `api/` | `docker compose -f compose.dev.yaml restart api` (a few seconds) |
+| `web/package.json` or its lockfile | `docker compose -f compose.dev.yaml restart web` (reinstalls the dependencies) |
+| `compose.dev.yaml` itself | `docker compose -f compose.dev.yaml up -d` again |
+
+**Stop**
+
+```bash
+docker compose -f compose.dev.yaml down
+```
+
+(or `Ctrl+C` if it is running in the foreground, then `down` to remove the containers). Your data is kept.
+`docker compose -f compose.dev.yaml down -v` stops it **and wipes the data**.
+
+Notes: the data is its own SQLite file in a Docker volume, separate from the installed app. It runs in a browser, not
+Electron, so desktop-only features (updates, desktop sync, native file saving) are not there. It reads Maven's cache from
+`~/.m2/repository` on the Mac, because Maven Central's jars cannot be downloaded from inside Docker on the office network.
+
 ## Scripts
 
 Run from `web/`.

@@ -1,0 +1,69 @@
+# The whole app on http://localhost:9000, for trying a change without building the desktop app.
+#
+#   docker compose -f compose.dev.yaml up
+#
+# `web/` is mounted into the container and served by Vite, so a saved change to the UI shows in the open page at once.
+# `api/` is mounted too, but Java is compiled at start: after a Java change run
+#   docker compose -f compose.dev.yaml restart api
+# Data is the desktop app's own SQLite backend, kept in a Docker volume (not your installed app's data); wipe it with
+#   docker compose -f compose.dev.yaml down -v
+services:
+  api:
+    image: maven:3.9-eclipse-temurin-25
+    # Colima's VM resolves through 192.168.1.1 / 8.8.8.8, which this office network does not answer, so a container could not
+    # reach Maven or npm. These are the office resolvers (the same ones the Mac uses), with 8.8.8.8 as the fallback anywhere
+    # else; set DEV_DNS_1 / DEV_DNS_2 to use others.
+    dns:
+      - ${DEV_DNS_1:-192.168.100.11}
+      - ${DEV_DNS_2:-192.168.100.52}
+      - 8.8.8.8
+    working_dir: /workspace/api
+    command: mvn -B -q spring-boot:run
+    environment:
+      STORAGE_MODE: sqlite
+      SQLITE_PATH: /data/hitlist.db
+      SERVER_PORT: "3001"
+      # Cookie sign-in is what a browser uses; the desktop app's token mode is for Electron. Not a real secret.
+      OWNER_COOKIE_SECRET: dev-only-secret-for-localhost-0123456789abcdef
+      AUTH_MODE: cookie
+    volumes:
+      - ./api:/workspace/api
+      - dev-data:/data
+      # The Mac's own Maven cache, so the first start needs no download: from inside Docker this network answers 404 for
+      # Maven Central's jars. Anything missing is downloaded into it as usual.
+      - ${HOME}/.m2/repository:/root/.m2/repository
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/3001' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 60
+      start_period: 20s
+
+  web:
+    image: node:24-bookworm-slim
+    # Colima's VM resolves through 192.168.1.1 / 8.8.8.8, which this office network does not answer, so a container could not
+    # reach Maven or npm. These are the office resolvers (the same ones the Mac uses), with 8.8.8.8 as the fallback anywhere
+    # else; set DEV_DNS_1 / DEV_DNS_2 to use others.
+    dns:
+      - ${DEV_DNS_1:-192.168.100.11}
+      - ${DEV_DNS_2:-192.168.100.52}
+      - 8.8.8.8
+    working_dir: /workspace/web
+    # Dependencies live in a volume of their own, so the Linux ones here never mix with the Mac ones in ./web.
+    command: sh -c "npm ci --no-audit --no-fund && npx vite --host 0.0.0.0 --port 9000 --strictPort"
+    environment:
+      VITE_API_PROXY_TARGET: http://api:3001
+      # A mounted folder on a Mac does not always report file changes; polling does.
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_INTERVAL: "300"
+    ports:
+      - "9000:9000"
+    volumes:
+      - ./web:/workspace/web
+      - web-modules:/workspace/web/node_modules
+    depends_on:
+      - api
+
+volumes:
+  dev-data:
+  web-modules:
