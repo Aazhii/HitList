@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { Code2, Copy, Download, FileCode2, MoreHorizontal, Plus, Trash2, WrapText } from 'lucide-react';
+import { Braces, Code2, Copy, Download, FileCode2, MoreHorizontal, Plus, Trash2, WrapText } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useNotes } from '@/hooks/useNotes';
@@ -17,9 +17,10 @@ import {
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  CODE_LANGUAGES, fileNameFor, INDENT_CHOICES, isIndentChoice, languageById, languageForFileName, PLAIN_TEXT,
+  CODE_LANGUAGES, fileNameFor, indentString, INDENT_CHOICES, isIndentChoice, languageById, languageForFileName, PLAIN_TEXT,
 } from '@/lib/codeLanguages';
 import { downloadTextFile } from '@/lib/download';
+import { formatJson } from '@/lib/jsonFormat';
 import { fileSettings, fileText, newFileParts, withFileChanges } from '@/lib/notepad';
 import { NOTE_SYNC_LIMIT, NOTE_SYNC_WARN, type Note } from '@/types/notes';
 
@@ -91,6 +92,38 @@ function FileEditor({
     downloadTextFile(fileNameFor(note.title, settings.language), text);
   }, [note.title, settings.language, text]);
 
+  // Postman's Beautify: lay the JSON out again, at the indentation this file is set to. Wrap, beside it, only folds long
+  // lines so they stay in view — it changes no text, which is why it never fixed anyone's indentation.
+  const isJson = settings.language === 'json';
+  const beautify = useCallback(() => {
+    const { text: laidOut, problem } = formatJson(text, indentString(settings.indent));
+    if (problem) {
+      toast.error('This cannot be laid out until the JSON is valid', {
+        description: `Line ${problem.line}: ${problem.message}`,
+        duration: 4000,
+      });
+      return;
+    }
+    if (laidOut === text) {
+      toast('Already laid out', { duration: 1800 });
+      return;
+    }
+    change({ content: laidOut });
+  }, [text, settings.indent, change]);
+
+  // ⌘/Ctrl+B, as in Postman. Undo takes it back, like any other edit.
+  useEffect(() => {
+    if (!isJson) return;
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'b') {
+        e.preventDefault();
+        beautify();
+      }
+    };
+    document.addEventListener('keydown', handler);
+    return () => document.removeEventListener('keydown', handler);
+  }, [isJson, beautify]);
+
   // ⌘/Ctrl+S: there is nothing to save by hand; say so instead of letting the browser offer to save the page.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -142,6 +175,11 @@ function FileEditor({
         <button type="button" onClick={() => change({ codeWrap: !settings.wrap })} aria-pressed={settings.wrap} title="Wrap long lines" className={cn(TOOL, settings.wrap && 'bg-a-accent-tint text-a-accent-700')}>
           <WrapText className="size-4" strokeWidth={1.75} aria-hidden /> Wrap
         </button>
+        {isJson && (
+          <button type="button" onClick={beautify} className={TOOL} title="Beautify: lay the JSON out again at this file's indentation (⌘/Ctrl + B)">
+            <Braces className="size-4" strokeWidth={1.75} aria-hidden /> Beautify
+          </button>
+        )}
         <button type="button" onClick={copy} className={TOOL} title="Copy the whole file">
           <Copy className="size-4" strokeWidth={1.75} aria-hidden /> Copy
         </button>

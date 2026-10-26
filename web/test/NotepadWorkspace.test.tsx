@@ -94,6 +94,39 @@ describe('Notepad page', () => {
     await waitFor(() => expect(heading.className).toContain('text-[32px]'));
   });
 
+  it('Beautify lays the JSON out at the file\'s indentation and saves it; it is not offered for other languages', async () => {
+    localStorage.setItem(notesStorageKey('12345'), JSON.stringify([
+      file('j1', 'body.json', '{"a":1,"b":[1,2]}', 'json'),
+    ]));
+    const { container } = render(<NotepadWorkspace onSidebarContentChange={vi.fn()} />);
+    await waitFor(() => expect(container.querySelector('.cm-editor')).not.toBeNull());
+
+    fireEvent.click(screen.getByRole('button', { name: /Beautify/ }));
+    await waitFor(() => expect(stored().find((n) => n.id === 'j1')?.blocks[0].content)
+      .toBe('{\n    "a": 1,\n    "b": [\n        1,\n        2\n    ]\n}'));
+
+    // The indentation the file is set to is the one it uses.
+    fireEvent.change(screen.getByLabelText('Indentation'), { target: { value: '2' } });
+    fireEvent.click(screen.getByRole('button', { name: /Beautify/ }));
+    await waitFor(() => expect(stored().find((n) => n.id === 'j1')?.blocks[0].content)
+      .toBe('{\n  "a": 1,\n  "b": [\n    1,\n    2\n  ]\n}'));
+
+    // Another language has no Beautify: this one is for JSON.
+    fireEvent.change(screen.getByLabelText('Language'), { target: { value: 'python' } });
+    await waitFor(() => expect(screen.queryByRole('button', { name: /Beautify/ })).toBeNull());
+  });
+
+  it('Beautify leaves text that is not valid JSON exactly as it is, and says what is wrong', async () => {
+    const broken = '{\n  "a": 1,\n  "b":\n}';
+    localStorage.setItem(notesStorageKey('12345'), JSON.stringify([file('j1', 'body.json', broken, 'json')]));
+    const { container } = render(<NotepadWorkspace onSidebarContentChange={vi.fn()} />);
+    await waitFor(() => expect(container.querySelector('.cm-editor')).not.toBeNull());
+
+    fireEvent.click(screen.getByRole('button', { name: /Beautify/ }));
+    expect(await screen.findByText(/Line 4: Missing a value/)).toBeInTheDocument();
+    expect(stored().find((n) => n.id === 'j1')?.blocks[0].content).toBe(broken);
+  });
+
   it('typing is saved into the file\'s code block', async () => {
     const { container } = render(<NotepadWorkspace onSidebarContentChange={vi.fn()} />);
     await waitFor(() => expect(container.querySelector('.cm-editor')).not.toBeNull());
