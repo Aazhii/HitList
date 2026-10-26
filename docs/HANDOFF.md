@@ -428,3 +428,28 @@ makes the big title safe to shrink. Leave `compact` out and `TopBar` behaves exa
 it back to true, because that file starts at its own first line. Not done: the same treatment on Notes, Tasks and Databases —
 they scroll their own content, so they would each need to report their scroll position the same way.
 Tests: `CodeEditor` (thresholds, one call per change), `NotepadWorkspace` (shrinks, restores, loses no control, resets per file).
+
+## The JSON editor: comments, Beautify, and how Wrap looks
+Three things that made a JSON notepad file behave unlike Postman or VS Code.
+
+**⌘/ did nothing in a JSON file.** Strict JSON has no comments, so `@codemirror/lang-json` offers no comment tokens and the
+key was a no-op. The JSON entry in `codeLanguages.ts` now adds `JSONC_COMMENTS` (`//` and `/* */`) — the dialect this
+language already claimed through its `.jsonc` extension, and the one VS Code uses for `.json`. All three places had to agree,
+so `lintJson`'s `skip()` now steps over comments instead of reporting "Comments are not allowed in JSON" (an unterminated
+`/*` is still an error, and a file of nothing but comments is not), and Beautify keeps them. Everything else in the checker
+is as strict as it was.
+
+**Beautify** (`lib/jsonFormat.ts`, the toolbar button beside Wrap, ⌘/Ctrl+B, JSON only) lays the file out again at whatever
+indentation the file is set to. It walks the text rather than going through `JSON.parse` + `JSON.stringify`, which would
+reorder keys that look like whole numbers, round a number longer than a JavaScript one, and drop all but the last of a
+repeated key — a code editor has to hand back the same document. A comment that had its own line keeps it; one that trailed a
+value stays on that value's line. Text that is not JSON is refused with the checker's own message and line, and comes back
+untouched. `formatJson` returns `{ text, problem }` rather than a `{ ok: true } | { ok: false }` union, because this project
+has `strictNullChecks` off and TypeScript will not narrow a boolean discriminant there.
+
+**Wrap** only ever folded long lines so they stayed in view — it changes no text, which is why it never fixed anyone's
+indentation; that is Beautify's job. What it did do badly was start the rest of a wrapped line back at the left margin.
+`components/code/wrapIndent.ts` gives it the hanging indent VS Code has by default (`editor.wrappingIndent: same`): each
+visible line gets `--cm-wrap-indent` from its own leading whitespace (tabs counted to the next tab stop, capped at 40
+columns), and `.cm-line` in `codeTheme.ts` turns that into `padding-left` plus a negative `text-indent`. Only the lines on
+screen are measured, and only while wrapping is on.

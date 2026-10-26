@@ -11,6 +11,7 @@ import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/sea
 import { cn } from '@/lib/utils';
 import { bracketDoubleClick } from '@/components/code/bracketSelect';
 import { smartEnter } from '@/components/code/smartEnter';
+import { wrapIndent } from '@/components/code/wrapIndent';
 import { indentString, languageById, type IndentChoice } from '@/lib/codeLanguages';
 import { codeHighlight, codeTheme } from '@/components/code/codeTheme';
 
@@ -117,7 +118,7 @@ export function CodeEditor({
           EditorView.contentAttributes.of({ 'aria-label': ariaLabel, spellcheck: 'false', autocorrect: 'off', autocapitalize: 'off' }),
           parts.current.language.of([]),
           parts.current.indent.of(indentExtension(indent)),
-          parts.current.wrap.of(wrap ? EditorView.lineWrapping : []),
+          parts.current.wrap.of(wrap ? [EditorView.lineWrapping, wrapIndent] : []),
           parts.current.readOnly.of([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]),
           EditorView.updateListener.of((update) => {
             if (update.docChanged && !update.transactions.some((tr) => tr.annotation(fromProp))) {
@@ -156,7 +157,7 @@ export function CodeEditor({
   }, [language]);
 
   useEffect(() => { view.current?.dispatch({ effects: parts.current.indent.reconfigure(indentExtension(indent)) }); }, [indent]);
-  useEffect(() => { view.current?.dispatch({ effects: parts.current.wrap.reconfigure(wrap ? EditorView.lineWrapping : []) }); }, [wrap]);
+  useEffect(() => { view.current?.dispatch({ effects: parts.current.wrap.reconfigure(wrap ? [EditorView.lineWrapping, wrapIndent] : []) }); }, [wrap]);
   useEffect(() => {
     view.current?.dispatch({ effects: parts.current.readOnly.reconfigure([EditorState.readOnly.of(readOnly), EditorView.editable.of(!readOnly)]) });
   }, [readOnly]);

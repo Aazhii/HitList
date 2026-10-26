@@ -19,6 +19,12 @@ export const codeTheme = EditorView.theme({
   '&.cm-focused': { outline: 'none' },
   '.cm-scroller': { fontFamily: MONO, lineHeight: '1.6', overflow: 'auto' },
   '.cm-content': { caretColor: 'var(--code-cursor)', padding: '8px 0' },
+  // The wrapped rest of a line lines up under where the line begins (see wrapIndent, which sets the variable per line).
+  // 6px is CodeMirror's own left padding on a line, restated here because this rule now owns the property.
+  '.cm-line': {
+    paddingLeft: 'calc(6px + var(--cm-wrap-indent, 0px))',
+    textIndent: 'calc(-1 * var(--cm-wrap-indent, 0px))',
+  },
   '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--code-cursor)' },
   '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, ::selection': {
     backgroundColor: 'var(--code-selection)',
