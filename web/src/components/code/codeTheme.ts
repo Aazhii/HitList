@@ -43,13 +43,15 @@ export const codeTheme = EditorView.theme({
     borderRadius: '3px',
   },
   '.cm-activeLine': { backgroundColor: 'var(--code-active-line)' },
+  // No rule between the numbers and the code, as in Postman: with the indentation rules drawn just inside it, a border
+  // here read as two lines running side by side.
   '.cm-gutters': {
     backgroundColor: 'var(--code-bg)',
     color: 'var(--code-gutter)',
     border: 'none',
-    borderRight: '1px solid var(--a-line)',
   },
-  '.cm-activeLineGutter': { backgroundColor: 'var(--code-active-line)', color: 'var(--code-fg)' },
+  // The line you are on is the only number that comes forward.
+  '.cm-activeLineGutter': { backgroundColor: 'var(--code-active-line)', color: 'var(--code-gutter-active)' },
   '.cm-lineNumbers .cm-gutterElement': { padding: '0 10px 0 12px', minWidth: '34px' },
   '.cm-foldPlaceholder': { backgroundColor: 'var(--code-active-line)', border: 'none', color: 'var(--code-gutter)' },
   '.cm-matchingBracket, &.cm-focused .cm-matchingBracket': {

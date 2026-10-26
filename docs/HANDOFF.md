@@ -464,7 +464,10 @@ screen are measured, and only while wrapping is on.
 - **Indentation rules** (`components/code/indentGuides.ts`): a faint vertical line at each level, as every IDE draws them.
   No extra elements — each visible line carries two lengths (`--cm-guide-step`, `--cm-guide-width`) and `.cm-line` paints
   them as one repeating gradient from 6px in, where column zero sits. A blank line inherits the line above, so the rules run
-  through the gaps in a block. Colour: `--code-guide` (light and dark, `index.css`).
+  through the gaps in a block. Colour: `--code-guide` (light and dark, `index.css`). The gutter has **no right border**:
+  with the first rule drawn just inside it, a border there read as two lines running side by side. Postman has none either.
+- **Line numbers** sit back (`--code-gutter`, lightened) and only the line you are on comes forward
+  (`--code-gutter-active`), rather than every number competing with the code.
 - **true / false / null** are marked `cm-json-literal` and shown bold in the keyword colour, apart from the strings and
   numbers around them. `"null"` in quotes is still a string.
 - **Selection** keeps `--code-selection` but is now rounded (3px), so it reads as a soft band rather than a highlighter pen.

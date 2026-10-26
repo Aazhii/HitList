@@ -245,4 +245,12 @@ describe('code editor', () => {
     // The class is what the stylesheet keys off to hide an open arrow until the editor is hovered.
     expect(container.querySelectorAll('.cm-foldGutter .cm-fold-open').length).toBeGreaterThan(0);
   });
+  it('no rule sits against the line numbers: the gutter has no border of its own', async () => {
+    const { container } = render(<CodeEditor value={'{\n    "a": 1\n}'} language="json" />);
+    await act(async () => { await new Promise((r) => setTimeout(r, 300)); });
+    // Two lines side by side was the complaint: a gutter border plus the first indentation rule just inside it.
+    const gutters = container.querySelector('.cm-gutters') as HTMLElement;
+    const style = getComputedStyle(gutters);
+    expect(['', 'none']).toContain(style.borderRightStyle);
+  });
 });
