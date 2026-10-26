@@ -33,8 +33,13 @@ export const codeTheme = EditorView.theme({
   },
   // The fold arrows keep out of the way until you go looking for them, as in Postman; a folded line keeps its arrow, or
   // there would be nothing to show that something is hidden there.
+  '.cm-foldGutter .cm-gutterElement': { display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 4px', cursor: 'pointer' },
+  '.cm-foldGutter .cm-fold-open, .cm-foldGutter .cm-fold-closed': { display: 'flex', color: 'var(--code-fold)' },
+  '.cm-foldGutter .cm-gutterElement:hover > span': { color: 'var(--code-gutter-active)' },
   '.cm-foldGutter .cm-fold-open': { opacity: '0', transition: 'opacity 120ms' },
-  '.cm-editor:hover .cm-foldGutter .cm-fold-open, .cm-foldGutter:hover .cm-fold-open': { opacity: '1' },
+  // `&` is the editor itself: written as `.cm-editor:hover` the theme scopes it to a `.cm-editor` *inside* the editor,
+  // which does not exist, and the arrows never appeared.
+  '&:hover .cm-foldGutter .cm-fold-open': { opacity: '1' },
   '.cm-foldGutter .cm-fold-open:focus-visible': { opacity: '1' },
   '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--code-cursor)' },
   // Rounded corners, as Postman's is — the selection should read as a soft band over the code, not a highlighter pen.

@@ -27,7 +27,22 @@ const fromProp = Annotation.define<boolean>();
 function foldMarker(open: boolean): HTMLElement {
   const span = document.createElement('span');
   span.className = open ? 'cm-fold-open' : 'cm-fold-closed';
-  span.textContent = open ? '\u2304' : '\u203A';
+  // A drawn chevron, not a text glyph: the glyphs are tiny and sit at different heights in different fonts.
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('width', '16');
+  svg.setAttribute('height', '16');
+  svg.setAttribute('aria-hidden', 'true');
+  const path = document.createElementNS(ns, 'path');
+  path.setAttribute('d', open ? 'M3.5 6 L8 10.5 L12.5 6' : 'M6 3.5 L10.5 8 L6 12.5');
+  path.setAttribute('fill', 'none');
+  path.setAttribute('stroke', 'currentColor');
+  path.setAttribute('stroke-width', '1.5');
+  path.setAttribute('stroke-linecap', 'round');
+  path.setAttribute('stroke-linejoin', 'round');
+  svg.appendChild(path);
+  span.appendChild(svg);
   span.title = open ? 'Fold this block' : 'Unfold this block';
   return span;
 }

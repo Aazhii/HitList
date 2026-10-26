@@ -903,8 +903,9 @@ html.login-locked body {
   --code-bg: var(--a-surface);
   --code-fg: #24292f;
   /* Line numbers sit back so the code reads first; the line you are on is named by --code-gutter-active. */
-  --code-gutter: #aab1b8;
-  --code-gutter-active: #57606a;
+  --code-gutter: #3b7a96;
+  --code-gutter-active: #1d2a5c;
+  --code-fold: #5b6670;
   --code-active-line: rgba(55, 53, 47, 0.05);
   --code-selection: rgba(9, 105, 218, 0.2);
   /* The faint vertical rules that mark each level of indentation, as every IDE draws them. */
@@ -925,8 +926,9 @@ html.login-locked body {
 .app-organic.dark {
   --code-bg: #1c1a18;
   --code-fg: #e6edf3;
-  --code-gutter: #5c666f;
-  --code-gutter-active: #c9d1d9;
+  --code-gutter: #6fa8c4;
+  --code-gutter-active: #e6edf3;
+  --code-fold: #9da7b3;
   --code-active-line: rgba(245, 234, 216, 0.06);
   --code-selection: rgba(56, 139, 253, 0.35);
   --code-guide: rgba(230, 237, 243, 0.16);
