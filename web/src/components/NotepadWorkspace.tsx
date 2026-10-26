@@ -1,10 +1,11 @@
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Braces, Code2, Copy, Download, FileCode2, MoreHorizontal, Plus, Trash2, WrapText } from 'lucide-react';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { useNotes } from '@/hooks/useNotes';
 import { useSyncedSize } from '@/hooks/useSyncedSize';
 import { CodeEditor } from '@/components/code/CodeEditor';
+import type { EditorView } from '@codemirror/view';
 import { SyncIndicatorWrapper } from '@/components/NotesWorkspace';
 import { EmptyState, ILL } from '@/components/EmptyState';
 import { RowMenuContent, RowMenuItem } from '@/components/shell/RowMenu';
@@ -95,8 +96,39 @@ function FileEditor({
   // Postman's Beautify: lay the JSON out again, at the indentation this file is set to. Wrap, beside it, only folds long
   // lines so they stay in view — it changes no text, which is why it never fixed anyone's indentation.
   const isJson = settings.language === 'json';
+  const editor = useRef<EditorView | null>(null);
   const beautify = useCallback(() => {
-    const { text: laidOut, problem } = formatJson(text, indentString(settings.indent));
+    const unit = indentString(settings.indent);
+    const view = editor.current;
+    const picked = view?.state.selection.main;
+
+    // Something selected: lay out just that, as Postman does. The piece has to stand on its own as JSON (an object, an
+    // array, one value), and it keeps the indentation of the line it starts on, so it settles back where it came from.
+    if (view && picked && !picked.empty) {
+      const slice = view.state.sliceDoc(picked.from, picked.to);
+      const { text: laidOut, problem } = formatJson(slice, unit);
+      if (problem) {
+        toast.error('That selection is not a piece of JSON on its own', {
+          description: `Line ${problem.line} of the selection: ${problem.message}`,
+          duration: 4000,
+        });
+        return;
+      }
+      const line = view.state.doc.lineAt(picked.from);
+      const lead = line.text.slice(0, line.text.length - line.text.trimStart().length);
+      const settled = laidOut.split('\n').map((row, i) => (i === 0 ? row : lead + row)).join('\n');
+      if (settled === slice) {
+        toast('Already laid out', { duration: 1800 });
+        return;
+      }
+      view.dispatch({
+        changes: { from: picked.from, to: picked.to, insert: settled },
+        selection: { anchor: picked.from, head: picked.from + settled.length },
+      });
+      return;
+    }
+
+    const { text: laidOut, problem } = formatJson(text, unit);
     if (problem) {
       toast.error('This cannot be laid out until the JSON is valid', {
         description: `Line ${problem.line}: ${problem.message}`,
@@ -200,6 +232,7 @@ function FileEditor({
           ariaLabel={`Code of ${note.title || 'this file'}`}
           onCursor={setCursor}
           onAtTop={onAtTop}
+          onView={(view) => { editor.current = view; }}
         />
       </div>
 

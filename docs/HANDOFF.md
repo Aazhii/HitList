@@ -459,3 +459,23 @@ indentation; that is Beautify's job. What it did do badly was start the rest of 
 visible line gets `--cm-wrap-indent` from its own leading whitespace (tabs counted to the next tab stop, capped at 40
 columns), and `.cm-line` in `codeTheme.ts` turns that into `padding-left` plus a negative `text-indent`. Only the lines on
 screen are measured, and only while wrapping is on.
+
+## The JSON editor, continued: guides, literals, selection, fold arrows, Beautify on a selection
+- **Indentation rules** (`components/code/indentGuides.ts`): a faint vertical line at each level, as every IDE draws them.
+  No extra elements — each visible line carries two lengths (`--cm-guide-step`, `--cm-guide-width`) and `.cm-line` paints
+  them as one repeating gradient from 6px in, where column zero sits. A blank line inherits the line above, so the rules run
+  through the gaps in a block. Colour: `--code-guide` (light and dark, `index.css`).
+- **true / false / null** are marked `cm-json-literal` and shown bold in the keyword colour, apart from the strings and
+  numbers around them. `"null"` in quotes is still a string.
+- **Selection** keeps `--code-selection` but is now rounded (3px), so it reads as a soft band rather than a highlighter pen.
+- **Fold arrows** use a custom `markerDOM` (`foldMarker` in `CodeEditor.tsx`), because CodeMirror's own marker gives CSS no
+  way to tell an open arrow from a closed one. An open arrow is invisible until the editor is hovered or it takes focus; a
+  closed one always shows, or nothing would say that something is hidden there.
+- **Beautify with something selected** lays out only that piece, keeping the indentation of the line it starts on, and
+  leaves the rest of the file alone. The piece has to stand on its own as JSON; if it does not, it is refused and nothing
+  moves. With nothing selected it lays out the whole file as before. It needs the editor itself, so `FileEditor` holds the
+  view through `CodeEditor`'s `onView`.
+
+Note for whoever writes the next test here: **`toast` renders nothing in these tests unless `<Toaster />` is mounted**
+alongside the page. An earlier test looked like it was asserting a toast and was really matching the editor's own JSON
+warning strip, which prints the same `Line N: message`.

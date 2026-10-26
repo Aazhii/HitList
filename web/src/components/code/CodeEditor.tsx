@@ -12,11 +12,25 @@ import { cn } from '@/lib/utils';
 import { bracketDoubleClick } from '@/components/code/bracketSelect';
 import { smartEnter } from '@/components/code/smartEnter';
 import { wrapIndent } from '@/components/code/wrapIndent';
+import { indentGuides } from '@/components/code/indentGuides';
 import { indentString, languageById, type IndentChoice } from '@/lib/codeLanguages';
 import { codeHighlight, codeTheme } from '@/components/code/codeTheme';
 
 /** Marks a change that came from the `value` prop, so it is not reported back as an edit. */
 const fromProp = Annotation.define<boolean>();
+
+/**
+ * The fold arrow in the gutter. CodeMirror's own marker gives no way to tell an open one from a closed one in CSS, and the
+ * two are styled differently: an open arrow waits until you point at the editor, a closed one always shows, because it is
+ * the only sign that something is hidden there.
+ */
+function foldMarker(open: boolean): HTMLElement {
+  const span = document.createElement('span');
+  span.className = open ? 'cm-fold-open' : 'cm-fold-closed';
+  span.textContent = open ? '\u2304' : '\u203A';
+  span.title = open ? 'Fold this block' : 'Unfold this block';
+  return span;
+}
 
 /**
  * How far the text scrolls before it counts as moved, and how far back it must come before it counts as home again
@@ -83,12 +97,12 @@ export function CodeEditor({
       state: EditorState.create({
         doc: value,
         extensions: [
-          lineNumbers(), highlightActiveLineGutter(), highlightSpecialChars(), history(), foldGutter(), drawSelection(), dropCursor(),
+          lineNumbers(), highlightActiveLineGutter(), highlightSpecialChars(), history(), foldGutter({ markerDOM: foldMarker }), drawSelection(), dropCursor(),
           EditorState.allowMultipleSelections.of(true), indentOnInput(), syntaxHighlighting(codeHighlight), bracketMatching(),
           closeBrackets(), autocompletion(), rectangularSelection(), crosshairCursor(), highlightActiveLine(), highlightSelectionMatches(),
           search({ top: true }),
           keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, ...foldKeymap, ...completionKeymap, indentWithTab]),
-          codeTheme, bracketDoubleClick, smartEnter,
+          codeTheme, bracketDoubleClick, smartEnter, indentGuides,
           // Past either end the arrows are the caller's, to move to the next block.
           Prec.highest(EditorView.domEventHandlers({
             keydown: (event, editor) => {

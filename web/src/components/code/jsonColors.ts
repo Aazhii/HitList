@@ -13,6 +13,8 @@ import { type Extension } from '@codemirror/state';
 const key = Decoration.mark({ class: 'cm-json-key' });
 const value = Decoration.mark({ class: 'cm-json-value' });
 const comment = Decoration.mark({ class: 'cm-json-comment' });
+// true, false and null are the three words JSON has; Postman sets them apart from the strings and numbers around them.
+const literal = Decoration.mark({ class: 'cm-json-literal' });
 
 // A string comes first in the alternation and so wins from its opening quote, which is what keeps a // or /* inside a
 // string ("http://x") text rather than the start of a comment.
@@ -20,6 +22,7 @@ const matcher = new MatchDecorator({
   regexp: /"(?:[^"\\\n]|\\.)*"|\/\/[^\n]*|\/\*(?:[^*]|\*(?!\/))*\*\/|-?\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b|\b(?:true|false|null)\b/g,
   decoration: (match, view, pos) => {
     if (match[0][0] === '/') return comment;
+    if (match[0] === 'true' || match[0] === 'false' || match[0] === 'null') return literal;
     if (match[0][0] !== '"') return value;
     const after = pos + match[0].length;
     return /^[ \t]*:/.test(view.state.sliceDoc(after, Math.min(view.state.doc.length, after + 40))) ? key : value;

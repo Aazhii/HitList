@@ -24,10 +24,23 @@ export const codeTheme = EditorView.theme({
   '.cm-line': {
     paddingLeft: 'calc(6px + var(--cm-wrap-indent, 0px))',
     textIndent: 'calc(-1 * var(--cm-wrap-indent, 0px))',
+    // The indentation rules (see indentGuides, which sets the two lengths per line): one 1px rule at the start of every
+    // level, painted from where column zero sits — 6px in, the line's own left padding.
+    backgroundImage: 'repeating-linear-gradient(to right, var(--code-guide) 0, var(--code-guide) 1px, transparent 1px, transparent var(--cm-guide-step, 0px))',
+    backgroundSize: 'var(--cm-guide-width, 0px) 100%',
+    backgroundPosition: '6px 0',
+    backgroundRepeat: 'no-repeat',
   },
+  // The fold arrows keep out of the way until you go looking for them, as in Postman; a folded line keeps its arrow, or
+  // there would be nothing to show that something is hidden there.
+  '.cm-foldGutter .cm-fold-open': { opacity: '0', transition: 'opacity 120ms' },
+  '.cm-editor:hover .cm-foldGutter .cm-fold-open, .cm-foldGutter:hover .cm-fold-open': { opacity: '1' },
+  '.cm-foldGutter .cm-fold-open:focus-visible': { opacity: '1' },
   '.cm-cursor, .cm-dropCursor': { borderLeftColor: 'var(--code-cursor)' },
+  // Rounded corners, as Postman's is — the selection should read as a soft band over the code, not a highlighter pen.
   '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, ::selection': {
     backgroundColor: 'var(--code-selection)',
+    borderRadius: '3px',
   },
   '.cm-activeLine': { backgroundColor: 'var(--code-active-line)' },
   '.cm-gutters': {
@@ -60,6 +73,8 @@ export const codeTheme = EditorView.theme({
   '.cm-json-value, .cm-json-value *': { color: 'var(--code-string) !important' },
   // Greyed out, as Postman does, and italic like every other comment in the theme below.
   '.cm-json-comment, .cm-json-comment *': { color: 'var(--code-comment) !important', fontStyle: 'italic' },
+  // Bold, so true/false/null stand out from the values either side of them, the way Postman shows them.
+  '.cm-json-literal, .cm-json-literal *': { color: 'var(--code-keyword) !important', fontWeight: '600' },
   '.cm-json-error': { textDecoration: 'underline wavy var(--code-invalid)', textUnderlineOffset: '3px', backgroundColor: 'var(--code-match)' },
   '.cm-json-problem': { padding: '4px 12px', fontSize: '12px', color: 'var(--code-invalid)', cursor: 'pointer' },
   '.cm-panels.cm-panels-bottom': { borderTop: '1px solid var(--a-line)' },

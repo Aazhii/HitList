@@ -154,7 +154,8 @@ describe('code editor', () => {
     await act(async () => { await new Promise((r) => setTimeout(r, 300)); });
     const text = (selector: string) => Array.from(container.querySelectorAll(`.cm-content ${selector}`)).filter((el) => !el.querySelector(selector)).map((el) => el.textContent);
     expect(text('.cm-json-key')).toEqual(['"data"', '"Name"', '"n"', '"ok"', '"x"', '"id"']);
-    expect(text('.cm-json-value')).toEqual(['"merge"', '1', 'true', '"{{Id}}"']);
+    expect(text('.cm-json-value')).toEqual(['"merge"', '1', '"{{Id}}"']);
+    expect(text('.cm-json-literal')).toEqual(['true']);
   });
   it('reports leaving the top of the text and coming back, once each, with a gap so it cannot flutter', () => {
     const onAtTop = vi.fn();
@@ -213,5 +214,35 @@ describe('code editor', () => {
     // The // in a URL belongs to the string, so it stays a value and takes nothing after it.
     expect(marked('.cm-json-value')).toContain('"http://x"');
     expect(marked('.cm-json-key')).toEqual(['"a"', '"url"', '"b"']);
+  });
+  it('draws a rule at each level of indentation, carrying them through a blank line', async () => {
+    const { container } = render(<CodeEditor value={'{\n    "a": {\n\n        "b": 1\n    }\n}'} language="json" indent="4" />);
+    await act(async () => { await new Promise((r) => setTimeout(r, 300)); });
+    const guide = (i: number) => {
+      const style = Array.from(container.querySelectorAll('.cm-line'))[i].getAttribute('style') ?? '';
+      return Number(/--cm-guide-width:\s*([\d.]+)px/.exec(style)?.[1] ?? 0);
+    };
+    expect(guide(0)).toBe(0);
+    expect(guide(1)).toBeGreaterThan(0);
+    // The blank line keeps the rules of the block it sits in rather than breaking them.
+    expect(guide(2)).toBe(guide(1));
+    expect(guide(3)).toBe(guide(1) * 2);
+  });
+
+  it('true, false and null are set apart from the values around them', async () => {
+    const { container } = render(<CodeEditor value={'{"a": null, "b": true, "c": 1, "d": "null"}'} language="json" />);
+    await act(async () => { await new Promise((r) => setTimeout(r, 300)); });
+    const marked = (selector: string) => Array.from(container.querySelectorAll(`.cm-content ${selector}`))
+      .filter((el) => !el.querySelector(selector)).map((el) => el.textContent);
+    expect(marked('.cm-json-literal')).toEqual(['null', 'true']);
+    // A number is still a value, and the word null inside quotes is a string, not a literal.
+    expect(marked('.cm-json-value')).toEqual(['1', '"null"']);
+  });
+
+  it('the fold arrow says whether it is open, so only the open ones can hide until hovered', async () => {
+    const { container } = render(<CodeEditor value={'{\n  "a": [\n    1\n  ]\n}'} language="json" />);
+    await act(async () => { await new Promise((r) => setTimeout(r, 300)); });
+    // The class is what the stylesheet keys off to hide an open arrow until the editor is hovered.
+    expect(container.querySelectorAll('.cm-foldGutter .cm-fold-open').length).toBeGreaterThan(0);
   });
 });

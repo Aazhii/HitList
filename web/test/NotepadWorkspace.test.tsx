@@ -6,6 +6,7 @@ import { useNotes } from '@/hooks/useNotes';
 import { notesStorageKey } from '@/lib/notesStorage';
 import { setActiveUserId } from '@/lib/storage';
 import { FILE_EMOJI } from '@/lib/notepad';
+import { Toaster } from '@/components/ui/sonner';
 
 const file = (id: string, title: string, content: string, language = 'python') => ({
   id, title, emoji: FILE_EMOJI, createdAt: 1, updatedAt: 1, pinned: false,
@@ -116,14 +117,51 @@ describe('Notepad page', () => {
     await waitFor(() => expect(screen.queryByRole('button', { name: /Beautify/ })).toBeNull());
   });
 
+  it('with something selected, Beautify lays out only that piece and leaves the rest alone', async () => {
+    const source = '{\n    "a": 1,\n    "b": {"x":1,"y":[2,3]},\n    "c": 3\n}';
+    localStorage.setItem(notesStorageKey('12345'), JSON.stringify([file('j1', 'b.json', source, 'json')]));
+    const { container } = render(<NotepadWorkspace onSidebarContentChange={vi.fn()} />);
+    await waitFor(() => expect(container.querySelector('.cm-editor')).not.toBeNull());
+    const view = editorView(container);
+
+    // Just the object that is the value of "b".
+    const from = source.indexOf('{"x"');
+    const to = source.indexOf('}', source.indexOf('[2,3]')) + 1;
+    act(() => view.dispatch({ selection: { anchor: from, head: to } }));
+    fireEvent.click(screen.getByRole('button', { name: /Beautify/ }));
+
+    await waitFor(() => expect(view.state.doc.toString()).toContain('"x": 1'));
+    // The piece is laid out and sits at the indentation of the line it started on; nothing else moved.
+    expect(view.state.doc.toString()).toBe(
+      '{\n    "a": 1,\n    "b": {\n        "x": 1,\n        "y": [\n            2,\n            3\n        ]\n    },\n    "c": 3\n}',
+    );
+  });
+
+  it('a selection that is not JSON on its own is refused, and nothing moves', async () => {
+    const source = '{\n    "a": 1,\n    "b": 2\n}';
+    localStorage.setItem(notesStorageKey('12345'), JSON.stringify([file('j1', 'b.json', source, 'json')]));
+    // The toast surface has to be mounted for a refusal to be visible at all.
+    const { container } = render(<><NotepadWorkspace onSidebarContentChange={vi.fn()} /><Toaster /></>);
+    await waitFor(() => expect(container.querySelector('.cm-editor')).not.toBeNull());
+    const view = editorView(container);
+
+    const from = source.indexOf('"a"');
+    act(() => view.dispatch({ selection: { anchor: from, head: from + 7 } }));
+    fireEvent.click(screen.getByRole('button', { name: /Beautify/ }));
+    expect(await screen.findByText(/not a piece of JSON on its own/)).toBeInTheDocument();
+    expect(view.state.doc.toString()).toBe(source);
+  });
+
   it('Beautify leaves text that is not valid JSON exactly as it is, and says what is wrong', async () => {
     const broken = '{\n  "a": 1,\n  "b":\n}';
     localStorage.setItem(notesStorageKey('12345'), JSON.stringify([file('j1', 'body.json', broken, 'json')]));
-    const { container } = render(<NotepadWorkspace onSidebarContentChange={vi.fn()} />);
+    const { container } = render(<><NotepadWorkspace onSidebarContentChange={vi.fn()} /><Toaster /></>);
     await waitFor(() => expect(container.querySelector('.cm-editor')).not.toBeNull());
 
     fireEvent.click(screen.getByRole('button', { name: /Beautify/ }));
-    expect(await screen.findByText(/Line 4: Missing a value/)).toBeInTheDocument();
+    expect(await screen.findByText(/cannot be laid out until the JSON is valid/)).toBeInTheDocument();
+    // Both the message and the editor's own warning strip name the line; either one is enough to find it.
+    expect(screen.getAllByText(/Line 4: Missing a value/).length).toBeGreaterThan(0);
     expect(stored().find((n) => n.id === 'j1')?.blocks[0].content).toBe(broken);
   });
 
