@@ -25,15 +25,27 @@ const serialized = (value) => {
 };
 const duplicate = (error) => /duplicate|unique|already.exists/i.test(`${error && error.code || ''} ${error && error.message || ''}`);
 
-function createCatalystCliqStorage(req, { linksTable, recordsTable }) {
+function createCatalystCliqStorage(req, { linksTable, recordsTable, sdk = catalyst }) {
 	const links = tableName(linksTable);
 	const records = tableName(recordsTable);
-	const app = catalyst.initialize(req, { type: 'advancedio', appName: 'backup', scope: 'admin' });
+	const app = sdk.initialize(req, { type: 'advancedio', appName: 'backup', scope: 'admin' });
 	const query = async (table, column, value, limit = 1, extra = '') => {
 		const raw = await app.zcql().executeZCQLQuery(`SELECT * FROM ${table} WHERE ${column}='${value}' ${extra} LIMIT ${limit}`);
 		return raw.map((entry) => entry[table]).filter(Boolean);
 	};
-	const rowFor = async (key) => (await query(records, 'RecordKey', recordKey(key)))[0] || null;
+	/**
+	 * A record read twice in one request is fetched once. Acknowledging a command reads it, then writes it, and the write
+	 * looks it up again for its row id; the same happens for each command already finished. The storage object is built per
+	 * request, so nothing is remembered between callers, and a write drops its own entry — two reasons there is no stale
+	 * answer to worry about.
+	 */
+	const seen = new Map();
+	const forget = (key) => seen.delete(recordKey(key));
+	const rowFor = async (key) => {
+		const id = recordKey(key);
+		if (!seen.has(id)) seen.set(id, (await query(records, 'RecordKey', id))[0] || null);
+		return seen.get(id);
+	};
 	const linkFor = (row) => row ? JSON.parse(row.Value) : null;
 	const recordFor = (row) => row ? JSON.parse(row.Value) : null;
 	return {
@@ -45,6 +57,7 @@ function createCatalystCliqStorage(req, { linksTable, recordsTable }) {
 				Generation: Number.isSafeInteger(value.generation) ? value.generation : 0,
 				Status: key.startsWith('command:') ? 'pending' : 'record', CreatedAt: Number.isSafeInteger(value.createdAt) ? value.createdAt : Date.now(),
 			};
+			forget(key);
 			try { await app.datastore().table(records).insertRow(row); return true; }
 			catch (error) {
 				if (duplicate(error) && await rowFor(key)) return false;
@@ -56,10 +69,12 @@ function createCatalystCliqStorage(req, { linksTable, recordsTable }) {
 			const row = await rowFor(key);
 			if (!row) throw new Error('cliq record missing');
 			await app.datastore().table(records).updateRow({ ROWID: row.ROWID, Value: serialized(value), Status: key.startsWith('command:') && value.status === 'terminal' ? 'terminal' : row.Status });
+			forget(key);
 		},
 		async remove(key) {
 			const row = await rowFor(key);
 			if (row) await app.datastore().table(records).deleteRow(row.ROWID);
+			forget(key);
 		},
 		async listPending(accountId, deviceId, generation, limit) {
 			if (!Number.isSafeInteger(generation) || generation <= 0 || !Number.isInteger(limit) || limit < 1 || limit > 50) throw new Error('invalid pending query');

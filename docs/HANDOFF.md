@@ -373,6 +373,11 @@ worth it.
 With the live signal down, `desktop/workspaceSync.js` now catches up at 5 minutes, then 15, then every 30
 (`PUSH_RETRY_STEPS`) instead of every 5 minutes for as long as the app runs — roughly 90 fetches a day rather than 800.
 
+On the Cliq side, `catalystCliqStorage.js` fetches a record once per request even when it is read twice (acknowledging a
+command reads it and then writes it, and the write needs its row id). The memo lives on the storage object, which is built
+per request, and a write drops its own entry, so it cannot answer with anything stale. `createCatalystCliqStorage` now takes
+an `sdk` for tests, like `createCatalystStorage` already did (`test.catalystCliqStorage.js`).
+
 ## Sidebar: drag to resize, toggle to hide (desktop), like Postman and IntelliJ
 `web/src/components/shell/Sidebar.tsx` and `web/src/lib/sidebarMode.ts`. The right edge is a drag handle (`data-testid="sidebar-resize"`,
 `role="separator"`): dragging sets the width between 180 and 440, double-clicking resets it to 248, and the arrow keys move it by 16.
