@@ -29,16 +29,21 @@ Tick **publish** when running (or push a tag like `v1.2.0`) to also create a **G
    function tests). If any fails, nothing is built.
 3. **backend**: builds the web app, puts it inside the jar, and builds the jar once.
 4. **mac / windows / linux** (in parallel): each downloads that same jar, adds its own Java runtime, and packs the app.
-   With **Build one system only** ticked, the other two are skipped.
+   With **Which system to build** set to one system, the other two are skipped.
 5. **release** (optional): gathers everything and publishes it.
 
 ## Building only one system
 
 A full run packs all three apps, and the Mac and Windows runners are what make it slow and expensive. When you only need
-one of them — testing a Windows fix, say — tick **Build one system only** on the form and choose **mac**, **windows** or
-**linux**. The other two platform jobs are skipped; the run name says so, for example `HitList 1.1.57 (windows only)`.
+one of them — testing a Windows fix, say — set **Which system to build** to **mac**, **windows** or **linux**. The other
+two platform jobs are skipped; the run name says so, for example `HitList 1.1.57 (windows only)`.
 
-- Left unticked, nothing changes: all three are built, exactly as before. **Which system** is ignored then.
+It is one dropdown rather than a "just one system?" tick plus a system list, because **GitHub cannot hide or show a form
+field depending on another one**: `workflow_dispatch` draws every input it declares, every time. A second field that only
+counted when the tick was on would still sit on the form looking live when it was not, so the two are one field with an
+`all` option.
+
+- Left on `all`, nothing changes: all three are built, exactly as before.
 - A pushed tag always builds all three, because a tag has no form to fill in.
 - The tests (**verify**) and the shared jar (**backend**) still run either way — a one-system build is not a lesser-checked build.
 - **publish** still works with it, and the Release then holds only that system's files, which its notes say. A release meant
@@ -56,8 +61,7 @@ When you click **Run workflow** you get these fields:
 | Third number | The 5 in `1.2.5`. **Leave empty** and it becomes the run number | empty |
 | Pre-release stage | `none` (a normal release), `alpha` or `beta` | `none` |
 | Stage number | The 2 in `beta2`; only used with alpha or beta; empty means 1 | empty |
-| Build one system only | Builds just the system picked below instead of all three | off |
-| Which system | `mac`, `windows` or `linux`; only used when the tick above is on | `mac` |
+| Which system to build | `all`, or just `mac`, `windows` or `linux` | `all` |
 | Also publish a GitHub Release | Creates a Release with every file | off |
 
 The result follows the pattern `<name>_<main>.<second>.<third>-<stage><number>`: for example name `HitList`, `1`, `2`, `5`, `beta`, `2`

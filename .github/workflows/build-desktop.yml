@@ -1,8 +1,8 @@
 # Builds the HitList desktop apps for Mac, Windows and Linux.
 #
 # Run it by hand: GitHub -> Actions -> "Build desktop apps" -> Run workflow.
-# Tick "Build one system only" on that form and pick mac, windows or linux to build just that one (much quicker, and far
-# fewer GitHub minutes). Left unticked, all three are built, as before; a pushed tag always builds all three.
+# The form's "Which system" is `all` by default; pick mac, windows or linux to build just that one (much quicker, and far
+# fewer GitHub minutes). A pushed tag sends no inputs, so it always builds all three.
 # Or push a tag such as v1.2.0 and it runs by itself and publishes a release.
 #
 # The version comes from the form when you run it by hand: main.second.third (for example 1.2.5). Leave the third field empty
@@ -13,7 +13,7 @@ name: Build desktop apps
 # What the run is called in the Actions list: the name and version you typed (or the tag that was pushed).
 run-name: >-
   ${{ github.event_name == 'workflow_dispatch'
-  && format('{0} {1}.{2}.{3}{4}{5}', inputs.release_name, inputs.major, inputs.minor, inputs.patch || github.run_number, inputs.stage != 'none' && format('-{0}{1}', inputs.stage, inputs.stage_number || '1') || '', inputs.one_system && format(' ({0} only)', inputs.system) || '')
+  && format('{0} {1}.{2}.{3}{4}{5}', inputs.release_name, inputs.major, inputs.minor, inputs.patch || github.run_number, inputs.stage != 'none' && format('-{0}{1}', inputs.stage, inputs.stage_number || '1') || '', inputs.system != 'all' && format(' ({0} only)', inputs.system) || '')
   || github.ref_name }}
 
 on:
@@ -46,16 +46,13 @@ on:
         description: Stage no.
         type: string
         default: ''
-      # Off: all three apps are built, as before. On: only the one picked below, which is much quicker and much cheaper.
-      one_system:
-        description: Build one system only
-        type: boolean
-        default: false
+      # One dropdown, not a tick plus a dropdown: GitHub shows every input on the form always, so a field that only
+      # applied "when the tick is on" would sit there looking live when it was not. `all` is the old behaviour.
       system:
-        description: Which system (only used when "Build one system only" is ticked)
+        description: Which system to build (all by default)
         type: choice
-        options: [mac, windows, linux]
-        default: mac
+        options: [all, mac, windows, linux]
+        default: all
       publish:
         description: Publish release
         type: boolean
@@ -177,8 +174,8 @@ jobs:
 
   # ---- Mac (Apple silicon) .dmg ------------------------------------------------------------------------------------------
   mac:
-    # A tag push has no inputs, so `one_system` is empty there and all three are built.
-    if: ${{ !inputs.one_system || inputs.system == 'mac' }}
+    # A tag push has no inputs, so `system` is empty there and all three are built.
+    if: ${{ inputs.system == '' || inputs.system == 'all' || inputs.system == 'mac' }}
     needs: [version, backend]
     runs-on: macos-14
     steps:
@@ -214,7 +211,7 @@ jobs:
 
   # ---- Windows installer (.exe). Built on Windows: on Linux the installer tool needs Wine to make the uninstaller. ---------
   windows:
-    if: ${{ !inputs.one_system || inputs.system == 'windows' }}
+    if: ${{ inputs.system == '' || inputs.system == 'all' || inputs.system == 'windows' }}
     needs: [version, backend]
     runs-on: windows-latest
     defaults:
@@ -250,7 +247,7 @@ jobs:
 
   # ---- Linux .AppImage and .deb --------------------------------------------------------------------------------------------
   linux:
-    if: ${{ !inputs.one_system || inputs.system == 'linux' }}
+    if: ${{ inputs.system == '' || inputs.system == 'all' || inputs.system == 'linux' }}
     needs: [version, backend]
     runs-on: ubuntu-latest
     steps:
@@ -284,7 +281,7 @@ jobs:
 
   # ---- Optional: a GitHub Release with every file (a tag push, or "publish" ticked) ---------------------------------------
   release:
-    # A platform left out by "Build one system only" is `skipped`, not a failure, so the default "all needs succeeded"
+    # A platform left out by a one-system run is `skipped`, not a failure, so the default "all needs succeeded"
     # rule would wrongly skip this too. Anything that actually failed or was cancelled still stops it.
     if: >-
       ${{ !cancelled()
