@@ -58,6 +58,8 @@ export const codeTheme = EditorView.theme({
   },
   '.cm-json-key, .cm-json-key *': { color: 'var(--code-property) !important' },
   '.cm-json-value, .cm-json-value *': { color: 'var(--code-string) !important' },
+  // Greyed out, as Postman does, and italic like every other comment in the theme below.
+  '.cm-json-comment, .cm-json-comment *': { color: 'var(--code-comment) !important', fontStyle: 'italic' },
   '.cm-json-error': { textDecoration: 'underline wavy var(--code-invalid)', textUnderlineOffset: '3px', backgroundColor: 'var(--code-match)' },
   '.cm-json-problem': { padding: '4px 12px', fontSize: '12px', color: 'var(--code-invalid)', cursor: 'pointer' },
   '.cm-panels.cm-panels-bottom': { borderTop: '1px solid var(--a-line)' },

@@ -447,6 +447,12 @@ value stays on that value's line. Text that is not JSON is refused with the chec
 untouched. `formatJson` returns `{ text, problem }` rather than a `{ ok: true } | { ok: false }` union, because this project
 has `strictNullChecks` off and TypeScript will not narrow a boolean discriminant there.
 
+Comments are coloured too: `jsonColors.ts` marks them `cm-json-comment` and `codeTheme.ts` greys them (italic, from
+`--code-comment`), the way Postman does. The JSON parser knows nothing about comments, so without that mark they read as
+ordinary text. A string wins from its opening quote in that regex, which is what keeps the `//` in `"http://x"` part of the
+string. A block comment spanning several lines is only coloured on the lines the viewport regex can match, since a
+`MatchDecorator` pattern cannot cross a line; `//`, which is what ⌘/ writes, is unaffected.
+
 **Wrap** only ever folded long lines so they stayed in view — it changes no text, which is why it never fixed anyone's
 indentation; that is Beautify's job. What it did do badly was start the rest of a wrapped line back at the left margin.
 `components/code/wrapIndent.ts` gives it the hanging indent VS Code has by default (`editor.wrappingIndent: same`): each

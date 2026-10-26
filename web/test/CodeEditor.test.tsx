@@ -202,4 +202,16 @@ describe('code editor', () => {
     await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
     expect(lines().every((style) => !style.includes('--cm-wrap-indent'))).toBe(true);
   });
+  it('a JSON comment is greyed out like Postman, and a // inside a string is not one', async () => {
+    const doc = '{\n  // which module\n  "a": 1, // and why\n  "url": "http://x",\n  "b": /* inline */ 2\n}';
+    const { container } = render(<CodeEditor value={doc} language="json" />);
+    await act(async () => { await new Promise((r) => setTimeout(r, 300)); });
+    const marked = (selector: string) => Array.from(container.querySelectorAll(`.cm-content ${selector}`))
+      .filter((el) => !el.querySelector(selector)).map((el) => el.textContent);
+
+    expect(marked('.cm-json-comment')).toEqual(['// which module', '// and why', '/* inline */']);
+    // The // in a URL belongs to the string, so it stays a value and takes nothing after it.
+    expect(marked('.cm-json-value')).toContain('"http://x"');
+    expect(marked('.cm-json-key')).toEqual(['"a"', '"url"', '"b"']);
+  });
 });
