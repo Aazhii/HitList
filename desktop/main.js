@@ -341,7 +341,24 @@ async function openWindow() {
   win.webContents.session.webRequest.onCompleted?.({ urls: [`http://127.0.0.1:${port}/api/*`] }, (details) => {
     if (details.method !== 'GET' && details.statusCode < 300 && /\/api\/(tasks|lists|notes|databases|fields|field-values|sync\/(share-source|source-task))(\/|$|\?)/.test(details.url)) workspaces.kick();
   });
-  if (account) { activeWorkspace = readActive(); void workspaces.start(); }
+  /**
+   * Whether this installation has shared workspaces switched on (the local server's trial features; see
+   * TrialFeatureService). Asked once, and off whenever it cannot be read — off is also the default, and with it off the
+   * app never asks the cloud about workspaces, which is the whole point: those requests are what spend the project's
+   * Data Store allowance. Copies already on this computer stay on disk and are simply not synced.
+   */
+  let sharedWorkspacesOn = null;
+  const workspacesEnabled = async () => {
+    if (sharedWorkspacesOn === null) {
+      // A failure is not remembered, so a server that was still starting is asked again.
+      try { sharedWorkspacesOn = !!JSON.parse((await localGet('/api/trial-features')).toString('utf8')).sharedWorkspaces; }
+      catch { return false; }
+    }
+    return sharedWorkspacesOn;
+  };
+  const startWorkspaces = async () => { if (await workspacesEnabled()) await workspaces.start(); };
+
+  if (account) { activeWorkspace = readActive(); void startWorkspaces(); }
   const cloudFetch = (urlPath) => {
     const identity = account?.userId;
     return auth.fetchAs(identity, `${BACKUP_FUNCTION_URL}${urlPath}`, { signal: AbortSignal.timeout(15_000) }, () => !accountTransition && account?.userId === identity);
@@ -424,7 +441,10 @@ async function openWindow() {
     writeActive(id);
     return { ok: true, workspaceId: id };
   });
-  ipcMain.handle('ws:refresh', async () => { try { await workspaces.refresh(); return { ok: true }; } catch { return { ok: false, reason: 'offline' }; } });
+  ipcMain.handle('ws:refresh', async () => {
+    if (!await workspacesEnabled()) return { ok: false, reason: 'workspaces-off' };
+    try { await workspaces.refresh(); return { ok: true }; } catch { return { ok: false, reason: 'offline' }; }
+  });
   ipcMain.handle('ws:create', (_e, o) => workspaces.create({ name: text(o?.name), listIds: Array.isArray(o?.listIds) ? o.listIds.filter((x) => typeof x === 'string') : [] }));
   ipcMain.handle('ws:invite', (_e, o) => workspaces.invite(text(o?.workspaceId), text(o?.email)));
   ipcMain.handle('ws:accept', (_e, o) => workspaces.accept(text(o?.token)));
@@ -447,7 +467,7 @@ async function openWindow() {
         setTimeout(() => { if (!accountTransition && account?.userId === identity) void backup.backupNow('signed-in'); }, 15_000);
         void connection.get();
         activeWorkspace = readActive();
-        void workspaces.start();
+        void startWorkspaces();
       }
       return publicAccount();
     } finally { accountTransition = false; }

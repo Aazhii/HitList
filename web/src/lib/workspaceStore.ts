@@ -6,6 +6,7 @@
  * another member refreshes all of them at once.
  */
 import { flushSourceSaves } from '@/lib/sourceSaves';
+import { trialFeatureApi } from '@/lib/api';
 import { toast } from 'sonner';
 
 export interface WorkspaceMember { userId: string; email: string; name: string; role: 'owner' | 'member' }
@@ -59,11 +60,26 @@ function publish(next: WorkspaceSnapshot) {
   listeners.forEach((l) => l());
 }
 
+/**
+ * Whether this installation has shared workspaces switched on, asked once (the local server answers it; see
+ * TrialFeatureService). Off is the safe answer: with the feature off the app makes no cloud workspace request at all,
+ * and the copies already on this computer stay where they are.
+ */
+let enabled: boolean | null = null;
+async function workspacesEnabled(): Promise<boolean> {
+  if (enabled === null) {
+    // A failure is not remembered, so a server that was still starting is asked again.
+    try { enabled = (await trialFeatureApi.get()).sharedWorkspaces; } catch { return false; }
+  }
+  return enabled;
+}
+
 /** Reads what the local server and shell know right now. Failures leave the last answer in place. */
 export async function refreshWorkspaces(): Promise<void> {
   const d = desktop();
   const bridge = d?.workspaces;
   if (!d || !bridge?.select || !bridge.active) { if (snapshot.loaded) publish(EMPTY); return; }
+  if (!await workspacesEnabled()) { publish({ ...EMPTY, loaded: true }); return; }
   try {
     const [account, active, res] = await Promise.all([d.getAccount?.() ?? null, bridge.active(), fetch('/api/sync/workspaces')]);
     if (!account?.userId || !res.ok) { publish({ ...EMPTY, loaded: true }); return; }
@@ -126,4 +142,5 @@ export function resetWorkspaceStore(): void {
   started = false;
   snapshot = EMPTY;
   listeners.clear();
+  enabled = null;
 }

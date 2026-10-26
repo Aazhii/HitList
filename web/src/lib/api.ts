@@ -768,16 +768,22 @@ export const progressApi = {
 export interface TrialFeatures {
   notifications: boolean;
   automations: boolean;
+  /**
+   * Shared workspaces. Off unless the installation turns it on: every workspace request costs the hosted project
+   * several cloud reads, so while nobody is using the feature the app does not ask the cloud about it at all.
+   */
+  sharedWorkspaces: boolean;
   unavailableReason?: string;
 }
 
 export const trialFeatureApi = {
   /** GET /api/trial-features */
   async get(): Promise<TrialFeatures> {
-    const flags = await get<{ notifications: boolean; automations: boolean }>('/trial-features');
+    const flags = await get<{ notifications: boolean; automations: boolean; sharedWorkspaces?: boolean }>('/trial-features');
     return {
       notifications: !!flags.notifications,
       automations: !!flags.automations,
+      sharedWorkspaces: !!flags.sharedWorkspaces,
       unavailableReason: flags.automations ? undefined : AUTOMATIONS_UNAVAILABLE_REASON,
     };
   },

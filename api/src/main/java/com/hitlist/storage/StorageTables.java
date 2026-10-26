@@ -28,6 +28,11 @@ public final class StorageTables {
     public static final String SYNC_OUTBOX = "KaizenSyncOutbox";
     public static final String SYNC_FRAGMENTS = "KaizenSyncFragments";
     public static final String SHARED_SOURCES = "KaizenSharedSources";
+    /**
+     * Which optional features this deployment has switched on. One row per flag, held under the empty owner because a
+     * flag is a property of the installation, not of a person.
+     */
+    public static final String TRIAL_FEATURES = "KaizenTrialFeatures";
 
     private static final Map<String, String> PRIMARY_KEYS = Map.ofEntries(
         Map.entry(TASKS, "TaskId"),
@@ -51,7 +56,8 @@ public final class StorageTables {
         Map.entry(WORKSPACE_INFO, "WorkspaceId"),
         Map.entry(SYNC_OUTBOX, "OpId"),
         Map.entry(SYNC_FRAGMENTS, "FragmentId"),
-        Map.entry(SHARED_SOURCES, "SourceKey")
+        Map.entry(SHARED_SOURCES, "SourceKey"),
+        Map.entry(TRIAL_FEATURES, "FeatureKey")
     );
 
     private StorageTables() {

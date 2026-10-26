@@ -341,6 +341,25 @@ Two drags choose blocks (`NoteEditor`, document-level mouse listeners; both then
 ### Clicking empty space in a note
 A plain click (no drag) on blank space now puts the caret where you would expect (`NoteEditor.clickEmptySpace`, run from the same mouse listener as the box-drag, so a press that moves is a box and one that does not is a click): **below the last block** an empty last line takes the caret, otherwise a new empty line is added and focused; **beside or between lines** it goes to the end of the nearest line (lines that are not text, such as a table or database, are left alone); above the first line nothing happens. The note page has a minimum height so the whole visible page below the text is clickable. The old bottom strip only marked the line for focus without a re-render, so with an empty last line nothing happened; it now uses the same `addAtEnd`. Tests: `NoteMarquee`.
 
+## Trial features, and shared workspaces switched off
+`api/.../domain/TrialFeatureService.java`, served by `GET /api/trial-features`. Switches for a whole installation, not a person:
+`notifications` and `automations` are on, **`sharedWorkspaces` is off**. Where a value comes from, first answer wins:
+`HITLIST_FEATURE_SHAREDWORKSPACES=true` in the environment, then a row in the `KaizenTrialFeatures` table
+(`{ FeatureKey, Enabled }`, stored under the empty owner), then the built-in default. There is deliberately no HTTP route that
+writes a flag: it covers everyone on the installation.
+
+Why off: the free Catalyst allowance is **10,000 Data Store fetches per 30 days**, and shared workspaces were spending it while
+nobody used the feature. One `GET /ws` costs 1 + 2N fetches, a pull costs 2, a push 3 — and when the Ably doorbell is
+unavailable `desktop/workspaceSync.js` falls back to polling every 5 minutes for as long as the app runs, which is about
+800 fetches a day with a single workspace. With the flag off nothing asks the cloud about workspaces at all.
+
+What reads it: `web/src/lib/workspaceStore.ts` asks once and publishes `available: false` when it is off, which hides the
+switcher, the share and join dialogs, "Assigned to me" and the assignee controls; `desktop/main.js` (`workspacesEnabled`) never
+calls `workspaces.start()`, so no sync, no push token and no polling. A failed read counts as off and is not remembered, so a
+server that was still starting is asked again. Copies of shared workspaces already on the computer stay on disk, untouched.
+To turn it back on: set the environment variable (or the stored row) and restart. Tests: `TrialFeatureServiceTest`,
+`ApiContractTest`, `workspaceUi`, `apiAvailability`, `desktop/test.main.js`.
+
 ## Sidebar: drag to resize, toggle to hide (desktop), like Postman and IntelliJ
 `web/src/components/shell/Sidebar.tsx` and `web/src/lib/sidebarMode.ts`. The right edge is a drag handle (`data-testid="sidebar-resize"`,
 `role="separator"`): dragging sets the width between 180 and 440, double-clicking resets it to 248, and the arrow keys move it by 16.

@@ -8,6 +8,7 @@ import { MentionMenu } from '@/components/notes/MentionMenu';
 import { AssigneeChip } from '@/components/tasks/AssigneeChip';
 import { pageControls, refreshWorkspaces, resetWorkspaceStore, type SharedWorkspace, type WorkspaceSyncStatus } from '@/lib/workspaceStore';
 
+const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
 const WS = 'W'.repeat(43);
 const TOKEN = 'abcDEF0123456789abcDEF0123456789abcDEF01234';
 const ME = '100001';
@@ -39,11 +40,17 @@ function bridge(active: string | null = null, extra: Record<string, unknown> = {
   (window as unknown as { hitlistDesktop: unknown }).hitlistDesktop = b;
   return b;
 }
-function serve(workspaces: SharedWorkspace[], lists: unknown[] = []) {
+function serve(workspaces: SharedWorkspace[], lists: unknown[] = [], sharedWorkspaces = true) {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => ({
     ok: true,
     json: async () => (String(url).startsWith('/api/lists') ? lists : workspaces),
   })));
+  const plain = globalThis.fetch as unknown as (url: string) => Promise<unknown>;
+  // The store asks whether the installation has the feature on before it reads anything else, and that one goes through
+  // the typed API client, which wants a real Response (it checks the content type).
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => (String(url).includes('/trial-features')
+    ? json({ notifications: true, automations: true, sharedWorkspaces })
+    : plain(url))));
 }
 
 beforeEach(() => { resetWorkspaceStore(); pageControls.reload = vi.fn(); });
@@ -89,6 +96,18 @@ describe('WorkspaceSwitcher', () => {
     render(<WorkspaceSwitcher />);
     expect(screen.getByText('HitList')).toBeInTheDocument();
     expect(screen.queryByRole('button')).toBeNull();
+  });
+
+  it('is just the app name when the installation has the feature switched off, and asks the cloud nothing', async () => {
+    const b = bridge(WS);
+    serve([team()], [], false);
+    render(<WorkspaceSwitcher />);
+    await act(async () => { await refreshWorkspaces(); });
+    expect(screen.getByText('HitList')).toBeInTheDocument();
+    expect(screen.queryByRole('button')).toBeNull();
+    // Nothing was read about workspaces: no local list, and so nothing for the shell to sync.
+    expect(b.workspaces.active).not.toHaveBeenCalled();
+    expect(b.workspaces.refresh).not.toHaveBeenCalled();
   });
 
   it('names the open workspace and switches to another, reloading the page', async () => {

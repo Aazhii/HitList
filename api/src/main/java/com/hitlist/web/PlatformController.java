@@ -2,6 +2,7 @@ package com.hitlist.web;
 
 import com.hitlist.auth.OwnerResolver;
 import com.hitlist.domain.EntityRepository;
+import com.hitlist.domain.TrialFeatureService;
 import com.hitlist.storage.StorageTables;
 import jakarta.servlet.http.HttpServletRequest;
 import java.util.LinkedHashMap;
@@ -16,10 +17,12 @@ import org.springframework.web.bind.annotation.RestController;
 public class PlatformController {
     private final EntityRepository repository;
     private final OwnerResolver owners;
+    private final TrialFeatureService features;
 
-    public PlatformController(EntityRepository repository, OwnerResolver owners) {
+    public PlatformController(EntityRepository repository, OwnerResolver owners, TrialFeatureService features) {
         this.repository = repository;
         this.owners = owners;
+        this.features = features;
     }
 
     @GetMapping("/health")
@@ -50,6 +53,6 @@ public class PlatformController {
     @GetMapping("/api/trial-features")
     Map<String, Object> trialFeatures(HttpServletRequest request) {
         owners.owner(request);
-        return Map.of("notifications", true, "automations", true);
+        return features.flags();
     }
 }

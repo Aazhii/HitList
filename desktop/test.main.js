@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-function launch({ failNavigation = false, backupGate, platform = 'darwin', packaged = false, missingJava = false, spawnError = false } = {}) {
+function launch({ failNavigation = false, backupGate, platform = 'darwin', packaged = false, missingJava = false, spawnError = false, sharedWorkspaces = null } = {}) {
   const app = new EventEmitter();
   app.isPackaged = packaged;
   app.getPath = (name) => name === 'appData' ? '/fake' : '/fake/HitList';
@@ -71,7 +71,15 @@ function launch({ failNavigation = false, backupGate, platform = 'darwin', packa
       const response = new EventEmitter();
       response.statusCode = 200;
       response.resume = () => {};
-      queueMicrotask(() => callback(response));
+      queueMicrotask(() => {
+        callback(response);
+        // The trial-features read decides whether shared workspaces start; null means the local server never answers,
+        // which must also count as off.
+        if (sharedWorkspaces !== null && String(_options && _options.path).startsWith('/api/trial-features')) {
+          response.emit('data', Buffer.from(JSON.stringify({ notifications: true, automations: true, sharedWorkspaces })));
+          response.emit('end');
+        }
+      });
       return new EventEmitter();
     },
   };
@@ -101,6 +109,11 @@ function launch({ failNavigation = false, backupGate, platform = 'darwin', packa
       cancel: () => { lifecycle.push('alerts-cancel'); }, check: async () => { wakeChecks++; },
     }; } },
     './cliqConnection': { createCliqConnection: () => ({ stop: () => { lifecycle.push('stop'); }, beforeRestore: async () => { lifecycle.push('beforeRestore'); }, get: async () => ({}), start: async () => ({}), confirm: async () => ({}), enable: async () => ({}), fetchNow: async () => ({}), unlink: async () => ({}) }) },
+    './workspaceSync': { createWorkspaceSync: () => ({
+      start: async () => { lifecycle.push('ws-start'); }, stop: () => {}, kick: () => {}, refresh: async () => {},
+      status: () => ({}), create: async () => ({}), invite: async () => ({}), accept: async () => ({}),
+      removeMember: async () => ({}), leave: async () => ({}), select: async () => ({}), active: () => ({}),
+    }) },
     './updater': { createUpdater: () => ({ status: () => ({}), check: () => {}, download: () => {}, cancel: () => {}, install: () => {} }) },
     './installer': { cleanupAfterUpdate: () => {}, canSwap: () => false, swapPlan: () => ({ ok: false, reason: 'dev-run' }) },
     './dataDir': { dataDirIn: () => '/fake/HitList', migrateLegacyData: () => null, LEGACY_FOLDER: 'old' },
@@ -263,4 +276,27 @@ test('restore invalidates the connection first and reopens without duplicate con
   await settle();
   assert.equal(windows.length, 2);
   assert.equal(typeof handlers.get('cliq:connection:get'), 'function');
+});
+test('shared workspaces only sync when the installation has the feature on', async () => {
+  // Off: nothing is started, so the cloud is never asked about workspaces (those requests are what spend the project's
+  // Data Store allowance). The IPC refresh says why rather than reaching for the network.
+  const off = launch({ sharedWorkspaces: false });
+  await settle();
+  await settle();
+  assert.equal(off.lifecycle.includes('ws-start'), false);
+  // Built inside the VM realm, so the fields are checked rather than the object as a whole.
+  const refused = await off.handlers.get('ws:refresh')();
+  assert.equal(refused.ok, false);
+  assert.equal(refused.reason, 'workspaces-off');
+
+  // A server that cannot answer counts as off too.
+  const unknown = launch({ sharedWorkspaces: null });
+  await settle();
+  await settle();
+  assert.equal(unknown.lifecycle.includes('ws-start'), false);
+
+  const on = launch({ sharedWorkspaces: true });
+  await settle();
+  await settle();
+  assert.equal(on.lifecycle.includes('ws-start'), true);
 });

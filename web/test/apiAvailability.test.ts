@@ -10,8 +10,13 @@ describe('feature switches and the automations client', () => {
   });
 
   it('reads notifications and automations from the server', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(json({ notifications: true, automations: true, sharedWorkspaces: true }));
+    await expect(trialFeatureApi.get()).resolves.toEqual({ notifications: true, automations: true, sharedWorkspaces: true, unavailableReason: undefined });
+  });
+
+  it('treats shared workspaces as off unless the server says otherwise', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(json({ notifications: true, automations: true }));
-    await expect(trialFeatureApi.get()).resolves.toEqual({ notifications: true, automations: true, unavailableReason: undefined });
+    await expect(trialFeatureApi.get()).resolves.toMatchObject({ sharedWorkspaces: false });
   });
 
   it('explains what a server has switched off', async () => {

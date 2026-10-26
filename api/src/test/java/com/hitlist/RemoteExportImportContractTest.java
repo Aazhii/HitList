@@ -14,6 +14,7 @@ import com.hitlist.domain.ListService;
 import com.hitlist.domain.NoteService;
 import com.hitlist.domain.RemoteExportImportService;
 import com.hitlist.domain.TaskService;
+import com.hitlist.domain.TrialFeatureService;
 import com.hitlist.domain.WorkspaceService;
 import com.hitlist.storage.RowStore;
 import com.hitlist.web.ApiExceptionHandler;
@@ -288,7 +289,7 @@ class RemoteExportImportContractTest {
         converter.setSupportedMediaTypes(List.of(MediaType.APPLICATION_JSON, MediaType.TEXT_PLAIN));
 
         return MockMvcBuilders.standaloneSetup(
-                new PlatformController(repository, owners),
+                new PlatformController(repository, owners, new TrialFeatureService(repository, new org.springframework.mock.env.MockEnvironment())),
                 new TaskController(new TaskService(repository), owners),
                 new ListController(new ListService(repository), owners),
                 new NoteController(new NoteService(repository), owners),
