@@ -47,14 +47,24 @@ describe('lintJson', () => {
     expect(one('[1, 2,]').message).toContain('trailing comma');
   });
 
-  it('unquoted keys and words, single quotes, comments, a missing value', () => {
+  it('unquoted keys and words, single quotes, a missing value', () => {
     expect(one('{a: 1}').message).toBe(`The key 'a' must be in "double quotes"`);
     expect(one('{"a": yes}').message).toContain("'yes' is not valid JSON");
     expect(one("{'a': 1}").message).toContain('Expected a "key"');
     expect(one("['a']").message).toContain('single quotes');
-    expect(one('// note\n{}').message).toBe('Comments are not allowed in JSON');
     expect(one('{"a": }').message).toBe("Missing a value before '}'");
     expect(one('{"a":').message).toContain('Missing');
+  });
+
+  it('accepts comments, as the editor and Beautify do, but not one left open', () => {
+    // The editor writes these with ⌘/ and Beautify keeps them, so underlining them here would be arguing with the app.
+    expect(lintJson('// note\n{}')).toEqual([]);
+    expect(lintJson('{\n  // which module\n  "a": 1 // and why\n}')).toEqual([]);
+    expect(lintJson('{"a": /* inline */ 1}')).toEqual([]);
+    expect(lintJson('// nothing but a note')).toEqual([]);
+    expect(one('{"a": /* open').message).toContain('missing its closing */');
+    // Everything else stays as strict as it was.
+    expect(one('{"a": 1,}').message).toContain('trailing comma');
   });
 
   it('never throws and always stays inside the text, whatever it is given', () => {

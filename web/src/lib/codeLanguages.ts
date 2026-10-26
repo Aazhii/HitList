@@ -26,6 +26,14 @@ const stream = async (parser: Promise<Record<string, unknown>>, key: string): Pr
 
 export const PLAIN_TEXT = 'plaintext';
 
+/**
+ * ⌘/ in a JSON file. Strict JSON has no comments, so `@codemirror/lang-json` offers none and the key did nothing at all —
+ * which is what people hit, because a notepad file is usually a draft rather than something a parser is about to read.
+ * This is the JSONC dialect, which this language already claims (.jsonc above) and which VS Code uses for .json too; the
+ * checker skips comments and Beautify keeps them, so all three agree.
+ */
+const JSONC_COMMENTS = EditorState.languageData.of(() => [{ commentTokens: { line: '//', block: { open: '/*', close: '*/' } } }]);
+
 export const CODE_LANGUAGES: readonly CodeLanguage[] = [
   { id: PLAIN_TEXT, label: 'Plain text', extensions: ['txt', 'text', 'log'], // No language, so no comment syntax of its own: "//" is what ⌘/ uses there, as in most languages.
     load: async () => EditorState.languageData.of(() => [{ commentTokens: { line: '//' } }]) },
@@ -35,7 +43,7 @@ export const CODE_LANGUAGES: readonly CodeLanguage[] = [
   { id: 'tsx', label: 'TSX', extensions: ['tsx'], load: () => import('@codemirror/lang-javascript').then((m) => m.javascript({ jsx: true, typescript: true })) },
   // Deluge (Zoho) is not a CodeMirror language; it reads close enough to JavaScript for colours and indentation.
   { id: 'deluge', label: 'Deluge (Zoho)', extensions: ['dg', 'deluge'], load: () => import('@codemirror/lang-javascript').then((m) => m.javascript()) },
-  { id: 'json', label: 'JSON', extensions: ['json', 'jsonc', 'geojson'], load: () => Promise.all([import('@codemirror/lang-json'), import('@/components/code/jsonDiagnostics'), import('@/components/code/jsonColors')]).then(([m, d, c]) => [m.json(), EditorView.editorAttributes.of({ class: 'cm-lang-json' }), c.jsonColors, d.jsonDiagnostics]) },
+  { id: 'json', label: 'JSON', extensions: ['json', 'jsonc', 'geojson'], load: () => Promise.all([import('@codemirror/lang-json'), import('@/components/code/jsonDiagnostics'), import('@/components/code/jsonColors')]).then(([m, d, c]) => [m.json(), EditorView.editorAttributes.of({ class: 'cm-lang-json' }), c.jsonColors, d.jsonDiagnostics, JSONC_COMMENTS]) },
   { id: 'html', label: 'HTML', extensions: ['html', 'htm'], load: () => import('@codemirror/lang-html').then((m) => m.html()) },
   { id: 'css', label: 'CSS', extensions: ['css'], load: () => import('@codemirror/lang-css').then((m) => m.css()) },
   { id: 'scss', label: 'SCSS / Sass', extensions: ['scss', 'sass'], load: () => import('@codemirror/lang-sass').then((m) => m.sass({ indented: false })) },

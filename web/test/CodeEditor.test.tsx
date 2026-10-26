@@ -109,7 +109,7 @@ describe('code editor', () => {
     expect(view.state.doc.toString()).toBe('    a');
   });
 
-  it.each([['javascript', '// '], ['python', '# '], ['sql', '-- '], ['plaintext', '// ']])('Ctrl/Cmd + / comments and uncomments the lines in %s', async (language, mark) => {
+  it.each([['javascript', '// '], ['python', '# '], ['sql', '-- '], ['plaintext', '// '], ['json', '// ']])('Ctrl/Cmd + / comments and uncomments the lines in %s', async (language, mark) => {
     const { container } = render(<CodeEditor value={'a = 1\nb = 2'} language={language} />);
     const view = viewOf(container);
     await act(async () => { await new Promise((r) => setTimeout(r, 300)); });
@@ -183,5 +183,23 @@ describe('code editor', () => {
 
     scrollTo(0);
     expect(onAtTop).toHaveBeenCalledExactlyOnceWith(true);
+  });
+  it('a wrapped line continues under where the line begins, and only while wrapping is on', async () => {
+    const doc = '{\n    "a": 1,\n\t\t"b": 2,\n"c": 3\n}';
+    const { container, rerender } = render(<CodeEditor value={doc} language="json" wrap />);
+    await act(async () => { await new Promise((r) => setTimeout(r, 300)); });
+    const lines = () => Array.from(container.querySelectorAll('.cm-line')).map((el) => el.getAttribute('style') ?? '');
+
+    // Four spaces, then two tabs (8 columns at the default tab size), then none at all.
+    expect(lines()[1]).toContain('--cm-wrap-indent');
+    expect(lines()[2]).toContain('--cm-wrap-indent');
+    expect(lines()[0]).not.toContain('--cm-wrap-indent');
+    expect(lines()[3]).not.toContain('--cm-wrap-indent');
+    const [, four, eight] = lines().map((style) => Number(/--cm-wrap-indent:(\d+)px/.exec(style)?.[1] ?? 0));
+    expect(eight).toBe(four * 2);
+
+    rerender(<CodeEditor value={doc} language="json" wrap={false} />);
+    await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+    expect(lines().every((style) => !style.includes('--cm-wrap-indent'))).toBe(true);
   });
 });

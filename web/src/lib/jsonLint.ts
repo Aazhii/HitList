@@ -25,7 +25,29 @@ export function lintJson(text: string): JsonProblem[] {
     const start = Math.min(Math.max(0, from), Math.max(0, end - 1));
     throw new Stop({ from: start, to: Math.min(end, Math.max(to, start + 1)), message });
   };
-  const skip = () => { while (pos < end && /\s/.test(text[pos])) pos += 1; };
+  /**
+   * Whitespace, and comments with it: the editor lets you write them here (⌘/), the file extensions this language claims
+   * include .jsonc, and the formatter keeps them. A checker that then underlined them would be arguing with its own app.
+   * Strict JSON has no comments, so a file meant for a strict reader still should not carry any.
+   */
+  const skip = () => {
+    for (;;) {
+      while (pos < end && /\s/.test(text[pos])) pos += 1;
+      if (text[pos] !== '/') return;
+      if (text[pos + 1] === '/') {
+        const line = text.indexOf('\n', pos);
+        pos = line === -1 ? end : line;
+        continue;
+      }
+      if (text[pos + 1] === '*') {
+        const close = text.indexOf('*/', pos + 2);
+        if (close === -1) fail(pos, pos + 2, 'This comment is missing its closing */');
+        pos = close + 2;
+        continue;
+      }
+      return;
+    }
+  };
   const show = (ch: string | undefined) => (ch === undefined ? 'the end' : `'${ch}'`);
   const close = (open: string) => (open === '{' ? '}' : ']');
 
@@ -58,7 +80,6 @@ export function lintJson(text: string): JsonProblem[] {
       fail(pos, pos + word[0].length, `'${word[0]}' is not valid JSON; text must be in "double quotes" (true, false and null have none)`);
     }
     if (ch === "'") fail(pos, pos + 1, 'Strings use "double quotes" in JSON, not single quotes');
-    if (ch === '/') fail(pos, pos + 2, 'Comments are not allowed in JSON');
     if (ch === ',' || ch === '}' || ch === ']' || ch === ':') fail(pos, pos + 1, `Missing a value before ${show(ch)}`);
     return fail(pos, pos + 1, ch === undefined ? 'Missing a value at the end' : `Unexpected ${show(ch)}; expected a value`);
   };
@@ -100,6 +121,9 @@ export function lintJson(text: string): JsonProblem[] {
   };
 
   try {
+    // Nothing but comments: there is no value to check, and that is not a problem to report.
+    skip();
+    if (pos >= end) return [];
     value();
     skip();
     if (pos < end) fail(pos, pos + 1, `Unexpected ${show(text[pos])} after the end of the JSON`);
