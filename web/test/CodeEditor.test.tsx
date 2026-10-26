@@ -156,4 +156,32 @@ describe('code editor', () => {
     expect(text('.cm-json-key')).toEqual(['"data"', '"Name"', '"n"', '"ok"', '"x"', '"id"']);
     expect(text('.cm-json-value')).toEqual(['"merge"', '1', 'true', '"{{Id}}"']);
   });
+  it('reports leaving the top of the text and coming back, once each, with a gap so it cannot flutter', () => {
+    const onAtTop = vi.fn();
+    const { container } = render(<CodeEditor value={'x\n'.repeat(400)} onAtTop={onAtTop} />);
+    const view = viewOf(container);
+    const scrollTo = (top: number) => act(() => {
+      Object.defineProperty(view.scrollDOM, 'scrollTop', { value: top, configurable: true });
+      view.scrollDOM.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+
+    // Nothing is said until the answer actually changes.
+    scrollTo(0);
+    expect(onAtTop).not.toHaveBeenCalled();
+
+    // A nudge inside the dead zone is not "scrolled".
+    scrollTo(20);
+    expect(onAtTop).not.toHaveBeenCalled();
+
+    scrollTo(60);
+    expect(onAtTop).toHaveBeenCalledExactlyOnceWith(false);
+
+    // Coming part of the way back is not enough: that gap is what stops a header fluttering on a boundary line.
+    onAtTop.mockClear();
+    scrollTo(20);
+    expect(onAtTop).not.toHaveBeenCalled();
+
+    scrollTo(0);
+    expect(onAtTop).toHaveBeenCalledExactlyOnceWith(true);
+  });
 });

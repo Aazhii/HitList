@@ -17,6 +17,13 @@ import { codeHighlight, codeTheme } from '@/components/code/codeTheme';
 /** Marks a change that came from the `value` prop, so it is not reported back as an edit. */
 const fromProp = Annotation.define<boolean>();
 
+/**
+ * How far the text scrolls before it counts as moved, and how far back it must come before it counts as home again
+ * (see `onAtTop`). The second is the smaller of the two on purpose: that gap is what stops a header fluttering.
+ */
+const COLLAPSE_AT = 24;
+const RESTORE_AT = 4;
+
 export interface CodeEditorProps {
   value: string;
   onChange?: (value: string) => void;
@@ -37,6 +44,12 @@ export interface CodeEditorProps {
   onEdge?: (direction: 'up' | 'down') => void;
   /** Where the caret is, for a status line. */
   onCursor?: (position: { line: number; column: number; selected: number }) => void;
+  /**
+   * Whether the text is scrolled to the very top, for a page header that gets out of the way once you start reading.
+   * Called only when the answer changes, and with a gap between the two thresholds so a line sitting on the edge cannot
+   * flicker between them.
+   */
+  onAtTop?: (atTop: boolean) => void;
   className?: string;
 }
 
@@ -49,14 +62,16 @@ export interface CodeEditorProps {
  */
 export function CodeEditor({
   value, onChange, language, indent = '4', wrap = false, fontSize = 13, readOnly = false, ariaLabel = 'Code',
-  autoFocus = false, autoHeight = false, maxHeight = 480, onView, onEdge, onCursor, className,
+  autoFocus = false, autoHeight = false, maxHeight = 480, onView, onEdge, onCursor, onAtTop, className,
 }: CodeEditorProps) {
   const host = useRef<HTMLDivElement | null>(null);
   const view = useRef<EditorView | null>(null);
   const parts = useRef({ language: new Compartment(), indent: new Compartment(), wrap: new Compartment(), readOnly: new Compartment() });
   // The latest callbacks, read by the editor's long-lived listener.
-  const callbacks = useRef({ onChange, onCursor, onView, onEdge });
-  useEffect(() => { callbacks.current = { onChange, onCursor, onView, onEdge }; });
+  const callbacks = useRef({ onChange, onCursor, onView, onEdge, onAtTop });
+  useEffect(() => { callbacks.current = { onChange, onCursor, onView, onEdge, onAtTop }; });
+  // The last answer given, so only a change is reported.
+  const wasAtTop = useRef(true);
 
   const indentExtension = (choice: IndentChoice) => [indentUnit.of(indentString(choice)), EditorState.tabSize.of(choice === 'tab' ? 4 : Number(choice))];
 
@@ -87,6 +102,18 @@ export function CodeEditor({
               return true;
             },
           })),
+          // Scrolled away from the top, and back again. The two thresholds do not meet, so a header that moves out of the
+          // way cannot flutter while the text sits on the boundary.
+          EditorView.domEventHandlers({
+            scroll: (_event, editor) => {
+              const top = editor.scrollDOM.scrollTop;
+              const next = wasAtTop.current ? top <= COLLAPSE_AT : top < RESTORE_AT;
+              if (next === wasAtTop.current) return false;
+              wasAtTop.current = next;
+              callbacks.current.onAtTop?.(next);
+              return false;
+            },
+          }),
           EditorView.contentAttributes.of({ 'aria-label': ariaLabel, spellcheck: 'false', autocorrect: 'off', autocapitalize: 'off' }),
           parts.current.language.of([]),
           parts.current.indent.of(indentExtension(indent)),

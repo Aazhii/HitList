@@ -53,6 +53,47 @@ describe('Notepad page', () => {
     expect(screen.getByLabelText('Language')).toBeInTheDocument();
   });
 
+  it('the page title steps aside once the file is scrolled, and comes back at the top, losing no control', async () => {
+    const { container } = render(<NotepadWorkspace onSidebarContentChange={vi.fn()} />);
+    await waitFor(() => expect(container.querySelector('.cm-editor')).not.toBeNull());
+    const view = editorView(container);
+    const heading = screen.getByRole('heading', { name: 'Notepad' });
+    const scrollTo = (top: number) => act(() => {
+      Object.defineProperty(view.scrollDOM, 'scrollTop', { value: top, configurable: true });
+      view.scrollDOM.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+
+    expect(heading.className).toContain('text-[32px]');
+
+    scrollTo(60);
+    await waitFor(() => expect(heading.className).toContain('text-[16px]'));
+    // It shrinks rather than going away, and everything it shares its row with is still there to click.
+    expect(screen.getByRole('heading', { name: 'Notepad' })).toBe(heading);
+    expect(screen.getByLabelText('New file')).toBeInTheDocument();
+    expect(screen.getByLabelText('File name')).toBeInTheDocument();
+    expect(screen.getByLabelText('Language')).toBeInTheDocument();
+
+    scrollTo(0);
+    await waitFor(() => expect(heading.className).toContain('text-[32px]'));
+  });
+
+  it('opening another file puts the page title back to full size', async () => {
+    const { container, rerender } = render(<NotepadWorkspace onSidebarContentChange={vi.fn()} />);
+    await waitFor(() => expect(container.querySelector('.cm-editor')).not.toBeNull());
+    const view = editorView(container);
+    act(() => {
+      Object.defineProperty(view.scrollDOM, 'scrollTop', { value: 60, configurable: true });
+      view.scrollDOM.dispatchEvent(new Event('scroll', { bubbles: true }));
+    });
+    const heading = screen.getByRole('heading', { name: 'Notepad' });
+    await waitFor(() => expect(heading.className).toContain('text-[16px]'));
+
+    // Another file starts at its own first line, so the header starts open again.
+    const open = (screen.getByLabelText('File name') as HTMLInputElement).value;
+    rerender(<NotepadWorkspace onSidebarContentChange={vi.fn()} openNoteId={open === 'script.py' ? 'f2' : 'f1'} />);
+    await waitFor(() => expect(heading.className).toContain('text-[32px]'));
+  });
+
   it('typing is saved into the file\'s code block', async () => {
     const { container } = render(<NotepadWorkspace onSidebarContentChange={vi.fn()} />);
     await waitFor(() => expect(container.querySelector('.cm-editor')).not.toBeNull());

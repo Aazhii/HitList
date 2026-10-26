@@ -413,3 +413,18 @@ inside an array). The marks override the parser's in `codeTheme.ts`.
 `web/src/components/code/smartEnter.ts`: in the code editor, Enter right after `{`, `[` or `(` that has no partner (and nothing else after the caret on
 that line) adds the closing bracket on its own line and leaves the caret on the indented line between. Typing `{` already auto-inserts `}` and
 Enter between a pair already opens it up; this covers a bracket whose closer is missing. Tested in jsdom only.
+
+## The Notepad page header gets out of the way
+`TopBar` gained `compact?: boolean` and `CodeEditor` gained `onAtTop?: (atTop: boolean) => void`; `NotepadWorkspace` joins them.
+Passing `compact` at all (true or false) opts a page into the Notion-style header: the actions move onto the title row, so the
+header is one row instead of two. `compact === true` then shrinks the title from 32px to 16px and the subtitle from 14 to 12,
+over 180ms on one curve, with `motion-reduce` honoured. It **shrinks, never disappears**: the row keeps its place, so nothing
+below it jumps, and no control is ever out of reach — the actions, the file name, the language and the rest sit on rows that
+do not move. The breadcrumb in `AppHeader` is above every page and keeps naming the view and the open file, which is what
+makes the big title safe to shrink. Leave `compact` out and `TopBar` behaves exactly as before, so no other page is touched.
+
+`onAtTop` fires only when the answer changes, from a CodeMirror `scroll` handler, with two thresholds that do not meet
+(`COLLAPSE_AT` 24, `RESTORE_AT` 4): a line sitting on the boundary cannot make the header flutter. Opening another file sets
+it back to true, because that file starts at its own first line. Not done: the same treatment on Notes, Tasks and Databases —
+they scroll their own content, so they would each need to report their scroll position the same way.
+Tests: `CodeEditor` (thresholds, one call per change), `NotepadWorkspace` (shrinks, restores, loses no control, resets per file).

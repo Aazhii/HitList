@@ -15,6 +15,15 @@ interface TopBarProps {
   tabs?: ReactNode;
   /** Right-aligned on the tabs row: one quiet pill, one accent button. Never more. */
   actions?: ReactNode;
+  /**
+   * Opts the page into the header that gets out of the way, as a Notion page's title does when you scroll past it.
+   * Passing it at all (true or false) puts the actions on the title row, so the header is one row rather than two;
+   * `true` then shrinks the title to a label. Leave it out and the header behaves exactly as it always has.
+   *
+   * Only for a page whose context stays on screen some other way — `AppHeader`'s breadcrumb is above every page and
+   * names both the view and what is open — and that does not use `collapsible`, whose button lives on this row.
+   */
+  compact?: boolean;
 }
 
 /**
@@ -28,12 +37,21 @@ interface TopBarProps {
  *
  * Below `md` it also carries the button that opens the sidebar's sheet.
  */
-export function TopBar({ dotClass, title, subtitle, attention, tabs, actions }: TopBarProps) {
+export function TopBar({ dotClass, title, subtitle, attention, tabs, actions, compact }: TopBarProps) {
   const { openContext, toggleCollapsed, collapsible, collapsed } = useViewLayout();
+  // One row instead of two for a page that opted in, so shrinking the title actually buys the content the space.
+  const oneRow = compact !== undefined && !tabs;
 
   return (
-    <header className="flex-shrink-0 bg-a-surface px-4 pt-2 md:px-12">
-      <div className="flex flex-wrap items-center gap-3 pb-1.5">
+    <header
+      className={cn(
+        'flex-shrink-0 bg-a-surface px-4 md:px-12',
+        // Everything that moves is a length, and they all move together over the same short, settling curve.
+        'transition-[padding] duration-[180ms] ease-[cubic-bezier(0.2,0,0,1)] motion-reduce:transition-none',
+        compact ? 'pt-1' : 'pt-2',
+      )}
+    >
+      <div className={cn('flex flex-wrap items-center gap-3', compact ? 'pb-1' : 'pb-1.5')}>
         <button
           type="button"
           onClick={openContext}
@@ -63,20 +81,42 @@ export function TopBar({ dotClass, title, subtitle, attention, tabs, actions }: 
         {/* A rounded square, not a circle — showcase 120 is 14px at radius 3. */}
         {dotClass && <span className={cn('size-[14px] flex-shrink-0 rounded-[3px]', dotClass)} aria-hidden />}
 
-        <h1 className="min-w-0 truncate font-display text-[32px] leading-[1.2] font-bold tracking-[-0.02em] text-a-ink">
+        {/* The title shrinks to a label rather than disappearing: the eye follows it to its smaller self, and nothing
+            below it jumps, because the row keeps its place. */}
+        <h1
+          className={cn(
+            'min-w-0 truncate font-display font-bold tracking-[-0.02em] text-a-ink',
+            'transition-[font-size,line-height] duration-[180ms] ease-[cubic-bezier(0.2,0,0,1)] motion-reduce:transition-none',
+            compact ? 'text-[16px] leading-[1.5]' : 'text-[32px] leading-[1.2]',
+          )}
+        >
           {title}
         </h1>
 
+        {/* It shrinks with the title, on the same curve, rather than fading out: the count is still worth reading. */}
         {subtitle && (
-          <p className="hidden min-w-0 truncate text-[14px] text-a-muted lg:block">{subtitle}</p>
+          <p
+            className={cn(
+              'hidden min-w-0 truncate text-a-muted lg:block',
+              'transition-[font-size] duration-[180ms] ease-[cubic-bezier(0.2,0,0,1)] motion-reduce:transition-none',
+              compact ? 'text-[12px]' : 'text-[14px]',
+            )}
+          >
+            {subtitle}
+          </p>
         )}
 
         {attention && (
           <span className="hidden flex-shrink-0 text-[14px] font-medium text-a-attention lg:block">{attention}</span>
         )}
+
+        {/* On a one-row header the actions sit at the end of this row, so they never move when the title shrinks. */}
+        {oneRow && actions && (
+          <div className="ml-auto flex flex-shrink-0 items-center gap-1">{actions}</div>
+        )}
       </div>
 
-      {(tabs || actions) && (
+      {!oneRow && (tabs || actions) && (
         <div className="mt-2 flex items-center gap-2">
           <div className="min-w-0 flex-1">{tabs}</div>
           {actions && <div className="flex flex-shrink-0 items-center gap-1 pb-1">{actions}</div>}

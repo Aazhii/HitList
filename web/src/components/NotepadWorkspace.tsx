@@ -62,11 +62,13 @@ function FileListItem({ note, isActive, onSelect, onDelete }: { note: Note; isAc
 
 // ── The open file ──────────────────────────────────────────────────────────────
 function FileEditor({
-  note, onTitle, onBlocks,
+  note, onTitle, onBlocks, onAtTop,
 }: {
   note: Note;
   onTitle: (title: string) => void;
   onBlocks: (blocks: Note['blocks']) => void;
+  /** Tells the page whether the text is still at the top, so its header can get out of the way once it is not. */
+  onAtTop?: (atTop: boolean) => void;
 }) {
   const settings = fileSettings(note);
   const text = fileText(note);
@@ -159,6 +161,7 @@ function FileEditor({
           fontSize={fontSize}
           ariaLabel={`Code of ${note.title || 'this file'}`}
           onCursor={setCursor}
+          onAtTop={onAtTop}
         />
       </div>
 
@@ -203,6 +206,9 @@ export function NotepadWorkspace({
     createNote, deleteNote, updateNoteTitle, setBlocks,
   } = useNotes({ files: true });
   const [deleteTarget, setDeleteTarget] = useState<Note | null>(null);
+  /** Whether the open file is scrolled to the top; a fresh file starts there, and so does every other file you open. */
+  const [atTop, setAtTop] = useState(true);
+  useEffect(() => { setAtTop(true); }, [activeNoteId]);
 
   const handleCreate = useCallback(() => {
     const parts = newFileParts();
@@ -265,6 +271,9 @@ export function NotepadWorkspace({
     <TopBar
       title="Notepad"
       subtitle={`${files.length} file${files.length !== 1 ? 's' : ''}`}
+      // The page title steps aside once you are reading the file, the way a Notion page's does. It only ever shrinks —
+      // the actions stay on this row throughout — and the breadcrumb above keeps naming the view and the open file.
+      compact={!atTop}
       actions={(
         <>
           {(activeNote || files.length > 0) && <SyncIndicatorWrapper saveStatus={saveStatus} />}
@@ -302,6 +311,7 @@ export function NotepadWorkspace({
                 note={activeNote}
                 onTitle={(title) => updateNoteTitle(activeNote.id, title)}
                 onBlocks={(blocks) => setBlocks(activeNote.id, blocks)}
+                onAtTop={setAtTop}
               />
             ) : files.length === 0 ? (
               <div className="pt-4">
