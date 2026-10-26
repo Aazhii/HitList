@@ -87,6 +87,7 @@ function cleanOps(ops) {
 
 /**
  * store: createWorkspace, getWorkspace, addMember -> bool, getMember, membersOf, membershipsOf, removeMember,
+ *        workspacesByIds -> [workspace], membersByWorkspace -> Map(id -> [member]),
  *        createInvite, getInvite, setInviteStatus, lastSeq, insertChange -> 'ok'|'duplicate-seq'|'duplicate-batch',
  *        changeByBatch, changesAfter
  * publish(workspaceId, seq) -> bool   (the doorbell; failures are fine, members catch up on their next connect)
@@ -122,10 +123,22 @@ function createWorkspaceService({ store, publish = async () => false, sendInvite
 
 	async function listWorkspaces(rawCaller) {
 		const caller = callerOf(rawCaller);
+		const memberships = await store.membershipsOf(caller.userId);
+		const ids = memberships.map((m) => m.workspaceId);
+		// Three reads for the whole list, not two per workspace: this runs at every start, every reconnect and on every
+		// retry, and the Data Store allowance is small.
+		const [found, members] = ids.length
+			? await Promise.all([store.workspacesByIds(ids), store.membersByWorkspace(ids)])
+			: [[], new Map()];
+		const byId = new Map(found.map((w) => [w.workspaceId, w]));
 		const out = [];
-		for (const m of await store.membershipsOf(caller.userId)) {
-			const workspace = await store.getWorkspace(m.workspaceId);
-			if (workspace) out.push(await view(workspace, m.role));
+		for (const m of memberships) {
+			const workspace = byId.get(m.workspaceId);
+			if (!workspace) continue;
+			out.push({
+				workspaceId: workspace.workspaceId, name: workspace.name, ownerUserId: workspace.ownerUserId, role: m.role,
+				members: (members.get(m.workspaceId) || []).map(publicMember),
+			});
 		}
 		return { workspaces: out };
 	}
@@ -192,8 +205,8 @@ function createWorkspaceService({ store, publish = async () => false, sendInvite
 		if (!validDevice(deviceId) || !validBatch(batchId)) fail(400, 'invalid_device');
 		const clean = cleanOps(ops);
 		const batchKey = `${workspaceId}:${deviceId}:${batchId}`;
-		const existing = await store.changeByBatch(batchKey);
-		if (existing) return { seq: existing.seq, duplicate: true, signalDelivered: await publish(workspaceId, existing.seq) };
+		// No "has this batch been sent?" read first: the insert below is unique on the batch key, so a repeat comes back as
+		// 'duplicate-batch' and is looked up only then. A retry is rare; the read was paid on every send.
 		for (let attempt = 0; attempt < SEQ_RETRIES; attempt += 1) {
 			const seq = (await store.lastSeq(workspaceId)) + 1;
 			const outcome = await store.insertChange({ workspaceId, seq, batchKey, authorUserId: caller.userId, deviceId, ops: clean, createdAt: now() });

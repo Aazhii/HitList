@@ -26,6 +26,14 @@ const seqNumber = (v) => { if (!Number.isSafeInteger(v) || v < 0) throw new Erro
 const changeKey = (ws, seq) => `${wsKey(ws)}:${String(seqNumber(seq)).padStart(12, '0')}`;
 const duplicate = (error) => /duplicate|unique|already.exists/i.test(`${error && error.code || ''} ${error && error.message || ''}`);
 const num = (v) => Number(v) || 0;
+/** A query returns at most 300 rows, and a workspace holds at most this many members, so three ids fill one query. */
+const MEMBERS_PER_WORKSPACE = 100;
+const PER_QUERY = 3;
+const chunks = (ids) => {
+	const out = [];
+	for (let at = 0; at < ids.length; at += PER_QUERY) out.push(ids.slice(at, at + PER_QUERY));
+	return out;
+};
 /** Catalyst's own created time ("2026-10-04 12:30:00:123") as milliseconds, or 0 if it cannot be read. */
 const createdAt = (r) => {
 	const m = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}:\d{2})(?:[.:](\d{1,3}))?/.exec(String((r && r.CREATEDTIME) || ''));
@@ -67,6 +75,31 @@ function createWorkspacesStorage(req, { tables = TABLES, app = catalyst.initiali
 			return member((await select(t.members, `MemberKey='${wsKey(ws)}:${userKey(user)}'`, '', 1))[0]) || null;
 		},
 		async membersOf(ws) { return (await select(t.members, `WorkspaceId='${wsKey(ws)}'`, 'ORDER BY JoinedAt ASC', 100)).map(member); },
+		/**
+		 * The two reads below answer for several workspaces at once, so listing them costs a fixed few fetches instead of
+		 * two per workspace. A query may return at most 300 rows and a workspace may hold 100 members, so the ids are
+		 * taken PER_QUERY at a time rather than all at once.
+		 */
+		async workspacesByIds(ids) {
+			const out = [];
+			for (const group of chunks(ids)) {
+				const rows = await select(t.workspaces, group.map((id) => `WorkspaceId='${wsKey(id)}'`).join(' OR '), '', group.length);
+				out.push(...rows.map((r) => ({ workspaceId: r.WorkspaceId, name: r.Name, ownerUserId: String(r.OwnerUserId), createdAt: createdAt(r) })));
+			}
+			return out;
+		},
+		/** The members of each of these workspaces, as a Map keyed by workspace id. */
+		async membersByWorkspace(ids) {
+			const out = new Map(ids.map((id) => [id, []]));
+			for (const group of chunks(ids)) {
+				const rows = await select(t.members, group.map((id) => `WorkspaceId='${wsKey(id)}'`).join(' OR '), 'ORDER BY JoinedAt ASC', group.length * MEMBERS_PER_WORKSPACE);
+				for (const row of rows) {
+					const entry = out.get(row.WorkspaceId);
+					if (entry) entry.push(member(row));
+				}
+			}
+			return out;
+		},
 		async membershipsOf(user) { return (await select(t.members, `UserId='${userKey(user)}'`, '', 100)).map(member); },
 		async removeMember(ws, user) {
 			const found = await this.getMember(ws, user);

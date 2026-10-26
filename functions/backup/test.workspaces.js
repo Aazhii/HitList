@@ -5,13 +5,20 @@ const { createWorkspaceService, cleanOps, digest } = require('./workspaces');
 
 function memoryStore() {
 	const workspaces = new Map(); const members = new Map(); const invites = new Map(); const changes = [];
+	// What each read cost, so a change that quietly turns one query into one per workspace is caught.
+	const reads = [];
 	return {
-		workspaces, members, invites, changes,
+		workspaces, members, invites, changes, reads,
 		async createWorkspace(w) { workspaces.set(w.workspaceId, { ...w }); },
 		async getWorkspace(id) { return workspaces.has(id) ? { ...workspaces.get(id) } : null; },
 		async addMember(m) { const k = `${m.workspaceId}:${m.userId}`; if (members.has(k)) return false; members.set(k, { ...m }); return true; },
 		async getMember(ws, user) { const m = members.get(`${ws}:${user}`); return m ? { ...m } : null; },
 		async membersOf(ws) { return [...members.values()].filter((m) => m.workspaceId === ws); },
+		async workspacesByIds(ids) { reads.push(`workspaces:${ids.length}`); return ids.map((id) => workspaces.get(id)).filter(Boolean).map((w) => ({ ...w })); },
+		async membersByWorkspace(ids) {
+			reads.push(`members:${ids.length}`);
+			return new Map(ids.map((id) => [id, [...members.values()].filter((m) => m.workspaceId === id)]));
+		},
 		async membershipsOf(user) { return [...members.values()].filter((m) => m.userId === user); },
 		async removeMember(ws, user) { members.delete(`${ws}:${user}`); },
 		async createInvite(i) { invites.set(i.tokenHash, { ...i }); },
@@ -268,6 +275,24 @@ test('the push token covers exactly the caller\'s workspaces', async () => {
 	assert.equal(Object.keys(tok.channels).includes(other.workspaceId), false);
 	const none = setup({ issueToken: null });
 	await assert.rejects(none.svc.token(alice), { code: 'push_unavailable' });
+});
+
+test('listing workspaces costs the same few reads however many there are', async () => {
+	const ctx = setup();
+	await sharedWithBob(ctx);
+	for (const name of ['Second', 'Third', 'Fourth']) {
+		const made = await ctx.svc.createWorkspace(alice, { name });
+		const invited = await ctx.svc.invite(alice, made.workspaceId, { email: 'BOB@example.com' });
+		await ctx.svc.acceptInvite(bob, { token: invited.token });
+	}
+	ctx.store.reads.length = 0;
+
+	const listed = await ctx.svc.listWorkspaces(bob);
+	assert.equal(listed.workspaces.length, 4);
+	// Every workspace still carries its members, and the whole list took one batched read of each kind, not one per
+	// workspace. That matters: this runs at every start, every reconnect and on every retry.
+	assert.deepEqual(listed.workspaces.map((w) => w.members.length), [2, 2, 2, 2]);
+	assert.deepEqual(ctx.store.reads, ['workspaces:4', 'members:4']);
 });
 
 test('a caller without a usable account is refused everywhere', async () => {

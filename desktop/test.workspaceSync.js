@@ -600,8 +600,10 @@ test('with the live signal down, retries settle into one cheap request, and the 
     await retry.fn();
     await new Promise((r) => setImmediate(r));
   }
-  assert.deepEqual(delays.slice(0, 6), [30_000, 60_000, 120_000, 300_000, 300_000, 300_000]);
-  // 4 quick full refreshes (30s, 1m, 2m, 5m), then 5-minute steps: five pulls and one refresh in every six.
+  // 4 quick tries, then the signal-only ladder: 5 minutes, 15, then half-hourly for as long as it stays away, instead of
+  // every 5 minutes for ever. Catching up still costs cloud reads out of a small monthly allowance.
+  assert.deepEqual(delays.slice(0, 8), [30_000, 60_000, 120_000, 300_000, 300_000, 900_000, 1_800_000, 1_800_000]);
+  // 4 quick full refreshes (30s, 1m, 2m, 5m), then one refresh in every six catch-ups.
   const refreshes = calls.filter((c) => c === 'GET /ws').length;
   const pulls = calls.filter((c) => c.startsWith('GET /ws/:ws/changes')).length;
   assert.equal(calls.filter((c) => c === 'POST /ws/token').length, 0, 'the fake push never asks for a token');

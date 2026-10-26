@@ -360,6 +360,19 @@ server that was still starting is asked again. Copies of shared workspaces alrea
 To turn it back on: set the environment variable (or the stored row) and restart. Tests: `TrialFeatureServiceTest`,
 `ApiContractTest`, `workspaceUi`, `apiAvailability`, `desktop/test.main.js`.
 
+## What a shared-workspace request costs the Data Store
+Counted in ZCQL `SELECT`s, which is what the "fetch" allowance measures (10,000 per 30 days):
+`GET /ws` **3** (`membershipsOf`, then one batched read of the workspaces and one of their members — `workspacesByIds` and
+`membersByWorkspace` take ids three at a time, because a query returns at most 300 rows and a workspace holds at most 100
+members); `GET /ws/{id}/changes` **2**; `POST /ws/{id}/changes` **2** (`getMember`, `lastSeq` — there is no "already sent?"
+read, the insert is unique on the batch key and a repeat is looked up only then); `POST /ws/token` **1**;
+`POST /ws/invite/accept` **5**. Before this, listing cost 1 + 2N and a send cost 3.
+Not done, on purpose: caching the `getMember` check between requests. It would save one fetch on every send and every pull,
+but it would also let someone just removed keep access until the cache expired. Trading an access check for a read is not
+worth it.
+With the live signal down, `desktop/workspaceSync.js` now catches up at 5 minutes, then 15, then every 30
+(`PUSH_RETRY_STEPS`) instead of every 5 minutes for as long as the app runs — roughly 90 fetches a day rather than 800.
+
 ## Sidebar: drag to resize, toggle to hide (desktop), like Postman and IntelliJ
 `web/src/components/shell/Sidebar.tsx` and `web/src/lib/sidebarMode.ts`. The right edge is a drag handle (`data-testid="sidebar-resize"`,
 `role="separator"`): dragging sets the width between 180 and 440, double-clicking resets it to 248, and the arrow keys move it by 16.

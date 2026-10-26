@@ -29,6 +29,8 @@ function memoryStore() {
     async addMember(m) { const k = `${m.workspaceId}:${m.userId}`; if (members.has(k)) return false; members.set(k, { ...m }); return true; },
     async getMember(ws, u) { const m = members.get(`${ws}:${u}`); return m ? { ...m } : null; },
     async membersOf(ws) { return [...members.values()].filter((m) => m.workspaceId === ws); },
+    async workspacesByIds(ids) { return ids.map((id) => workspaces.get(id)).filter(Boolean).map((w) => ({ ...w })); },
+    async membersByWorkspace(ids) { return new Map(ids.map((id) => [id, [...members.values()].filter((m) => m.workspaceId === id)])); },
     async membershipsOf(u) { return [...members.values()].filter((m) => m.userId === u); },
     async removeMember(ws, u) { members.delete(`${ws}:${u}`); },
     async createInvite(i) { invites.set(i.tokenHash, { ...i }); },

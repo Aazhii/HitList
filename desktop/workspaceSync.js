@@ -22,8 +22,13 @@ const { randomUUID, createHash } = require('node:crypto');
 const FLUSH_DELAY = 3_000;
 const MIN_BETWEEN_FLUSHES = 5_000;
 const RETRY_STEPS = [30_000, 60_000, 120_000, 300_000];
-// When only the live signal is down, the engine asks for new changes every 5 minutes (one cheap request) and tries to bring
-// the signal back only every sixth time (30 minutes), instead of repeating the whole refresh every 5 minutes.
+/**
+ * When only the live signal is down, the engine asks for new changes on this ladder rather than every 5 minutes for as long
+ * as the app runs. A dead doorbell is usually dead for hours (a missing key, a blocked network), and every catch-up costs
+ * cloud reads out of a small monthly allowance: 5 minutes forever is about 800 a day with one workspace, this is about 90.
+ * It tries to bring the signal itself back every sixth catch-up.
+ */
+const PUSH_RETRY_STEPS = [300_000, 900_000, 1_800_000];
 const PUSH_RETRY_EVERY = 6;
 const MAX_OPS_BYTES = 8_500;
 const MAX_OPS = 200;
@@ -299,9 +304,12 @@ function createWorkspaceSync({
 
   function scheduleRetry() {
     if (timers.retry || !running) return;
-    const delay = RETRY_STEPS[Math.min(retryStep, RETRY_STEPS.length - 1)];
-    // After the quick early tries, a problem that is only the live signal (the cloud itself answers) is handled gently.
+    // After the quick early tries, a problem that is only the live signal (the cloud itself answers) is handled gently: it
+    // slows down the longer the signal stays away, instead of settling at one catch-up every five minutes for ever.
     const pushOnly = retryStep >= RETRY_STEPS.length && state.lastError === 'push-unavailable';
+    const delay = pushOnly
+      ? PUSH_RETRY_STEPS[Math.min(retryStep - RETRY_STEPS.length, PUSH_RETRY_STEPS.length - 1)]
+      : RETRY_STEPS[Math.min(retryStep, RETRY_STEPS.length - 1)];
     retryStep += 1;
     timers.retry = setTimer(() => {
       timers.retry = null;
