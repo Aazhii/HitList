@@ -1,10 +1,17 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
-import { CalendarCheck, CalendarDays, FileCode2, Leaf, PanelLeftClose, PanelLeftOpen, Sun, ListChecks, Search, StickyNote, Table2, UserCheck, Zap } from 'lucide-react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { CalendarCheck, CalendarDays, FileCode2, Leaf, PanelLeft, Sun, ListChecks, Search, StickyNote, Table2, UserCheck, Zap } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Sheet, SheetContent, SheetDescription, SheetTitle } from '@/components/ui/sheet';
 import { useIsDesktop } from '@/components/shell/ViewLayout';
 import { useWorkspaces } from '@/hooks/useWorkspaces';
-import { useSidebarMode } from '@/lib/sidebarMode';
+import {
+  SIDEBAR_COLLAPSE_AT,
+  SIDEBAR_DEFAULT_WIDTH,
+  SIDEBAR_MAX_WIDTH,
+  clampSidebarWidth,
+  useSidebarMode,
+  useSidebarWidth,
+} from '@/lib/sidebarMode';
 
 export type AppView = 'tasks' | 'notes' | 'notepad' | 'databases' | 'calendar' | 'automations' | 'library' | 'today' | 'assigned' | 'weekly';
 
@@ -78,67 +85,111 @@ export function Sidebar({
   }, [isDesktop, onMobileOpenChange]);
 
   const [mode, setMode] = useSidebarMode();
-  const [peek, setPeek] = useState(false);
-  const closeTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(closeTimer.current), []);
+  const [width, setWidth] = useSidebarWidth();
+  // While the edge is being dragged: the raw width the pointer asks for, before it is clamped or snapped shut.
+  const [dragging, setDragging] = useState<number | null>(null);
 
   const bodyProps = { activeView, onViewChange, counts, context, contextFoot, pages, onSearch, workspace };
 
-  const show = useCallback(() => { clearTimeout(closeTimer.current); setPeek(false); setMode('shown'); }, [setMode]);
-  const hide = useCallback(() => { clearTimeout(closeTimer.current); setPeek(false); setMode('hidden'); }, [setMode]);
+  // Below the collapse point the sidebar snaps shut while you are still dragging, as in IntelliJ, so you can see what you get.
+  const live = dragging === null ? (mode === 'hidden' ? 0 : width) : (dragging < SIDEBAR_COLLAPSE_AT ? 0 : clampSidebarWidth(dragging));
+  const collapsed = live === 0;
 
-  // Ctrl/Cmd + \ hides the sidebar, or shows it again.
+  const toggle = useCallback(() => setMode(mode === 'hidden' ? 'shown' : 'hidden'), [mode, setMode]);
+
+  // Ctrl/Cmd + \ hides the sidebar, or shows it again — the same shortcut Postman uses.
   useEffect(() => {
     if (!isDesktop) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== '\\' || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
       e.preventDefault();
-      if (mode === 'hidden') show(); else hide();
+      toggle();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [isDesktop, mode, show, hide]);
+  }, [isDesktop, toggle]);
 
-  // Hidden, as in Notion: a button in the page header's left gutter brings it back (a click keeps it open), and merely pointing at
-  // that button or the left edge slides it in over the page until the pointer leaves.
-  if (isDesktop && mode === 'hidden') {
-    const open = () => { clearTimeout(closeTimer.current); setPeek(true); };
-    const close = () => { clearTimeout(closeTimer.current); closeTimer.current = setTimeout(() => setPeek(false), 250); };
-    return (
-      <>
-        <button
-          type="button"
-          aria-label="Show sidebar"
-          title="Show sidebar (Ctrl/Cmd + \)"
-          onClick={show}
-          onMouseEnter={open}
-          onMouseLeave={close}
-          className="fixed left-2 top-[6px] z-30 flex size-8 items-center justify-center rounded-[4px] text-a-muted transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
-        >
-          <PanelLeftOpen className="size-[17px]" strokeWidth={1.75} aria-hidden />
-        </button>
-        <div aria-hidden data-testid="sidebar-hot-edge" className="fixed inset-y-0 left-0 z-40 w-1.5" onMouseEnter={open} onMouseLeave={close} />
-        <aside
-          aria-label="Sidebar"
-          aria-hidden={!peek}
-          onMouseEnter={open}
-          onMouseLeave={close}
-          onFocus={open}
-          className={cn(
-            'fixed inset-y-1 left-1 z-50 flex w-[248px] flex-col overflow-hidden rounded-[8px] border border-a-line bg-a-bg shadow-[var(--a-shadow-xl)] transition-[transform,visibility] duration-[120ms]',
-            peek ? 'visible translate-x-0' : 'invisible -translate-x-[260px]',
-          )}
-        >
-          <SidebarBody {...bodyProps} />
-        </aside>
-      </>
-    );
-  }
+  const startDrag = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = mode === 'hidden' ? 0 : width;
+    let last = startWidth;
+    const onMove = (ev: MouseEvent) => {
+      last = Math.max(0, startWidth + (ev.clientX - startX));
+      setDragging(last);
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.classList.remove('is-resizing-sidebar');
+      setDragging(null);
+      if (last < SIDEBAR_COLLAPSE_AT) setMode('hidden');
+      else { setWidth(last); setMode('shown'); }
+    };
+    document.body.classList.add('is-resizing-sidebar');
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, [mode, width, setMode, setWidth]);
+
+  // The keyboard way to do the same: arrows resize, and going under the collapse point closes it.
+  const onHandleKey = useCallback((e: React.KeyboardEvent) => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    const next = (mode === 'hidden' ? 0 : width) + (e.key === 'ArrowRight' ? 16 : -16);
+    if (next < SIDEBAR_COLLAPSE_AT) setMode('hidden');
+    else { setWidth(next); setMode('shown'); }
+  }, [mode, width, setMode, setWidth]);
+
+  const handle = isDesktop && (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize sidebar"
+      aria-valuenow={live}
+      aria-valuemin={0}
+      aria-valuemax={SIDEBAR_MAX_WIDTH}
+      tabIndex={0}
+      data-testid="sidebar-resize"
+      onMouseDown={startDrag}
+      onKeyDown={onHandleKey}
+      // Double-click resets, the way a column divider does.
+      onDoubleClick={() => { setWidth(SIDEBAR_DEFAULT_WIDTH); setMode('shown'); }}
+      className={cn(
+        'z-30 w-1.5 cursor-col-resize transition-colors duration-[120ms] hover:bg-a-accent/40 focus-visible:bg-a-accent/40',
+        collapsed ? 'fixed inset-y-0 left-0' : 'absolute inset-y-0 -right-[3px]',
+      )}
+    />
+  );
+
+  // The toggle sits at the bottom left in both states, as in Postman, so it never moves and nothing can cover it.
+  const toggleButton = isDesktop && collapsed && (
+    <button
+      type="button"
+      aria-label="Toggle sidebar"
+      title="Toggle left sidebar (Ctrl/Cmd + \)"
+      onClick={toggle}
+      className="fixed bottom-2 left-2 z-30 flex size-8 items-center justify-center rounded-[4px] border border-a-line bg-a-bg text-a-muted shadow-[var(--a-shadow-sm)] transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
+    >
+      <PanelLeft className="size-[17px]" strokeWidth={1.75} aria-hidden />
+    </button>
+  );
 
   if (isDesktop) {
+    if (collapsed) {
+      return <>{handle}{toggleButton}</>;
+    }
     return (
-      <aside aria-label="Sidebar" className="flex h-full w-[248px] flex-shrink-0 flex-col border-r border-a-line bg-a-bg">
-        <SidebarBody {...bodyProps} onCollapse={hide} />
+      <aside
+        aria-label="Sidebar"
+        style={{ width: live }}
+        className={cn(
+          'relative flex h-full flex-shrink-0 flex-col border-r border-a-line bg-a-bg',
+          dragging === null && 'transition-[width] duration-[120ms]',
+        )}
+      >
+        <SidebarBody {...bodyProps} onToggle={toggle} />
+        {handle}
       </aside>
     );
   }
@@ -154,12 +205,12 @@ export function Sidebar({
   );
 }
 
-function SidebarBody({ activeView, onViewChange, counts, context, contextFoot, pages, onSearch, workspace, onCollapse }: Omit<SidebarProps, 'mobileOpen' | 'onMobileOpenChange'> & { onCollapse?: () => void }) {
+function SidebarBody({ activeView, onViewChange, counts, context, contextFoot, pages, onSearch, workspace, onToggle }: Omit<SidebarProps, 'mobileOpen' | 'onMobileOpenChange'> & { onToggle?: () => void }) {
   const shared = useWorkspaces();
   const views = VIEWS.filter((v) => v.id !== 'assigned' || (shared.available && shared.workspaces.length > 0));
   return (
-    <div className="group/side flex h-full min-h-0 flex-col">
-      {/* Logo / workspace row; the hide button shows while the pointer is over the sidebar, as in Notion. */}
+    <div className="flex h-full min-h-0 flex-col">
+      {/* Logo / workspace row. */}
       <div className="flex min-w-0 flex-shrink-0 items-center gap-2 px-3.5 pt-3 pb-1.5">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           {workspace ?? (
@@ -171,17 +222,6 @@ function SidebarBody({ activeView, onViewChange, counts, context, contextFoot, p
             </>
           )}
         </div>
-        {onCollapse && (
-          <button
-            type="button"
-            aria-label="Hide sidebar"
-            title="Hide sidebar (Ctrl/Cmd + \)"
-            onClick={onCollapse}
-            className="flex size-6 flex-shrink-0 items-center justify-center rounded-[4px] text-a-faint opacity-0 transition-[opacity,background-color] duration-[120ms] hover:bg-a-row-hover hover:text-a-ink focus-visible:opacity-100 group-hover/side:opacity-100"
-          >
-            <PanelLeftClose className="size-[17px]" strokeWidth={1.75} aria-hidden />
-          </button>
-        )}
       </div>
 
       {/* Search row: opens the ⌘K palette. */}
@@ -231,6 +271,21 @@ function SidebarBody({ activeView, onViewChange, counts, context, contextFoot, p
 
       {contextFoot && (
         <div className="flex-shrink-0 border-t border-a-line-soft p-3">{contextFoot}</div>
+      )}
+
+      {/* The toggle lives at the bottom left, as in Postman: always in the same place, whether the sidebar is open or shut. */}
+      {onToggle && (
+        <div className="flex flex-shrink-0 items-center border-t border-a-line-soft px-2 py-1.5">
+          <button
+            type="button"
+            aria-label="Toggle sidebar"
+            title="Toggle left sidebar (Ctrl/Cmd + \)"
+            onClick={onToggle}
+            className="flex size-7 items-center justify-center rounded-[4px] text-a-faint transition-colors duration-[120ms] hover:bg-a-row-hover hover:text-a-ink"
+          >
+            <PanelLeft className="size-[17px]" strokeWidth={1.75} aria-hidden />
+          </button>
+        </div>
       )}
     </div>
   );

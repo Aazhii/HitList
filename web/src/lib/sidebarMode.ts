@@ -1,13 +1,25 @@
 import { useCallback, useState } from 'react';
 
 /**
- * How the desktop sidebar is shown, as in Notion. Kept per device (local storage only): it is a layout preference, so nothing syncs.
- * - shown: the sidebar beside the page.
- * - hidden: no sidebar; a button at the top left brings it back, and pointing at that button or the left edge slides it in over the page.
+ * How the desktop sidebar is shown, as in Postman and IntelliJ. Kept per device (local storage only): it is a layout
+ * preference, so nothing syncs.
+ * - shown: the sidebar beside the page, at the width the person dragged it to.
+ * - hidden: no sidebar; the toggle button at the bottom left brings it back, and so does dragging the left edge out.
  */
 export type SidebarMode = 'shown' | 'hidden';
 
 export const SIDEBAR_MODE_KEY = 'hitlist-sidebar-mode';
+export const SIDEBAR_WIDTH_KEY = 'hitlist-sidebar-width';
+
+/** The width it opens at, how far it can be dragged, and the width below which dragging closes it. */
+export const SIDEBAR_DEFAULT_WIDTH = 248;
+export const SIDEBAR_MIN_WIDTH = 180;
+export const SIDEBAR_MAX_WIDTH = 440;
+export const SIDEBAR_COLLAPSE_AT = 140;
+
+export function clampSidebarWidth(width: number): number {
+  return Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, Math.round(width)));
+}
 
 export function readSidebarMode(): SidebarMode {
   try {
@@ -19,6 +31,15 @@ export function readSidebarMode(): SidebarMode {
   }
 }
 
+export function readSidebarWidth(): number {
+  try {
+    const value = Number(window.localStorage.getItem(SIDEBAR_WIDTH_KEY));
+    return Number.isFinite(value) && value > 0 ? clampSidebarWidth(value) : SIDEBAR_DEFAULT_WIDTH;
+  } catch {
+    return SIDEBAR_DEFAULT_WIDTH;
+  }
+}
+
 export function useSidebarMode(): [SidebarMode, (mode: SidebarMode) => void] {
   const [mode, setModeState] = useState<SidebarMode>(readSidebarMode);
   const setMode = useCallback((next: SidebarMode) => {
@@ -26,4 +47,14 @@ export function useSidebarMode(): [SidebarMode, (mode: SidebarMode) => void] {
     try { window.localStorage.setItem(SIDEBAR_MODE_KEY, next); } catch { /* storage blocked: the choice lasts until reload */ }
   }, []);
   return [mode, setMode];
+}
+
+export function useSidebarWidth(): [number, (width: number) => void] {
+  const [width, setWidthState] = useState<number>(readSidebarWidth);
+  const setWidth = useCallback((next: number) => {
+    const clamped = clampSidebarWidth(next);
+    setWidthState(clamped);
+    try { window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(clamped)); } catch { /* storage blocked: the width lasts until reload */ }
+  }, []);
+  return [width, setWidth];
 }

@@ -341,12 +341,15 @@ Two drags choose blocks (`NoteEditor`, document-level mouse listeners; both then
 ### Clicking empty space in a note
 A plain click (no drag) on blank space now puts the caret where you would expect (`NoteEditor.clickEmptySpace`, run from the same mouse listener as the box-drag, so a press that moves is a box and one that does not is a click): **below the last block** an empty last line takes the caret, otherwise a new empty line is added and focused; **beside or between lines** it goes to the end of the nearest line (lines that are not text, such as a table or database, are left alone); above the first line nothing happens. The note page has a minimum height so the whole visible page below the text is clickable. The old bottom strip only marked the line for focus without a re-render, so with an empty last line nothing happened; it now uses the same `addAtEnd`. Tests: `NoteMarquee`.
 
-## Sidebar hide (desktop), like Notion
-`web/src/components/shell/Sidebar.tsx` and `web/src/lib/sidebarMode.ts`. A "Hide sidebar" button shows at the right of the sidebar's top row while the
-pointer is over the sidebar (also Ctrl/Cmd + `\`). Hidden, the page uses the full width and a "Show sidebar" button sits in the page header's left
-gutter: a click brings the sidebar back; just pointing at that button or at the left edge slides the sidebar in over the page until the pointer leaves.
-The choice is kept per device in local storage (`hitlist-sidebar-mode`: `shown` or `hidden`; the earlier `hover` reads as hidden, `sections` as shown).
-An earlier version had a Cliq-style menu (Hide Sidebar / Hide Sections / Show on hover) at the foot; it was removed. Mobile sheet unchanged. Only jsdom tests.
+## Sidebar: drag to resize, toggle to hide (desktop), like Postman and IntelliJ
+`web/src/components/shell/Sidebar.tsx` and `web/src/lib/sidebarMode.ts`. The right edge is a drag handle (`data-testid="sidebar-resize"`,
+`role="separator"`): dragging sets the width between 180 and 440, double-clicking resets it to 248, and the arrow keys move it by 16.
+Dragging under 140 snaps the sidebar shut while the drag is still running; shut, the handle moves to the window's left edge, so dragging it
+back out opens the sidebar at that width. A toggle button (`aria-label="Toggle sidebar"`, Ctrl/Cmd + `\`) sits at the bottom left in both
+states — at the foot of the sidebar when open, fixed in the window corner when shut — so nothing can ever cover it.
+Kept per device in local storage: `hitlist-sidebar-mode` (`shown` or `hidden`; the earlier `hover` reads as hidden, `sections` as shown) and
+`hitlist-sidebar-width`. Earlier versions had a Cliq-style menu, then a Notion-style hover peek with a button in the header's left gutter; both
+were removed — the peek overlay covered its own Show button, so the sidebar could not be brought back by mouse. Mobile sheet unchanged. Only jsdom tests.
 
 ## JSON colours (Notepad and code blocks)
 In a JSON editor keys are orange-brown and strings, numbers and values blue, like Postman's body view (`.cm-lang-json` overrides the

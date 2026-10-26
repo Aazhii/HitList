@@ -949,3 +949,9 @@ html.login-locked body {
   --code-string: #8ab4ff;
   --code-number: #8ab4ff;
 }
+
+/* While the sidebar's edge is being dragged, the resize cursor stays whatever the pointer is over, and nothing selects. */
+body.is-resizing-sidebar {
+  cursor: col-resize;
+  user-select: none;
+}
