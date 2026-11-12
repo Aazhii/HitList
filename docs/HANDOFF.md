@@ -482,3 +482,32 @@ screen are measured, and only while wrapping is on.
 Note for whoever writes the next test here: **`toast` renders nothing in these tests unless `<Toaster />` is mounted**
 alongside the page. An earlier test looked like it was asserting a toast and was really matching the editor's own JSON
 warning strip, which prints the same `Line N: message`.
+
+## Linux: the backend no longer needs an executable `/tmp`
+
+**The bug.** On a system that mounts `/tmp` `noexec` (CIS/STIG-hardened Ubuntu/Debian), the `.deb` installed but the app never
+opened: the backend exited with code 1. `sqlite-jdbc` unpacks `libsqlitejdbc.so` from its jar into `java.io.tmpdir` and
+`System.load()`s it; the kernel refuses to map it (`UnsatisfiedLinkError … failed to map segment from shared object`).
+
+**The fix** (`desktop/backendLaunch.js`, used by `startBackend` in `main.js`):
+- The library ships beside the app: `scripts/prepare-sqlite-native-linux.sh` pulls `Linux/x86_64/libsqlitejdbc.so` out of the
+  jar (two levels: the Spring Boot jar holds the driver jar) into `resources/sqlite-native-linux`, `electron-builder.yml`
+  installs it as `<resources>/native/` (`/opt/HitList/resources/native/` in the `.deb`). The backend gets
+  `-Dorg.sqlite.lib.path` and `-Dorg.sqlite.lib.name` pointing there, resolved from `process.resourcesPath`. The CI Linux job
+  runs the script and then checks the `.deb` lists the file.
+- Fallback, if that file is missing: `-Dorg.sqlite.tmpdir` and `-Djava.io.tmpdir` are `<userData>/tmp` (0700), on every platform.
+  A hardened system can mount `/home` noexec too, which is why the bundled file is the real fix.
+- `--enable-native-access=ALL-UNNAMED` silences Java's restricted-method warnings.
+- The backend's output goes to `<userData>/backend.log` (replaced each start, 0600). If it exits non-zero before it is healthy,
+  the person gets a dialog with the reason and the log path (a library that cannot load is explained in words) instead of a
+  silent failure.
+
+**Checked.** Unit tests (`test.backendLaunch.js`, `test.main.js`). And in a real Linux container (aarch64, since this was
+run on a Mac under Colima) with `/tmp` as a `noexec` tmpfs: before — the exact `UnsatisfiedLinkError` and exit 1; after the
+flags — healthy in 2 s, `hitlist.db` created, nothing sqlite-related in `/tmp`; the fallback alone (no bundled file) —
+healthy too; and the same flags on an exec-enabled `/tmp` — healthy.
+
+**Not checked** (cannot be, from a Mac): the x86_64 `.deb` itself (`dpkg -V`, `apt install`), the installed app on Ubuntu,
+the AppImage. Note an AppImage on a `noexec` `/tmp` can fail for its own reasons (it mounts itself there); only the `.deb`
+was in the report. The version is set per workflow run (the form), so there is no version file to bump; the release notes
+line is: "Fix startup failure on systems with noexec /tmp (SQLite native library no longer extracted to /tmp)."

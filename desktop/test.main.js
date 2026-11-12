@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 
-function launch({ failNavigation = false, backupGate, platform = 'darwin', packaged = false, missingJava = false, spawnError = false, sharedWorkspaces = null } = {}) {
+function launch({ failNavigation = false, backupGate, platform = 'darwin', packaged = false, missingJava = false, spawnError = false, sharedWorkspaces = null, backendExit = null } = {}) {
   const app = new EventEmitter();
   app.isPackaged = packaged;
   app.getPath = (name) => name === 'appData' ? '/fake' : '/fake/HitList';
@@ -56,6 +56,8 @@ function launch({ failNavigation = false, backupGate, platform = 'darwin', packa
     child.kill = () => { child.exitCode = 0; child.emit('exit', 0); };
     children.push(child);
     if (spawnError) queueMicrotask(() => child.emit('error', Object.assign(new Error('denied'), { code: 'EACCES' })));
+    // The backend dies while starting: it prints its reason, then exits non-zero.
+    if (backendExit) queueMicrotask(() => { child.stderr.emit('data', backendExit.log); child.exitCode = backendExit.code; child.emit('exit', backendExit.code); child.emit('close', backendExit.code); });
     return child;
   };
   const createServer = () => {
@@ -85,7 +87,7 @@ function launch({ failNavigation = false, backupGate, platform = 'darwin', packa
   };
   const mockFs = {
     mkdirSync: () => {}, existsSync: (target) => !(missingJava && /[\\/]jre[\\/]bin[\\/]java/.test(target)),
-    readFileSync: () => 'test-secret', writeFileSync: () => {},
+    readFileSync: () => 'test-secret', writeFileSync: () => {}, appendFileSync: () => {},
   };
   let accounts = 0;
   let backupOptions;
@@ -185,13 +187,28 @@ test('Java spawn failure reports a controlled startup error instead of an unhand
   assert.equal(windows.length, 0);
 });
 
+test('a backend that dies while starting is reported with its reason and the log file, not left to time out', async () => {
+  const { errors, app, windows } = launch({ packaged: true, platform: 'linux',
+    backendExit: { code: 1, log: 'Caused by: java.lang.UnsatisfiedLinkError: /tmp/x-libsqlitejdbc.so: failed to map segment from shared object' } });
+  await settle();
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /could not load its local database library/);
+  assert.match(errors[0], /backend\.log/);
+  assert.equal(app.quitCalls, 1);
+  assert.equal(windows.length, 0);
+});
+
 for (const platform of ['darwin', 'win32', 'linux']) {
   test(`${platform}: packaged startup uses bundled Java and jar`, async () => {
     const { children, errors } = launch({ platform, packaged: true });
     await settle();
     assert.equal(children.length, 1);
     assert.equal(children[0].executable, path.join('/fake/resources', 'jre', 'bin', platform === 'win32' ? 'java.exe' : 'java'));
-    assert.deepEqual(Array.from(children[0].args), ['-jar', path.join('/fake/resources', 'hitlist.jar')]);
+    const args = Array.from(children[0].args);
+    assert.deepEqual(args.slice(-2), ['-jar', path.join('/fake/resources', 'hitlist.jar')]);
+    assert.ok(args.includes('--enable-native-access=ALL-UNNAMED'));
+    // Only Linux ships SQLite's library beside the app; there the driver is told to load it from there, not from /tmp.
+    assert.equal(args.includes('-Dorg.sqlite.lib.name=libsqlitejdbc.so'), platform === 'linux');
     assert.deepEqual(errors, []);
   });
 

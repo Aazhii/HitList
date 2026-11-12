@@ -262,9 +262,14 @@ jobs:
         working-directory: desktop
         run: |
           pnpm install --frozen-lockfile
-          node --test test.main.js test.updater.js test.auth.js test.backup.js test.restore.js test.nativeInstaller.js test.buildSmoke.js
+          node --test test.main.js test.updater.js test.auth.js test.backup.js test.restore.js test.nativeInstaller.js test.buildSmoke.js test.backendLaunch.js
           sh scripts/prepare-jre-linux.sh
+          sh scripts/prepare-sqlite-native-linux.sh
           pnpm exec electron-builder --linux --x64 --publish never -c.extraMetadata.version=${{ needs.version.outputs.version }}
+      - name: Check the .deb carries SQLite's library
+        working-directory: desktop/dist
+        # Without it the app would unpack the library into /tmp at start, and fail where /tmp is mounted noexec.
+        run: dpkg-deb -c *.deb | grep -q 'opt/HitList/resources/native/libsqlitejdbc.so'
       - name: Checksum
         working-directory: desktop/dist
         run: |

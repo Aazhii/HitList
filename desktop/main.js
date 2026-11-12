@@ -20,6 +20,7 @@ const { createWorkspacePush } = require('./workspacePush');
 const installer = require('./installer');
 const { dataDirIn, migrateLegacyData, LEGACY_FOLDER } = require('./dataDir');
 const { BACKUP_FUNCTION_URL } = require('./catalyst-config');
+const { jvmArgs, failureReason } = require('./backendLaunch');
 const { spawn } = require('node:child_process');
 const { createServer } = require('node:net');
 const path = require('node:path');
@@ -130,6 +131,8 @@ function waitForHealth(port) {
 
 let backendProcess = null;
 let backendStartError = null;
+/** True once the backend has answered its health check; an exit before that is a failed start, after it an ordinary stop. */
+let backendReady = false;
 let backendPort = null;
 let windowCreation = null;
 /** Set once the window is up. Used by the quit handler to take a last backup. */
@@ -140,14 +143,20 @@ const DESKTOP_TOKEN = crypto.randomBytes(32).toString('hex');
 
 function startBackend(port, userDataDir) {
   backendStartError = null;
+  backendReady = false;
   const jarPath = getJarPath();
   if (!fs.existsSync(jarPath)) {
     throw new Error(`hitlist.jar not found at ${jarPath} — build api/ first (mvn package).`);
   }
   const sqlitePath = path.join(userDataDir, 'hitlist.db');
   const ownerSecret = getOrCreateOwnerSecret(userDataDir);
+  // Everything the backend prints goes to a file, not only to a console nobody sees: a person whose app will not open
+  // can then be asked for one file. It is replaced on every start and private to the person running the app.
+  const logPath = path.join(userDataDir, 'backend.log');
+  try { fs.writeFileSync(logPath, '', { mode: 0o600 }); } catch { /* the log is a convenience; starting does not depend on it */ }
 
-  backendProcess = spawn(getJavaExecutable(), ['-jar', jarPath], {
+  const args = [...jvmArgs({ fs, platform: process.platform, resourcesPath: process.resourcesPath, userDataDir }), '-jar', jarPath];
+  backendProcess = spawn(getJavaExecutable(), args, {
     env: {
       ...process.env,
       STORAGE_MODE: 'sqlite',
@@ -160,19 +169,26 @@ function startBackend(port, userDataDir) {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
-  // Surfaced on failure only — a healthy backend doesn't need its log
-  // narrated, but a silent one that never becomes healthy is undebuggable
-  // without this.
+  // Kept in memory only as far as the last few lines are needed to say why it stopped; the file has all of it.
   let log = '';
+  const keep = (chunk) => {
+    log = (log + chunk).slice(-16_000);
+    try { fs.appendFileSync(logPath, chunk); } catch { /* as above */ }
+  };
   backendProcess.once('error', (error) => {
     backendStartError = new Error(`Java could not start (${error.code || 'process error'}). Check the bundled runtime and security software permissions.`);
   });
-  backendProcess.stdout.on('data', (chunk) => { log += chunk; });
-  backendProcess.stderr.on('data', (chunk) => { log += chunk; });
+  backendProcess.stdout.on('data', keep);
+  backendProcess.stderr.on('data', keep);
   backendProcess.on('exit', (code) => {
     if (code !== 0 && code !== null) {
       console.error(`[hitlist backend] exited with code ${code}\n${log}`);
     }
+  });
+  // `close`, not `exit`: only once its output has been read in full is the reason in `log`.
+  backendProcess.on('close', (code) => {
+    if (backendReady || backendStartError || code === 0 || code === null) return;
+    backendStartError = new Error(failureReason({ log, code, logPath }));
   });
 }
 
@@ -198,6 +214,7 @@ async function openWindow() {
       if (backendStartError) throw backendStartError;
       throw new Error('The local backend did not respond in time. Check that Java is installed and try again.');
     }
+    backendReady = true;
     if (backendStartError) throw backendStartError;
   }
   const port = backendPort;

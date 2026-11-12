@@ -9,12 +9,13 @@
     "prepare:jar": "sh scripts/prepare-jar.sh",
     "prepare:jre": "sh scripts/prepare-jre.sh",
     "build": "pnpm run prepare:jar && pnpm run prepare:jre && electron-builder",
-    "test": "node --test test.auth.js test.backup.js test.restore.js test.dataDir.js test.cliqAlerts.js test.cliqInbox.js test.cliqPush.js test.cliqConnection.js test.cliqPipeline.js test.updater.js test.installer.js test.main.js test.workspacePush.js test.workspaceSync.js test.buildSmoke.js test.nativeInstaller.js",
+    "test": "node --test test.auth.js test.backup.js test.restore.js test.dataDir.js test.cliqAlerts.js test.cliqInbox.js test.cliqPush.js test.cliqConnection.js test.cliqPipeline.js test.updater.js test.installer.js test.main.js test.workspacePush.js test.workspaceSync.js test.buildSmoke.js test.nativeInstaller.js test.backendLaunch.js",
     "prepare:jre:win": "sh scripts/prepare-jre-win.sh",
     "build:mac": "pnpm run prepare:jar && pnpm run prepare:jre && electron-builder --mac",
     "build:win": "pnpm run prepare:jar && pnpm run prepare:jre:win && electron-builder --win --x64",
     "prepare:jre:linux": "sh scripts/prepare-jre-linux.sh",
-    "build:linux": "pnpm run prepare:jar && pnpm run prepare:jre:linux && electron-builder --linux --x64"
+    "prepare:native:linux": "sh scripts/prepare-sqlite-native-linux.sh",
+    "build:linux": "pnpm run prepare:jar && pnpm run prepare:jre:linux && pnpm run prepare:native:linux && electron-builder --linux --x64"
   },
   "devDependencies": {
     "electron": "^44.3.0",

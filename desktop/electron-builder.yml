@@ -24,6 +24,7 @@ files:
   - workspaceSync.js
   - workspacePush.js
   - dataDir.js
+  - backendLaunch.js
   - preload.js
   - signin.html
   - catalyst-config.js
@@ -74,6 +75,9 @@ linux:
       to: hitlist.jar
     - from: resources/jre-linux
       to: jre
+    # SQLite's native library, so the backend does not unpack it into /tmp, which some systems mount noexec.
+    - from: resources/sqlite-native-linux
+      to: native
 
 deb:
   artifactName: HitList_${version}_amd64.${ext}
